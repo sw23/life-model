@@ -19,6 +19,8 @@ class Family(BaseModel):
         # TODO - Probably want to add some rules around this (e.g. parents vs. kids)
         # TODO - Currently all debts are paid off right away, but this should be modeled better
         for person_x in self.members:
-            while person_x.debt > 0:
+            if person_x.debt > 0:
                 for person_y in self.members:
+                    if person_x is person_y:
+                        continue
                     person_x.debt = person_y.pay_bills(person_x.debt)
