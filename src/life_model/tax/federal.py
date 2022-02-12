@@ -1,3 +1,10 @@
+from enum import Enum
+
+
+class FilingStatus(Enum):
+    SINGLE = 1
+    MARRIED_FILING_JOINTLY = 2
+
 
 federal_tax_brackets = {}
 
@@ -5,7 +12,7 @@ federal_tax_brackets = {}
 # much taxes will be paid. This currently takes the current tax brackets and applies
 # them to all future years, given that it is not possible to predict taxes in the future.
 
-federal_tax_brackets['single'] = [
+federal_tax_brackets[FilingStatus.SINGLE] = [
     [0,       10275,        10],
     [10276,   41775,        12],
     [41776,   89075,        22],
@@ -15,11 +22,7 @@ federal_tax_brackets['single'] = [
     [539901,  float('inf'), 37],
 ]
 
-# df = pd.DataFrame(federal_tax_brackets['single'],
-#                   columns = ['Start', 'End', 'Rate'])
-# df.style.format(precision=0, formatter={('Start', 'End'): '${:.0f}', ('Rate'): '{}%'})
-
-federal_tax_brackets['married-filing-jointly'] = [
+federal_tax_brackets[FilingStatus.MARRIED_FILING_JOINTLY] = [
     [0,       20550,        10],
     [20551,   83550,        12],
     [83551,   178150,       22],
@@ -28,9 +31,6 @@ federal_tax_brackets['married-filing-jointly'] = [
     [431901,  647850,       35],
     [647851,  float('inf'), 37],
 ]
-
-# df = pd.DataFrame(federal_tax_brackets['married-filing-jointly'], columns = ['Start', 'End', 'Rate'])
-# df.style.format(precision=0, formatter={('Start', 'End'): '${:.0f}', ('Rate'): '{}%'})
 
 
 def federal_income_tax(amount, filing_status):

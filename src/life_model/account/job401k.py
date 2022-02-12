@@ -1,5 +1,5 @@
 from ..basemodel import BaseModel, continous_interest
-from ..limits import federal_retirement_age
+from ..limits import federal_retirement_age, required_min_distrib
 
 
 class Job401kAccount(BaseModel):
@@ -49,6 +49,13 @@ class Job401kAccount(BaseModel):
         self.stat_balance_history.append(self.balance)
         if (self.owner.age > federal_retirement_age()):
             self.stat_useable_balance = self.balance
+
+        # Required minimum distributions
+        # - Based on the owner's age, force withdraw the required minium
+        required_min_dist_amount = min(required_min_distrib(self.owner.age, self.pretax_balance), self.pretax_balance)
+        self.pretax_balance -= required_min_dist_amount
+        self.owner.bank_accounts[0].balance += required_min_dist_amount
+        self.owner.taxable_income += required_min_dist_amount
 
     def deduct(self, amount):
         # TODO - Need to figure out where early penalties and limits are applied

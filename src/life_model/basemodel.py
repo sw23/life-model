@@ -9,6 +9,41 @@ def continous_interest(principle, rate, elapsed_time_periods=1):
     return principle * pow(const_e, (rate / 100) * elapsed_time_periods) - principle
 
 
+class Event:
+    def __init__(self, message):
+        self.year = BaseModel().year
+        self.message = message
+
+    def _repr_html_(self):
+        return f"<tr><td>{self.year}</td><td>{self.message}</td></tr>\n"
+
+
+class EventList:
+    def __init__(self):
+        self.list = []
+
+    def _repr_html_(self):
+        table = "<table>"
+        table += "<tr><th>Year:</th><th>Event:</th></tr>\n"
+        table += "".join(x._repr_html_() for x in self.list)
+        table += "</table>"
+        return table
+
+    def add(self, event):
+        self.list.append(event)
+
+
+class Year:
+    def __init__(self):
+        self._year = 0
+
+    def set(self, year):
+        self._year = year
+
+    def get(self):
+        return self._year
+
+
 class BaseModel:
     COMMON_STATS = [
         'stat_gross_income',        # Gross income made in a year
@@ -17,6 +52,22 @@ class BaseModel:
         'stat_money_spent',         # Money spent in a year
         'stat_retirement_contrib',  # Money contributed to retirement in a given year
     ]
+
+    _year = Year()
+
+    @property
+    def year(self):
+        return type(self)._year.get()
+
+    @year.setter
+    def year(self, val):
+        type(self)._year.set(val)
+
+    _event_log = EventList()
+
+    @property
+    def event_log(self):
+        return type(self)._event_log
 
     def advance_year(self, objects=None):
         if objects is None:

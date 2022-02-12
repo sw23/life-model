@@ -1,4 +1,4 @@
-from .basemodel import BaseModel
+from .basemodel import BaseModel, Event
 from .limits import job_401k_contrib_limit
 
 
@@ -57,6 +57,7 @@ class Job(BaseModel):
             self.owner.legacy_retirement_accounts.append(self.retirement_account)
         # Remove the job associated with the acount
         self.retirement_account.job = None
+        self.event_log.add(Event(f"{self.owner.name} retired from {self.company}"))
 
 
 class Salary(BaseModel):
