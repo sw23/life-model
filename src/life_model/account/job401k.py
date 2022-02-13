@@ -16,7 +16,6 @@ class Job401kAccount(BaseModel):
         self.average_growth = average_growth
         self.company_match_percent = company_match_percent
 
-        self.stat_contributions = 0
         self.stat_balance_history = []
         self.stat_useable_balance = 0
 

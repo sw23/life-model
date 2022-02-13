@@ -20,6 +20,7 @@ class Person(BaseModel):
         self.filing_status = FilingStatus.SINGLE
 
         self.stat_money_spent = 0
+        self.stat_taxes_paid = 0
 
         self.family.members.append(self)
 

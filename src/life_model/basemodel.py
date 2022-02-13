@@ -51,6 +51,7 @@ class BaseModel:
         'stat_taxes_paid',          # Taxes paid in a year
         'stat_money_spent',         # Money spent in a year
         'stat_retirement_contrib',  # Money contributed to retirement in a given year
+        'stat_retirement_match',    # Money matched by company in 401k in a given year
     ]
 
     _year = Year()

@@ -11,6 +11,8 @@ class Job(BaseModel):
         self.retirement_account = None
 
         self.stat_gross_income = 0
+        self.stat_retirement_contrib = 0
+        self.stat_retirement_match = 0
 
         self.owner.jobs.append(self)
 
@@ -38,7 +40,11 @@ class Job(BaseModel):
             self.retirement_account.pretax_balance += yearly_pretax_contrib
             self.retirement_account.roth_balance += yearly_roth_contrib
             yearly_401k_contrib = yearly_pretax_contrib + yearly_roth_contrib
-            self.retirement_account.pretax_balance += self.retirement_account.company_match(yearly_401k_contrib)
+            company_match = self.retirement_account.company_match(yearly_401k_contrib)
+            self.retirement_account.pretax_balance += company_match
+        else:
+            yearly_401k_contrib = 0
+            company_match = 0
 
         gross_income = self.salary.base + self.salary.bonus
 
@@ -50,6 +56,8 @@ class Job(BaseModel):
         self.owner.taxable_income += gross_income - yearly_pretax_contrib
 
         self.stat_gross_income = gross_income
+        self.stat_retirement_contrib = yearly_401k_contrib
+        self.stat_retirement_match = company_match
 
     def retire(self):
         # Turn over control of the retirement account to the user
