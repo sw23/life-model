@@ -18,6 +18,8 @@ class Job401kAccount(BaseModel):
 
         self.stat_balance_history = []
         self.stat_useable_balance = 0
+        self.stat_required_min_distrib = 0
+        self.stat_401k_balance = 0
 
         job.retirement_account = self
 
@@ -51,17 +53,21 @@ class Job401kAccount(BaseModel):
 
         # Required minimum distributions
         # - Based on the owner's age, force withdraw the required minium
-        required_min_dist_amount = min(required_min_distrib(self.owner.age, self.pretax_balance), self.pretax_balance)
-        self.pretax_balance -= required_min_dist_amount
+        required_min_dist_amount = self.deduct_pretax(required_min_distrib(self.owner.age, self.pretax_balance))
         self.owner.bank_accounts[0].balance += required_min_dist_amount
         self.owner.taxable_income += required_min_dist_amount
 
-    def deduct(self, amount):
+        self.stat_required_min_distrib = required_min_dist_amount
+        self.stat_401k_balance = self.balance
+
+    def deduct_pretax(self, amount):
         # TODO - Need to figure out where early penalties and limits are applied
-        pretax_amount_deducted = min(self.pretax_balance, amount)
-        self.pretax_balance -= pretax_amount_deducted
-        amount -= pretax_amount_deducted
-        roth_amount_deducted = min(self.roth_balance, amount)
-        self.roth_balance -= roth_amount_deducted
-        amount -= roth_amount_deducted
-        return pretax_amount_deducted + roth_amount_deducted
+        amount_deducted = min(self.pretax_balance, amount)
+        self.pretax_balance -= amount_deducted
+        return amount_deducted
+
+    def deduct_roth(self, amount):
+        # TODO - Need to figure out where early penalties and limits are applied
+        amount_deducted = min(self.roth_balance, amount)
+        self.roth_balance -= amount_deducted
+        return amount_deducted

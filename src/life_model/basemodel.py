@@ -46,12 +46,16 @@ class Year:
 
 class BaseModel:
     COMMON_STATS = [
-        'stat_gross_income',        # Gross income made in a year
-        'stat_useable_balance',     # Balance available for use in a year
-        'stat_taxes_paid',          # Taxes paid in a year
-        'stat_money_spent',         # Money spent in a year
-        'stat_retirement_contrib',  # Money contributed to retirement in a given year
-        'stat_retirement_match',    # Money matched by company in 401k in a given year
+        'stat_gross_income',          # Gross income made in a year
+        'stat_bank_balance',          # Bank account balance at the end of each year
+        'stat_401k_balance',          # Total 401k balance at the end of each year
+        'stat_useable_balance',       # Balance available for use in a year
+        'stat_debt',                  # Total debt balance in each year
+        'stat_taxes_paid',            # Taxes paid in a year
+        'stat_money_spent',           # Money spent in a year
+        'stat_retirement_contrib',    # Money contributed to retirement in a given year
+        'stat_retirement_match',      # Money matched by company in 401k in a given year
+        'stat_required_min_distrib',  # Money taken out from required minimum distributions
     ]
 
     _year = Year()

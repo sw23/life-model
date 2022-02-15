@@ -39,3 +39,7 @@ def federal_income_tax(amount, filing_status):
     for (start, end, percent) in bracket:
         total_tax += min(max(amount - start, 0), end) * (percent / 100)
     return total_tax
+
+
+def max_tax_rate(filing_status):
+    return federal_tax_brackets[filing_status][-1][2]
