@@ -4,6 +4,7 @@ from .limits import job_401k_contrib_limit
 
 class Job(BaseModel):
     def __init__(self, owner, company, role, salary):
+        self.simulation = owner.simulation
         self.owner = owner
         self.company = company
         self.role = role

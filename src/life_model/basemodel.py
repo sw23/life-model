@@ -11,15 +11,16 @@ def continous_interest(principle, rate, elapsed_time_periods=1):
 
 class Event:
     def __init__(self, message):
-        self.year = BaseModel().year
         self.message = message
+        self.year = 0
 
     def _repr_html_(self):
         return f"<tr><td>{self.year}</td><td>{self.message}</td></tr>\n"
 
 
-class EventList:
-    def __init__(self):
+class EventLog:
+    def __init__(self, simulation):
+        self.simulation = simulation
         self.list = []
 
     def _repr_html_(self):
@@ -30,18 +31,8 @@ class EventList:
         return table
 
     def add(self, event):
+        event.year = self.simulation.year
         self.list.append(event)
-
-
-class Year:
-    def __init__(self):
-        self._year = 0
-
-    def set(self, year):
-        self._year = year
-
-    def get(self):
-        return self._year
 
 
 class BaseModel:
@@ -58,21 +49,13 @@ class BaseModel:
         'stat_required_min_distrib',  # Money taken out from required minimum distributions
     ]
 
-    _year = Year()
-
     @property
     def year(self):
-        return type(self)._year.get()
-
-    @year.setter
-    def year(self, val):
-        type(self)._year.set(val)
-
-    _event_log = EventList()
+        return self.simulation.get_year()
 
     @property
     def event_log(self):
-        return type(self)._event_log
+        return self.simulation.get_event_log()
 
     def advance_year(self, objects=None):
         if objects is None:

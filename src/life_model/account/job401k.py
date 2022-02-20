@@ -7,6 +7,7 @@ class Job401kAccount(BaseModel):
                  pretax_balance=0, pretax_contrib_percent=0,
                  roth_balance=0, roth_contrib_percent=0,
                  average_growth=0, company_match_percent=0):
+        self.simulation = job.simulation
         self.job = job
         self.owner = job.owner
         self.pretax_balance = pretax_balance

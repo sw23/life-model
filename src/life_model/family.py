@@ -3,7 +3,9 @@ from .tax.federal import FilingStatus, federal_income_tax, max_tax_rate
 
 
 class Family(BaseModel):
-    def __init__(self, *args):
+    def __init__(self, simulation, *args):
+        self.simulation = simulation
+        self.simulation.top_level_models.append(self)
         self.members = list(args)
 
     @property

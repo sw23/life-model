@@ -3,6 +3,7 @@ from ..basemodel import BaseModel, compound_interest
 
 class BankAccount(BaseModel):
     def __init__(self, owner, company, type='Bank', balance=0, interest_rate=0):
+        self.simulation = owner.simulation
         self.owner = owner
         self.company = company
         self.type = type

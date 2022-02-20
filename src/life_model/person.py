@@ -4,8 +4,8 @@ from .limits import federal_retirement_age
 
 
 class Person(BaseModel):
-    def __init__(self, family, name, age, retirement_age, spending, life_events=None):
-        self.life_events = [] if life_events is None else life_events
+    def __init__(self, family, name, age, retirement_age, spending):
+        self.simulation = family.simulation
         self.family = family
         self.name = name
         self.age = age
@@ -106,6 +106,9 @@ class Person(BaseModel):
             spouse.get_married(self, False)
             self.event_log.add(Event(f"{self.name} and {spouse.name} got married at age {self.age} and {spouse.age}"))
 
+    def get_year_at_age(self, age):
+        return self.year + (age - self.age)
+
     def advance_year(self, objects=None):
         self.yearly_taxes_paid = False
         self.taxable_income = 0
@@ -115,9 +118,6 @@ class Person(BaseModel):
         if self.age == self.retirement_age:
             while(self.jobs):
                 self.jobs.pop(0).retire()
-
-        # Perform life events at the new age
-        self.life_events = [x for x in self.life_events if not x.eval_event(self.age)]
 
         # Advance the year for all sub-objects
         super().advance_year(objects)
@@ -161,16 +161,3 @@ class Spending(BaseModel):
     def advance_year(self, objects=None):
         super().advance_year(objects)
         self.base += (self.base * (self.yearly_increase / 100))
-
-
-class LifeEvent():
-    def __init__(self, age, event, *event_args):
-        self.age = age
-        self.event = event
-        self.event_args = event_args
-
-    def eval_event(self, age):
-        if self.age == age:
-            self.event(*self.event_args)
-            return True
-        return False
