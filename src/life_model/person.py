@@ -19,10 +19,15 @@ class Person(BaseModel):
         self.spouse = None
         self.filing_status = FilingStatus.SINGLE
         self.yearly_taxes_paid = False
+        self.homes = []
+        self.apartments = []
 
         self.stat_money_spent = 0
         self.stat_taxes_paid = 0
         self.stat_bank_balance = 0
+        self.stat_home_expenses_paid = 0
+        self.stat_interest_paid = 0
+        self.stat_rent_paid = 0
 
         self.family.members.append(self)
 
@@ -39,6 +44,9 @@ class Person(BaseModel):
         desc += f'<li>Retirement Age: {self.retirement_age}</li>'
         desc += ''.join(f"<li>{x._repr_html_()}</li>" for x in self.jobs)
         desc += ''.join(f"<li>{x._repr_html_()}</li>" for x in self.bank_accounts)
+        desc += ''.join(f"<li>{x._repr_html_()}</li>" for x in self.legacy_retirement_accounts)
+        desc += ''.join(f"<li>{x._repr_html_()}</li>" for x in self.homes)
+        desc += ''.join(f"<li>{x._repr_html_()}</li>" for x in self.apartments)
         desc += f'<li>Debt: {self.debt}</li>'
         desc += '</ul>'
         return desc
@@ -114,6 +122,12 @@ class Person(BaseModel):
         self.taxable_income = 0
         self.age += 1
 
+        all_bills_except_taxes = self.spending.base
+        home_spending = sum(x.make_yearly_payment() for x in self.homes)
+        home_interest_paid = sum(x.mortgage.get_interest_for_year() for x in self.homes)
+        apartment_rent = sum(x.yearly_rent for x in self.apartments)
+        all_bills_except_taxes += home_spending + apartment_rent
+
         # Retire from all jobs at retirement age
         if self.age == self.retirement_age:
             while(self.jobs):
@@ -130,7 +144,7 @@ class Person(BaseModel):
             # 2. Withdraw that amount plus max tax rate to cover taxes
             # 3. Deposit that amount into checking
             yearly_taxes = self.get_federal_taxes_due()
-            spending_plus_pre_401k_taxes = self.spending.base + yearly_taxes
+            spending_plus_pre_401k_taxes = all_bills_except_taxes + yearly_taxes
             amount_from_pretax_401k = max(0, spending_plus_pre_401k_taxes - self.bank_account_balance)
             taxes_from_pretax_401k = self.get_federal_taxes_due(amount_from_pretax_401k) - yearly_taxes
             taxes_from_pretax_401k += taxes_from_pretax_401k * (max_tax_rate(self.filing_status) / 100)
@@ -140,7 +154,7 @@ class Person(BaseModel):
             if amount_from_pretax_401k:
                 yearly_taxes = self.get_federal_taxes_due()
 
-            self.debt += self.pay_bills(self.spending.base + yearly_taxes)
+            self.debt += self.pay_bills(all_bills_except_taxes + yearly_taxes)
             self.debt = self.pay_bills(self.debt)
         else:
             yearly_taxes = 0
@@ -151,6 +165,9 @@ class Person(BaseModel):
         self.stat_money_spent = self.spending.base
         self.stat_taxes_paid = yearly_taxes
         self.stat_bank_balance = self.bank_account_balance
+        self.stat_home_expenses_paid = home_spending
+        self.stat_interest_paid = home_interest_paid
+        self.stat_rent_paid = apartment_rent
 
 
 class Spending(BaseModel):

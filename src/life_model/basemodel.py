@@ -47,6 +47,9 @@ class BaseModel:
         'stat_retirement_contrib',    # Money contributed to retirement in a given year
         'stat_retirement_match',      # Money matched by company in 401k in a given year
         'stat_required_min_distrib',  # Money taken out from required minimum distributions
+        'stat_home_expenses_paid',    # Money paid towards mortgage
+        'stat_interest_paid',         # Money paid in interest for loans
+        'stat_rent_paid',             # Money paid in rent
     ]
 
     @property
