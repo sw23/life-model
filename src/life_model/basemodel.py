@@ -1,12 +1,12 @@
 from math import e as const_e
 
 
-def compound_interest(principle, rate, num_times_applied=1, elapsed_time_periods=1):
-    return principle * pow(1 + ((rate / 100) / num_times_applied), num_times_applied * elapsed_time_periods) - principle
+def compound_interest(principal, rate, num_times_applied=1, elapsed_time_periods=1):
+    return principal * pow(1 + ((rate / 100) / num_times_applied), num_times_applied * elapsed_time_periods) - principal
 
 
-def continous_interest(principle, rate, elapsed_time_periods=1):
-    return principle * pow(const_e, (rate / 100) * elapsed_time_periods) - principle
+def continous_interest(principal, rate, elapsed_time_periods=1):
+    return principal * pow(const_e, (rate / 100) * elapsed_time_periods) - principal
 
 
 class Event:

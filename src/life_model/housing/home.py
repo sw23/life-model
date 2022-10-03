@@ -19,12 +19,12 @@ class Home(BaseModel):
     def yearly_expenses_due(self):
         return self.expenses.get_yearly_spending() + self.mortgage.get_payment_due_for_year()
 
-    def make_yearly_payment(self, yearly_payment=None, extra_to_principle=0):
+    def make_yearly_payment(self, yearly_payment=None, extra_to_principal=0):
         if yearly_payment is None:
             yearly_payment = self.yearly_expenses_due
         base_mortgage_payment = yearly_payment - self.expenses.get_yearly_spending()
-        self.mortgage.make_yearly_payment(base_mortgage_payment, extra_to_principle)
-        return yearly_payment + extra_to_principle
+        self.mortgage.make_yearly_payment(base_mortgage_payment, extra_to_principal)
+        return yearly_payment + extra_to_principal
 
     def _repr_html_(self):
         return f"{self.name}, purchase price ${self.purchase_price:,}, " \
@@ -68,15 +68,19 @@ class HomeExpenses(BaseModel):
 # https://www.investopedia.com/calculate-principal-and-interest-5211981
 class Mortgage:
     def __init__(self, loan_amount, start_date, length_years, yearly_interest_rate,
-                 principle=None, monthly_payment=None):
+                 principal=None, monthly_payment=None):
         # TODO - Need to add PMI
         self.loan_amount = loan_amount
         self.start_date = start_date
         self.length_years = length_years
         self.yearly_interest_rate = yearly_interest_rate
-        self.principle = principle or loan_amount
+        self.principal = principal or loan_amount
         self.monthly_payment = monthly_payment or self.get_monthly_payment()
         self.yearly_payment = self.monthly_payment * 12
+
+        self.stat_principal_payment_history = []
+        self.stat_interest_payment_history = []
+        self.stat_principal_balance_history = []
 
     def get_monthly_payment(self):
         p = self.loan_amount
@@ -86,11 +90,16 @@ class Mortgage:
 
     def get_payment_due_for_year(self):
         return min(self.yearly_payment,
-                   self.principle + (self.principle * (self.yearly_interest_rate / 100)))
+                   self.principal + (self.principal * (self.yearly_interest_rate / 100)))
 
     def get_interest_for_year(self):
-        return self.principle * (self.yearly_interest_rate / 100)
+        return self.principal * (self.yearly_interest_rate / 100)
 
-    def make_yearly_payment(self, yearly_payment, extra_to_principle=0):
-        self.principle -= yearly_payment - self.get_interest_for_year()
-        self.principle -= extra_to_principle
+    def make_yearly_payment(self, yearly_payment, extra_to_principal=0):
+        interest_amount = self.get_interest_for_year()
+        principal_amount = (yearly_payment - interest_amount) + extra_to_principal
+        self.principal -= principal_amount
+
+        self.stat_principal_payment_history.append(principal_amount)
+        self.stat_interest_payment_history.append(interest_amount)
+        self.stat_principal_balance_history.append(self.principal)
