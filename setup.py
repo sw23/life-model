@@ -24,11 +24,11 @@ with open(path, 'w') as F:
 
 setup(
     # Basic info
-    name='life_model',
+    name='life-model',
     version=version,
     author=author,
     author_email='sw23@users.noreply.github.com',
-    url='https://github.com/sw23/life_model',
+    url='https://github.com/sw23/life-model',
     description='Modeling life events and how they impact finances',
     long_description=codecs.open('README.rst', 'rb', 'utf8').read(),
 
@@ -42,13 +42,6 @@ setup(
         'Programming Language :: Python :: 3.3',
         'Programming Language :: Python :: 3.4',
         'Programming Language :: Python :: 3.5',
-        'Programming Language :: Python :: 3.6',
-        'Programming Language :: Python :: 3.7',
-        'Programming Language :: Python :: 3.8',
-        'Programming Language :: Python :: 3.9',
-        'Programming Language :: Python :: 3.10',
-        'Programming Language :: Python :: 3.11',
-        'Programming Language :: Python :: 3.12'
     ],
 
     # Packages and dependencies

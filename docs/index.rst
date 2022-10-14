@@ -1,5 +1,5 @@
 ================================================================================
-Welcome to life_model's documentation!
+Welcome to life-model's documentation!
 ================================================================================
 
 .. include:: warning.rst
