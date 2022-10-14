@@ -2,7 +2,7 @@
 API Reference
 =============
 
-API documentation for the life-model module.
+API documentation for the life_model module.
 
-.. automodule:: life-model
+.. automodule:: life_model
    :members:

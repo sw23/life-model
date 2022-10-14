@@ -7,7 +7,7 @@ def get_parser():
     """
     Creates a new argument parser.
     """
-    parser = argparse.ArgumentParser('life-model')
+    parser = argparse.ArgumentParser('life_model')
     version = '%(prog)s ' + __version__
     parser.add_argument('--version', '-v', action='version', version=version)
     return parser

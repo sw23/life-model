@@ -2,9 +2,9 @@
 Installation instructions
 =========================
 
-life-model can be installed using pip::
+life_model can be installed using pip::
 
-    $ python -m pip install life-model
+    $ python -m pip install life_model
 
 This command will fetch the archive and its dependencies from the internet and
 install them. 
