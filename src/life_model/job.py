@@ -71,6 +71,13 @@ class Job(BaseModel):
 
 class Salary(BaseModel):
     def __init__(self, base, yearly_increase, yearly_bonus):
+        """Salary
+
+        Args:
+            base (float): Base salary.
+            yearly_increase (float): Yearly percentage increase.
+            yearly_bonus (float): Yearly percentage bonus.
+        """
         self.base = base
         self.yearly_increase = yearly_increase
         self.yearly_bonus = yearly_bonus

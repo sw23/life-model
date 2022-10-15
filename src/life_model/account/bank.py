@@ -3,6 +3,15 @@ from ..basemodel import BaseModel, compound_interest
 
 class BankAccount(BaseModel):
     def __init__(self, owner, company, type='Bank', balance=0, interest_rate=0):
+        """Class modeling bank accounds
+
+        Args:
+            owner (Person): Person that owns the Bank Account.
+            company (Company): Company at which the bank account belongs.
+            type (str, optional): Type of account. Defaults to 'Bank'.
+            balance (int, optional): Balance of account. Defaults to 0.
+            interest_rate (float, optional): Interest rate. Defaults to 0.
+        """
         self.simulation = owner.simulation
         self.owner = owner
         self.company = company
@@ -30,6 +39,14 @@ class BankAccount(BaseModel):
         self.stat_useable_balance = self.balance
 
     def deduct(self, amount):
+        """Deduct funds from bank account
+
+        Args:
+            amount (float): Amount to deduct from account.
+
+        Returns:
+            float: Amount deducted. Won't be more than the account balance.
+        """
         amount_deducted = min(self.balance, amount)
         self.balance -= amount_deducted
         return amount_deducted

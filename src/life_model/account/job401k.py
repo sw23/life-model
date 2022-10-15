@@ -7,6 +7,17 @@ class Job401kAccount(BaseModel):
                  pretax_balance=0, pretax_contrib_percent=0,
                  roth_balance=0, roth_contrib_percent=0,
                  average_growth=0, company_match_percent=0):
+        """401k Account
+
+        Args:
+            job (Job): Job offering the 401k plan.
+            pretax_balance (float, optional): Initial pre-tax balance of account. Defaults to 0.
+            pretax_contrib_percent (float, optional): Pre-tax contribution percentage. Defaults to 0.
+            roth_balance (float, optional): Initial roth balance of account. Defaults to 0.
+            roth_contrib_percent (float, optional): Roth contribution percentage. Defaults to 0.
+            average_growth (float, optional): Average account growth every year. Defaults to 0.
+            company_match_percent (float, optional): Percentage that company matches contributions. Defaults to 0.
+        """
         self.simulation = job.simulation
         self.job = job
         self.owner = job.owner
@@ -62,12 +73,28 @@ class Job401kAccount(BaseModel):
         self.stat_401k_balance = self.balance
 
     def deduct_pretax(self, amount):
+        """Deduct from pre-tax balance
+
+        Args:
+            amount (float): Amount to deduct.
+
+        Returns:
+            float: Amount deducted. Will not be less than the account balance.
+        """
         # TODO - Need to figure out where early penalties and limits are applied
         amount_deducted = min(self.pretax_balance, amount)
         self.pretax_balance -= amount_deducted
         return amount_deducted
 
     def deduct_roth(self, amount):
+        """Deduct from roth balance
+
+        Args:
+            amount (float): Amount to deduct.
+
+        Returns:
+            float: Amount deducted. Will not be less than the account balance.
+        """
         # TODO - Need to figure out where early penalties and limits are applied
         amount_deducted = min(self.roth_balance, amount)
         self.roth_balance -= amount_deducted

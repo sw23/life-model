@@ -5,6 +5,15 @@ from .limits import federal_retirement_age
 
 class Person(BaseModel):
     def __init__(self, family, name, age, retirement_age, spending):
+        """Person
+
+        Args:
+            family (Family): Family of which the person is a part.
+            name (str): Person's name.
+            age (int): Person's age.
+            retirement_age (float): Person's retirement age.
+            spending (Spending): Person's spending habits.
+        """
         self.simulation = family.simulation
         self.family = family
         self.name = name
@@ -172,6 +181,12 @@ class Person(BaseModel):
 
 class Spending(BaseModel):
     def __init__(self, base, yearly_increase):
+        """Spending
+
+        Args:
+            base (float): Base spending amount.
+            yearly_increase (float): Yearly percentage increase in spending.
+        """
         self.base = base
         self.yearly_increase = yearly_increase
 

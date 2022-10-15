@@ -4,6 +4,17 @@ from ..basemodel import BaseModel
 class Home(BaseModel):
     def __init__(self, person, name, purchase_price, value_yearly_increase,
                  down_payment, mortgage, expenses):
+        """Home
+
+        Args:
+            person (Person): Primary resident or person that pays the bills.
+            name (string): Name of the house or neighborhood.
+            purchase_price (float): Purchase price of the home.
+            value_yearly_increase (float): Percentage of yearly home value appreciation.
+            down_payment (float): Amount of down payment.
+            mortgage (Mortgage): Mortgage associated with the home.
+            expenses (HomeExpenses): Home expenses associated with the home.
+        """
         self.simulation = person.simulation
         self.name = name
         self.purchase_price = purchase_price
@@ -40,6 +51,18 @@ class HomeExpenses(BaseModel):
                  maintenance_amount, maintenance_increase,
                  improvement_amount, improvement_increase,
                  hoa_amount, hoa_increase):
+        """Home Expenses
+
+        Args:
+            property_tax_percent (float): Property tax percentage paid yearly based on home value.
+            home_insurance_percent (float): Yearly home insurance cost as percentage of home value.
+            maintenance_amount (float): Yearly cost of home maintenance.
+            maintenance_increase (float): Yearly percentage increase of maintenance costs.
+            improvement_amount (float): Yearly cost of improvements.
+            improvement_increase (float): Yearly percentage increase of improvment costs.
+            hoa_amount (float): Yearly HOA dues.
+            hoa_increase (float): Yearly percentage incresae of HOA dues.
+        """
         self.property_tax_percent = property_tax_percent
         self.home_insurance_percent = home_insurance_percent
         self.maintenance_amount = maintenance_amount
@@ -69,6 +92,16 @@ class HomeExpenses(BaseModel):
 class Mortgage:
     def __init__(self, loan_amount, start_date, length_years, yearly_interest_rate,
                  principal=None, monthly_payment=None):
+        """Mortgage
+
+        Args:
+            loan_amount (float): Amount of loan.
+            start_date (float): Starting year of loan.
+            length_years (int): Length of years of loan (e.g. 30, 15)
+            yearly_interest_rate (float): Yearly interest rate
+            principal (float, optional): Initial principal. Defaults to None.
+            monthly_payment (float, optional): Monthly payment. Defaults to None.
+        """
         # TODO - Need to add PMI
         self.loan_amount = loan_amount
         self.start_date = start_date

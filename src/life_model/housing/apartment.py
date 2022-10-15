@@ -3,6 +3,14 @@ from ..basemodel import BaseModel
 
 class Apartment(BaseModel):
     def __init__(self, person, name, monthly_rent, yearly_increase=5):
+        """Apartment
+
+        Args:
+            person (Person): Primary resident or person paying apartment rent.
+            name (string): Apartment Name.
+            monthly_rent (float): Amount of rent charged monthly.
+            yearly_increase (float, optional): Percentage of rent increase every year. Defaults to 5.
+        """
         self.simulation = person.simulation
         self.name = name
         self.monthly_rent = monthly_rent

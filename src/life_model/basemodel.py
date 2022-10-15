@@ -11,6 +11,11 @@ def continous_interest(principal, rate, elapsed_time_periods=1):
 
 class Event:
     def __init__(self, message):
+        """Event
+
+        Args:
+            message (str): Event description.
+        """
         self.message = message
         self.year = 0
 
@@ -20,6 +25,11 @@ class Event:
 
 class EventLog:
     def __init__(self, simulation):
+        """Event Log
+
+        Args:
+            simulation (Simulation): Simulation.
+        """
         self.simulation = simulation
         self.list = []
 

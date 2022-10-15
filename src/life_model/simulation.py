@@ -4,6 +4,12 @@ from .basemodel import BaseModel, EventLog
 
 class Simulation(BaseModel):
     def __init__(self, end_year=None, start_year=None):
+        """Simulation Helper Class
+
+        Args:
+            end_year (int, optional): End date of the simulation. Defaults to None.
+            start_year (int, optional): Start date of the simulation. Defaults to None.
+        """
         if start_year is None:
             start_year = date.today().year
         if end_year is None:

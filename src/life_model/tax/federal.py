@@ -34,6 +34,15 @@ federal_tax_brackets[FilingStatus.MARRIED_FILING_JOINTLY] = [
 
 
 def federal_income_tax(amount, filing_status):
+    """Calculates federal income tax due
+
+    Args:
+        amount (float): Taxable income.
+        filing_status (FilingStatus): Filing status for tax purposes.
+
+    Returns:
+        total_tax: Amount of tax due based on the taxable income.
+    """
     bracket = federal_tax_brackets[filing_status]
     total_tax = 0
     for (start, end, percent) in bracket:
