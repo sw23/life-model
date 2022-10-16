@@ -131,11 +131,11 @@ class Person(BaseModel):
         self.taxable_income = 0
         self.age += 1
 
-        all_bills_except_taxes = self.spending.base
+        discretionary_spending = self.spending.get_yearly_spending()
         home_spending = sum(x.make_yearly_payment() for x in self.homes)
         home_interest_paid = sum(x.mortgage.get_interest_for_year() for x in self.homes)
         apartment_rent = sum(x.yearly_rent for x in self.apartments)
-        all_bills_except_taxes += home_spending + apartment_rent
+        all_bills_except_taxes = discretionary_spending + home_spending + apartment_rent
 
         # Retire from all jobs at retirement age
         if self.age == self.retirement_age:
@@ -171,7 +171,7 @@ class Person(BaseModel):
         if (self.age == int(federal_retirement_age())):
             self.event_log.add(Event(f"{self.name} reached retirement age (age {federal_retirement_age()})"))
 
-        self.stat_money_spent = self.spending.base
+        self.stat_money_spent = discretionary_spending
         self.stat_taxes_paid = yearly_taxes
         self.stat_bank_balance = self.bank_account_balance
         self.stat_home_expenses_paid = home_spending
@@ -189,7 +189,15 @@ class Spending(BaseModel):
         """
         self.base = base
         self.yearly_increase = yearly_increase
+        self.one_time_expenses = 0
+
+    def add_expense(self, amount):
+        self.one_time_expenses += amount
+
+    def get_yearly_spending(self):
+        return self.base + self.one_time_expenses
 
     def advance_year(self, objects=None):
         super().advance_year(objects)
         self.base += (self.base * (self.yearly_increase / 100))
+        self.one_time_expenses = 0

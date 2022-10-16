@@ -14,11 +14,11 @@ class LifeEvents(BaseModel):
         self.life_events = [] if life_events is None else life_events
 
     def _repr_html_(self):
-        desc = 'Life Events:'
-        desc += '<ul>'
-        desc += ''.join(f"<li>{x.year}: {x.name}</li>" for x in self.life_events)
-        desc += '</ul>'
-        return desc
+        table = "<table>"
+        table += "<tr><th>Year:</th><th>Event:</th></tr>\n"
+        table += "".join(f"<tr><td>{x.year}</td><td>{x.name}</td></tr>\n" for x in self.life_events)
+        table += "</table>"
+        return table
 
     def advance_year(self, objects=None):
         # Perform life events for the current year (if any)

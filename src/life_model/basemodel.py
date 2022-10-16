@@ -9,6 +9,29 @@ def continous_interest(principal, rate, elapsed_time_periods=1):
     return principal * pow(const_e, (rate / 100) * elapsed_time_periods) - principal
 
 
+FMT_MONEY = '${:,.0f}'
+
+
+class Stat:
+    def __init__(self, name, title=None, fmt=None, aggregator=None):
+        """Stat
+
+        Args:
+            name (str): Name of stat.
+            title (str): Title of stat.
+            fmt (str, Optional): Format string for printing.
+        """
+        self.name = name
+        self.title = title or name
+        self.fmt = fmt
+        self.aggregator = aggregator or sum
+
+
+class MoneyStat(Stat):
+    def __init__(self, name, title=None):
+        super().__init__(name, title, FMT_MONEY)
+
+
 class Event:
     def __init__(self, message):
         """Event
@@ -47,19 +70,19 @@ class EventLog:
 
 class BaseModel:
     COMMON_STATS = [
-        'stat_gross_income',          # Gross income made in a year
-        'stat_bank_balance',          # Bank account balance at the end of each year
-        'stat_401k_balance',          # Total 401k balance at the end of each year
-        'stat_useable_balance',       # Balance available for use in a year
-        'stat_debt',                  # Total debt balance in each year
-        'stat_taxes_paid',            # Taxes paid in a year
-        'stat_money_spent',           # Money spent in a year
-        'stat_retirement_contrib',    # Money contributed to retirement in a given year
-        'stat_retirement_match',      # Money matched by company in 401k in a given year
-        'stat_required_min_distrib',  # Money taken out from required minimum distributions
-        'stat_home_expenses_paid',    # Money paid towards mortgage
-        'stat_interest_paid',         # Money paid in interest for loans
-        'stat_rent_paid',             # Money paid in rent
+        MoneyStat('stat_gross_income',         'Income'),           # Gross income made in a year
+        MoneyStat('stat_bank_balance',         'Bank Balance'),     # Bank account balance at the end of each year
+        MoneyStat('stat_401k_balance',         '401k Balance'),     # Total 401k balance at the end of each year
+        MoneyStat('stat_useable_balance',      'Useable Balance'),  # Balance available for use in a year
+        MoneyStat('stat_debt',                 'Debt'),             # Total debt balance in each year
+        MoneyStat('stat_taxes_paid',           'Taxes'),            # Taxes paid in a year
+        MoneyStat('stat_money_spent',          'Spending'),         # Money spent in a year
+        MoneyStat('stat_retirement_contrib',   '401k Contrib'),     # Money contributed to retirement in a given year
+        MoneyStat('stat_retirement_match',     '401k Match'),       # Money matched by company in 401k in a given year
+        MoneyStat('stat_required_min_distrib', 'RMDs'),             # Money taken out from required minimum distrib.
+        MoneyStat('stat_home_expenses_paid',   'Home Expenses'),    # Money paid towards mortgage
+        MoneyStat('stat_interest_paid',        'Interest Paid'),    # Money paid in interest for loans
+        MoneyStat('stat_rent_paid',            'Rent Paid')         # Money paid in rent
     ]
 
     @property
@@ -69,6 +92,13 @@ class BaseModel:
     @property
     def event_log(self):
         return self.simulation.get_event_log()
+
+    @classmethod
+    def get_stat_by_name(cls, stat_name):
+        for stat in cls.COMMON_STATS:
+            if stat.name == stat_name:
+                return stat
+        return None
 
     def advance_year(self, objects=None):
         if objects is None:
@@ -83,7 +113,7 @@ class BaseModel:
 
     def get_stats(self, stats=None, objects=None):
         if objects is None:
-            stats = {x: 0 for x in self.COMMON_STATS}
+            stats = {x.name: 0 for x in self.COMMON_STATS}
             objects = [self]
 
         for stat_name in stats:
