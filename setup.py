@@ -19,8 +19,8 @@ meta = f'''# Automatically created. Please do not edit.
 __version__ = '{version}'
 __author__ = '{author}'
 '''
-with open(path, 'w') as F:
-    F.write(meta)
+with open(path, 'w') as meta_file:
+    meta_file.write(meta)
 
 setup(
     # Basic info
@@ -31,6 +31,7 @@ setup(
     url='https://github.com/sw23/life-model',
     description='Modeling life events and how they impact finances',
     long_description=codecs.open('README.rst', 'rb', 'utf8').read(),
+    long_description_content_type='text/x-rst',
 
     # Classifiers (see https://pypi.python.org/pypi?%3Aaction=list_classifiers)
     classifiers=[
@@ -42,12 +43,21 @@ setup(
         'Programming Language :: Python :: 3.3',
         'Programming Language :: Python :: 3.4',
         'Programming Language :: Python :: 3.5',
+        'Programming Language :: Python :: 3.6',
+        'Programming Language :: Python :: 3.7',
+        'Programming Language :: Python :: 3.8',
+        'Programming Language :: Python :: 3.9',
+        'Programming Language :: Python :: 3.10',
+        'Programming Language :: Python :: 3.11',
+        'Programming Language :: Python :: 3.12',
     ],
 
     # Packages and dependencies
     package_dir={'': 'src'},
     packages=find_packages('src'),
     install_requires=[
+        'pandas',
+        'matplotlib'
     ],
 
     # Other configurations
