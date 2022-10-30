@@ -8,13 +8,13 @@ The package provides models of people, jobs, accounts, etc. and provides a time 
 While impossible to predict the future, the goal of this package is to provide a framework for modeling financial outcomes based on various inputs. The best way to use this model is to change one variable at a time and evaluate how it impacts the outcome.
 
 ## Getting Started
-To get started, [check out the example simulation notebook](https://colab.research.google.com/github/sw23/life-model/blob/main/ExampleSimulation.ipynb)
+To get started, check out the example simulation notebook:
+- [Google Colab (interactive)](https://colab.research.google.com/github/sw23/life-model/blob/main/ExampleSimulation.ipynb)
+- [GitHub](https://github.com/sw23/life-model/blob/main/ExampleSimulation.ipynb)
 
-Clone this repo and open the Jupyter Notebook in a supported editor, such as [VS Code](https://code.visualstudio.com/docs/datascience/jupyter-notebooks)
-
-To install this module locally, run the following command:
+To install this module, run the following command:
 ```
-python -m pip install -r requirements.txt
+python -m pip install life-model
 ```
 
 ## Modeling Status
