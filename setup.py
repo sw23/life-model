@@ -54,7 +54,7 @@ setup(
 
     # Packages and dependencies
     package_dir={'': 'src'},
-    packages=find_packages('src'),
+    packages=find_packages('src', exclude=['life_model.tests']),
     install_requires=[
         'pandas',
         'matplotlib'
