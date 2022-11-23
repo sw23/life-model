@@ -1,6 +1,12 @@
+# Copyright 2022 Spencer Williams
+#
+# Use of this source code is governed by an MIT license:
+# https://github.com/sw23/life-model/blob/main/LICENSE
+
 import argparse
 from datetime import date
-from life_model import __version__, Family, Person
+
+from life_model import Family, Person, __version__
 
 
 def get_parser():

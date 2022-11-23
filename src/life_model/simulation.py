@@ -1,5 +1,12 @@
-import pandas as pd
+# Copyright 2022 Spencer Williams
+#
+# Use of this source code is governed by an MIT license:
+# https://github.com/sw23/life-model/blob/main/LICENSE
+
 from datetime import date
+
+import pandas as pd
+
 from .basemodel import BaseModel, EventLog
 
 

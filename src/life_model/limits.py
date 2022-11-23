@@ -1,3 +1,7 @@
+# Copyright 2022 Spencer Williams
+#
+# Use of this source code is governed by an MIT license:
+# https://github.com/sw23/life-model/blob/main/LICENSE
 
 def job_401k_contrib_limit(age):
     return 20500 + (0 if (age < 50) else 6500)

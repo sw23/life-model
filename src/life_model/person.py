@@ -1,6 +1,11 @@
+# Copyright 2022 Spencer Williams
+#
+# Use of this source code is governed by an MIT license:
+# https://github.com/sw23/life-model/blob/main/LICENSE
+
 from .basemodel import BaseModel, Event
-from .tax.federal import FilingStatus, federal_income_tax, max_tax_rate
 from .limits import federal_retirement_age
+from .tax.federal import FilingStatus, federal_income_tax, max_tax_rate
 
 
 class Person(BaseModel):
@@ -139,7 +144,7 @@ class Person(BaseModel):
 
         # Retire from all jobs at retirement age
         if self.age == self.retirement_age:
-            while(self.jobs):
+            while self.jobs:
                 self.jobs.pop(0).retire()
 
         # Advance the year for all sub-objects
