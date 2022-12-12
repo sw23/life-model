@@ -56,7 +56,7 @@ class Simulation(BaseModel):
             self.simulated_data.append(year_end_data)
         return self.simulated_data
 
-    def get_yearly_stat_df(self, columns=None, extra_columns=None, aggregate=None):
+    def get_yearly_stat_df(self, columns=None, extra_columns=None, aggregate=None, column_formats=None):
         if columns is None:
             columns = ['Year'] + [x.name for x in self.COMMON_STATS]
         if extra_columns is not None:
@@ -79,4 +79,6 @@ class Simulation(BaseModel):
             df.columns = df.iloc[0]
             df = df.drop(df.index[0])
         formats = {x.title: x.fmt for x in stats if x.fmt is not None}
+        if column_formats is not None:
+            formats.update(column_formats)
         return df.style.format(precision=0, na_rep='MISSING', formatter=formats).hide_index()
