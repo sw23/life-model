@@ -3,12 +3,14 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
+from typing import Optional
 from ..basemodel import BaseModel
+from ..person import Person
 
 
 class Home(BaseModel):
-    def __init__(self, person, name, purchase_price, value_yearly_increase,
-                 down_payment, mortgage, expenses):
+    def __init__(self, person: Person, name: str, purchase_price: float, value_yearly_increase: float,
+                 down_payment: float, mortgage: 'Mortgage', expenses: 'HomeExpenses'):
         """Home
 
         Args:
@@ -28,14 +30,14 @@ class Home(BaseModel):
         self.mortgage = mortgage
         self.expenses = expenses
         self.expenses.home = self
-        self.home_value = self.purchase_price
+        self.home_value: float = self.purchase_price
         person.homes.append(self)
 
     @property
-    def yearly_expenses_due(self):
+    def yearly_expenses_due(self) -> float:
         return self.expenses.get_yearly_spending() + self.mortgage.get_payment_due_for_year()
 
-    def make_yearly_payment(self, yearly_payment=None, extra_to_principal=0):
+    def make_yearly_payment(self, yearly_payment: Optional[float] = None, extra_to_principal: float = 0):
         if yearly_payment is None:
             yearly_payment = self.yearly_expenses_due
         base_mortgage_payment = yearly_payment - self.expenses.get_yearly_spending()
@@ -52,10 +54,10 @@ class Home(BaseModel):
 
 
 class HomeExpenses(BaseModel):
-    def __init__(self, property_tax_percent, home_insurance_percent,
-                 maintenance_amount, maintenance_increase,
-                 improvement_amount, improvement_increase,
-                 hoa_amount, hoa_increase):
+    def __init__(self, property_tax_percent: float, home_insurance_percent: float,
+                 maintenance_amount: float, maintenance_increase: float,
+                 improvement_amount: float, improvement_increase: float,
+                 hoa_amount: float, hoa_increase: float):
         """Home Expenses
 
         Args:
@@ -76,11 +78,13 @@ class HomeExpenses(BaseModel):
         self.improvement_increase = improvement_increase
         self.hoa_amount = hoa_amount
         self.hoa_increase = hoa_increase
-        self.home = None
+        self.home: Optional[Home] = None
 
     def get_yearly_spending(self):
-        spending_amount = self.home.home_value * (self.property_tax_percent / 100)
-        spending_amount += self.home.home_value * (self.home_insurance_percent / 100)
+        spending_amount = 0
+        if self.home is not None:
+            spending_amount += self.home.home_value * (self.property_tax_percent / 100)
+            spending_amount += self.home.home_value * (self.home_insurance_percent / 100)
         spending_amount += self.maintenance_amount + self.improvement_amount + self.hoa_amount
         return spending_amount
 
@@ -95,8 +99,8 @@ class HomeExpenses(BaseModel):
 # https://www.valuepenguin.com/mortgages/mortgage-payments-calculator
 # https://www.investopedia.com/calculate-principal-and-interest-5211981
 class Mortgage:
-    def __init__(self, loan_amount, start_date, length_years, yearly_interest_rate,
-                 principal=None, monthly_payment=None):
+    def __init__(self, loan_amount: float, start_date: float, length_years: int, yearly_interest_rate: float,
+                 principal: Optional[float] = None, monthly_payment: Optional[float] = None):
         """Mortgage
 
         Args:
@@ -120,20 +124,20 @@ class Mortgage:
         self.stat_interest_payment_history = []
         self.stat_principal_balance_history = []
 
-    def get_monthly_payment(self):
+    def get_monthly_payment(self) -> float:
         p = self.loan_amount
         i = self.yearly_interest_rate / (100 * 12)
         n = self.length_years * 12
         return p * (i * ((1 + i) ** n)) / (((1 + i) ** n) - 1)
 
-    def get_payment_due_for_year(self):
+    def get_payment_due_for_year(self) -> float:
         return min(self.yearly_payment,
                    self.principal + (self.principal * (self.yearly_interest_rate / 100)))
 
-    def get_interest_for_year(self):
+    def get_interest_for_year(self) -> float:
         return self.principal * (self.yearly_interest_rate / 100)
 
-    def make_yearly_payment(self, yearly_payment, extra_to_principal=0):
+    def make_yearly_payment(self, yearly_payment: float, extra_to_principal: float = 0):
         interest_amount = self.get_interest_for_year()
         principal_amount = (yearly_payment - interest_amount) + extra_to_principal
         self.principal -= principal_amount

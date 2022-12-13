@@ -3,11 +3,11 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-def job_401k_contrib_limit(age):
+def job_401k_contrib_limit(age) -> int:
     return 20500 + (0 if (age < 50) else 6500)
 
 
-def federal_retirement_age():
+def federal_retirement_age() -> float:
     return 59.5
 
 
@@ -65,7 +65,7 @@ rmd_distribution_period = [
 ]
 
 
-def required_min_distrib(age, balance):
+def required_min_distrib(age, balance) -> float:
     if age < rmd_distribution_period[0][0]:
         return 0
     elif age > rmd_distribution_period[-1][0]:

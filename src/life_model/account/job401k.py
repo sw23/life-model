@@ -3,15 +3,19 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
+from typing import Optional, TYPE_CHECKING
 from ..basemodel import BaseModel, continous_interest
 from ..limits import federal_retirement_age, required_min_distrib
 
+if TYPE_CHECKING:
+    from ..job import Job
+
 
 class Job401kAccount(BaseModel):
-    def __init__(self, job,
-                 pretax_balance=0, pretax_contrib_percent=0,
-                 roth_balance=0, roth_contrib_percent=0,
-                 average_growth=0, company_match_percent=0):
+    def __init__(self, job: 'Job',
+                 pretax_balance: float = 0, pretax_contrib_percent: float = 0,
+                 roth_balance: float = 0, roth_contrib_percent: float = 0,
+                 average_growth: float = 0, company_match_percent: float = 0):
         """401k Account
 
         Args:
@@ -24,7 +28,7 @@ class Job401kAccount(BaseModel):
             company_match_percent (float, optional): Percentage that company matches contributions. Defaults to 0.
         """
         self.simulation = job.simulation
-        self.job = job
+        self.job: Optional['Job'] = job
         self.owner = job.owner
         self.pretax_balance = pretax_balance
         self.pretax_contrib_percent = pretax_contrib_percent
@@ -40,13 +44,13 @@ class Job401kAccount(BaseModel):
 
         job.retirement_account = self
 
-    def pretax_contrib(self, salary):
+    def pretax_contrib(self, salary: float):
         return salary * (self.pretax_contrib_percent / 100)
 
-    def roth_contrib(self, salary):
+    def roth_contrib(self, salary: float):
         return salary * (self.roth_contrib_percent / 100)
 
-    def company_match(self, contribution):
+    def company_match(self, contribution: float):
         return contribution * (self.company_match_percent / 100)
 
     @property
@@ -54,7 +58,8 @@ class Job401kAccount(BaseModel):
         return self.pretax_balance + self.roth_balance
 
     def _repr_html_(self):
-        return f"401k at {self.job.company} balance: ${self.balance:,}"
+        company = self.job.company if self.job is not None else "<None>"
+        return f"401k at {company} balance: ${self.balance:,}"
 
     def advance_year(self, objects=None):
         super().advance_year(objects)
@@ -77,7 +82,7 @@ class Job401kAccount(BaseModel):
         self.stat_required_min_distrib = required_min_dist_amount
         self.stat_401k_balance = self.balance
 
-    def deduct_pretax(self, amount):
+    def deduct_pretax(self, amount: float):
         """Deduct from pre-tax balance
 
         Args:
@@ -91,7 +96,7 @@ class Job401kAccount(BaseModel):
         self.pretax_balance -= amount_deducted
         return amount_deducted
 
-    def deduct_roth(self, amount):
+    def deduct_roth(self, amount: float) -> float:
         """Deduct from roth balance
 
         Args:

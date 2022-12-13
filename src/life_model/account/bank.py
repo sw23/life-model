@@ -4,10 +4,11 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 from ..basemodel import BaseModel, compound_interest
+from ..person import Person
 
 
 class BankAccount(BaseModel):
-    def __init__(self, owner, company, type='Bank', balance=0, interest_rate=0):
+    def __init__(self, owner: Person, company: str, type: str = 'Bank', balance: int = 0, interest_rate: float = 0):
         """Class modeling bank accounds
 
         Args:

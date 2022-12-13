@@ -4,10 +4,11 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 from ..basemodel import BaseModel
+from ..person import Person
 
 
 class Apartment(BaseModel):
-    def __init__(self, person, name, monthly_rent, yearly_increase=5):
+    def __init__(self, person: Person, name: str, monthly_rent: float, yearly_increase: float = 5):
         """Apartment
 
         Args:

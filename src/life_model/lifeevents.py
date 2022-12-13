@@ -3,11 +3,12 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
+from typing import Optional, List, Callable
 from .basemodel import BaseModel
 
 
 class LifeEvents(BaseModel):
-    def __init__(self, simulation, life_events=None):
+    def __init__(self, simulation, life_events: Optional[List['LifeEvent']] = None):
         """List of life events
 
         Args:
@@ -27,18 +28,19 @@ class LifeEvents(BaseModel):
 
     def advance_year(self, objects=None):
         # Perform life events for the current year (if any)
-        self.life_events = [x for x in self.life_events if not x.eval_event(self.year)]
+        self.life_events = [x for x in self.life_events if not x.eval_event(self.simulation.year)]
         super().advance_year(objects)
 
 
 class LifeEvent():
-    def __init__(self, year, name, event, *event_args):
+    def __init__(self, year: int, name: str, event: Callable, *event_args):
         """Life Event.
 
         Args:
             year (int): Year in which the life event takes place.
             name (str): Name of the event.
             event (Callable): Callable performed at the specified year.
+            *event_args: Arguments to pass to the event callable.
         """
         self.year = year
         self.name = name

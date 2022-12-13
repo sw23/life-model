@@ -3,13 +3,17 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-from .basemodel import BaseModel, Event
+from typing import List
+from .basemodel import BaseModel
+from .simulation import Event
+from .family import Family
 from .limits import federal_retirement_age
 from .tax.federal import FilingStatus, federal_income_tax, max_tax_rate
+from .account.job401k import Job401kAccount
 
 
 class Person(BaseModel):
-    def __init__(self, family, name, age, retirement_age, spending):
+    def __init__(self, family: Family, name: str, age: int, retirement_age: float, spending: 'Spending'):
         """Person
 
         Args:
@@ -29,7 +33,7 @@ class Person(BaseModel):
         self.debt = 0
         self.bank_accounts = []
         self.legacy_retirement_accounts = []
-        self.taxable_income = 0
+        self.taxable_income: float = 0
         self.spouse = None
         self.filing_status = FilingStatus.SINGLE
         self.yearly_taxes_paid = False
@@ -46,7 +50,7 @@ class Person(BaseModel):
         self.family.members.append(self)
 
     @property
-    def all_retirement_accounts(self):
+    def all_retirement_accounts(self) -> List[Job401kAccount]:
         accounts = [x.retirement_account for x in self.jobs if x.retirement_account is not None]
         accounts.extend(self.legacy_retirement_accounts)
         return accounts
@@ -66,10 +70,18 @@ class Person(BaseModel):
         return desc
 
     @property
-    def bank_account_balance(self):
+    def bank_account_balance(self) -> float:
         return sum(x.balance for x in self.bank_accounts)
 
-    def deduct_from_bank_accounts(self, amount):
+    def deduct_from_bank_accounts(self, amount: float) -> float:
+        """Deducts money from bank accounts.
+
+        Args:
+            amount (float): Amount to deduct.
+
+        Returns:
+            float: Amount that could not be deducted.
+        """
         spending_balance = amount
         for bank_account in self.bank_accounts:
             if (spending_balance == 0):
@@ -77,7 +89,15 @@ class Person(BaseModel):
             spending_balance -= bank_account.deduct(spending_balance)
         return spending_balance
 
-    def deduct_from_pretax_401ks(self, amount):
+    def deduct_from_pretax_401ks(self, amount: float) -> float:
+        """Deducts money from pre-tax 401ks.
+
+        Args:
+            amount (float): Amount to deduct.
+
+        Returns:
+            float: Amount that could not be deducted.
+        """
         spending_balance = amount
         for retirement_account in self.all_retirement_accounts:
             if (spending_balance == 0):
@@ -85,7 +105,15 @@ class Person(BaseModel):
             spending_balance -= retirement_account.deduct_pretax(spending_balance)
         return spending_balance
 
-    def deduct_from_roth_401ks(self, amount):
+    def deduct_from_roth_401ks(self, amount: float) -> float:
+        """Deducts money from roth 401ks.
+
+        Args:
+            amount (float): Amount to deduct.
+
+        Returns:
+            float: Amount that could not be deducted.
+        """
         spending_balance = amount
         for retirement_account in self.all_retirement_accounts:
             if (spending_balance == 0):
@@ -93,13 +121,29 @@ class Person(BaseModel):
             spending_balance -= retirement_account.deduct_roth(spending_balance)
         return spending_balance
 
-    def withdraw_from_pretax_401ks(self, amount):
+    def withdraw_from_pretax_401ks(self, amount: float) -> float:
+        """Withdraws money from pre-tax 401ks.
+
+        Args:
+            amount (float): Amount to withdraw.
+
+        Returns:
+            float: Amount that could not be withdrawn.
+        """
         amount -= self.deduct_from_pretax_401ks(amount)
         self.taxable_income += amount
         self.bank_accounts[0].balance += amount
         return amount
 
-    def pay_bills(self, spending_balance):
+    def pay_bills(self, spending_balance: float) -> float:
+        """Pays bills.
+
+        Args:
+            spending_balance (float): Amount of money spent.
+
+        Returns:
+            float: Amount that could not be paid.
+        """
 
         # Deduct spending from bank accounts
         # - Include yearly spending and any debts
@@ -114,22 +158,48 @@ class Person(BaseModel):
         spending_balance = self.deduct_from_roth_401ks(spending_balance)
         return spending_balance
 
-    def get_federal_taxes_due(self, additional_income=0):
+    def get_federal_taxes_due(self, additional_income: float = 0) -> float:
+        """Gets federal taxes due.
+
+        Args:
+            additional_income (float, optional): Additional income to include, not present in taxable_income.
+
+        Raises:
+            NotImplementedError: Unsupported filing status.
+
+        Returns:
+            float: Federal taxes due.
+        """
         income_amount = self.taxable_income + additional_income
         if self.filing_status == FilingStatus.SINGLE:
             return federal_income_tax(income_amount, self.filing_status)
         else:
             raise NotImplementedError(f"Unsupported filing status: {self.filing_status}")
 
-    def get_married(self, spouse, link_spouse=True):
+    def get_married(self, spouse: 'Person', link_spouse: bool = True):
+        """Get  married.
+
+        Args:
+            spouse (Person): Spouse to get married to.
+            link_spouse (bool, optional): Whether to call get_married on the spouse object as well. Defaults to True.
+        """
         self.spouse = spouse
         self.filing_status = FilingStatus.MARRIED_FILING_JOINTLY
         if link_spouse:
             spouse.get_married(self, False)
-            self.event_log.add(Event(f"{self.name} and {spouse.name} got married at age {self.age} and {spouse.age}"))
+            event_str = f"{self.name} and {spouse.name} got married at age {self.age} and {spouse.age}"
+            self.simulation.event_log.add(Event(event_str))
 
-    def get_year_at_age(self, age):
-        return self.year + (age - self.age)
+    def get_year_at_age(self, age: int) -> int:
+        """Gets the year at a given age.
+
+        Args:
+            age (int): Age of the person.
+
+        Returns:
+            int: Year at the given age.
+        """
+        return self.simulation.year + (age - self.age)
 
     def advance_year(self, objects=None):
         self.yearly_taxes_paid = False
@@ -174,7 +244,7 @@ class Person(BaseModel):
             yearly_taxes = 0
 
         if (self.age == int(federal_retirement_age())):
-            self.event_log.add(Event(f"{self.name} reached retirement age (age {federal_retirement_age()})"))
+            self.simulation.event_log.add(Event(f"{self.name} reached retirement age (age {federal_retirement_age()})"))
 
         self.stat_money_spent = discretionary_spending
         self.stat_taxes_paid = yearly_taxes
@@ -185,7 +255,7 @@ class Person(BaseModel):
 
 
 class Spending(BaseModel):
-    def __init__(self, base, yearly_increase):
+    def __init__(self, base: float, yearly_increase: float):
         """Spending
 
         Args:
@@ -196,10 +266,16 @@ class Spending(BaseModel):
         self.yearly_increase = yearly_increase
         self.one_time_expenses = 0
 
-    def add_expense(self, amount):
+    def add_expense(self, amount: float):
+        """Adds a one-time expense.
+
+        Args:
+            amount (float): Amount of expense to add.
+        """
         self.one_time_expenses += amount
 
-    def get_yearly_spending(self):
+    def get_yearly_spending(self) -> float:
+        """Gets yearly spending."""
         return self.base + self.one_time_expenses
 
     def advance_year(self, objects=None):

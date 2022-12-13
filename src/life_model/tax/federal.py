@@ -38,7 +38,7 @@ federal_tax_brackets[FilingStatus.MARRIED_FILING_JOINTLY] = [
 ]
 
 
-def federal_income_tax(amount, filing_status):
+def federal_income_tax(amount: float, filing_status: FilingStatus) -> float:
     """Calculates federal income tax due
 
     Args:
@@ -55,5 +55,5 @@ def federal_income_tax(amount, filing_status):
     return total_tax
 
 
-def max_tax_rate(filing_status):
+def max_tax_rate(filing_status: FilingStatus) -> float:
     return federal_tax_brackets[filing_status][-1][2]

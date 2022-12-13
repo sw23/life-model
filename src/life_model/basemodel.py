@@ -4,13 +4,14 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 from math import e as const_e
+from typing import Optional, Callable, Dict, List
 
 
-def compound_interest(principal, rate, num_times_applied=1, elapsed_time_periods=1):
+def compound_interest(principal: float, rate: float, num_times_applied: int = 1, elapsed_time_periods: int = 1):
     return principal * pow(1 + ((rate / 100) / num_times_applied), num_times_applied * elapsed_time_periods) - principal
 
 
-def continous_interest(principal, rate, elapsed_time_periods=1):
+def continous_interest(principal: float, rate: float, elapsed_time_periods: int = 1):
     return principal * pow(const_e, (rate / 100) * elapsed_time_periods) - principal
 
 
@@ -18,13 +19,15 @@ FMT_MONEY = '${:,.0f}'
 
 
 class Stat:
-    def __init__(self, name, title=None, fmt=None, aggregator=None):
+    def __init__(self, name: str, title: Optional[str] = None, fmt: Optional[str] = None,
+                 aggregator: Optional[Callable] = None):
         """Stat
 
         Args:
             name (str): Name of stat.
-            title (str): Title of stat.
-            fmt (str, Optional): Format string for printing.
+            title (str, optional): Title of stat.
+            fmt (str, optional): Format string for printing.
+            aggregator (Callable, optional): Function to aggregate stat values. Default is sum().
         """
         self.name = name
         self.title = title or name
@@ -33,44 +36,8 @@ class Stat:
 
 
 class MoneyStat(Stat):
-    def __init__(self, name, title=None):
+    def __init__(self, name: str, title: Optional[str] = None):
         super().__init__(name, title, FMT_MONEY)
-
-
-class Event:
-    def __init__(self, message):
-        """Event
-
-        Args:
-            message (str): Event description.
-        """
-        self.message = message
-        self.year = 0
-
-    def _repr_html_(self):
-        return f"<tr><td>{self.year}</td><td>{self.message}</td></tr>\n"
-
-
-class EventLog:
-    def __init__(self, simulation):
-        """Event Log
-
-        Args:
-            simulation (Simulation): Simulation.
-        """
-        self.simulation = simulation
-        self.list = []
-
-    def _repr_html_(self):
-        table = "<table>"
-        table += "<tr><th>Year:</th><th>Event:</th></tr>\n"
-        table += "".join(x._repr_html_() for x in self.list)
-        table += "</table>"
-        return table
-
-    def add(self, event):
-        event.year = self.simulation.year
-        self.list.append(event)
 
 
 class BaseModel:
@@ -90,16 +57,19 @@ class BaseModel:
         MoneyStat('stat_rent_paid',            'Rent Paid')         # Money paid in rent
     ]
 
-    @property
-    def year(self):
-        return self.simulation.get_year()
-
-    @property
-    def event_log(self):
-        return self.simulation.get_event_log()
+    def __init__(self):
+        self.simulation = None
 
     @classmethod
-    def get_stat_by_name(cls, stat_name):
+    def get_stat_by_name(cls, stat_name: str) -> Optional[Stat]:
+        """Returns a stat by name.
+
+        Args:
+            stat_name (str): Name of stat.
+
+        Returns:
+            Optional[Stat]: Stat.
+        """
         for stat in cls.COMMON_STATS:
             if stat.name == stat_name:
                 return stat
@@ -116,8 +86,8 @@ class BaseModel:
                     objects.append(obj)
                     obj.advance_year(objects)
 
-    def get_stats(self, stats=None, objects=None):
-        if objects is None:
+    def get_stats(self, stats: Optional[Dict[str, float]] = None, objects: Optional[List['BaseModel']] = None):
+        if objects is None or stats is None:
             stats = {x.name: 0 for x in self.COMMON_STATS}
             objects = [self]
 
