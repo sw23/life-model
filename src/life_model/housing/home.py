@@ -4,11 +4,11 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 from typing import Optional
-from ..basemodel import BaseModel
 from ..person import Person
+from ..model import LifeModelAgent, LifeModel
 
 
-class Home(BaseModel):
+class Home(LifeModelAgent):
     def __init__(self, person: Person, name: str, purchase_price: float, value_yearly_increase: float,
                  down_payment: float, mortgage: 'Mortgage', expenses: 'HomeExpenses'):
         """Home
@@ -22,7 +22,7 @@ class Home(BaseModel):
             mortgage (Mortgage): Mortgage associated with the home.
             expenses (HomeExpenses): Home expenses associated with the home.
         """
-        self.simulation = person.simulation
+        super().__init__(person.model)
         self.name = name
         self.purchase_price = purchase_price
         self.value_yearly_increase = value_yearly_increase
@@ -48,13 +48,13 @@ class Home(BaseModel):
         return f"{self.name}, purchase price ${self.purchase_price:,}, " \
                + f"monthly mortgage ${self.mortgage.monthly_payment:,}"
 
-    def advance_year(self, objects=None):
-        super().advance_year(objects)
+    def step(self):
         self.home_value += self.home_value * (self.value_yearly_increase / 100)
 
 
-class HomeExpenses(BaseModel):
-    def __init__(self, property_tax_percent: float, home_insurance_percent: float,
+class HomeExpenses(LifeModelAgent):
+    def __init__(self, model: LifeModel,
+                 property_tax_percent: float, home_insurance_percent: float,
                  maintenance_amount: float, maintenance_increase: float,
                  improvement_amount: float, improvement_increase: float,
                  hoa_amount: float, hoa_increase: float):
@@ -70,6 +70,7 @@ class HomeExpenses(BaseModel):
             hoa_amount (float): Yearly HOA dues.
             hoa_increase (float): Yearly percentage incresae of HOA dues.
         """
+        super().__init__(model)
         self.property_tax_percent = property_tax_percent
         self.home_insurance_percent = home_insurance_percent
         self.maintenance_amount = maintenance_amount
@@ -88,8 +89,7 @@ class HomeExpenses(BaseModel):
         spending_amount += self.maintenance_amount + self.improvement_amount + self.hoa_amount
         return spending_amount
 
-    def advance_year(self, objects=None):
-        super().advance_year(objects)
+    def step(self):
         self.maintenance_amount += self.maintenance_amount * (self.maintenance_increase / 100)
         self.improvement_amount += self.improvement_amount * (self.improvement_increase / 100)
         self.hoa_amount += self.hoa_amount * (self.hoa_increase / 100)

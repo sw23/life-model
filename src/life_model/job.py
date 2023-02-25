@@ -4,8 +4,7 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 from typing import Optional, TYPE_CHECKING
-from .basemodel import BaseModel
-from .simulation import Event
+from .model import LifeModelAgent, LifeModel, Event
 from .limits import job_401k_contrib_limit
 from .person import Person
 
@@ -13,14 +12,23 @@ if TYPE_CHECKING:
     from .account.job401k import Job401kAccount
 
 
-class Job(BaseModel):
+class Job(LifeModelAgent):
     def __init__(self, owner: Person, company: str, role: 'str', salary: 'Salary'):
-        self.simulation = owner.simulation
+        """Job
+
+        Args:
+            owner (Person): Person who owns the job.
+            company (str): Company name.
+            role (str): Job title.
+            salary (Salary): Salary of the job.
+        """
+        super().__init__(owner.model)
         self.owner = owner
         self.company = company
         self.role = role
         self.salary = salary
         self.retirement_account: Optional['Job401kAccount'] = None
+        self.retired = False
 
         self.stat_gross_income = 0
         self.stat_retirement_contrib = 0
@@ -31,8 +39,14 @@ class Job(BaseModel):
     def _repr_html_(self):
         return f"{self.role} at {self.company}"
 
-    def advance_year(self, objects=None):
-        super().advance_year(objects)
+    def step(self):
+
+        # If retired, don't do anything
+        if self.retired:
+            self.stat_gross_income = 0
+            self.stat_retirement_contrib = 0
+            self.stat_retirement_match = 0
+            return
 
         remaining_401k_contrib = min(self.salary.base, job_401k_contrib_limit(self.owner.age))
         # Deduct pre-tax contribution from income
@@ -77,16 +91,13 @@ class Job(BaseModel):
         self.stat_retirement_match = company_match
 
     def retire(self):
-        # Turn over control of the retirement account to the user
-        if self.retirement_account is not None:
-            self.owner.legacy_retirement_accounts.append(self.retirement_account)
-            # Remove the job associated with the acount
-            self.retirement_account.job = None
-        self.simulation.event_log.add(Event(f"{self.owner.name} retired from {self.company}"))
+        """Retire from the job """
+        self.retired = True
+        self.model.event_log.add(Event(f"{self.owner.name} retired from {self.company}"))
 
 
-class Salary(BaseModel):
-    def __init__(self, base: float, yearly_increase: float, yearly_bonus: float):
+class Salary(LifeModelAgent):
+    def __init__(self, model: LifeModel, base: float, yearly_increase: float, yearly_bonus: float):
         """Salary
 
         Args:
@@ -94,6 +105,7 @@ class Salary(BaseModel):
             yearly_increase (float): Yearly percentage increase.
             yearly_bonus (float): Yearly percentage bonus.
         """
+        super().__init__(model)
         self.base = base
         self.yearly_increase = yearly_increase
         self.yearly_bonus = yearly_bonus
@@ -102,6 +114,5 @@ class Salary(BaseModel):
     def bonus(self) -> float:
         return self.base * (self.yearly_bonus / 100)
 
-    def advance_year(self, objects=None):
-        super().advance_year(objects)
+    def step(self):
         self.base += self.base * (self.yearly_increase / 100)

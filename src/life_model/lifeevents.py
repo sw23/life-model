@@ -4,19 +4,18 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 from typing import Optional, List, Callable
-from .basemodel import BaseModel
+from .model import LifeModelAgent
 
 
-class LifeEvents(BaseModel):
-    def __init__(self, simulation, life_events: Optional[List['LifeEvent']] = None):
+class LifeEvents(LifeModelAgent):
+    def __init__(self, model, life_events: Optional[List['LifeEvent']] = None):
         """List of life events
 
         Args:
-            simulation (Simulation): Simulation in which the life events take place.
+            model (LifeModel): LifeModel in which the life events take place.
             life_events (List[LifeEvent], optional): List of life events. Defaults to None.
         """
-        self.simulation = simulation
-        self.simulation.top_level_models.insert(0, self)
+        super().__init__(model)
         self.life_events = [] if life_events is None else life_events
 
     def _repr_html_(self):
@@ -26,10 +25,9 @@ class LifeEvents(BaseModel):
         table += "</table>"
         return table
 
-    def advance_year(self, objects=None):
+    def step(self):
         # Perform life events for the current year (if any)
-        self.life_events = [x for x in self.life_events if not x.eval_event(self.simulation.year)]
-        super().advance_year(objects)
+        self.life_events = [x for x in self.life_events if not x.eval_event(self.model.year)]
 
 
 class LifeEvent():

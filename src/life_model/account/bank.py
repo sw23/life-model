@@ -3,11 +3,11 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-from ..basemodel import BaseModel, compound_interest
+from ..model import LifeModelAgent, compound_interest
 from ..person import Person
 
 
-class BankAccount(BaseModel):
+class BankAccount(LifeModelAgent):
     def __init__(self, owner: Person, company: str, type: str = 'Bank', balance: int = 0, interest_rate: float = 0):
         """Class modeling bank accounds
 
@@ -18,7 +18,7 @@ class BankAccount(BaseModel):
             balance (int, optional): Balance of account. Defaults to 0.
             interest_rate (float, optional): Interest rate. Defaults to 0.
         """
-        self.simulation = owner.simulation
+        super().__init__(owner.model)
         self.owner = owner
         self.company = company
         self.type = type
@@ -35,8 +35,7 @@ class BankAccount(BaseModel):
     def _repr_html_(self):
         return f"{self.type} account at {self.company} balance: ${self.balance:,}"
 
-    def advance_year(self, objects=None):
-        super().advance_year(objects)
+    def step(self):
         interest = compound_interest(self.balance, self.interest_rate, self.compound_rate)
         self.balance += interest
 

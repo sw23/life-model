@@ -4,14 +4,14 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 from typing import Optional, TYPE_CHECKING
-from ..basemodel import BaseModel, continous_interest
+from ..model import LifeModelAgent, continous_interest
 from ..limits import federal_retirement_age, required_min_distrib
 
 if TYPE_CHECKING:
     from ..job import Job
 
 
-class Job401kAccount(BaseModel):
+class Job401kAccount(LifeModelAgent):
     def __init__(self, job: 'Job',
                  pretax_balance: float = 0, pretax_contrib_percent: float = 0,
                  roth_balance: float = 0, roth_contrib_percent: float = 0,
@@ -27,7 +27,7 @@ class Job401kAccount(BaseModel):
             average_growth (float, optional): Average account growth every year. Defaults to 0.
             company_match_percent (float, optional): Percentage that company matches contributions. Defaults to 0.
         """
-        self.simulation = job.simulation
+        super().__init__(job.model)
         self.job: Optional['Job'] = job
         self.owner = job.owner
         self.pretax_balance = pretax_balance
@@ -61,8 +61,7 @@ class Job401kAccount(BaseModel):
         company = self.job.company if self.job is not None else "<None>"
         return f"401k at {company} balance: ${self.balance:,}"
 
-    def advance_year(self, objects=None):
-        super().advance_year(objects)
+    def step(self):
         # Note: Contributions are handled by job, after this is called
         # This isn't 100% accurate since contributions aren't included in the
         # growth, which is a little pessimistic but that should be fine

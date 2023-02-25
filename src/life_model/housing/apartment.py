@@ -3,11 +3,11 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-from ..basemodel import BaseModel
 from ..person import Person
+from ..model import LifeModelAgent
 
 
-class Apartment(BaseModel):
+class Apartment(LifeModelAgent):
     def __init__(self, person: Person, name: str, monthly_rent: float, yearly_increase: float = 5):
         """Apartment
 
@@ -17,7 +17,7 @@ class Apartment(BaseModel):
             monthly_rent (float): Amount of rent charged monthly.
             yearly_increase (float, optional): Percentage of rent increase every year. Defaults to 5.
         """
-        self.simulation = person.simulation
+        super().__init__(person.model)
         self.name = name
         self.monthly_rent = monthly_rent
         self.yearly_increase = yearly_increase
@@ -30,7 +30,5 @@ class Apartment(BaseModel):
     def _repr_html_(self):
         return f"{self.name}, monthly rent ${self.monthly_rent:,}"
 
-    def advance_year(self, objects=None):
-        super().advance_year(objects)
-
+    def step(self):
         self.monthly_rent += self.monthly_rent * (self.yearly_increase / 100)

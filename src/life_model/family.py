@@ -3,21 +3,19 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-from .basemodel import BaseModel
 from .tax.federal import FilingStatus, federal_income_tax, max_tax_rate
-from .simulation import Simulation
+from .model import LifeModelAgent, LifeModel
 
 
-class Family(BaseModel):
-    def __init__(self, simulation: Simulation, *args):
+class Family(LifeModelAgent):
+    def __init__(self, model: LifeModel, *args):
         """Family
 
         Args:
-            simulation (Simulation): Simulation.
+            model (LifeModel): LifeModel.
             args (Person): Family members.
         """
-        self.simulation = simulation
-        self.simulation.top_level_models.append(self)
+        super().__init__(model)
         self.members = list(args)
 
     @property
@@ -85,8 +83,7 @@ class Family(BaseModel):
         else:
             raise NotImplementedError(f"Unsupported filing status: {self.filing_status}")
 
-    def advance_year(self, objects=None):
-        super().advance_year(objects)
+    def step(self):
 
         # Pay off spending, taxes, and debts for the year
         # - People filing MFJ is handled individually here, single is handled in family

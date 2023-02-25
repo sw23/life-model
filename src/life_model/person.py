@@ -4,15 +4,14 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 from typing import List
-from .basemodel import BaseModel
-from .simulation import Event
+from .model import LifeModelAgent, LifeModel, Event
 from .family import Family
 from .limits import federal_retirement_age
 from .tax.federal import FilingStatus, federal_income_tax, max_tax_rate
 from .account.job401k import Job401kAccount
 
 
-class Person(BaseModel):
+class Person(LifeModelAgent):
     def __init__(self, family: Family, name: str, age: int, retirement_age: float, spending: 'Spending'):
         """Person
 
@@ -23,7 +22,7 @@ class Person(BaseModel):
             retirement_age (float): Person's retirement age.
             spending (Spending): Person's spending habits.
         """
-        self.simulation = family.simulation
+        super().__init__(family.model)
         self.family = family
         self.name = name
         self.age = age
@@ -32,7 +31,6 @@ class Person(BaseModel):
         self.jobs = []
         self.debt = 0
         self.bank_accounts = []
-        self.legacy_retirement_accounts = []
         self.taxable_income: float = 0
         self.spouse = None
         self.filing_status = FilingStatus.SINGLE
@@ -51,9 +49,7 @@ class Person(BaseModel):
 
     @property
     def all_retirement_accounts(self) -> List[Job401kAccount]:
-        accounts = [x.retirement_account for x in self.jobs if x.retirement_account is not None]
-        accounts.extend(self.legacy_retirement_accounts)
-        return accounts
+        return [x.retirement_account for x in self.jobs if x.retirement_account is not None]
 
     def _repr_html_(self):
         desc = self.name
@@ -62,7 +58,6 @@ class Person(BaseModel):
         desc += f'<li>Retirement Age: {self.retirement_age}</li>'
         desc += ''.join(f"<li>{x._repr_html_()}</li>" for x in self.jobs)
         desc += ''.join(f"<li>{x._repr_html_()}</li>" for x in self.bank_accounts)
-        desc += ''.join(f"<li>{x._repr_html_()}</li>" for x in self.legacy_retirement_accounts)
         desc += ''.join(f"<li>{x._repr_html_()}</li>" for x in self.homes)
         desc += ''.join(f"<li>{x._repr_html_()}</li>" for x in self.apartments)
         desc += f'<li>Debt: {self.debt}</li>'
@@ -188,7 +183,7 @@ class Person(BaseModel):
         if link_spouse:
             spouse.get_married(self, False)
             event_str = f"{self.name} and {spouse.name} got married at age {self.age} and {spouse.age}"
-            self.simulation.event_log.add(Event(event_str))
+            self.model.event_log.add(Event(event_str))
 
     def get_year_at_age(self, age: int) -> int:
         """Gets the year at a given age.
@@ -199,9 +194,9 @@ class Person(BaseModel):
         Returns:
             int: Year at the given age.
         """
-        return self.simulation.year + (age - self.age)
+        return self.model.year + (age - self.age)
 
-    def advance_year(self, objects=None):
+    def step(self):
         self.yearly_taxes_paid = False
         self.taxable_income = 0
         self.age += 1
@@ -214,11 +209,8 @@ class Person(BaseModel):
 
         # Retire from all jobs at retirement age
         if self.age == self.retirement_age:
-            while self.jobs:
-                self.jobs.pop(0).retire()
-
-        # Advance the year for all sub-objects
-        super().advance_year(objects)
+            for job in self.jobs:
+                job.retire()
 
         # Pay off spending, taxes, and debts for the year
         # - People filing single is handled individually here, MFJ is handled in family
@@ -244,7 +236,7 @@ class Person(BaseModel):
             yearly_taxes = 0
 
         if (self.age == int(federal_retirement_age())):
-            self.simulation.event_log.add(Event(f"{self.name} reached retirement age (age {federal_retirement_age()})"))
+            self.model.event_log.add(Event(f"{self.name} reached retirement age (age {federal_retirement_age()})"))
 
         self.stat_money_spent = discretionary_spending
         self.stat_taxes_paid = yearly_taxes
@@ -254,14 +246,15 @@ class Person(BaseModel):
         self.stat_rent_paid = apartment_rent
 
 
-class Spending(BaseModel):
-    def __init__(self, base: float, yearly_increase: float):
+class Spending(LifeModelAgent):
+    def __init__(self, model: LifeModel, base: float, yearly_increase: float):
         """Spending
 
         Args:
             base (float): Base spending amount.
             yearly_increase (float): Yearly percentage increase in spending.
         """
+        super().__init__(model)
         self.base = base
         self.yearly_increase = yearly_increase
         self.one_time_expenses = 0
@@ -278,7 +271,6 @@ class Spending(BaseModel):
         """Gets yearly spending."""
         return self.base + self.one_time_expenses
 
-    def advance_year(self, objects=None):
-        super().advance_year(objects)
+    def step(self):
         self.base += (self.base * (self.yearly_increase / 100))
         self.one_time_expenses = 0
