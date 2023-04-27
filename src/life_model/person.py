@@ -247,7 +247,7 @@ class Person(LifeModelAgent):
 
 
 class Spending(LifeModelAgent):
-    def __init__(self, model: LifeModel, base: float, yearly_increase: float):
+    def __init__(self, model: LifeModel, base: float = 0, yearly_increase: float = 0):
         """Spending
 
         Args:
