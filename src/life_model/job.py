@@ -39,7 +39,8 @@ class Job(LifeModelAgent):
     def _repr_html_(self):
         return f"{self.role} at {self.company}"
 
-    def step(self):
+    # Using pre_step() so taxable_income will be set before person's step() is called
+    def pre_step(self):
 
         # If retired, don't do anything
         if self.retired:
@@ -80,7 +81,7 @@ class Job(LifeModelAgent):
         gross_income = self.salary.base + self.salary.bonus
 
         # Deposit take-home pay into bank account
-        self.owner.bank_accounts[0].balance += gross_income - yearly_401k_contrib
+        self.owner.deposit_into_bank_account(gross_income - yearly_401k_contrib)
 
         # Add to taxable income for the person
         # - Taxes are dedudcted in the person class
@@ -97,7 +98,7 @@ class Job(LifeModelAgent):
 
 
 class Salary(LifeModelAgent):
-    def __init__(self, model: LifeModel, base: float, yearly_increase: float, yearly_bonus: float):
+    def __init__(self, model: LifeModel, base: float, yearly_increase: float = 0, yearly_bonus: float = 0):
         """Salary
 
         Args:

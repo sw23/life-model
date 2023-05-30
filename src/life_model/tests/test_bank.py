@@ -8,6 +8,8 @@ from ..model import LifeModel
 from ..person import Person, Spending
 from ..family import Family
 
+import unittest
+
 check_interest_table = {
     1:  5228.971130614779,
     2:  5463.732587816526,
@@ -29,18 +31,20 @@ def get_bank_account():
     return BankAccount(person, company='Test Company')
 
 
-def test_bank_account():
-    """ Test bank account """
+class TestBank(unittest.TestCase):
 
-    account = get_bank_account()
+    def test_bank_account(self):
+        """ Test bank account """
 
-    assert account.balance == 0
-    assert account.interest_rate == 0
+        account = get_bank_account()
 
-    account.balance = 5000
-    account.interest_rate = 2.5
+        self.assertEqual(account.balance, 0)
+        self.assertEqual(account.interest_rate, 0)
 
-    for i in range(1, 11):
-        account.balance += 100
-        account.step()
-        assert account.balance == check_interest_table[i]
+        account.balance = 5000
+        account.interest_rate = 2.5
+
+        for i in range(1, 11):
+            account.balance += 100
+            account.step()
+            self.assertEqual(account.balance, check_interest_table[i])

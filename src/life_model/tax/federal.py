@@ -11,6 +11,11 @@ class FilingStatus(Enum):
     MARRIED_FILING_JOINTLY = 2
 
 
+federal_standard_deduction = {
+    FilingStatus.SINGLE: 13850,
+    FilingStatus.MARRIED_FILING_JOINTLY: 27700
+}
+
 federal_tax_brackets = {}
 
 # The tables below capture the federal tax brackets, for purposes of determining how
@@ -51,8 +56,11 @@ def federal_income_tax(amount: float, filing_status: FilingStatus) -> float:
     bracket = federal_tax_brackets[filing_status]
     total_tax = 0
     for (start, end, percent) in bracket:
-        total_tax += min(max(amount - start, 0), end) * (percent / 100)
-    return total_tax
+        amount_in_bracket = min(max(amount - start, 0), end - start)
+        if amount_in_bracket == 0:
+            break
+        total_tax += amount_in_bracket * (percent / 100)
+    return round(total_tax)
 
 
 def max_tax_rate(filing_status: FilingStatus) -> float:

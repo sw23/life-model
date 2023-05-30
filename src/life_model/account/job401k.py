@@ -61,10 +61,12 @@ class Job401kAccount(LifeModelAgent):
         company = self.job.company if self.job is not None else "<None>"
         return f"401k at {company} balance: ${self.balance:,}"
 
-    def step(self):
-        # Note: Contributions are handled by job, after this is called
+    # Using pre_step() so taxable_income will be set before person's step() is called
+    def pre_step(self):
+        # Note: Contributions are handled by job, after this is called.
         # This isn't 100% accurate since contributions aren't included in the
-        # growth, which is a little pessimistic but that should be fine
+        # growth, which is a little pessimistic but that should be fine.
+
         self.pretax_balance += continous_interest(self.pretax_balance, self.average_growth)
         self.roth_balance += continous_interest(self.roth_balance, self.average_growth)
 
@@ -75,7 +77,7 @@ class Job401kAccount(LifeModelAgent):
         # Required minimum distributions
         # - Based on the owner's age, force withdraw the required minium
         required_min_dist_amount = self.deduct_pretax(required_min_distrib(self.owner.age, self.pretax_balance))
-        self.owner.bank_accounts[0].balance += required_min_dist_amount
+        self.owner.deposit_into_bank_account(required_min_dist_amount)
         self.owner.taxable_income += required_min_dist_amount
 
         self.stat_required_min_distrib = required_min_dist_amount
