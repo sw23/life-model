@@ -40,3 +40,5 @@ This package is a work in progress. Here's what's supported currently:
 - [ ] Annuities
 - [ ] Pensions
 - [ ] Social Security
+- [ ] FICA
+- [ ] Charitable Giving

@@ -120,8 +120,7 @@ class LifeModel(mesa.Model):
         self.year = start_year
         self.event_log = EventLog(self)
         self.simulated_years = []
-        self.simulated_data = []
-        self.schedule = mesa.time.BaseScheduler(self)
+        self.schedule = mesa.time.StagedActivation(self, stage_list=["pre_step", "step", "post_step"])
         self.datacollector = mesa.DataCollector(
             model_reporters={
                 **{"Year": "year"},
@@ -170,16 +169,10 @@ class LifeModel(mesa.Model):
         """ Get the range of years in the model """
         return range(self.start_year, self.end_year + 1)
 
-    def run(self) -> List[dict]:
-        """Run the simulation
-
-        Returns:
-            List[dict]: List of simulated data for each year.
-        """
-        self.simulated_data = []
+    def run(self):
+        """ Run the simulation """
         for _ in self.get_year_range():
             self.step()
-        return self.simulated_data
 
     def add_agent_stat(self, title: str, attr_name: str):
         """Add an agent stat to the model
@@ -287,3 +280,20 @@ class LifeModelAgent(mesa.Agent):
         # Initialize the stats
         for stat in LifeModel.STATS:
             setattr(self, stat.name, 0)
+
+    def pre_step(self):
+        """ Pre-step phase. Called for all agents before step phase. """
+        pass
+
+    def step(self):
+        """ Step phase. Called for all agents after pre-step phase. """
+        pass
+
+    def post_step(self):
+        """ Post-step phase. Called for all agents after post-step phase. """
+        pass
+
+
+class ModelSetupException(Exception):
+    """Exception raised when there is an error setting up the model."""
+    pass

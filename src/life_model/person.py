@@ -4,10 +4,10 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 from typing import List
-from .model import LifeModelAgent, LifeModel, Event
+from .model import LifeModelAgent, LifeModel, Event, ModelSetupException
 from .family import Family
 from .limits import federal_retirement_age
-from .tax.federal import FilingStatus, federal_income_tax, max_tax_rate
+from .tax.federal import FilingStatus, federal_income_tax, max_tax_rate, federal_standard_deduction
 from .account.job401k import Job401kAccount
 
 
@@ -34,7 +34,6 @@ class Person(LifeModelAgent):
         self.taxable_income: float = 0
         self.spouse = None
         self.filing_status = FilingStatus.SINGLE
-        self.yearly_taxes_paid = False
         self.homes = []
         self.apartments = []
 
@@ -46,6 +45,11 @@ class Person(LifeModelAgent):
         self.stat_rent_paid = 0
 
         self.family.members.append(self)
+
+    @property
+    def federal_deductions(self) -> float:
+        # TODO - Using std deduction for now, but should be able to itemize
+        return federal_standard_deduction[self.filing_status]
 
     @property
     def all_retirement_accounts(self) -> List[Job401kAccount]:
@@ -127,8 +131,18 @@ class Person(LifeModelAgent):
         """
         amount -= self.deduct_from_pretax_401ks(amount)
         self.taxable_income += amount
-        self.bank_accounts[0].balance += amount
+        self.deposit_into_bank_account(amount)
         return amount
+
+    def deposit_into_bank_account(self, amount: float):
+        """Deposits money into bank account.
+
+        Args:
+            amount (float): Amount to deposit.
+        """
+        if len(self.bank_accounts) == 0:
+            raise ModelSetupException('No Bank Account. Create a bank account before making deposits.')
+        self.bank_accounts[0].balance += amount
 
     def pay_bills(self, spending_balance: float) -> float:
         """Pays bills.
@@ -165,9 +179,11 @@ class Person(LifeModelAgent):
         Returns:
             float: Federal taxes due.
         """
+
         income_amount = self.taxable_income + additional_income
+        adjusted_gross_income = max(income_amount - self.federal_deductions, 0)
         if self.filing_status == FilingStatus.SINGLE:
-            return federal_income_tax(income_amount, self.filing_status)
+            return federal_income_tax(adjusted_gross_income, self.filing_status)
         else:
             raise NotImplementedError(f"Unsupported filing status: {self.filing_status}")
 
@@ -196,11 +212,10 @@ class Person(LifeModelAgent):
         """
         return self.model.year + (age - self.age)
 
-    def step(self):
-        self.yearly_taxes_paid = False
-        self.taxable_income = 0
+    def pre_step(self):
         self.age += 1
 
+    def step(self):
         discretionary_spending = self.spending.get_yearly_spending()
         home_spending = sum(x.make_yearly_payment() for x in self.homes)
         home_interest_paid = sum(x.mortgage.get_interest_for_year() for x in self.homes)
@@ -245,6 +260,9 @@ class Person(LifeModelAgent):
         self.stat_interest_paid = home_interest_paid
         self.stat_rent_paid = apartment_rent
 
+    def post_step(self):
+        self.taxable_income = 0
+
 
 class Spending(LifeModelAgent):
     def __init__(self, model: LifeModel, base: float = 0, yearly_increase: float = 0):
@@ -252,7 +270,7 @@ class Spending(LifeModelAgent):
 
         Args:
             base (float): Base spending amount.
-            yearly_increase (float): Yearly percentage increase in spending.
+            yearly_increase (float): Yearly percentage increase in spending. 10 = 10%.
         """
         super().__init__(model)
         self.base = base
@@ -270,6 +288,14 @@ class Spending(LifeModelAgent):
     def get_yearly_spending(self) -> float:
         """Gets yearly spending."""
         return self.base + self.one_time_expenses
+
+    def adjust_base(self, base_percent: float):
+        """Adjusts base spending.
+
+        Args:
+            percent_increase (float): Percentage increase in spending. 50 = 50%.
+        """
+        self.base = self.base * (base_percent / 100)
 
     def step(self):
         self.base += (self.base * (self.yearly_increase / 100))
