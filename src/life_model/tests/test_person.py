@@ -42,4 +42,10 @@ class TestPerson(unittest.TestCase):
         for salary, taxes_due in tax_data:
             job.salary.base = salary
             model.step()
-            self.assertEqual(person.stat_taxes_paid, taxes_due)
+            self.assertEqual(person.stat_taxes_paid_federal, taxes_due)
+
+    # TODO - Add test for state taxes
+
+    # TODO - Add test for ss taxes
+
+    # TODO - Add test for medicare taxes

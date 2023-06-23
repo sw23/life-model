@@ -43,11 +43,11 @@ federal_tax_brackets[FilingStatus.MARRIED_FILING_JOINTLY] = [
 ]
 
 
-def federal_income_tax(amount: float, filing_status: FilingStatus) -> float:
+def federal_income_tax(income: float, filing_status: FilingStatus) -> float:
     """Calculates federal income tax due
 
     Args:
-        amount (float): Taxable income.
+        income (float): Taxable income.
         filing_status (FilingStatus): Filing status for tax purposes.
 
     Returns:
@@ -56,7 +56,7 @@ def federal_income_tax(amount: float, filing_status: FilingStatus) -> float:
     bracket = federal_tax_brackets[filing_status]
     total_tax = 0
     for (start, end, percent) in bracket:
-        amount_in_bracket = min(max(amount - start, 0), end - start)
+        amount_in_bracket = min(max(income - start, 0), end - start)
         if amount_in_bracket == 0:
             break
         total_tax += amount_in_bracket * (percent / 100)

@@ -104,6 +104,13 @@ class LifeModel(mesa.Model):
         MoneyStat('stat_rent_paid',            'Rent Paid')         # Money paid in rent
     ]
 
+    EXTRA_STATS = [
+        MoneyStat('stat_taxes_paid_federal',   'Federal Taxes'),    # Federal income taxes paid in a year
+        MoneyStat('stat_taxes_paid_state',     'State Taxes'),      # State income taxes paid in a year
+        MoneyStat('stat_taxes_paid_ss',        'SS Taxes'),         # Social security taxes paid in a year
+        MoneyStat('stat_taxes_paid_medicare',  'Medicare Taxes'),   # Medicare taxes paid in a year
+    ]
+
     def __init__(self, end_year: Optional[int] = None, start_year: Optional[int] = None):
         """LifeModel Helper Class
 
@@ -124,9 +131,13 @@ class LifeModel(mesa.Model):
         self.datacollector = mesa.DataCollector(
             model_reporters={
                 **{"Year": "year"},
-                **{x.title: lambda model, x=x: x.model_reporter(model) for x in self.STATS}
+                **{x.title: lambda model, x=x: x.model_reporter(model) for x in self.STATS},
+                **{x.title: lambda model, x=x: x.model_reporter(model) for x in self.EXTRA_STATS}
             },
-            agent_reporters={x.title: x.name for x in self.STATS}
+            agent_reporters={
+                **{x.title: x.name for x in self.STATS},
+                **{x.title: x.name for x in self.EXTRA_STATS},
+            }
         )
 
     @classmethod
@@ -142,6 +153,9 @@ class LifeModel(mesa.Model):
         for stat in cls.STATS:
             if stat.name == stat_name:
                 return stat
+        for stat in cls.EXTRA_STATS:
+            if stat.name == stat_name:
+                return stat
         return None
 
     @classmethod
@@ -155,6 +169,9 @@ class LifeModel(mesa.Model):
             Optional[Stat]: Stat.
         """
         for stat in cls.STATS:
+            if stat.title == stat_title:
+                return stat
+        for stat in cls.EXTRA_STATS:
             if stat.title == stat_title:
                 return stat
         return None
@@ -279,6 +296,8 @@ class LifeModelAgent(mesa.Agent):
 
         # Initialize the stats
         for stat in LifeModel.STATS:
+            setattr(self, stat.name, 0)
+        for stat in LifeModel.EXTRA_STATS:
             setattr(self, stat.name, 0)
 
     def pre_step(self):
