@@ -7,7 +7,8 @@ from typing import List
 from .model import LifeModelAgent, LifeModel, Event, ModelSetupException
 from .family import Family
 from .limits import federal_retirement_age
-from .tax.federal import FilingStatus, federal_income_tax, max_tax_rate, federal_standard_deduction
+from .tax.federal import FilingStatus, max_tax_rate, federal_standard_deduction
+from .tax.tax import get_income_taxes_due, TaxesDue
 from .account.job401k import Job401kAccount
 
 
@@ -167,8 +168,8 @@ class Person(LifeModelAgent):
         spending_balance = self.deduct_from_roth_401ks(spending_balance)
         return spending_balance
 
-    def get_federal_taxes_due(self, additional_income: float = 0) -> float:
-        """Gets federal taxes due.
+    def get_income_taxes_due(self, additional_income: float = 0) -> TaxesDue:
+        """Gets income taxes due for the year.
 
         Args:
             additional_income (float, optional): Additional income to include, not present in taxable_income.
@@ -181,9 +182,8 @@ class Person(LifeModelAgent):
         """
 
         income_amount = self.taxable_income + additional_income
-        adjusted_gross_income = max(income_amount - self.federal_deductions, 0)
         if self.filing_status == FilingStatus.SINGLE:
-            return federal_income_tax(adjusted_gross_income, self.filing_status)
+            return get_income_taxes_due(income_amount, self.federal_deductions, self.filing_status)
         else:
             raise NotImplementedError(f"Unsupported filing status: {self.filing_status}")
 
@@ -234,31 +234,38 @@ class Person(LifeModelAgent):
             #    - RMDs are handled before this by moving the RMD from 401k to bank account
             # 2. Withdraw that amount plus max tax rate to cover taxes
             # 3. Deposit that amount into checking
-            yearly_taxes = self.get_federal_taxes_due()
-            spending_plus_pre_401k_taxes = all_bills_except_taxes + yearly_taxes
+            yearly_taxes = self.get_income_taxes_due()
+            spending_plus_pre_401k_taxes = all_bills_except_taxes + yearly_taxes.total
             amount_from_pretax_401k = max(0, spending_plus_pre_401k_taxes - self.bank_account_balance)
-            taxes_from_pretax_401k = self.get_federal_taxes_due(amount_from_pretax_401k) - yearly_taxes
+            yearly_taxes_plus_401k_income = self.get_income_taxes_due(amount_from_pretax_401k)
+            taxes_from_pretax_401k = yearly_taxes_plus_401k_income.total - yearly_taxes.total
             taxes_from_pretax_401k += taxes_from_pretax_401k * (max_tax_rate(self.filing_status) / 100)
             self.withdraw_from_pretax_401ks(amount_from_pretax_401k + taxes_from_pretax_401k)
 
             # Now that 401k withdrawal is complete (if necessary), calculatue taxes
             if amount_from_pretax_401k:
-                yearly_taxes = self.get_federal_taxes_due()
+                yearly_taxes = self.get_income_taxes_due()
 
-            self.debt += self.pay_bills(all_bills_except_taxes + yearly_taxes)
+            self.debt += self.pay_bills(all_bills_except_taxes + yearly_taxes.total)
             self.debt = self.pay_bills(self.debt)
         else:
-            yearly_taxes = 0
+            yearly_taxes = TaxesDue()
 
         if (self.age == int(federal_retirement_age())):
             self.model.event_log.add(Event(f"{self.name} reached retirement age (age {federal_retirement_age()})"))
 
         self.stat_money_spent = discretionary_spending
-        self.stat_taxes_paid = yearly_taxes
+        self.stat_taxes_paid = yearly_taxes.total
         self.stat_bank_balance = self.bank_account_balance
         self.stat_home_expenses_paid = home_spending
         self.stat_interest_paid = home_interest_paid
         self.stat_rent_paid = apartment_rent
+
+        # Additional tax stats
+        self.stat_taxes_paid_federal = yearly_taxes.federal
+        self.stat_taxes_paid_state = yearly_taxes.state
+        self.stat_taxes_paid_ss = yearly_taxes.ss
+        self.stat_taxes_paid_medicare = yearly_taxes.medicare
 
     def post_step(self):
         self.taxable_income = 0
