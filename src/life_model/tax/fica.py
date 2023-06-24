@@ -20,6 +20,8 @@ medicare_additional_rate_threshold[FilingStatus.SINGLE] = 200000
 medicare_additional_rate_threshold[FilingStatus.MARRIED_FILING_JOINTLY] = 250000
 
 
+# https://www.ssa.gov/oact/cola/cbb.html
+# https://www.irs.gov/taxtopics/tc751
 # https://smartasset.com/taxes/all-about-the-fica-tax
 def social_security_tax(income: float) -> float:
     """ Calculates FICA taxes due
