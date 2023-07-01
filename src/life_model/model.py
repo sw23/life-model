@@ -99,9 +99,9 @@ class LifeModel(mesa.Model):
         MoneyStat('stat_retirement_contrib',   '401k Contrib'),     # Money contributed to retirement in a given year
         MoneyStat('stat_retirement_match',     '401k Match'),       # Money matched by company in 401k in a given year
         MoneyStat('stat_required_min_distrib', 'RMDs'),             # Money taken out from required minimum distrib.
-        MoneyStat('stat_home_expenses_paid',   'Home Expenses'),    # Money paid towards mortgage
+        MoneyStat('stat_housing_costs',        'Housing'),          # Money paid towards mortgage or rent
         MoneyStat('stat_interest_paid',        'Interest Paid'),    # Money paid in interest for loans
-        MoneyStat('stat_rent_paid',            'Rent Paid')         # Money paid in rent
+        MoneyStat('stat_ss_income',            'SS Income')         # Income from social security
     ]
 
     EXTRA_STATS = [

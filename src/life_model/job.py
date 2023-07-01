@@ -85,7 +85,10 @@ class Job(LifeModelAgent):
 
         # Add to taxable income for the person
         # - Taxes are dedudcted in the person class
+        # - Social security limits are handled in the SS class
         self.owner.taxable_income += gross_income - yearly_pretax_contrib
+        if self.owner.social_security is not None:
+            self.owner.social_security.add_income_for_year(gross_income)
 
         self.stat_gross_income = gross_income
         self.stat_retirement_contrib = yearly_401k_contrib
