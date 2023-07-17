@@ -39,6 +39,6 @@ This package is a work in progress. Here's what's supported currently:
 - [ ] Life Insurance
 - [ ] Annuities
 - [ ] Pensions
-- [ ] Social Security
-- [ ] FICA
+- [x] Social Security
+- [x] FICA
 - [ ] Charitable Giving

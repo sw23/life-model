@@ -3,13 +3,16 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-from typing import List
+from typing import List, Optional, TYPE_CHECKING
 from .model import LifeModelAgent, LifeModel, Event, ModelSetupException
 from .family import Family
 from .limits import federal_retirement_age
 from .tax.federal import FilingStatus, max_tax_rate, federal_standard_deduction
 from .tax.tax import get_income_taxes_due, TaxesDue
 from .account.job401k import Job401kAccount
+
+if TYPE_CHECKING:
+    from .insurance.social_security import SocialSecurity
 
 
 class Person(LifeModelAgent):
@@ -37,13 +40,14 @@ class Person(LifeModelAgent):
         self.filing_status = FilingStatus.SINGLE
         self.homes = []
         self.apartments = []
+        self.social_security: Optional[SocialSecurity] = None
 
-        self.stat_money_spent = 0
-        self.stat_taxes_paid = 0
-        self.stat_bank_balance = 0
-        self.stat_home_expenses_paid = 0
-        self.stat_interest_paid = 0
-        self.stat_rent_paid = 0
+        self.stat_money_spent = 0.0
+        self.stat_taxes_paid = 0.0
+        self.stat_bank_balance = 0.0
+        self.stat_housing_costs = 0.0
+        self.stat_interest_paid = 0.0
+        self.stat_ss_income = 0.0
 
         self.family.members.append(self)
 
@@ -257,9 +261,8 @@ class Person(LifeModelAgent):
         self.stat_money_spent = discretionary_spending
         self.stat_taxes_paid = yearly_taxes.total
         self.stat_bank_balance = self.bank_account_balance
-        self.stat_home_expenses_paid = home_spending
+        self.stat_housing_costs = home_spending + apartment_rent
         self.stat_interest_paid = home_interest_paid
-        self.stat_rent_paid = apartment_rent
 
         # Additional tax stats
         self.stat_taxes_paid_federal = yearly_taxes.federal
