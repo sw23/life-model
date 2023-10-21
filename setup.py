@@ -12,6 +12,7 @@ from setuptools import setup, find_packages
 
 # Save version and author to __meta__.py
 author = 'Spencer Williams'
+# Note: VERSION file is created by release workflow
 version = open('VERSION').read().strip()
 dirname = os.path.dirname(__file__)
 path = os.path.join(dirname, 'src', 'life_model', '__meta__.py')
