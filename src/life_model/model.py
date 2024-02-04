@@ -118,6 +118,7 @@ class LifeModel(mesa.Model):
             end_year (int, optional): End date of the model. Defaults to None.
             start_year (int, optional): Start date of the model. Defaults to None.
         """
+        super().__init__()
         if start_year is None:
             start_year = date.today().year
         if end_year is None:
