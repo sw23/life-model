@@ -5,8 +5,6 @@
 
 import mesa
 import pandas as pd
-
-
 from datetime import date
 from typing import Optional, List, Callable, Dict
 from pandas.io.formats.style import Styler
@@ -42,7 +40,7 @@ class Stat:
 
     def model_reporter(self, model: 'LifeModel'):
         """ Return the value of the stat for the model. """
-        return self.aggregator(getattr(agent, self.name) for agent in model.schedule.agents)
+        return self.aggregator(getattr(agent, self.name) for agent in model.agents)
 
 
 class MoneyStat(Stat):
@@ -111,14 +109,15 @@ class LifeModel(mesa.Model):
         MoneyStat('stat_taxes_paid_medicare',  'Medicare Taxes'),   # Medicare taxes paid in a year
     ]
 
-    def __init__(self, end_year: Optional[int] = None, start_year: Optional[int] = None):
+    def __init__(self, end_year: Optional[int] = None, start_year: Optional[int] = None, seed: Optional[int] = None):
         """LifeModel Helper Class
 
         Args:
             end_year (int, optional): End date of the model. Defaults to None.
             start_year (int, optional): Start date of the model. Defaults to None.
+            seed (int, optional): Random seed. Defaults to None.
         """
-        super().__init__()
+        super().__init__(seed=seed)  # Required in Mesa 3.0
         if start_year is None:
             start_year = date.today().year
         if end_year is None:
@@ -128,7 +127,7 @@ class LifeModel(mesa.Model):
         self.year = start_year
         self.event_log = EventLog(self)
         self.simulated_years = []
-        self.schedule = mesa.time.StagedActivation(self, stage_list=["pre_step", "step", "post_step"])
+        self._stages = ["pre_step", "step", "post_step"]
         self.datacollector = mesa.DataCollector(
             model_reporters={
                 **{"Year": "year"},
@@ -178,9 +177,14 @@ class LifeModel(mesa.Model):
         return None
 
     def step(self):
+        """Execute one step of the model."""
         self.simulated_years.append(self.year)
         self.datacollector.collect(self)
-        self.schedule.step()
+
+        # Execute each stage using AgentSet functionality
+        for stage in self._stages:
+            self.agents.do(stage)
+
         self.year += 1
 
     def get_year_range(self) -> range:
@@ -202,7 +206,7 @@ class LifeModel(mesa.Model):
         self.datacollector._new_agent_reporter(title, attr_name)
 
         # Set stat value to 0 for agents that don't have that attribute
-        for agent in self.schedule.agents:
+        for agent in self.agents:
             if not hasattr(agent, attr_name):
                 setattr(agent, attr_name, 0)
 
@@ -289,11 +293,7 @@ class LifeModelAgent(mesa.Agent):
         Args:
             model (LifeModel): LifeModel.
         """
-        super().__init__(id(self), model)
-
-        # Register the agent with the model
-        self.model = model
-        self.model.schedule.add(self)
+        super().__init__(model)  # unique_id is now automatically assigned
 
         # Initialize the stats
         for stat in LifeModel.STATS:
