@@ -279,6 +279,7 @@ class Spending(LifeModelAgent):
         """Spending
 
         Args:
+            model (LifeModel): LifeModel instance.
             base (float): Base spending amount.
             yearly_increase (float): Yearly percentage increase in spending. 10 = 10%.
         """
