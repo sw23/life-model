@@ -41,6 +41,8 @@ class Person(LifeModelAgent):
         self.homes = []
         self.apartments = []
         self.social_security: Optional[SocialSecurity] = None
+        self.early_withdrawal_amount = 0.0 # Track early withdrawals for tax penalty purposes
+        self.ira_accounts = []
 
         self.stat_money_spent = 0.0
         self.stat_taxes_paid = 0.0
@@ -132,12 +134,32 @@ class Person(LifeModelAgent):
             amount (float): Amount to withdraw.
 
         Returns:
-            float: Amount that could not be withdrawn.
+            float: Amount that was withdrawn.
         """
-        amount -= self.deduct_from_pretax_401ks(amount)
-        self.taxable_income += amount
-        self.deposit_into_bank_account(amount)
-        return amount
+        withdrawn_amount = 0
+        for retirement_account in self.all_retirement_accounts:
+            if amount <= 0:
+                break
+
+            # Check if this is an early withdrawal (subject to 10% penalty)
+            is_early = retirement_account.is_early_withdrawal()
+
+            # Withdraw from the account
+            withdrawal = retirement_account.deduct_pretax(amount, is_early)
+            amount -= withdrawal
+            withdrawn_amount += withdrawal
+
+            # Add to taxable income (the full amount)
+            self.taxable_income += withdrawal
+
+            # For early withdrawals, we'll add a 10% penalty later in tax calculations
+            if is_early:
+                # Mark this money for penalty in tax calculations
+                self.early_withdrawal_amount += withdrawal
+
+        # Deposit the withdrawn amount into the bank account
+        self.deposit_into_bank_account(withdrawn_amount)
+        return withdrawn_amount
 
     def deposit_into_bank_account(self, amount: float):
         """Deposits money into bank account.
@@ -182,12 +204,12 @@ class Person(LifeModelAgent):
             NotImplementedError: Unsupported filing status.
 
         Returns:
-            float: Federal taxes due.
+            TaxesDue: Object containing all taxes due.
         """
-
         income_amount = self.taxable_income + additional_income
         if self.filing_status == FilingStatus.SINGLE:
-            return get_income_taxes_due(income_amount, self.federal_deductions, self.filing_status)
+            return get_income_taxes_due(income_amount, self.federal_deductions,
+                                        self.filing_status, self.early_withdrawal_amount)
         else:
             raise NotImplementedError(f"Unsupported filing status: {self.filing_status}")
 
@@ -272,6 +294,7 @@ class Person(LifeModelAgent):
 
     def post_step(self):
         self.taxable_income = 0
+        self.early_withdrawal_amount = 0  # Reset early withdrawal tracking for next year
 
 
 class Spending(LifeModelAgent):

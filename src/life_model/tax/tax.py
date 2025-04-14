@@ -9,26 +9,30 @@ from .fica import social_security_tax, medicare_tax
 
 
 class TaxesDue:
-    def __init__(self, federal: float = 0, state: float = 0, ss: float = 0, medicare: float = 0):
+    def __init__(self, federal: float = 0, state: float = 0, ss: float = 0, medicare: float = 0,
+                 early_withdrawal_penalty: float = 0):
         """Taxes due for the year, split up by type of tax."""
         self.federal = federal
         self.state = state
         self.ss = ss
         self.medicare = medicare
+        self.early_withdrawal_penalty = early_withdrawal_penalty
 
     @property
     def total(self) -> float:
         """Total taxes due for the year."""
-        return self.federal + self.state + self.ss + self.medicare
+        return self.federal + self.state + self.ss + self.medicare + self.early_withdrawal_penalty
 
 
-def get_income_taxes_due(gross_income: float, deductions: float, filing_status: FilingStatus) -> TaxesDue:
+def get_income_taxes_due(gross_income: float, deductions: float, filing_status: FilingStatus,
+                         early_withdrawal_amount: float = 0) -> TaxesDue:
     """Gets income taxes due for the year for a person or family.
 
     Args:
         gross_income (float): Income subject to income taxes.
         deductions (float): Deductions from income.
         filing_status (FilingStatus): Filing status.
+        early_withdrawal_amount (float, optional): Amount of early withdrawals from retirement accounts. Defaults to 0.
 
     Returns:
         float: Income taxes due.
@@ -44,4 +48,7 @@ def get_income_taxes_due(gross_income: float, deductions: float, filing_status: 
     tax_ss = social_security_tax(gross_income)
     tax_medicare = medicare_tax(gross_income, filing_status)
 
-    return TaxesDue(tax_federal, tax_state, tax_ss, tax_medicare)
+    # Calculate early withdrawal penalty (10% of the withdrawal amount)
+    early_withdrawal_penalty = early_withdrawal_amount * 0.10 if early_withdrawal_amount > 0 else 0
+
+    return TaxesDue(tax_federal, tax_state, tax_ss, tax_medicare, early_withdrawal_penalty)

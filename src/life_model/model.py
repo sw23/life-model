@@ -12,10 +12,31 @@ from math import e as const_e
 
 
 def compound_interest(principal: float, rate: float, num_times_applied: int = 1, elapsed_time_periods: int = 1):
+    """Calculate compound interest.
+
+    Args:
+        principal (float): The initial amount.
+        rate (float): Annual percentage rate (e.g., 5 for 5%).
+        num_times_applied (int, optional): Number of times interest is applied per period. Defaults to 1.
+        elapsed_time_periods (int, optional): Number of time periods (typically years). Defaults to 1.
+
+    Returns:
+        float: The interest earned.
+    """
     return principal * pow(1 + ((rate / 100) / num_times_applied), num_times_applied * elapsed_time_periods) - principal
 
 
-def continous_interest(principal: float, rate: float, elapsed_time_periods: int = 1):
+def continuous_interest(principal: float, rate: float, elapsed_time_periods: int = 1):
+    """Calculate continuous compounding interest.
+
+    Args:
+        principal (float): The initial amount.
+        rate (float): Annual percentage rate (e.g., 5 for 5%).
+        elapsed_time_periods (int, optional): Number of time periods (typically years). Defaults to 1.
+
+    Returns:
+        float: The interest earned.
+    """
     return principal * pow(const_e, (rate / 100) * elapsed_time_periods) - principal
 
 
