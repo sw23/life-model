@@ -242,7 +242,7 @@ class LifeModel(mesa.Model):
         df = df[columns]
         if aggregate is not None:
             # Aggregate the data if desired
-            aggregators = {**{'Year': max}, **aggregate, **{x.title: x.aggregator for x in stats}}
+            aggregators = {**{'Year': 'max'}, **aggregate, **{x.title: x.aggregator.__name__ for x in stats}}
             df = df.aggregate(aggregators).reset_index().transpose()
             df.columns = df.iloc[0]
             df = df.drop(df.index[0])
@@ -280,7 +280,7 @@ class LifeModel(mesa.Model):
         # Aggregate the data
         stats = [self.get_stat_by_title(str(x)) for x in df.columns]
         stats = [x for x in stats if x is not None]
-        aggregators = {**{'Year': max}, **{x.title: x.aggregator for x in stats}}
+        aggregators = {**{'Year': 'max'}, **{x.title: x.aggregator.__name__ for x in stats}}
         df = df.aggregate(aggregators).reset_index().transpose()
         df.columns = df.iloc[0]
         return df.drop(df.index[0])
