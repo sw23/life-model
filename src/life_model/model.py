@@ -4,6 +4,7 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 import mesa
+from .person import Person # Added import
 import pandas as pd
 from datetime import date
 from typing import Optional, List, Callable, Dict
@@ -139,6 +140,55 @@ class LifeModel(mesa.Model):
                 **{x.title: x.name for x in self.EXTRA_STATS},
             }
         )
+        # Assuming there's a Family object associated with the model.
+        # This might be set up during model initialization.
+        # For now, this is a placeholder. It needs to be correctly initialized.
+        self.family = None # Placeholder, needs proper initialization
+
+    def person_dies(self, person_to_remove: 'Person'):
+        """Handles the event of a person dying, including life insurance payouts."""
+        # Ensure person_to_remove is an instance of Person for safety
+        if not isinstance(person_to_remove, Person):
+            self.event_log.add(Event(f"Invalid object passed to person_dies. Expected a Person, got {type(person_to_remove)}."))
+            return
+
+        # Check if the person is in the model's agent list (self.agents is from MESA)
+        # self.agents is a MESA AgentSet, which supports 'in' and 'remove'.
+        if person_to_remove not in self.agents:
+            self.event_log.add(Event(f"Attempted to process death for {person_to_remove.name}, but they are not in the model's active agents list."))
+            return
+
+        self.event_log.add(Event(f"{person_to_remove.name} has died at age {person_to_remove.age}."))
+
+        # Trigger life insurance payouts
+        # Ensure life_insurance_policies attribute exists
+        if hasattr(person_to_remove, 'life_insurance_policies'):
+            for policy in person_to_remove.life_insurance_policies:
+                if policy.is_active:
+                    self.event_log.add(Event(f"Processing payout for {type(policy).__name__} of {person_to_remove.name}."))
+                    policy.payout() # This method is on LifeInsurancePolicy
+                else:
+                    self.event_log.add(Event(f"{type(policy).__name__} for {person_to_remove.name} is inactive. No payout."))
+        else:
+            self.event_log.add(Event(f"No life_insurance_policies attribute found for {person_to_remove.name}."))
+            
+        # Remove person from active simulation
+        self.agents.remove(person_to_remove) # MESA's AgentSet remove
+        
+        # Handle family relations
+        # self.family needs to be correctly set for the model instance for this to work.
+        if self.family and hasattr(self.family, 'members') and person_to_remove in self.family.members:
+             self.family.members.remove(person_to_remove)
+             if person_to_remove.spouse:
+                 if hasattr(person_to_remove.spouse, 'spouse'): # Check if spouse object is valid
+                     person_to_remove.spouse.spouse = None
+                     self.event_log.add(Event(f"{person_to_remove.spouse.name} is now widowed."))
+                 # Future: Update spouse's filing status, etc.
+        elif not self.family:
+            self.event_log.add(Event(f"Model's family attribute not set. Cannot update family membership for {person_to_remove.name}."))
+
+
+        self.event_log.add(Event(f"{person_to_remove.name} has been removed from the simulation."))
 
     @classmethod
     def get_stat_by_name(cls, stat_name: str) -> Optional[Stat]:

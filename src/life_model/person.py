@@ -3,9 +3,10 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-from typing import List, Optional, TYPE_CHECKING
+from typing import List, Optional, TYPE_CHECKING, Union
 from .model import LifeModelAgent, LifeModel, Event, ModelSetupException
 from .family import Family
+from .insurance.life_insurance import LifeInsurancePolicy, TermLifeInsurancePolicy, WholeLifeInsurancePolicy
 from .limits import federal_retirement_age
 from .tax.federal import FilingStatus, max_tax_rate, federal_standard_deduction
 from .tax.tax import get_income_taxes_due, TaxesDue
@@ -41,6 +42,7 @@ class Person(LifeModelAgent):
         self.homes = []
         self.apartments = []
         self.social_security: Optional[SocialSecurity] = None
+        self.life_insurance_policies: List[LifeInsurancePolicy] = []
 
         self.stat_money_spent = 0.0
         self.stat_taxes_paid = 0.0
@@ -50,6 +52,16 @@ class Person(LifeModelAgent):
         self.stat_ss_income = 0.0
 
         self.family.members.append(self)
+
+    # Note: Life insurance payout upon death is handled by the simulation model / Family class by calling policy.payout()
+    def add_life_insurance_policy(self, policy: 'LifeInsurancePolicy'):
+        """Adds a life insurance policy to the person."""
+        if not isinstance(policy, LifeInsurancePolicy):
+            raise ValueError("policy must be an instance of LifeInsurancePolicy")
+        self.life_insurance_policies.append(policy)
+        self.model.event_log.add(
+            Event(f"{self.name} added a {type(policy).__name__} with ${policy.coverage_amount:,.2f} coverage.")
+        )
 
     @property
     def federal_deductions(self) -> float:
@@ -230,6 +242,37 @@ class Person(LifeModelAgent):
         if self.age == self.retirement_age:
             for job in self.jobs:
                 job.retire()
+
+        # Handle Life Insurance Premiums
+        for policy in self.life_insurance_policies:
+            if policy.is_active:
+                # For TermLifeInsurancePolicy, advance its term
+                if hasattr(policy, 'step'): # TermLifeInsurancePolicy and WholeLifeInsurancePolicy have step
+                    policy.step() # Advances term year for Term, grows cash value for Whole
+
+                if not policy.is_active: # Check again if policy became inactive after its own step (e.g. term expired)
+                    continue
+
+                premium = policy.annual_premium
+                # Attempt to pay from bank accounts
+                shortfall = self.deduct_from_bank_accounts(premium)
+                if shortfall > 0:
+                    # If premium couldn't be fully paid from bank, log warning and policy lapses
+                    self.model.event_log.add(
+                        Event(f"WARNING: {self.name} could not afford premium of ${premium:,.2f} for {type(policy).__name__}. Policy now inactive.")
+                    )
+                    policy.is_active = False
+                    # Consider if there should be an attempt to pay from other sources (e.g. 401k) - for now, no.
+                else:
+                    # If premium was paid, and it's a WholeLife policy, call its specific premium handling
+                    if isinstance(policy, WholeLifeInsurancePolicy):
+                        policy.pay_premium_and_grow_cash_value() # Handles cash value specific logic
+                    else:
+                        policy.pay_premium() # Generic premium payment acknowledgement for other types
+                    
+                    self.model.event_log.add(
+                        Event(f"{self.name} paid ${premium:,.2f} premium for {type(policy).__name__}.")
+                    )
 
         # Pay off spending, taxes, and debts for the year
         # - People filing single is handled individually here, MFJ is handled in family
