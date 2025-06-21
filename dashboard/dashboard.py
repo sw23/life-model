@@ -24,6 +24,9 @@ from life_model.job import Job, Salary
 class DashboardLifeModel(LifeModel):
     """LifeModel wrapper for dashboard with parameter initialization."""
 
+    # Class-level steps attribute for SolaraViz compatibility
+    steps = 0
+
     def __init__(self, **params):
         """Initialize the model with dashboard parameters."""
         super().__init__(

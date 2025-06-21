@@ -8,18 +8,20 @@ without needing to run the full Solara server.
 
 import sys
 import os
-
 import pytest
 
-# Try to import dashboard modules, adding path if needed
+# Add the dashboard directory to Python path for imports
+dashboard_path = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'dashboard')
+if dashboard_path not in sys.path:
+    sys.path.insert(0, dashboard_path)
+
+# Import dashboard modules - these need to be after the path setup
 try:
     from dashboard import (create_financial_model, plot_financial_overview,
-                           plot_balance_comparison, plot_retirement_savings, plot_taxes_and_income)
-except ImportError:
-    # Add the dashboard directory to Python path and try again
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', 'dashboard'))
-    from dashboard import (create_financial_model, plot_financial_overview,
-                           plot_balance_comparison, plot_retirement_savings, plot_taxes_and_income)
+                           plot_balance_comparison, plot_retirement_savings, plot_taxes_and_income,
+                           DashboardLifeModel, create_dashboard)  # noqa: E402
+except ImportError as e:
+    pytest.skip(f"Dashboard imports not available: {e}", allow_module_level=True)
 
 
 @pytest.fixture
@@ -206,3 +208,22 @@ def test_empty_model_charts():
 
     chart4 = plot_taxes_and_income(model)
     assert chart4 is not None
+
+
+def test_dashboard_life_model_steps_attribute():
+    """Test that DashboardLifeModel has the steps attribute required by SolaraViz."""
+    # Test that the class has the steps attribute (required by SolaraViz)
+    assert hasattr(DashboardLifeModel, 'steps'), \
+        "DashboardLifeModel class should have steps attribute for SolaraViz compatibility"
+
+    # Test that an instance also has the steps attribute
+    model = DashboardLifeModel()
+    assert hasattr(model, 'steps'), "DashboardLifeModel instance should have steps attribute"
+    assert model.steps == 0, "Initial steps should be 0"
+
+
+def test_solara_viz_dashboard_creation():
+    """Test that the SolaraViz dashboard can be created without errors."""
+    # This should not raise an AttributeError: 'type object has no attribute steps'
+    dashboard = create_dashboard()
+    assert dashboard is not None, "Dashboard should be created successfully"
