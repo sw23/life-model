@@ -26,7 +26,7 @@ class DashboardLifeModel(LifeModel):
     # Class-level steps attribute for SolaraViz compatibility
     steps = 0
 
-    def __init__(self, *, start_year=2023, end_year=2050, john_enabled=True,
+    def __init__(self, start_year=2023, end_year=2050, john_enabled=True,
                  john_age=44, john_retirement_age=60, john_salary=50000,
                  john_spending=12000, john_bank_balance=20000,
                  jane_enabled=False, jane_age=45, jane_retirement_age=60,
@@ -35,12 +35,12 @@ class DashboardLifeModel(LifeModel):
                  john_job_enabled=True, jane_job_enabled=True,
                  john_company="Company A", john_role="Manager", john_bonus=1,
                  jane_company="Company B", jane_role="Developer", jane_bonus=1,
-                 bank_interest_rate=0.5, **kwargs):
+                 bank_interest_rate=0.5, seed=None):
         """Initialize the model with dashboard parameters."""
         super().__init__(
             start_year=start_year,
             end_year=end_year,
-            seed=kwargs.get('seed')
+            seed=seed
         )
 
         # Create family
