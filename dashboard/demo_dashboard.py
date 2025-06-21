@@ -141,35 +141,25 @@ def main():
     print("Life Model Financial Simulation Dashboard - Demo Scenarios")
     print("This demonstrates the types of financial planning scenarios you can explore.")
     
-    try:
-        # Run demo scenarios
-        model1 = demo_single_professional()
-        model2 = demo_family_scenario() 
-        model3 = demo_retirement_planning()
-        
-        print("\n" + "=" * 60)
-        print("DEMO COMPLETE")
-        print("=" * 60)
-        print("These scenarios show different life stages and financial planning needs.")
-        print("Use the interactive dashboard to explore your own scenarios!")
-        print("\nTo run the interactive dashboard:")
-        print("  solara run run_dashboard.py")
-        print("  Then open: http://localhost:8765")
-        
-        print(f"\nDashboard features available:")
-        print(f"  • Adjust ages, salaries, and retirement plans")
-        print(f"  • Compare single vs. dual income scenarios")
-        print(f"  • Visualize long-term financial projections")
-        print(f"  • Track retirement savings and tax obligations")
-        
-    except Exception as e:
-        print(f"\nDemo failed with error: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
+    # Run demo scenarios
+    model1 = demo_single_professional()
+    model2 = demo_family_scenario() 
+    model3 = demo_retirement_planning()
     
-    return True
+    print("\n" + "=" * 60)
+    print("DEMO COMPLETE")
+    print("=" * 60)
+    print("These scenarios show different life stages and financial planning needs.")
+    print("Use the interactive dashboard to explore your own scenarios!")
+    print("\nTo run the interactive dashboard:")
+    print("  solara run run_dashboard.py")
+    print("  Then open: http://localhost:8765")
+    
+    print(f"\nDashboard features available:")
+    print(f"  • Adjust ages, salaries, and retirement plans")
+    print(f"  • Compare single vs. dual income scenarios")
+    print(f"  • Visualize long-term financial projections")
+    print(f"  • Track retirement savings and tax obligations")
 
 if __name__ == "__main__":
-    success = main()
-    sys.exit(0 if success else 1)
+    main()
