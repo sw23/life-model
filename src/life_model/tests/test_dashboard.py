@@ -2,22 +2,23 @@
 """
 Test the dashboard components
 
-This script tests that the dashboard components work correctly
+This module tests that the dashboard components work correctly
 without needing to run the full Solara server.
 """
 
 import sys
 import os
+import pytest
 # Add the dashboard directory to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', 'dashboard'))
 
 from dashboard import (create_financial_model, plot_financial_overview, 
                     plot_balance_comparison, plot_retirement_savings, plot_taxes_and_income)
 
-def test_model_creation():
-    """Test that we can create and run a model."""
-    print("Testing model creation...")
-    
+
+@pytest.fixture
+def basic_model():
+    """Create a basic financial model for testing."""
     params = {
         'start_year': 2023,
         'end_year': 2027,
@@ -38,73 +39,14 @@ def test_model_creation():
     }
     
     model = create_financial_model(params)
-    print(f"Model created with {len(model.agents)} agents")
-    
-    # Run the simulation
     model.run()
-    print(f"Simulation ran for {len(model.simulated_years)} years")
-    
-    # Check data
-    df = model.datacollector.get_model_vars_dataframe()
-    print(f"Collected data shape: {df.shape}")
-    print(f"Data columns: {list(df.columns)}")
-    
-    # Show some sample data
-    print("\nSample results:")
-    print(df[['Year', 'Income', 'Bank Balance', 'Spending', 'Taxes']].head())
-    
     return model
 
 
-def test_chart_generation(model):
-    """Test chart generation."""
-    print("\nTesting chart generation...")
-    
-    charts = []
-    chart_names = []
-    
-    # Test financial overview chart
-    chart1 = plot_financial_overview(model)
-    charts.append(chart1)
-    chart_names.append("Financial overview")
-    
-    # Test balance comparison chart
-    chart2 = plot_balance_comparison(model)
-    charts.append(chart2)
-    chart_names.append("Balance comparison")
-    
-    # Test retirement savings chart
-    chart3 = plot_retirement_savings(model)
-    charts.append(chart3)
-    chart_names.append("Retirement savings")
-    
-    # Test taxes and income chart
-    chart4 = plot_taxes_and_income(model)
-    charts.append(chart4)
-    chart_names.append("Taxes and income")
-    
-    print(f"Created {len(charts)} charts")
-    
-    # Verify charts can be serialized
-    try:
-        for i, (chart, name) in enumerate(zip(charts, chart_names)):
-            json_data = chart.to_json()
-            print(f"  {name} chart: {type(chart)} (JSON length: {len(json_data)})")
-        
-        print("All charts serialized successfully")
-    except Exception as e:
-        print(f"Error serializing charts: {e}")
-        return False
-    
-    return True
-
-
-def test_parameter_variations():
-    """Test different parameter combinations."""
-    print("\nTesting parameter variations...")
-    
-    # Test single person
-    params_single = {
+@pytest.fixture
+def single_person_model():
+    """Create a single person model for testing."""
+    params = {
         'start_year': 2023,
         'end_year': 2025,
         'john_enabled': True,
@@ -113,12 +55,15 @@ def test_parameter_variations():
         'john_salary': 75000,
     }
     
-    model_single = create_financial_model(params_single)
-    model_single.run()
-    print(f"Single person model: {len(model_single.agents)} agents")
-    
-    # Test couple
-    params_couple = {
+    model = create_financial_model(params)
+    model.run()
+    return model
+
+
+@pytest.fixture
+def couple_model():
+    """Create a couple model for testing."""
+    params = {
         'start_year': 2023,
         'end_year': 2025,
         'john_enabled': True,
@@ -129,48 +74,129 @@ def test_parameter_variations():
         'jane_salary': 70000,
     }
     
-    model_couple = create_financial_model(params_couple)
-    model_couple.run()
-    print(f"Couple model: {len(model_couple.agents)} agents")
+    model = create_financial_model(params)
+    model.run()
+    return model
+
+
+def test_model_creation():
+    """Test that we can create and run a model."""
+    params = {
+        'start_year': 2023,
+        'end_year': 2027,
+        'john_enabled': True,
+        'john_age': 30,
+        'john_retirement_age': 65,
+        'john_salary': 60000,
+        'john_spending': 15000,
+        'john_bank_balance': 25000,
+        'jane_enabled': True,
+        'jane_age': 28,
+        'jane_retirement_age': 65,
+        'jane_salary': 55000,
+        'jane_spending': 18000,
+        'jane_bank_balance': 20000,
+        'spending_increase': 3.0,
+        'salary_increase': 2.5,
+    }
+    
+    model = create_financial_model(params)
+    assert model is not None
+    assert len(model.agents) > 0
+    
+    # Run the simulation
+    model.run()
+    assert len(model.simulated_years) == 5  # 2023-2027 is 5 years
+    
+    # Check data
+    df = model.datacollector.get_model_vars_dataframe()
+    assert not df.empty
+    assert df.shape[0] == 5  # 5 years of data
+    assert 'Year' in df.columns
+    assert 'Income' in df.columns
+    assert 'Bank Balance' in df.columns
+
+
+def test_chart_generation(basic_model):
+    """Test chart generation."""
+    model = basic_model
+    
+    # Test financial overview chart
+    chart1 = plot_financial_overview(model)
+    assert chart1 is not None
+    # Verify chart can be serialized
+    json_data1 = chart1.to_json()
+    assert len(json_data1) > 0
+    
+    # Test balance comparison chart
+    chart2 = plot_balance_comparison(model)
+    assert chart2 is not None
+    json_data2 = chart2.to_json()
+    assert len(json_data2) > 0
+    
+    # Test retirement savings chart
+    chart3 = plot_retirement_savings(model)
+    assert chart3 is not None
+    json_data3 = chart3.to_json()
+    assert len(json_data3) > 0
+    
+    # Test taxes and income chart
+    chart4 = plot_taxes_and_income(model)
+    assert chart4 is not None
+    json_data4 = chart4.to_json()
+    assert len(json_data4) > 0
+
+
+def test_parameter_variations(single_person_model, couple_model):
+    """Test different parameter combinations."""
+    model_single = single_person_model
+    model_couple = couple_model
+    
+    # Verify models were created with correct number of agents
+    assert len(model_single.agents) < len(model_couple.agents)
     
     # Compare results
     df_single = model_single.datacollector.get_model_vars_dataframe()
     df_couple = model_couple.datacollector.get_model_vars_dataframe()
     
-    print(f"Single person final bank balance: ${df_single['Bank Balance'].iloc[-1]:,.2f}")
-    print(f"Couple final bank balance: ${df_couple['Bank Balance'].iloc[-1]:,.2f}")
+    assert not df_single.empty
+    assert not df_couple.empty
     
-    return True
-
-
-def main():
-    """Run all tests."""
-    print("=== Dashboard Component Tests ===")
+    # Both models should have the same number of years
+    assert len(df_single) == len(df_couple)
     
-    try:
-        # Test 1: Model creation and simulation
-        model = test_model_creation()
-        
-        # Test 2: Chart generation
-        test_chart_generation(model)
-        
-        # Test 3: Parameter variations
-        test_parameter_variations()
-        
-        print("\n=== All Tests Passed! ===")
-        print("Dashboard components are working correctly.")
-        print("You can now run the dashboard with: solara run dashboard/run_dashboard.py")
-        
-    except Exception as e:
-        print(f"\n=== Test Failed! ===")
-        print(f"Error: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
+    # Couple should generally have higher income and bank balance
+    final_balance_single = df_single['Bank Balance'].iloc[-1]
+    final_balance_couple = df_couple['Bank Balance'].iloc[-1]
     
-    return True
+    assert final_balance_single > 0
+    assert final_balance_couple > 0
+    assert final_balance_couple > final_balance_single
 
 
-if __name__ == "__main__":
-    success = main()
-    sys.exit(0 if success else 1)
+def test_empty_model_charts():
+    """Test that charts handle models without data gracefully."""
+    # Create a model but don't run it
+    params = {
+        'start_year': 2023,
+        'end_year': 2025,
+        'john_enabled': True,
+        'john_age': 30,
+        'john_salary': 50000,
+    }
+    
+    model = create_financial_model(params)
+    # Don't run the model to test empty data handling
+    
+    # All chart functions should handle empty data gracefully
+    chart1 = plot_financial_overview(model)
+    assert chart1 is not None
+    
+    chart2 = plot_balance_comparison(model)
+    assert chart2 is not None
+    
+    chart3 = plot_retirement_savings(model)
+    assert chart3 is not None
+    
+    chart4 = plot_taxes_and_income(model)
+    assert chart4 is not None
