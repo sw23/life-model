@@ -9,11 +9,10 @@ Based on the ExampleSimulation.ipynb notebook.
 """
 
 import solara
-import reacton
-from mesa.visualization import SolaraViz, make_plot_component
+from mesa.visualization import SolaraViz
 import altair as alt
 import pandas as pd
-from typing import Dict, Any, List
+from typing import Dict, Any
 
 from life_model.model import LifeModel
 from life_model.family import Family
@@ -24,17 +23,17 @@ from life_model.job import Job, Salary
 
 class DashboardLifeModel(LifeModel):
     """LifeModel wrapper for dashboard with parameter initialization."""
-    
+
     def __init__(self, **params):
         """Initialize the model with dashboard parameters."""
         super().__init__(
             start_year=params.get('start_year', 2023),
             end_year=params.get('end_year', 2050)
         )
-        
+
         # Create family
         family = Family(self)
-        
+
         # Create people
         if params.get('john_enabled', True):
             john = Person(
@@ -48,7 +47,7 @@ class DashboardLifeModel(LifeModel):
                     yearly_increase=params.get('spending_increase', 5)
                 )
             )
-            
+
             # Add bank account for John
             BankAccount(
                 owner=john,
@@ -57,7 +56,7 @@ class DashboardLifeModel(LifeModel):
                 balance=params.get('john_bank_balance', 20000),
                 interest_rate=params.get('bank_interest_rate', 0.5)
             )
-            
+
             # Add job for John
             if params.get('john_job_enabled', True):
                 Job(
@@ -71,7 +70,7 @@ class DashboardLifeModel(LifeModel):
                         yearly_bonus=params.get('john_bonus', 1)
                     )
                 )
-        
+
         if params.get('jane_enabled', False):
             jane = Person(
                 family=family,
@@ -84,7 +83,7 @@ class DashboardLifeModel(LifeModel):
                     yearly_increase=params.get('spending_increase', 5)
                 )
             )
-            
+
             # Add bank account for Jane
             BankAccount(
                 owner=jane,
@@ -93,7 +92,7 @@ class DashboardLifeModel(LifeModel):
                 balance=params.get('jane_bank_balance', 30000),
                 interest_rate=params.get('bank_interest_rate', 0.5)
             )
-            
+
             # Add job for Jane
             if params.get('jane_job_enabled', True):
                 Job(
@@ -120,24 +119,24 @@ def plot_financial_overview(model: LifeModel) -> alt.Chart:
         return alt.Chart(pd.DataFrame()).mark_text().encode(
             text=alt.value("Run simulation to see results")
         )
-    
+
     # Get model data
     df = model.datacollector.get_model_vars_dataframe()
-    
+
     if df.empty:
         return alt.Chart(pd.DataFrame()).mark_text().encode(
             text=alt.value("No data available")
         )
-    
+
     # Create a melted dataframe for better visualization
     financial_columns = ['Income', 'Bank Balance', '401k Balance', 'Debt', 'Spending']
     available_columns = [col for col in financial_columns if col in df.columns]
-    
+
     if not available_columns:
         return alt.Chart(pd.DataFrame()).mark_text().encode(
             text=alt.value("No financial data available")
         )
-    
+
     # Melt the dataframe
     df_melted = df[['Year'] + available_columns].melt(
         id_vars=['Year'],
@@ -145,7 +144,7 @@ def plot_financial_overview(model: LifeModel) -> alt.Chart:
         var_name='Category',
         value_name='Amount'
     )
-    
+
     # Create the chart
     chart = alt.Chart(df_melted).mark_line(point=True).encode(
         x=alt.X('Year:O', title='Year'),
@@ -157,7 +156,7 @@ def plot_financial_overview(model: LifeModel) -> alt.Chart:
         width=600,
         height=400
     )
-    
+
     return chart
 
 
@@ -167,14 +166,14 @@ def plot_balance_comparison(model: LifeModel) -> alt.Chart:
         return alt.Chart(pd.DataFrame()).mark_text().encode(
             text=alt.value("Run simulation to see results")
         )
-    
+
     df = model.datacollector.get_model_vars_dataframe()
-    
+
     if df.empty or 'Bank Balance' not in df.columns:
         return alt.Chart(pd.DataFrame()).mark_text().encode(
             text=alt.value("No balance data available")
         )
-    
+
     # Create bars for balances
     chart = alt.Chart(df).mark_bar().encode(
         x=alt.X('Year:O', title='Year'),
@@ -185,7 +184,7 @@ def plot_balance_comparison(model: LifeModel) -> alt.Chart:
         width=600,
         height=300
     )
-    
+
     return chart
 
 
@@ -195,26 +194,26 @@ def plot_retirement_savings(model: LifeModel) -> alt.Chart:
         return alt.Chart(pd.DataFrame()).mark_text().encode(
             text=alt.value("Run simulation to see results")
         )
-    
+
     df = model.datacollector.get_model_vars_dataframe()
-    
+
     if df.empty:
         return alt.Chart(pd.DataFrame()).mark_text().encode(
             text=alt.value("No data available")
         )
-    
+
     # Create retirement-focused chart
     retirement_columns = ['401k Balance', '401k Contrib', '401k Match']
     available_columns = [col for col in retirement_columns if col in df.columns]
-    
+
     if not available_columns:
         return alt.Chart(pd.DataFrame()).mark_text().encode(
             text=alt.value("No retirement data available")
         )
-    
+
     # Create multiple charts
     charts = []
-    
+
     # 401k Balance over time
     if '401k Balance' in df.columns:
         balance_chart = alt.Chart(df).mark_area(
@@ -226,11 +225,11 @@ def plot_retirement_savings(model: LifeModel) -> alt.Chart:
             tooltip=['Year:O', '401k Balance:Q']
         )
         charts.append(balance_chart)
-    
+
     # Contributions over time
     contrib_columns = ['401k Contrib', '401k Match']
     contrib_available = [col for col in contrib_columns if col in df.columns]
-    
+
     if contrib_available:
         df_contrib = df[['Year'] + contrib_available].melt(
             id_vars=['Year'],
@@ -238,7 +237,7 @@ def plot_retirement_savings(model: LifeModel) -> alt.Chart:
             var_name='Type',
             value_name='Amount'
         )
-        
+
         contrib_chart = alt.Chart(df_contrib).mark_bar().encode(
             x=alt.X('Year:O', title='Year'),
             y=alt.Y('Amount:Q', title='Contribution ($)'),
@@ -246,7 +245,7 @@ def plot_retirement_savings(model: LifeModel) -> alt.Chart:
             tooltip=['Year:O', 'Type:N', 'Amount:Q']
         )
         charts.append(contrib_chart)
-    
+
     if charts:
         if len(charts) > 1:
             final_chart = alt.vconcat(*charts).resolve_scale(
@@ -273,23 +272,23 @@ def plot_taxes_and_income(model: LifeModel) -> alt.Chart:
         return alt.Chart(pd.DataFrame()).mark_text().encode(
             text=alt.value("Run simulation to see results")
         )
-    
+
     df = model.datacollector.get_model_vars_dataframe()
-    
+
     if df.empty:
         return alt.Chart(pd.DataFrame()).mark_text().encode(
             text=alt.value("No data available")
         )
-    
+
     # Income and tax columns
     income_tax_columns = ['Income', 'Taxes', 'Federal Taxes', 'State Taxes', 'SS Taxes', 'Medicare Taxes']
     available_columns = [col for col in income_tax_columns if col in df.columns]
-    
+
     if len(available_columns) < 2:
         return alt.Chart(pd.DataFrame()).mark_text().encode(
             text=alt.value("Insufficient tax/income data")
         )
-    
+
     # Create income vs total taxes chart
     income_chart = alt.Chart(df).mark_line(
         point=True,
@@ -299,7 +298,7 @@ def plot_taxes_and_income(model: LifeModel) -> alt.Chart:
         y=alt.Y('Income:Q', title='Amount ($)'),
         tooltip=['Year:O', 'Income:Q']
     )
-    
+
     if 'Taxes' in df.columns:
         taxes_chart = alt.Chart(df).mark_line(
             point=True,
@@ -310,17 +309,17 @@ def plot_taxes_and_income(model: LifeModel) -> alt.Chart:
             y=alt.Y('Taxes:Q', title='Amount ($)'),
             tooltip=['Year:O', 'Taxes:Q']
         )
-        
+
         combined_chart = income_chart + taxes_chart
     else:
         combined_chart = income_chart
-    
+
     final_chart = combined_chart.properties(
         title='Income vs. Taxes Over Time',
         width=600,
         height=350
     )
-    
+
     return final_chart
 
 
@@ -335,7 +334,7 @@ model_params = {
         "step": 1,
     },
     "end_year": {
-        "type": "SliderInt", 
+        "type": "SliderInt",
         "value": 2050,
         "label": "End Year",
         "min": 2025,
@@ -451,17 +450,41 @@ model_params = {
 }
 
 
+def ensure_model_run(model):
+    """Ensure the model has been run and has data."""
+    if hasattr(model, 'simulated_years') and len(model.simulated_years) == 0:
+        # Model hasn't been run yet, run it
+        model.run()
+    return model
+
+
+def create_chart_component(plot_function):
+    """Create a Solara component that wraps our plot functions."""
+    @solara.component
+    def ChartComponent(model):
+        # Ensure model is run
+        model = ensure_model_run(model)
+
+        # Generate the chart
+        chart = plot_function(model)
+
+        # Return the chart as a Solara component
+        return solara.display(chart)
+
+    return ChartComponent
+
+
 def create_dashboard():
     """Create and run the financial simulation dashboard."""
-    
-    # Create visualization components
+
+    # Create visualization components using our custom wrapper
     components = [
-        make_plot_component(plot_financial_overview),
-        make_plot_component(plot_balance_comparison),
-        make_plot_component(plot_retirement_savings),
-        make_plot_component(plot_taxes_and_income),
+        create_chart_component(plot_financial_overview),
+        create_chart_component(plot_balance_comparison),
+        create_chart_component(plot_retirement_savings),
+        create_chart_component(plot_taxes_and_income),
     ]
-    
+
     # Create the SolaraViz dashboard
     viz = SolaraViz(
         model=DashboardLifeModel,
@@ -470,7 +493,7 @@ def create_dashboard():
         name="Life Model Financial Simulation Dashboard",
         play_interval=500,
     )
-    
+
     return viz
 
 
