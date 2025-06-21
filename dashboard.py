@@ -185,6 +185,141 @@ def plot_balance_comparison(model: LifeModel) -> alt.Chart:
     return chart
 
 
+def plot_retirement_savings(model: LifeModel) -> alt.Chart:
+    """Create a retirement savings chart."""
+    if not hasattr(model, 'datacollector') or model.datacollector is None:
+        return alt.Chart(pd.DataFrame()).mark_text().encode(
+            text=alt.value("Run simulation to see results")
+        )
+    
+    df = model.datacollector.get_model_vars_dataframe()
+    
+    if df.empty:
+        return alt.Chart(pd.DataFrame()).mark_text().encode(
+            text=alt.value("No data available")
+        )
+    
+    # Create retirement-focused chart
+    retirement_columns = ['401k Balance', '401k Contrib', '401k Match']
+    available_columns = [col for col in retirement_columns if col in df.columns]
+    
+    if not available_columns:
+        return alt.Chart(pd.DataFrame()).mark_text().encode(
+            text=alt.value("No retirement data available")
+        )
+    
+    # Create multiple charts
+    charts = []
+    
+    # 401k Balance over time
+    if '401k Balance' in df.columns:
+        balance_chart = alt.Chart(df).mark_area(
+            opacity=0.7,
+            color='green'
+        ).encode(
+            x=alt.X('Year:O', title='Year'),
+            y=alt.Y('401k Balance:Q', title='401k Balance ($)'),
+            tooltip=['Year:O', '401k Balance:Q']
+        )
+        charts.append(balance_chart)
+    
+    # Contributions over time
+    contrib_columns = ['401k Contrib', '401k Match']
+    contrib_available = [col for col in contrib_columns if col in df.columns]
+    
+    if contrib_available:
+        df_contrib = df[['Year'] + contrib_available].melt(
+            id_vars=['Year'],
+            value_vars=contrib_available,
+            var_name='Type',
+            value_name='Amount'
+        )
+        
+        contrib_chart = alt.Chart(df_contrib).mark_bar().encode(
+            x=alt.X('Year:O', title='Year'),
+            y=alt.Y('Amount:Q', title='Contribution ($)'),
+            color=alt.Color('Type:N', title='Contribution Type'),
+            tooltip=['Year:O', 'Type:N', 'Amount:Q']
+        )
+        charts.append(contrib_chart)
+    
+    if charts:
+        if len(charts) > 1:
+            final_chart = alt.vconcat(*charts).resolve_scale(
+                color='independent'
+            ).properties(
+                title='Retirement Savings Overview'
+            )
+        else:
+            final_chart = charts[0].properties(
+                title='Retirement Savings Overview',
+                width=600,
+                height=300
+            )
+        return final_chart
+    else:
+        return alt.Chart(pd.DataFrame()).mark_text().encode(
+            text=alt.value("No retirement data to display")
+        )
+
+
+def plot_taxes_and_income(model: LifeModel) -> alt.Chart:
+    """Create a taxes and income breakdown chart."""
+    if not hasattr(model, 'datacollector') or model.datacollector is None:
+        return alt.Chart(pd.DataFrame()).mark_text().encode(
+            text=alt.value("Run simulation to see results")
+        )
+    
+    df = model.datacollector.get_model_vars_dataframe()
+    
+    if df.empty:
+        return alt.Chart(pd.DataFrame()).mark_text().encode(
+            text=alt.value("No data available")
+        )
+    
+    # Income and tax columns
+    income_tax_columns = ['Income', 'Taxes', 'Federal Taxes', 'State Taxes', 'SS Taxes', 'Medicare Taxes']
+    available_columns = [col for col in income_tax_columns if col in df.columns]
+    
+    if len(available_columns) < 2:
+        return alt.Chart(pd.DataFrame()).mark_text().encode(
+            text=alt.value("Insufficient tax/income data")
+        )
+    
+    # Create income vs total taxes chart
+    income_chart = alt.Chart(df).mark_line(
+        point=True,
+        color='blue'
+    ).encode(
+        x=alt.X('Year:O', title='Year'),
+        y=alt.Y('Income:Q', title='Amount ($)'),
+        tooltip=['Year:O', 'Income:Q']
+    )
+    
+    if 'Taxes' in df.columns:
+        taxes_chart = alt.Chart(df).mark_line(
+            point=True,
+            color='red',
+            strokeDash=[5, 5]
+        ).encode(
+            x=alt.X('Year:O', title='Year'),
+            y=alt.Y('Taxes:Q', title='Amount ($)'),
+            tooltip=['Year:O', 'Taxes:Q']
+        )
+        
+        combined_chart = income_chart + taxes_chart
+    else:
+        combined_chart = income_chart
+    
+    final_chart = combined_chart.properties(
+        title='Income vs. Taxes Over Time',
+        width=600,
+        height=350
+    )
+    
+    return final_chart
+
+
 # Model parameters for the dashboard
 model_params = {
     "start_year": {
@@ -319,6 +454,8 @@ def create_dashboard():
     components = [
         make_plot_component(plot_financial_overview),
         make_plot_component(plot_balance_comparison),
+        make_plot_component(plot_retirement_savings),
+        make_plot_component(plot_taxes_and_income),
     ]
     
     # Create the SolaraViz dashboard
