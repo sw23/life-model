@@ -16,7 +16,7 @@ This dashboard provides an interactive interface for running financial simulatio
 
 1. Install the required dependencies:
 ```bash
-pip install mesa solara altair networkx
+pip install -r requirements-dash.txt
 ```
 
 2. Install the life_model package:

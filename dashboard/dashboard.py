@@ -22,92 +22,96 @@ from life_model.account.bank import BankAccount
 from life_model.job import Job, Salary
 
 
+class DashboardLifeModel(LifeModel):
+    """LifeModel wrapper for dashboard with parameter initialization."""
+    
+    def __init__(self, **params):
+        """Initialize the model with dashboard parameters."""
+        super().__init__(
+            start_year=params.get('start_year', 2023),
+            end_year=params.get('end_year', 2050)
+        )
+        
+        # Create family
+        family = Family(self)
+        
+        # Create people
+        if params.get('john_enabled', True):
+            john = Person(
+                family=family,
+                name='John',
+                age=params.get('john_age', 44),
+                retirement_age=params.get('john_retirement_age', 60),
+                spending=Spending(
+                    model=self,
+                    base=params.get('john_spending', 12000),
+                    yearly_increase=params.get('spending_increase', 5)
+                )
+            )
+            
+            # Add bank account for John
+            BankAccount(
+                owner=john,
+                company='Bank',
+                type='Checking',
+                balance=params.get('john_bank_balance', 20000),
+                interest_rate=params.get('bank_interest_rate', 0.5)
+            )
+            
+            # Add job for John
+            if params.get('john_job_enabled', True):
+                Job(
+                    owner=john,
+                    company=params.get('john_company', 'Company A'),
+                    role=params.get('john_role', 'Manager'),
+                    salary=Salary(
+                        model=self,
+                        base=params.get('john_salary', 50000),
+                        yearly_increase=params.get('salary_increase', 1),
+                        yearly_bonus=params.get('john_bonus', 1)
+                    )
+                )
+        
+        if params.get('jane_enabled', False):
+            jane = Person(
+                family=family,
+                name='Jane',
+                age=params.get('jane_age', 45),
+                retirement_age=params.get('jane_retirement_age', 60),
+                spending=Spending(
+                    model=self,
+                    base=params.get('jane_spending', 12000),
+                    yearly_increase=params.get('spending_increase', 5)
+                )
+            )
+            
+            # Add bank account for Jane
+            BankAccount(
+                owner=jane,
+                company='Credit Union',
+                type='Checking',
+                balance=params.get('jane_bank_balance', 30000),
+                interest_rate=params.get('bank_interest_rate', 0.5)
+            )
+            
+            # Add job for Jane
+            if params.get('jane_job_enabled', True):
+                Job(
+                    owner=jane,
+                    company=params.get('jane_company', 'Company B'),
+                    role=params.get('jane_role', 'Developer'),
+                    salary=Salary(
+                        model=self,
+                        base=params.get('jane_salary', 45000),
+                        yearly_increase=params.get('salary_increase', 1),
+                        yearly_bonus=params.get('jane_bonus', 1)
+                    )
+                )
+
+
 def create_financial_model(params: Dict[str, Any]) -> LifeModel:
     """Create a LifeModel based on user parameters."""
-    
-    # Create model
-    model = LifeModel(
-        start_year=params.get('start_year', 2023),
-        end_year=params.get('end_year', 2050)
-    )
-    
-    # Create family
-    family = Family(model)
-    
-    # Create people
-    if params.get('john_enabled', True):
-        john = Person(
-            family=family,
-            name='John',
-            age=params.get('john_age', 44),
-            retirement_age=params.get('john_retirement_age', 60),
-            spending=Spending(
-                model=model,
-                base=params.get('john_spending', 12000),
-                yearly_increase=params.get('spending_increase', 5)
-            )
-        )
-        
-        # Add bank account for John
-        BankAccount(
-            owner=john,
-            company='Bank',
-            type='Checking',
-            balance=params.get('john_bank_balance', 20000),
-            interest_rate=params.get('bank_interest_rate', 0.5)
-        )
-        
-        # Add job for John
-        if params.get('john_job_enabled', True):
-            Job(
-                owner=john,
-                company=params.get('john_company', 'Company A'),
-                role=params.get('john_role', 'Manager'),
-                salary=Salary(
-                    model=model,
-                    base=params.get('john_salary', 50000),
-                    yearly_increase=params.get('salary_increase', 1),
-                    yearly_bonus=params.get('john_bonus', 1)
-                )
-            )
-    
-    if params.get('jane_enabled', False):
-        jane = Person(
-            family=family,
-            name='Jane',
-            age=params.get('jane_age', 45),
-            retirement_age=params.get('jane_retirement_age', 60),
-            spending=Spending(
-                model=model,
-                base=params.get('jane_spending', 12000),
-                yearly_increase=params.get('spending_increase', 5)
-            )
-        )
-        
-        # Add bank account for Jane
-        BankAccount(
-            owner=jane,
-            company='Credit Union',
-            type='Checking',
-            balance=params.get('jane_bank_balance', 30000),
-            interest_rate=params.get('bank_interest_rate', 0.5)
-        )
-        
-        # Add job for Jane
-        if params.get('jane_job_enabled', True):
-            Job(
-                owner=jane,
-                company=params.get('jane_company', 'Company B'),
-                role=params.get('jane_role', 'Manager'),
-                salary=Salary(
-                    model=model,
-                    base=params.get('jane_salary', 65000),
-                    yearly_increase=params.get('salary_increase', 1),
-                    yearly_bonus=params.get('jane_bonus', 2)
-                )
-            )
-    
-    return model
+    return DashboardLifeModel(**params)
 
 
 def plot_financial_overview(model: LifeModel) -> alt.Chart:
@@ -460,7 +464,7 @@ def create_dashboard():
     
     # Create the SolaraViz dashboard
     viz = SolaraViz(
-        model=create_financial_model,
+        model=DashboardLifeModel,
         components=components,
         model_params=model_params,
         name="Life Model Financial Simulation Dashboard",

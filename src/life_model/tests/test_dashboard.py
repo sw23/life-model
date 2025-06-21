@@ -8,7 +8,8 @@ without needing to run the full Solara server.
 
 import sys
 import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+# Add the dashboard directory to Python path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', 'dashboard'))
 
 from dashboard import (create_financial_model, plot_financial_overview, 
                     plot_balance_comparison, plot_retirement_savings, plot_taxes_and_income)

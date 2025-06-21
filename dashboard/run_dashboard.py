@@ -15,7 +15,7 @@ import sys
 import os
 
 # Add the src directory to Python path so we can import life_model
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 try:
     from dashboard import create_dashboard
@@ -32,7 +32,6 @@ try:
     # This will be automatically picked up by Solara when running with `solara run`
     
     if __name__ == "__main__":
-        print("Starting Life Model Financial Simulation Dashboard...")
         print("Run with: solara run run_dashboard.py")
         print("Then open your browser to: http://localhost:8765")
         
@@ -42,7 +41,7 @@ try:
 except ImportError as e:
     print(f"Error importing dependencies: {e}")
     print("Make sure you have installed all required packages:")
-    print("pip install mesa solara altair networkx")
+    print("pip install -e . -r dashboard/requirements-dash.txt")
     sys.exit(1)
 except Exception as e:
     print(f"Error creating dashboard: {e}")
