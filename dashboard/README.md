@@ -14,21 +14,16 @@ This dashboard provides an interactive interface for running financial simulatio
 
 ## Installation
 
-1. Install the required dependencies:
+1. Install the life_model package and dashboard dependencies:
 ```bash
-pip install -r requirements-dash.txt
-```
-
-2. Install the life_model package:
-```bash
-pip install -e .
+pip install -e . -r dashboard/requirements-dash.txt
 ```
 
 ## Running the Dashboard
 
 ### Option 1: Using Solara (Recommended)
 ```bash
-solara run run_dashboard.py
+solara run dashboard/run_dashboard.py
 ```
 
 Then open your browser to http://localhost:8765
@@ -36,7 +31,7 @@ Then open your browser to http://localhost:8765
 ### Option 2: Testing Components
 Before running the full dashboard, you can test the components:
 ```bash
-python test_dashboard.py
+python src/life_model/tests/test_dashboard.py
 ```
 
 ## Dashboard Parameters
@@ -133,7 +128,7 @@ To add new parameters or visualizations:
 
 **Charts not displaying:**
 - Verify the simulation is running by checking console output
-- Test components individually with `python test_dashboard.py`
+- Test components individually with `python src/life_model/tests/test_dashboard.py`
 
 **Performance issues:**
 - Reduce the simulation time range (end_year - start_year)
@@ -142,6 +137,6 @@ To add new parameters or visualizations:
 ## Support
 
 For issues or questions:
-1. Check the test output: `python test_dashboard.py`
+1. Check the test output: `python src/life_model/tests/test_dashboard.py`
 2. Review the console output when running the dashboard
 3. Refer to the original `ExampleSimulation.ipynb` for simulation logic

@@ -159,7 +159,7 @@ def main():
         
         print("\n=== All Tests Passed! ===")
         print("Dashboard components are working correctly.")
-        print("You can now run the dashboard with: solara run run_dashboard.py")
+        print("You can now run the dashboard with: solara run dashboard/run_dashboard.py")
         
     except Exception as e:
         print(f"\n=== Test Failed! ===")
