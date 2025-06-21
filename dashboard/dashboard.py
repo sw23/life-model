@@ -12,7 +12,6 @@ import solara
 from mesa.visualization import SolaraViz
 import altair as alt
 import pandas as pd
-from typing import Dict, Any
 
 from life_model.model import LifeModel
 from life_model.family import Family
@@ -27,27 +26,37 @@ class DashboardLifeModel(LifeModel):
     # Class-level steps attribute for SolaraViz compatibility
     steps = 0
 
-    def __init__(self, **params):
+    def __init__(self, *, start_year=2023, end_year=2050, john_enabled=True,
+                 john_age=44, john_retirement_age=60, john_salary=50000,
+                 john_spending=12000, john_bank_balance=20000,
+                 jane_enabled=False, jane_age=45, jane_retirement_age=60,
+                 jane_salary=65000, jane_spending=12000, jane_bank_balance=30000,
+                 spending_increase=5.0, salary_increase=1.0,
+                 john_job_enabled=True, jane_job_enabled=True,
+                 john_company="Company A", john_role="Manager", john_bonus=1,
+                 jane_company="Company B", jane_role="Developer", jane_bonus=1,
+                 bank_interest_rate=0.5, **kwargs):
         """Initialize the model with dashboard parameters."""
         super().__init__(
-            start_year=params.get('start_year', 2023),
-            end_year=params.get('end_year', 2050)
+            start_year=start_year,
+            end_year=end_year,
+            seed=kwargs.get('seed')
         )
 
         # Create family
         family = Family(self)
 
         # Create people
-        if params.get('john_enabled', True):
+        if john_enabled:
             john = Person(
                 family=family,
                 name='John',
-                age=params.get('john_age', 44),
-                retirement_age=params.get('john_retirement_age', 60),
+                age=john_age,
+                retirement_age=john_retirement_age,
                 spending=Spending(
                     model=self,
-                    base=params.get('john_spending', 12000),
-                    yearly_increase=params.get('spending_increase', 5)
+                    base=john_spending,
+                    yearly_increase=spending_increase
                 )
             )
 
@@ -56,34 +65,34 @@ class DashboardLifeModel(LifeModel):
                 owner=john,
                 company='Bank',
                 type='Checking',
-                balance=params.get('john_bank_balance', 20000),
-                interest_rate=params.get('bank_interest_rate', 0.5)
+                balance=john_bank_balance,
+                interest_rate=bank_interest_rate
             )
 
             # Add job for John
-            if params.get('john_job_enabled', True):
+            if john_job_enabled:
                 Job(
                     owner=john,
-                    company=params.get('john_company', 'Company A'),
-                    role=params.get('john_role', 'Manager'),
+                    company=john_company,
+                    role=john_role,
                     salary=Salary(
                         model=self,
-                        base=params.get('john_salary', 50000),
-                        yearly_increase=params.get('salary_increase', 1),
-                        yearly_bonus=params.get('john_bonus', 1)
+                        base=john_salary,
+                        yearly_increase=salary_increase,
+                        yearly_bonus=john_bonus
                     )
                 )
 
-        if params.get('jane_enabled', False):
+        if jane_enabled:
             jane = Person(
                 family=family,
                 name='Jane',
-                age=params.get('jane_age', 45),
-                retirement_age=params.get('jane_retirement_age', 60),
+                age=jane_age,
+                retirement_age=jane_retirement_age,
                 spending=Spending(
                     model=self,
-                    base=params.get('jane_spending', 12000),
-                    yearly_increase=params.get('spending_increase', 5)
+                    base=jane_spending,
+                    yearly_increase=spending_increase
                 )
             )
 
@@ -92,28 +101,23 @@ class DashboardLifeModel(LifeModel):
                 owner=jane,
                 company='Credit Union',
                 type='Checking',
-                balance=params.get('jane_bank_balance', 30000),
-                interest_rate=params.get('bank_interest_rate', 0.5)
+                balance=jane_bank_balance,
+                interest_rate=bank_interest_rate
             )
 
             # Add job for Jane
-            if params.get('jane_job_enabled', True):
+            if jane_job_enabled:
                 Job(
                     owner=jane,
-                    company=params.get('jane_company', 'Company B'),
-                    role=params.get('jane_role', 'Developer'),
+                    company=jane_company,
+                    role=jane_role,
                     salary=Salary(
                         model=self,
-                        base=params.get('jane_salary', 45000),
-                        yearly_increase=params.get('salary_increase', 1),
-                        yearly_bonus=params.get('jane_bonus', 1)
+                        base=jane_salary,
+                        yearly_increase=salary_increase,
+                        yearly_bonus=jane_bonus
                     )
                 )
-
-
-def create_financial_model(params: Dict[str, Any]) -> LifeModel:
-    """Create a LifeModel based on user parameters."""
-    return DashboardLifeModel(**params)
 
 
 def plot_financial_overview(model: LifeModel) -> alt.Chart:

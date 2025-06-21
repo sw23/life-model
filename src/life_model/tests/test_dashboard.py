@@ -17,7 +17,7 @@ if dashboard_path not in sys.path:
 
 # Import dashboard modules - these need to be after the path setup
 try:
-    from dashboard import (create_financial_model, plot_financial_overview,
+    from dashboard import (plot_financial_overview,
                            plot_balance_comparison, plot_retirement_savings, plot_taxes_and_income,
                            DashboardLifeModel, create_dashboard)  # noqa: E402
 except ImportError as e:
@@ -27,26 +27,24 @@ except ImportError as e:
 @pytest.fixture
 def basic_model():
     """Create a basic financial model for testing."""
-    params = {
-        'start_year': 2023,
-        'end_year': 2027,
-        'john_enabled': True,
-        'john_age': 30,
-        'john_retirement_age': 65,
-        'john_salary': 60000,
-        'john_spending': 15000,
-        'john_bank_balance': 25000,
-        'jane_enabled': True,
-        'jane_age': 28,
-        'jane_retirement_age': 65,
-        'jane_salary': 55000,
-        'jane_spending': 18000,
-        'jane_bank_balance': 20000,
-        'spending_increase': 3.0,
-        'salary_increase': 2.5,
-    }
-
-    model = create_financial_model(params)
+    model = DashboardLifeModel(
+        start_year=2023,
+        end_year=2027,
+        john_enabled=True,
+        john_age=30,
+        john_retirement_age=65,
+        john_salary=60000,
+        john_spending=15000,
+        john_bank_balance=25000,
+        jane_enabled=True,
+        jane_age=28,
+        jane_retirement_age=65,
+        jane_salary=55000,
+        jane_spending=18000,
+        jane_bank_balance=20000,
+        spending_increase=3.0,
+        salary_increase=2.5,
+    )
     model.run()
     return model
 
@@ -54,16 +52,14 @@ def basic_model():
 @pytest.fixture
 def single_person_model():
     """Create a single person model for testing."""
-    params = {
-        'start_year': 2023,
-        'end_year': 2025,
-        'john_enabled': True,
-        'jane_enabled': False,
-        'john_age': 45,
-        'john_salary': 75000,
-    }
-
-    model = create_financial_model(params)
+    model = DashboardLifeModel(
+        start_year=2023,
+        end_year=2025,
+        john_enabled=True,
+        jane_enabled=False,
+        john_age=45,
+        john_salary=75000,
+    )
     model.run()
     return model
 
@@ -71,44 +67,40 @@ def single_person_model():
 @pytest.fixture
 def couple_model():
     """Create a couple model for testing."""
-    params = {
-        'start_year': 2023,
-        'end_year': 2025,
-        'john_enabled': True,
-        'jane_enabled': True,
-        'john_age': 35,
-        'jane_age': 33,
-        'john_salary': 80000,
-        'jane_salary': 70000,
-    }
-
-    model = create_financial_model(params)
+    model = DashboardLifeModel(
+        start_year=2023,
+        end_year=2025,
+        john_enabled=True,
+        jane_enabled=True,
+        john_age=35,
+        jane_age=33,
+        john_salary=80000,
+        jane_salary=70000,
+    )
     model.run()
     return model
 
 
 def test_model_creation():
     """Test that we can create and run a model."""
-    params = {
-        'start_year': 2023,
-        'end_year': 2027,
-        'john_enabled': True,
-        'john_age': 30,
-        'john_retirement_age': 65,
-        'john_salary': 60000,
-        'john_spending': 15000,
-        'john_bank_balance': 25000,
-        'jane_enabled': True,
-        'jane_age': 28,
-        'jane_retirement_age': 65,
-        'jane_salary': 55000,
-        'jane_spending': 18000,
-        'jane_bank_balance': 20000,
-        'spending_increase': 3.0,
-        'salary_increase': 2.5,
-    }
-
-    model = create_financial_model(params)
+    model = DashboardLifeModel(
+        start_year=2023,
+        end_year=2027,
+        john_enabled=True,
+        john_age=30,
+        john_retirement_age=65,
+        john_salary=60000,
+        john_spending=15000,
+        john_bank_balance=25000,
+        jane_enabled=True,
+        jane_age=28,
+        jane_retirement_age=65,
+        jane_salary=55000,
+        jane_spending=18000,
+        jane_bank_balance=20000,
+        spending_increase=3.0,
+        salary_increase=2.5,
+    )
     assert model is not None
     assert len(model.agents) > 0
 
@@ -185,15 +177,13 @@ def test_parameter_variations(single_person_model, couple_model):
 def test_empty_model_charts():
     """Test that charts handle models without data gracefully."""
     # Create a model but don't run it
-    params = {
-        'start_year': 2023,
-        'end_year': 2025,
-        'john_enabled': True,
-        'john_age': 30,
-        'john_salary': 50000,
-    }
-
-    model = create_financial_model(params)
+    model = DashboardLifeModel(
+        start_year=2023,
+        end_year=2025,
+        john_enabled=True,
+        john_age=30,
+        john_salary=50000,
+    )
     # Don't run the model to test empty data handling
 
     # All chart functions should handle empty data gracefully
