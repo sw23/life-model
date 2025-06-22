@@ -14,43 +14,37 @@ This dashboard provides an interactive interface for running financial simulatio
 
 ## Installation
 
-1. Install the life_model package and dashboard dependencies:
+Install the life_model package and dashboard dependencies:
 ```bash
 pip install -e . -r dashboard/requirements-dash.txt
 ```
 
 ## Running the Dashboard
 
-### Option 1: Using Solara (Recommended)
+Run the following command to start the dashboard:
 ```bash
-solara run dashboard/run_dashboard.py
+solara run dashboard/app.py
 ```
 
 Then open your browser to http://localhost:8765
 
-### Option 2: Testing Components
-Before running the full dashboard, you can test the components:
-```bash
-python src/life_model/tests/test_dashboard.py
-```
-
 ## Dashboard Parameters
 
 ### Model Configuration
-- **Start Year**: Beginning year for the simulation (2020-2030)
-- **End Year**: Ending year for the simulation (2025-2070)
+- **Start Year**: Beginning year for the simulation
+- **End Year**: Ending year for the simulation
 
 ### Family Members
 - **Include John/Jane**: Toggle to enable/disable family members
-- **Age**: Current age of each person (20-70)
-- **Retirement Age**: Planned retirement age (50-70)
-- **Annual Salary**: Current salary ($30,000-$150,000)
-- **Annual Spending**: Base spending amount ($5,000-$50,000)
-- **Initial Bank Balance**: Starting bank account balance ($0-$100,000)
+- **Age**: Current age of each person
+- **Retirement Age**: Planned retirement age
+- **Annual Salary**: Current salary
+- **Annual Spending**: Base spending amount
+- **Initial Bank Balance**: Starting bank account balance
 
 ### Economic Factors
-- **Annual Spending Increase**: Yearly increase in spending percentage (0-10%)
-- **Annual Salary Increase**: Yearly salary growth percentage (0-5%)
+- **Annual Spending Increase**: Yearly increase in spending percentage
+- **Annual Salary Increase**: Yearly salary growth percentage
 
 ## How It Works
 
@@ -79,8 +73,8 @@ Two-part visualization:
 
 ### Taxes and Income Chart
 Line chart comparing:
-- Total income (solid blue line)
-- Total taxes paid (dashed red line)
+- Total income (blue line)
+- Total taxes paid (red line)
 
 ## Example Use Cases
 
@@ -94,7 +88,6 @@ Line chart comparing:
 The dashboard is built using:
 - **Mesa**: Agent-based modeling framework for the financial simulation
 - **Solara**: Reactive web framework for the dashboard interface
-- **Altair**: Declarative statistical visualization library
 - **life_model**: Custom financial simulation package
 
 The simulation models each family member as an agent with:
@@ -106,17 +99,15 @@ The simulation models each family member as an agent with:
 
 ## Files
 
-- `dashboard.py`: Main dashboard implementation
-- `run_dashboard.py`: Script to start the Solara server
+- `app.py`: Main dashboard implementation
 - `test_dashboard.py`: Test script to verify dashboard functionality
-- `README_dashboard.md`: This documentation
 
 ## Customization
 
 To add new parameters or visualizations:
 
 1. **Add Parameters**: Update the `model_params` dictionary in `dashboard.py`
-2. **Modify Model**: Update the `create_financial_model()` function to use new parameters
+2. **Modify Model**: Update the `DashboardLifeModel` class to use new parameters
 3. **Create Charts**: Add new plotting functions following the pattern of existing ones
 4. **Update Dashboard**: Add your new chart functions to the `components` list in `create_dashboard()`
 
@@ -124,7 +115,7 @@ To add new parameters or visualizations:
 
 **Dashboard won't start:**
 - Ensure all dependencies are installed
-- Check that life_model package is installed with `pip install -e .`
+- Check that life_model package is installed with `pip install -e . -r dashboard/requirements-dash.txt`
 
 **Charts not displaying:**
 - Verify the simulation is running by checking console output
