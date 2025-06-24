@@ -9,3 +9,7 @@ updates:
     directory: "/" # Location of package manifests
     schedule:
       interval: "weekly"
+  - package-ecosystem: "pip"
+    directory: "/dashboard" # Location of requirements-dash.txt
+    schedule:
+      interval: "weekly"
