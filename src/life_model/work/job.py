@@ -4,12 +4,12 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 from typing import Optional, TYPE_CHECKING
-from .model import LifeModelAgent, LifeModel, Event
-from .limits import job_401k_contrib_limit
-from .person import Person
+from ..model import LifeModelAgent, LifeModel, Event
+from ..limits import job_401k_contrib_limit
+from ..people.person import Person
 
 if TYPE_CHECKING:
-    from .account.job401k import Job401kAccount
+    from ..account.job401k import Job401kAccount
 
 
 class Job(LifeModelAgent):

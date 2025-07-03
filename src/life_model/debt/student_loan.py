@@ -4,7 +4,7 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 from enum import Enum
 from typing import Optional
-from ..person import Person
+from ..people.person import Person
 from ..base_classes import Loan
 
 

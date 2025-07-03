@@ -4,8 +4,8 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 from ..model import LifeModel
-from ..person import Person, Spending
-from ..family import Family
+from ..people.person import Person, Spending
+from ..people.family import Family
 from ..insurance.social_security import SocialSecurity, Income, bend_points, last_bend_points_year, \
                                         cost_of_living_adj, last_cost_of_living_adj_year, \
                                         last_avg_wage_index_increase, last_avg_wage_index_year, \

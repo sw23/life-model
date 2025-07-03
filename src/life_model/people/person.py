@@ -3,16 +3,23 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
+from enum import Enum
 from typing import List, Optional, TYPE_CHECKING
-from .model import LifeModelAgent, LifeModel, Event, ModelSetupException
+from ..model import LifeModelAgent, LifeModel, Event, ModelSetupException
 from .family import Family
-from .limits import federal_retirement_age
-from .tax.federal import FilingStatus, max_tax_rate, federal_standard_deduction
-from .tax.tax import get_income_taxes_due, TaxesDue
-from .account.job401k import Job401kAccount
+from ..limits import federal_retirement_age
+from ..tax.federal import FilingStatus, max_tax_rate, federal_standard_deduction
+from ..tax.tax import get_income_taxes_due, TaxesDue
+from ..account.job401k import Job401kAccount
 
 if TYPE_CHECKING:
-    from .insurance.social_security import SocialSecurity
+    from ..insurance.social_security import SocialSecurity
+
+
+class GenderAtBirth(Enum):
+    MALE = "male"
+    FEMALE = "female"
+    OTHER = "other"
 
 
 class Person(LifeModelAgent):
@@ -59,6 +66,11 @@ class Person(LifeModelAgent):
     @property
     def all_retirement_accounts(self) -> List[Job401kAccount]:
         return [x.retirement_account for x in self.jobs if x.retirement_account is not None]
+
+    @property
+    def is_retired(self) -> bool:
+        """Check if person is retired"""
+        return self.age >= self.retirement_age
 
     def _repr_html_(self):
         desc = self.name

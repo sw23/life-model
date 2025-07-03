@@ -13,10 +13,10 @@ from mesa.visualization import SolaraViz, make_plot_component, Slider
 from typing import Any
 
 from life_model.model import LifeModel
-from life_model.family import Family
-from life_model.person import Person, Spending
+from life_model.people.family import Family
+from life_model.people.person import Person, Spending
 from life_model.account.bank import BankAccount
-from life_model.job import Job, Salary
+from life_model.work.job import Job, Salary
 
 
 class SafeDict(dict):

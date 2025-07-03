@@ -5,8 +5,8 @@
 
 from ..account.bank import BankAccount
 from ..model import LifeModel
-from ..person import Person, Spending
-from ..family import Family
+from ..people.person import Person, Spending
+from ..people.family import Family
 
 import unittest
 

@@ -4,7 +4,7 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 from ..model import LifeModelAgent, compound_interest
-from ..person import Person
+from ..people.person import Person
 
 
 class BankAccount(LifeModelAgent):

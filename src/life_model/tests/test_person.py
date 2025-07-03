@@ -4,9 +4,9 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 from ..model import LifeModel
-from ..person import Person, Spending
-from ..family import Family
-from ..job import Job, Salary
+from ..people.person import Person, Spending
+from ..people.family import Family
+from ..work.job import Job, Salary
 from ..account.bank import BankAccount
 
 import unittest

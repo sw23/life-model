@@ -8,7 +8,7 @@ from ..model import LifeModelAgent, continous_interest
 from ..limits import federal_retirement_age, required_min_distrib
 
 if TYPE_CHECKING:
-    from ..job import Job
+    from ..work.job import Job
 
 
 class Job401kAccount(LifeModelAgent):
