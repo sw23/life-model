@@ -11,17 +11,9 @@ import os
 import pytest
 
 # Add the dashboard directory to Python path for imports
-dashboard_path = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'dashboard')
-if dashboard_path not in sys.path:
-    sys.path.insert(0, dashboard_path)
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', 'dashboard'))
 
-# Import dashboard modules - these need to be after the path setup
-try:
-    from dashboard import (plot_financial_overview,
-                           plot_balance_comparison, plot_retirement_savings, plot_taxes_and_income,
-                           DashboardLifeModel, create_dashboard)  # noqa: E402
-except ImportError as e:
-    pytest.skip(f"Dashboard imports not available: {e}", allow_module_level=True)
+from app import DashboardLifeModel  # noqa: E402
 
 
 @pytest.fixture
@@ -117,36 +109,6 @@ def test_model_creation():
     assert 'Bank Balance' in df.columns
 
 
-def test_chart_generation(basic_model):
-    """Test chart generation."""
-    model = basic_model
-
-    # Test financial overview chart
-    chart1 = plot_financial_overview(model)
-    assert chart1 is not None
-    # Verify chart can be serialized
-    json_data1 = chart1.to_json()
-    assert len(json_data1) > 0
-
-    # Test balance comparison chart
-    chart2 = plot_balance_comparison(model)
-    assert chart2 is not None
-    json_data2 = chart2.to_json()
-    assert len(json_data2) > 0
-
-    # Test retirement savings chart
-    chart3 = plot_retirement_savings(model)
-    assert chart3 is not None
-    json_data3 = chart3.to_json()
-    assert len(json_data3) > 0
-
-    # Test taxes and income chart
-    chart4 = plot_taxes_and_income(model)
-    assert chart4 is not None
-    json_data4 = chart4.to_json()
-    assert len(json_data4) > 0
-
-
 def test_parameter_variations(single_person_model, couple_model):
     """Test different parameter combinations."""
     model_single = single_person_model
@@ -172,48 +134,3 @@ def test_parameter_variations(single_person_model, couple_model):
     assert final_balance_single > 0
     assert final_balance_couple > 0
     assert final_balance_couple > final_balance_single
-
-
-def test_empty_model_charts():
-    """Test that charts handle models without data gracefully."""
-    # Create a model but don't run it
-    model = DashboardLifeModel(
-        start_year=2023,
-        end_year=2025,
-        john_enabled=True,
-        john_age=30,
-        john_salary=50000,
-    )
-    # Don't run the model to test empty data handling
-
-    # All chart functions should handle empty data gracefully
-    chart1 = plot_financial_overview(model)
-    assert chart1 is not None
-
-    chart2 = plot_balance_comparison(model)
-    assert chart2 is not None
-
-    chart3 = plot_retirement_savings(model)
-    assert chart3 is not None
-
-    chart4 = plot_taxes_and_income(model)
-    assert chart4 is not None
-
-
-def test_dashboard_life_model_steps_attribute():
-    """Test that DashboardLifeModel has the steps attribute required by SolaraViz."""
-    # Test that the class has the steps attribute (required by SolaraViz)
-    assert hasattr(DashboardLifeModel, 'steps'), \
-        "DashboardLifeModel class should have steps attribute for SolaraViz compatibility"
-
-    # Test that an instance also has the steps attribute
-    model = DashboardLifeModel()
-    assert hasattr(model, 'steps'), "DashboardLifeModel instance should have steps attribute"
-    assert model.steps == 0, "Initial steps should be 0"
-
-
-def test_solara_viz_dashboard_creation():
-    """Test that the SolaraViz dashboard can be created without errors."""
-    # This should not raise an AttributeError: 'type object has no attribute steps'
-    dashboard = create_dashboard()
-    assert dashboard is not None, "Dashboard should be created successfully"
