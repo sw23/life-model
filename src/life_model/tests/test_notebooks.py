@@ -180,5 +180,20 @@ class TestExampleSimulationNotebook(JupyterNotebookTestBase):
         self._execute_notebook()
 
 
+class TestTrainingExampleNotebook(JupyterNotebookTestBase):
+    """Test class for the Training_Example.ipynb notebook."""
+
+    @property
+    def notebook_path(self):
+        """Return the path to the Training_Example.ipynb notebook."""
+        repo_root = get_repo_root()
+        return os.path.join(repo_root, 'deepqlearning', 'Training_Example.ipynb')
+
+    def test_notebook_execution(self):
+        """Test that the Training_Example.ipynb notebook executes without errors."""
+        os.environ['NUM_EPISODES'] = '10'  # Set a shorter episode count for testing
+        self._execute_notebook()
+
+
 if __name__ == '__main__':
     unittest.main()
