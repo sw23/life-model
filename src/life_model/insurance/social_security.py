@@ -39,7 +39,7 @@
 # https://www.ssa.gov/OACT/COLA/awiseries.html
 
 from typing import List, Optional, Tuple, Union
-from ..person import Person
+from ..people.person import Person
 from ..model import LifeModelAgent
 from ..tax.fica import social_security_max_income
 

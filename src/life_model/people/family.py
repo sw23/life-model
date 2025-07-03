@@ -3,9 +3,9 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-from .tax.federal import FilingStatus, max_tax_rate, federal_standard_deduction
-from .tax.tax import get_income_taxes_due, TaxesDue
-from .model import LifeModelAgent, LifeModel
+from ..tax.federal import FilingStatus, max_tax_rate, federal_standard_deduction
+from ..tax.tax import get_income_taxes_due, TaxesDue
+from ..model import LifeModelAgent, LifeModel
 
 
 class Family(LifeModelAgent):
