@@ -1,5 +1,5 @@
 # Deep Reinforcement Learning dependencies for life-model
 -r ../requirements.txt
-gymnasium==1.0.0
-torch==2.2.2
+gymnasium==1.2.0
+torch>=2.2.2  # Using 2.2.2+ since 2.2.2 is the last version for x86 Mac
 ipywidgets==8.1.7

@@ -13,3 +13,7 @@ updates:
     directory: "/dashboard" # Location of requirements-dash.txt
     schedule:
       interval: "weekly"
+  - package-ecosystem: "pip"
+    directory: "/deepqlearning" # Location of requirements-rl.txt
+    schedule:
+      interval: "weekly"
