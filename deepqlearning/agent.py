@@ -228,7 +228,7 @@ class FinancialDQNAgent:
         action_batch = torch.tensor(batch.action, dtype=torch.long).to(self.device)
         reward_batch = torch.tensor(batch.reward, dtype=torch.float32).to(self.device)
         next_state_batch = torch.tensor(np.array(batch.next_state), dtype=torch.float32).to(self.device)
-        done_batch = torch.tensor(batch.done, dtype=torch.bool).to(self.device)
+        done_batch = torch.tensor([bool(d) for d in batch.done], dtype=torch.bool).to(self.device)
 
         # Current Q values
         current_q_values = self.q_network(state_batch).gather(1, action_batch.unsqueeze(1))
