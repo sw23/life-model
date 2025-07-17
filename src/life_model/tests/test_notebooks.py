@@ -192,6 +192,7 @@ class TestTrainingExampleNotebook(JupyterNotebookTestBase):
     def test_notebook_execution(self):
         """Test that the Training_Example.ipynb notebook executes without errors."""
         os.environ['NUM_EPISODES'] = '10'  # Set a shorter episode count for testing
+        os.environ['OUTPUT_DIR'] = tempfile.gettempdir()  # Use a temp directory for outputs
         self._execute_notebook()
 
 
