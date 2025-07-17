@@ -193,6 +193,9 @@ class TestTrainingExampleNotebook(JupyterNotebookTestBase):
         """Test that the Training_Example.ipynb notebook executes without errors."""
         os.environ['NUM_EPISODES'] = '10'  # Set a shorter episode count for testing
         os.environ['OUTPUT_DIR'] = tempfile.mkdtemp()  # Use a temp directory for outputs
+        # Disable weight-only loading to avoid issues with model saving
+        # https://docs.pytorch.org/docs/stable/notes/serialization.html#torch-load-with-weights-only-true
+        os.environ['TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD'] = '1'
         self._execute_notebook()
 
 
