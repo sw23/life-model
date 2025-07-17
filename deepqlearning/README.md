@@ -6,7 +6,7 @@ Train an AI agent to make financial decisions over a person's lifetime. The agen
 
 ### 1. Install Dependencies
 ```bash
-pip install -r requirements-rl.txt
+pip install -r ../requirements.txt requirements-rl.txt
 ```
 
 ### 2. Train Your First Agent
@@ -90,5 +90,5 @@ Modify the reward calculation in `environment.py` to emphasize different objecti
 ### Add New Actions
 Extend the action space in `actions.py` to include:
 - New account types
-- Investment strategies  
+- Investment strategies
 - Life decisions (career changes, education, etc.)
