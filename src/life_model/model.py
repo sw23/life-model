@@ -107,6 +107,9 @@ class LifeModel(mesa.Model):
         MoneyStat('stat_taxes_paid_state',     'State Taxes'),      # State income taxes paid in a year
         MoneyStat('stat_taxes_paid_ss',        'SS Taxes'),         # Social security taxes paid in a year
         MoneyStat('stat_taxes_paid_medicare',  'Medicare Taxes'),   # Medicare taxes paid in a year
+        MoneyStat('stat_premium_payments',     'Life Ins Premiums'),  # Life insurance premiums paid in a year
+        MoneyStat('stat_cash_value',           'Life Ins Cash Value'),  # Life insurance cash value
+        MoneyStat('stat_death_benefit_paid',   'Death Benefits'),   # Death benefits paid out
     ]
 
     def __init__(self, end_year: Optional[int] = None, start_year: Optional[int] = None, seed: Optional[int] = None):
