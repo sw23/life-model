@@ -39,14 +39,10 @@ class Person(LifeModelAgent):
         self.age = age
         self.retirement_age = retirement_age
         self.spending = spending
-        self.jobs = []
         self.debt = 0
-        self.bank_accounts = []
         self.taxable_income: float = 0
         self.spouse = None
         self.filing_status = FilingStatus.SINGLE
-        self.homes = []
-        self.apartments = []
         self.social_security: Optional[SocialSecurity] = None
 
         self.stat_money_spent = 0.0
@@ -57,6 +53,31 @@ class Person(LifeModelAgent):
         self.stat_ss_income = 0.0
 
         self.family.members.append(self)
+
+    @property
+    def jobs(self):
+        """Get all jobs for this person from the registry"""
+        return self.model.registries.jobs.get_items(self)
+
+    @property
+    def bank_accounts(self):
+        """Get all bank accounts for this person from the registry"""
+        return self.model.registries.bank_accounts.get_items(self)
+
+    @property
+    def homes(self):
+        """Get all homes for this person from the registry"""
+        return self.model.registries.homes.get_items(self)
+
+    @property
+    def apartments(self):
+        """Get all apartments for this person from the registry"""
+        return self.model.registries.apartments.get_items(self)
+
+    @property
+    def life_insurance_policies(self):
+        """Get all life insurance policies for this person from the registry"""
+        return self.model.registries.life_insurance_policies.get_items(self)
 
     @property
     def federal_deductions(self) -> float:

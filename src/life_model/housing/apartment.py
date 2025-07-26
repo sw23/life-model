@@ -21,7 +21,9 @@ class Apartment(LifeModelAgent):
         self.name = name
         self.monthly_rent = monthly_rent
         self.yearly_increase = yearly_increase
-        person.apartments.append(self)
+
+        # Register with the model registry
+        self.model.registries.apartments.register(person, self)
 
     @property
     def yearly_rent(self):

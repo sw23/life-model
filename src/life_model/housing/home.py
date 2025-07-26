@@ -31,7 +31,9 @@ class Home(LifeModelAgent):
         self.expenses = expenses
         self.expenses.home = self
         self.home_value: float = self.purchase_price
-        person.homes.append(self)
+
+        # Register with the model registry
+        self.model.registries.homes.register(person, self)
 
     @property
     def yearly_expenses_due(self) -> float:
