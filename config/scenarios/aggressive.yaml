@@ -1,0 +1,10 @@
+# Aggressive growth scenario - higher risk, higher returns
+accounts:
+  brokerage:
+    default_growth_rate: 10.0  # Aggressive investment growth
+retirement:
+  ira:
+    default_growth_rate: 10.5  # Aggressive retirement growth
+insurance:
+  life:
+    default_cash_value_growth_rate: 4.0  # Higher cash value growth

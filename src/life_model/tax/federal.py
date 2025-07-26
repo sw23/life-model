@@ -4,6 +4,7 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 from enum import Enum
+from ..config.config_manager import config
 
 
 class FilingStatus(Enum):
@@ -11,36 +12,36 @@ class FilingStatus(Enum):
     MARRIED_FILING_JOINTLY = 2
 
 
-federal_standard_deduction = {
-    FilingStatus.SINGLE: 13850,
-    FilingStatus.MARRIED_FILING_JOINTLY: 27700
-}
+def get_federal_standard_deduction(filing_status: FilingStatus) -> float:
+    """Get federal standard deduction for filing status"""
+    return config.financial.get_federal_standard_deduction(filing_status)
 
-federal_tax_brackets = {}
 
-# The tables below capture the federal tax brackets, for purposes of determining how
-# much taxes will be paid. This currently takes the current tax brackets and applies
-# them to all future years, given that it is not possible to predict taxes in the future.
+def get_federal_tax_brackets(filing_status: FilingStatus) -> list:
+    """Get federal tax brackets for filing status"""
+    return config.financial.get_federal_tax_brackets(filing_status)
 
-federal_tax_brackets[FilingStatus.SINGLE] = [
-    [0,       10275,        10],
-    [10276,   41775,        12],
-    [41776,   89075,        22],
-    [89076,   170050,       24],
-    [170051,  215950,       32],
-    [215951,  539900,       35],
-    [539901,  float('inf'), 37],
-]
 
-federal_tax_brackets[FilingStatus.MARRIED_FILING_JOINTLY] = [
-    [0,       20550,        10],
-    [20551,   83550,        12],
-    [83551,   178150,       22],
-    [178151,  340100,       24],
-    [340101,  431900,       32],
-    [431901,  647850,       35],
-    [647851,  float('inf'), 37],
-]
+# Legacy compatibility - maintain old variable names for backward compatibility
+def _get_federal_standard_deduction_dict():
+    """Legacy compatibility function"""
+    return {
+        FilingStatus.SINGLE: get_federal_standard_deduction(FilingStatus.SINGLE),
+        FilingStatus.MARRIED_FILING_JOINTLY: get_federal_standard_deduction(FilingStatus.MARRIED_FILING_JOINTLY)
+    }
+
+
+def _get_federal_tax_brackets_dict():
+    """Legacy compatibility function"""
+    return {
+        FilingStatus.SINGLE: get_federal_tax_brackets(FilingStatus.SINGLE),
+        FilingStatus.MARRIED_FILING_JOINTLY: get_federal_tax_brackets(FilingStatus.MARRIED_FILING_JOINTLY)
+    }
+
+
+# For backward compatibility, expose these as module attributes
+federal_standard_deduction = _get_federal_standard_deduction_dict()
+federal_tax_brackets = _get_federal_tax_brackets_dict()
 
 
 def federal_income_tax(income: float, filing_status: FilingStatus) -> float:
@@ -53,7 +54,7 @@ def federal_income_tax(income: float, filing_status: FilingStatus) -> float:
     Returns:
         total_tax: Amount of tax due based on the taxable income.
     """
-    bracket = federal_tax_brackets[filing_status]
+    bracket = get_federal_tax_brackets(filing_status)
     total_tax = 0
     for (start, end, percent) in bracket:
         amount_in_bracket = min(max(income - start, 0), end - start)
@@ -64,4 +65,5 @@ def federal_income_tax(income: float, filing_status: FilingStatus) -> float:
 
 
 def max_tax_rate(filing_status: FilingStatus) -> float:
-    return federal_tax_brackets[filing_status][-1][2]
+    """Get maximum tax rate for filing status"""
+    return config.financial.get_max_tax_rate(filing_status)

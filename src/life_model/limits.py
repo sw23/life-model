@@ -3,12 +3,17 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
+from .config.config_manager import config
+
+
 def job_401k_contrib_limit(age) -> int:
-    return 20500 + (0 if (age < 50) else 6500)
+    """Get 401k contribution limit based on age"""
+    return config.financial.get_job_401k_contrib_limit(age)
 
 
 def federal_retirement_age() -> float:
-    return 59.5
+    """Get federal retirement age"""
+    return config.financial.get('retirement.federal_retirement_age', 59.5)
 
 
 # The table below is taken from the IRS website:
@@ -65,10 +70,17 @@ rmd_distribution_period = [
 ]
 
 
+def get_rmd_distribution_periods() -> list:
+    """Get RMD distribution periods from configuration"""
+    return config.financial.get('retirement.rmd_distribution_periods', rmd_distribution_period)
+
+
 def required_min_distrib(age, balance) -> float:
-    if age < rmd_distribution_period[0][0]:
+    """Calculate required minimum distribution"""
+    periods = get_rmd_distribution_periods()
+    if age < periods[0][0]:
         return 0
-    elif age > rmd_distribution_period[-1][0]:
-        return balance / rmd_distribution_period[-1][1]
+    elif age > periods[-1][0]:
+        return balance / periods[-1][1]
     else:
-        return balance / [x[1] for x in rmd_distribution_period if x[0] == age][0]
+        return balance / [x[1] for x in periods if x[0] == age][0]

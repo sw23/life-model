@@ -6,7 +6,12 @@
 # TODO: This code does not account for differences in state income tax
 # TODO: This can be expanded later for greater accuracy
 
-state_tax_rate = 6
+from ..config.config_manager import config
+
+
+def get_state_tax_rate() -> float:
+    """Get the configured state tax rate"""
+    return config.financial.get('tax.state.tax_rate', 6.0)
 
 
 def state_income_tax(income: float) -> float:
@@ -18,5 +23,8 @@ def state_income_tax(income: float) -> float:
     Returns:
         total_tax: Amount of tax due based on the taxable income.
     """
+    return income * get_state_tax_rate() / 100
 
-    return income * state_tax_rate / 100
+
+# Legacy compatibility
+state_tax_rate = get_state_tax_rate()
