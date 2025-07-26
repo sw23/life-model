@@ -50,17 +50,6 @@ class BankAccount(FinancialAccount):
         self.balance -= amount_withdrawn
         return amount_withdrawn
 
-    def deduct(self, amount: float) -> float:
-        """Deduct funds from bank account (alias for withdraw for backward compatibility)
-
-        Args:
-            amount (float): Amount to deduct from account.
-
-        Returns:
-            float: Amount deducted. Won't be more than the account balance.
-        """
-        return self.withdraw(amount)
-
     def _repr_html_(self):
         return f"{self.type} account at {self.company} balance: ${self.balance:,}"
 
