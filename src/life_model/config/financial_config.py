@@ -3,8 +3,12 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
+import yaml
+from pathlib import Path
+from typing import TYPE_CHECKING, Optional
 from .base_config import ScenarioConfig
-from typing import TYPE_CHECKING
+from .models import FinancialConfigModel
+from pydantic import ValidationError
 
 if TYPE_CHECKING:
     from ..tax.federal import FilingStatus
@@ -13,8 +17,54 @@ if TYPE_CHECKING:
 class FinancialConfig(ScenarioConfig):
     """Configuration for financial parameters, limits, and rates"""
 
+    def __init__(self, config_file: Optional[str] = None):
+        """Initialize financial configuration from YAML file
+
+        Args:
+            config_file: Path to configuration file. If None, uses default location.
+        """
+        self.config_file = config_file
+        super().__init__()
+
     def _initialize_defaults(self) -> None:
-        """Initialize default financial configuration values"""
+        """Initialize default financial configuration values from YAML file"""
+        # Determine config file path
+        if self.config_file is None:
+            # Look for config file relative to the project root
+            # Try multiple potential locations
+            potential_paths = [
+                Path('config/financial_defaults.yaml'),  # From project root
+                # Relative to this file
+                Path(__file__).parent.parent.parent.parent / 'config' / 'financial_defaults.yaml',
+                Path.cwd() / 'config' / 'financial_defaults.yaml',  # From current directory
+            ]
+
+            for path in potential_paths:
+                if path.exists():
+                    self.config_file = str(path)
+                    break
+            else:
+                # If no config file found, fall back to embedded defaults
+                self._use_embedded_defaults()
+                return
+
+        try:
+            # Load YAML configuration
+            with open(self.config_file, 'r') as f:
+                raw_config = yaml.safe_load(f)
+
+            # Validate with Pydantic model
+            validated_config = FinancialConfigModel(**raw_config)
+            self._config_data = validated_config.model_dump()
+
+        except (FileNotFoundError, yaml.YAMLError, ValidationError) as e:
+            # If loading fails, fall back to embedded defaults
+            print(f"Warning: Failed to load configuration from {self.config_file}: {e}")
+            print("Using embedded defaults")
+            self._use_embedded_defaults()
+
+    def _use_embedded_defaults(self) -> None:
+        """Use embedded default configuration as fallback"""
         self._config_data = {
             # Tax Configuration
             'tax': {

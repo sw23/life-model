@@ -1,0 +1,9 @@
+# Recession scenario - Lower interest rates and growth expectations
+accounts:
+  bank:
+    default_interest_rate: 0.5  # Lower interest rates
+  brokerage:
+    default_growth_rate: 3.0  # Lower growth expectations
+tax:
+  state:
+    tax_rate: 5.0  # Potential tax reduction
