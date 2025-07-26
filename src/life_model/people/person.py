@@ -8,9 +8,11 @@ from typing import List, Optional, TYPE_CHECKING
 from ..model import LifeModelAgent, LifeModel, Event, ModelSetupException
 from .family import Family
 from ..limits import federal_retirement_age
-from ..tax.federal import FilingStatus, max_tax_rate, federal_standard_deduction
+from ..tax.federal import FilingStatus, federal_standard_deduction
 from ..tax.tax import get_income_taxes_due, TaxesDue
 from ..account.job401k import Job401kAccount
+from ..services.tax_calculation_service import TaxCalculationService
+from ..services.payment_service import PaymentService
 
 if TYPE_CHECKING:
     from ..insurance.social_security import SocialSecurity
@@ -51,6 +53,10 @@ class Person(LifeModelAgent):
         self.stat_housing_costs = 0.0
         self.stat_interest_paid = 0.0
         self.stat_ss_income = 0.0
+
+        # Initialize services for business logic
+        self.tax_service = TaxCalculationService(self)
+        self.payment_service = PaymentService(self)
 
         self.family.members.append(self)
 
@@ -183,7 +189,7 @@ class Person(LifeModelAgent):
         self.bank_accounts[0].balance += amount
 
     def pay_bills(self, spending_balance: float) -> float:
-        """Pays bills.
+        """Pays bills using payment service for optimal prioritization.
 
         Args:
             spending_balance (float): Amount of money spent.
@@ -191,19 +197,7 @@ class Person(LifeModelAgent):
         Returns:
             float: Amount that could not be paid.
         """
-
-        # Deduct spending from bank accounts
-        # - Include yearly spending and any debts
-        spending_balance = self.deduct_from_bank_accounts(spending_balance)
-        if (spending_balance == 0):
-            return 0
-
-        # Deduct spending from roth retirement accounts
-        # - Taking out of pre-tax 401k is handled ahead of this, so that taxes can be paid as well
-        # - Pull from roth accounts last, to keep them invested as long as possible
-        #   https://www.investopedia.com/retirement/how-to-manage-timing-and-sources-of-income-retirement/
-        spending_balance = self.deduct_from_roth_401ks(spending_balance)
-        return spending_balance
+        return self.payment_service.pay_bills_with_prioritization(spending_balance)
 
     def get_income_taxes_due(self, additional_income: float = 0) -> TaxesDue:
         """Gets income taxes due for the year.
@@ -267,22 +261,10 @@ class Person(LifeModelAgent):
         # Pay off spending, taxes, and debts for the year
         # - People filing single is handled individually here, MFJ is handled in family
         if self.filing_status == FilingStatus.SINGLE:
-            # 1. See what amount needs to come from pre-tax 401k
-            #    - RMDs are handled before this by moving the RMD from 401k to bank account
-            # 2. Withdraw that amount plus max tax rate to cover taxes
-            # 3. Deposit that amount into checking
-            yearly_taxes = self.get_income_taxes_due()
-            spending_plus_pre_401k_taxes = all_bills_except_taxes + yearly_taxes.total
-            amount_from_pretax_401k = max(0, spending_plus_pre_401k_taxes - self.bank_account_balance)
-            yearly_taxes_plus_401k_income = self.get_income_taxes_due(amount_from_pretax_401k)
-            taxes_from_pretax_401k = yearly_taxes_plus_401k_income.total - yearly_taxes.total
-            taxes_from_pretax_401k += taxes_from_pretax_401k * (max_tax_rate(self.filing_status) / 100)
-            self.withdraw_from_pretax_401ks(amount_from_pretax_401k + taxes_from_pretax_401k)
+            # Use tax service to handle complex 401k withdrawal and tax calculations
+            withdrawal_amount, yearly_taxes = self.tax_service.calculate_total_401k_withdrawal(all_bills_except_taxes)
 
-            # Now that 401k withdrawal is complete (if necessary), calculatue taxes
-            if amount_from_pretax_401k:
-                yearly_taxes = self.get_income_taxes_due()
-
+            # Pay bills and handle any remaining debt
             self.debt += self.pay_bills(all_bills_except_taxes + yearly_taxes.total)
             self.debt = self.pay_bills(self.debt)
         else:
