@@ -5,6 +5,7 @@
 from abc import ABC, abstractmethod
 from typing import Optional, TYPE_CHECKING
 from .model import LifeModelAgent
+from .limits import federal_retirement_age
 
 if TYPE_CHECKING:
     from .people.person import Person
@@ -117,7 +118,6 @@ class RetirementAccount(FinancialAccount, ABC):
     @property
     def is_useable(self) -> bool:
         """Check if funds can be withdrawn without penalty based on age"""
-        from .limits import federal_retirement_age
         return self.person.age >= federal_retirement_age()
 
     def step(self):

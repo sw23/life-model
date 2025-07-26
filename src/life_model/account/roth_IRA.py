@@ -4,6 +4,7 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 from ..people.person import Person
 from ..base_classes import Investment
+from ..model import compound_interest
 
 
 class RothIRA(Investment):
@@ -62,7 +63,6 @@ class RothIRA(Investment):
 
     def calculate_growth(self) -> float:
         """Calculate investment growth for the period"""
-        from ..model import compound_interest
         return compound_interest(self.balance, self.growth_rate, 1, 1)
 
     def reset_annual_contributions(self):
