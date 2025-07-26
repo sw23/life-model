@@ -3,3 +3,4 @@ include README.rst
 include LICENSE
 include VERSION
 include requirements.txt
+recursive-include config *.yaml
