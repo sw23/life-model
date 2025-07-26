@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 
 class Job(LifeModelAgent):
-    def __init__(self, owner: Person, company: str, role: 'str', salary: 'Salary'):
+    def __init__(self, owner: Person, company: str, role: str, salary: 'Salary'):
         """Job
 
         Args:

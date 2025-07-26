@@ -123,7 +123,7 @@ class Person(LifeModelAgent):
         for bank_account in self.bank_accounts:
             if (spending_balance == 0):
                 break
-            spending_balance -= bank_account.deduct(spending_balance)
+            spending_balance -= bank_account.withdraw(spending_balance)
         return spending_balance
 
     def deduct_from_pretax_401ks(self, amount: float) -> float:

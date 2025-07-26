@@ -4,6 +4,7 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 from ..people.person import Person
 from ..base_classes import Investment
+from ..model import compound_interest
 
 
 class RothIRA(Investment):
@@ -38,6 +39,31 @@ class RothIRA(Investment):
             self.contributions_this_year += actual_contribution
 
         return actual_contribution
+
+    def get_balance(self) -> float:
+        """Get current account balance"""
+        return self.balance
+
+    def deposit(self, amount: float) -> bool:
+        """Deposit amount into account. Returns success status"""
+        if amount <= 0:
+            return False
+        contribution = self.contribute(amount)
+        return contribution > 0
+
+    def withdraw(self, amount: float) -> float:
+        """Withdraw amount from account. Returns actual amount withdrawn"""
+        if amount <= 0:
+            return 0.0
+        # Roth IRA contributions can be withdrawn penalty-free
+        # but for simplicity we'll allow all withdrawals up to balance
+        amount_withdrawn = min(self.balance, amount)
+        self.balance -= amount_withdrawn
+        return amount_withdrawn
+
+    def calculate_growth(self) -> float:
+        """Calculate investment growth for the period"""
+        return compound_interest(self.balance, self.growth_rate, 1, 1)
 
     def reset_annual_contributions(self):
         """Reset annual contribution tracking (called at year end)"""
