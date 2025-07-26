@@ -4,20 +4,45 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 from .federal import FilingStatus
+from ..config.config_manager import config
 
-# The variables below capture the social security tax rate and the maximum income
-# that is subject to social security taxes.
-social_security_rate = 6.2
-social_security_max_income = 160200
 
-# The variables below capture the medicare tax rate and the additional medicare tax
-# rate that is applied to income above a certain threshold.
-medicare_rate = 1.45
-medicare_additional_rate = 0.9
+def get_social_security_rate() -> float:
+    """Get the configured social security tax rate"""
+    return config.financial.get('tax.fica.social_security_rate', 6.2)
 
-medicare_additional_rate_threshold = {}
-medicare_additional_rate_threshold[FilingStatus.SINGLE] = 200000
-medicare_additional_rate_threshold[FilingStatus.MARRIED_FILING_JOINTLY] = 250000
+
+def get_social_security_max_income() -> float:
+    """Get the configured social security maximum income"""
+    return config.financial.get('tax.fica.social_security_max_income', 160200)
+
+
+def get_medicare_rate() -> float:
+    """Get the configured medicare tax rate"""
+    return config.financial.get('tax.fica.medicare_rate', 1.45)
+
+
+def get_medicare_additional_rate() -> float:
+    """Get the configured additional medicare tax rate"""
+    return config.financial.get('tax.fica.medicare_additional_rate', 0.9)
+
+
+def get_medicare_additional_rate_threshold(filing_status: FilingStatus) -> float:
+    """Get the configured medicare additional rate threshold for filing status"""
+    key = 'single' if filing_status == FilingStatus.SINGLE else 'married_filing_jointly'
+    return config.financial.get(f'tax.fica.medicare_additional_rate_threshold.{key}', 200000)
+
+
+# Legacy compatibility
+social_security_rate = get_social_security_rate()
+social_security_max_income = get_social_security_max_income()
+medicare_rate = get_medicare_rate()
+medicare_additional_rate = get_medicare_additional_rate()
+
+medicare_additional_rate_threshold = {
+    FilingStatus.SINGLE: get_medicare_additional_rate_threshold(FilingStatus.SINGLE),
+    FilingStatus.MARRIED_FILING_JOINTLY: get_medicare_additional_rate_threshold(FilingStatus.MARRIED_FILING_JOINTLY)
+}
 
 
 # https://www.ssa.gov/oact/cola/cbb.html

@@ -6,10 +6,12 @@
 from ..model import compound_interest
 from ..people.person import Person
 from ..base_classes import FinancialAccount
+from ..config.config_manager import config
 
 
 class BankAccount(FinancialAccount):
-    def __init__(self, owner: Person, company: str, type: str = 'Bank', balance: float = 0, interest_rate: float = 0):
+    def __init__(self, owner: Person, company: str, type: str = 'Bank',
+                 balance: float = 0, interest_rate: float = None):
         """Class modeling bank accounts
 
         Args:
@@ -17,13 +19,14 @@ class BankAccount(FinancialAccount):
             company (str): Company at which the bank account belongs.
             type (str, optional): Type of account. Defaults to 'Bank'.
             balance (float, optional): Balance of account. Defaults to 0.
-            interest_rate (float, optional): Interest rate. Defaults to 0.
+            interest_rate (float, optional): Interest rate. Uses configured default if None.
         """
         super().__init__(owner, balance)
         self.company = company
         self.type = type
-        self.interest_rate = interest_rate
-        self.compound_rate = 12  # Monthly - TODO - make configurable
+        self.interest_rate = (interest_rate if interest_rate is not None
+                              else config.financial.get('accounts.bank.default_interest_rate', 0.0))
+        self.compound_rate = config.financial.get('accounts.bank.compound_rate', 12)
 
         self.stat_total_interest = 0
         self.stat_useable_balance = 0
