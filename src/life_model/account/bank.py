@@ -30,7 +30,8 @@ class BankAccount(LifeModelAgent):
         self.stat_balance_history = []
         self.stat_useable_balance = 0
 
-        owner.bank_accounts.append(self)
+        # Register with the model registry
+        self.model.registries.bank_accounts.register(owner, self)
 
     def _repr_html_(self):
         return f"{self.type} account at {self.company} balance: ${self.balance:,}"

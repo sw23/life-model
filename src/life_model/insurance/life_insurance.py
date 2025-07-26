@@ -93,10 +93,8 @@ class LifeInsurance(LifeModelAgent):
         self.stat_death_benefit_paid = 0.0
         self.stat_policy_active = 1
 
-        # Add to person's insurance policies
-        if not hasattr(person, 'life_insurance_policies'):
-            person.life_insurance_policies = []  # type: ignore
-        person.life_insurance_policies.append(self)  # type: ignore
+        # Register with the model registry
+        self.model.registries.life_insurance_policies.register(person, self)
 
     @property
     def yearly_premium(self) -> float:

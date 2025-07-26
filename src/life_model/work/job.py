@@ -34,7 +34,8 @@ class Job(LifeModelAgent):
         self.stat_retirement_contrib = 0
         self.stat_retirement_match = 0
 
-        self.owner.jobs.append(self)
+        # Register with the model registry
+        self.model.registries.jobs.register(self.owner, self)
 
     def _repr_html_(self):
         return f"{self.role} at {self.company}"

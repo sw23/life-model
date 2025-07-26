@@ -9,6 +9,7 @@ from datetime import date
 from typing import Optional, List, Callable, Dict
 from pandas.io.formats.style import Styler
 from math import e as const_e
+from .registry import ModelRegistries
 
 
 def compound_interest(principal: float, rate: float, num_times_applied: int = 1, elapsed_time_periods: int = 1):
@@ -123,6 +124,9 @@ class LifeModel(mesa.Model):
         super().__init__(seed=seed)  # Required in Mesa 3.0
         if start_year is None:
             start_year = date.today().year
+
+        # Initialize registries
+        self.registries = ModelRegistries()
         if end_year is None:
             end_year = start_year + 50
         self.start_year = start_year
