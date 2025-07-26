@@ -3,49 +3,55 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-from ..model import LifeModelAgent, compound_interest
+from ..model import compound_interest
 from ..people.person import Person
+from ..base_classes import FinancialAccount
 
 
-class BankAccount(LifeModelAgent):
-    def __init__(self, owner: Person, company: str, type: str = 'Bank', balance: int = 0, interest_rate: float = 0):
-        """Class modeling bank accounds
+class BankAccount(FinancialAccount):
+    def __init__(self, owner: Person, company: str, type: str = 'Bank', balance: float = 0, interest_rate: float = 0):
+        """Class modeling bank accounts
 
         Args:
             owner (Person): Person that owns the Bank Account.
-            company (Company): Company at which the bank account belongs.
+            company (str): Company at which the bank account belongs.
             type (str, optional): Type of account. Defaults to 'Bank'.
-            balance (int, optional): Balance of account. Defaults to 0.
+            balance (float, optional): Balance of account. Defaults to 0.
             interest_rate (float, optional): Interest rate. Defaults to 0.
         """
-        super().__init__(owner.model)
-        self.owner = owner
+        super().__init__(owner, balance)
         self.company = company
         self.type = type
-        self.balance = balance
         self.interest_rate = interest_rate
         self.compound_rate = 12  # Monthly - TODO - make configurable
 
         self.stat_total_interest = 0
-        self.stat_balance_history = []
         self.stat_useable_balance = 0
 
         # Register with the model registry
         self.model.registries.bank_accounts.register(owner, self)
 
-    def _repr_html_(self):
-        return f"{self.type} account at {self.company} balance: ${self.balance:,}"
+    def get_balance(self) -> float:
+        """Get current account balance"""
+        return self.balance
 
-    def step(self):
-        interest = compound_interest(self.balance, self.interest_rate, self.compound_rate)
-        self.balance += interest
+    def deposit(self, amount: float) -> bool:
+        """Deposit amount into account. Returns success status"""
+        if amount <= 0:
+            return False
+        self.balance += amount
+        return True
 
-        self.stat_total_interest += interest
-        self.stat_balance_history.append(self.balance)
-        self.stat_useable_balance = self.balance
+    def withdraw(self, amount: float) -> float:
+        """Withdraw amount from account. Returns actual amount withdrawn"""
+        if amount <= 0:
+            return 0.0
+        amount_withdrawn = min(self.balance, amount)
+        self.balance -= amount_withdrawn
+        return amount_withdrawn
 
-    def deduct(self, amount):
-        """Deduct funds from bank account
+    def deduct(self, amount: float) -> float:
+        """Deduct funds from bank account (alias for withdraw for backward compatibility)
 
         Args:
             amount (float): Amount to deduct from account.
@@ -53,6 +59,17 @@ class BankAccount(LifeModelAgent):
         Returns:
             float: Amount deducted. Won't be more than the account balance.
         """
-        amount_deducted = min(self.balance, amount)
-        self.balance -= amount_deducted
-        return amount_deducted
+        return self.withdraw(amount)
+
+    def _repr_html_(self):
+        return f"{self.type} account at {self.company} balance: ${self.balance:,}"
+
+    def step(self):
+        # Apply interest
+        interest = compound_interest(self.balance, self.interest_rate, self.compound_rate)
+        self.balance += interest
+        self.stat_total_interest += interest
+        self.stat_useable_balance = self.balance
+
+        # Call parent step method to track balance history
+        super().step()
