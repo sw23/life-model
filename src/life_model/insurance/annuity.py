@@ -5,8 +5,8 @@
 from enum import Enum
 from typing import Optional, cast
 from ..people.person import Person, GenderAtBirth
-from ..people.mortality import mortality_rates, get_chance_of_mortality
-from ..model import LifeModel, LifeModelAgent, Event, compound_interest
+from ..people.mortality import get_chance_of_mortality
+from ..model import LifeModel, LifeModelAgent, Event
 
 
 class AnnuityType(Enum):
@@ -68,7 +68,7 @@ def calculate_life_expectancy(age: int, gender: Optional[GenderAtBirth] = None) 
 
 
 def calculate_annuity_factor(age: int, interest_rate: float, payout_type: AnnuityPayoutType,
-                           period_certain_years: int = 0, gender: Optional[GenderAtBirth] = None) -> float:
+                             period_certain_years: int = 0, gender: Optional[GenderAtBirth] = None) -> float:
     """Calculate annuity factor using actuarial principles
 
     Args:
@@ -276,7 +276,10 @@ class Annuity(LifeModelAgent):
             self.person.bank_accounts[0].deposit(net_withdrawal)
 
         if surrender_charge > 0:
-            self.model.event_log.add(Event(f"{self.person.name} withdrew ${net_withdrawal:,.0f} from annuity (${surrender_charge:,.0f} surrender charge)"))
+            self.model.event_log.add(Event(
+                f"{self.person.name} withdrew ${net_withdrawal:,.0f} from annuity "
+                f"(${surrender_charge:,.0f} surrender charge)"
+            ))
         else:
             self.model.event_log.add(Event(f"{self.person.name} withdrew ${net_withdrawal:,.0f} from annuity"))
 
@@ -320,7 +323,9 @@ class Annuity(LifeModelAgent):
                 life_expectancy = calculate_life_expectancy(self.person.age, gender)
                 self.monthly_payout = self.balance / (life_expectancy * 12)
 
-        self.model.event_log.add(Event(f"{self.person.name} annuitized with ${self.monthly_payout:,.0f}/month payments"))
+        self.model.event_log.add(Event(
+            f"{self.person.name} annuitized with ${self.monthly_payout:,.0f}/month payments"
+        ))
         return True
 
     def make_payout(self) -> float:
@@ -333,7 +338,8 @@ class Annuity(LifeModelAgent):
 
         if person_deceased:
             # Handle period certain payments to beneficiaries
-            if self.payout_type == AnnuityPayoutType.LIFE_WITH_PERIOD_CERTAIN and self.remaining_period_certain_payments > 0:
+            if self.payout_type == AnnuityPayoutType.LIFE_WITH_PERIOD_CERTAIN and \
+               self.remaining_period_certain_payments > 0:
                 payout = self.monthly_payout or 0.0
                 self.remaining_period_certain_payments -= 1
                 self.stat_payouts_received += payout
@@ -361,7 +367,8 @@ class Annuity(LifeModelAgent):
             self.person.bank_accounts[0].deposit(payout)
 
         # Reduce period certain payments if applicable
-        if self.payout_type == AnnuityPayoutType.LIFE_WITH_PERIOD_CERTAIN and self.remaining_period_certain_payments > 0:
+        if self.payout_type == AnnuityPayoutType.LIFE_WITH_PERIOD_CERTAIN and \
+           self.remaining_period_certain_payments > 0:
             self.remaining_period_certain_payments -= 1
 
         return payout
@@ -380,7 +387,10 @@ class Annuity(LifeModelAgent):
         if self.person.bank_accounts:
             self.person.bank_accounts[0].deposit(net_value)
 
-        self.model.event_log.add(Event(f"{self.person.name} surrendered annuity for ${net_value:,.0f} (${surrender_charge:,.0f} charge)"))
+        self.model.event_log.add(Event(
+            f"{self.person.name} surrendered annuity for ${net_value:,.0f} "
+            f"(${surrender_charge:,.0f} charge)"
+        ))
 
         self.balance = 0.0
         self.is_active = False
@@ -402,16 +412,14 @@ class Annuity(LifeModelAgent):
         if self.is_annuitized:
             monthly_income = 0.0
             for month in range(12):
-                monthly_income += self.make_payout()
-
-        # Update statistics
+                monthly_income += self.make_payout()        # Update statistics
         self.stat_balance = self.balance
 
     def pre_step(self):
         """Pre-step processing"""
         # Auto-annuitize immediate annuities or when payout age is reached
-        if (self.annuity_type == AnnuityType.IMMEDIATE or
-            (self.annuity_type == AnnuityType.DEFERRED and self.is_payout_eligible)) and not self.is_annuitized:
+        if self.annuity_type == AnnuityType.IMMEDIATE or \
+           (self.annuity_type == AnnuityType.DEFERRED and self.is_payout_eligible) and not self.is_annuitized:
             self.annuitize()
 
     def _repr_html_(self):

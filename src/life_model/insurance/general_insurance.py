@@ -126,7 +126,9 @@ class Insurance(LifeModelAgent):
             if amount_paid > 0:
                 self.stat_premiums_paid += amount_paid
             self.is_active = False
-            self.model.event_log.add(Event(f"{self.person.name}'s {self.insurance_type.value} insurance lapsed due to non-payment"))
+            self.model.event_log.add(Event(
+                f"{self.person.name}'s {self.insurance_type.value} insurance lapsed due to non-payment"
+            ))
             return False
 
     def file_claim(self, claim_amount: float, description: str) -> Optional[InsuranceClaim]:
@@ -135,7 +137,9 @@ class Insurance(LifeModelAgent):
             return None
 
         if self.claims_this_year >= self.max_claims_per_year:
-            self.model.event_log.add(Event(f"{self.person.name} cannot file more claims this year ({self.insurance_type.value})"))
+            self.model.event_log.add(Event(
+                f"{self.person.name} cannot file more claims this year ({self.insurance_type.value})"
+            ))
             return None
 
         # Create claim
@@ -155,7 +159,9 @@ class Insurance(LifeModelAgent):
         # Process claim automatically (simplified)
         self.process_claim(claim)
 
-        self.model.event_log.add(Event(f"{self.person.name} filed {self.insurance_type.value} claim for ${claim_amount:,.0f}"))
+        self.model.event_log.add(Event(
+            f"{self.person.name} filed {self.insurance_type.value} claim for ${claim_amount:,.0f}"
+        ))
         return claim
 
     def process_claim(self, claim: InsuranceClaim) -> bool:
@@ -210,7 +216,9 @@ class Insurance(LifeModelAgent):
         coverage_ratio = new_coverage_amount / old_coverage
         self.annual_premium = self.base_annual_premium * coverage_ratio
 
-        self.model.event_log.add(Event(f"{self.person.name} updated {self.insurance_type.value} coverage to ${new_coverage_amount:,.0f}"))
+        self.model.event_log.add(Event(
+            f"{self.person.name} updated {self.insurance_type.value} coverage to ${new_coverage_amount:,.0f}"
+        ))
 
     def get_claim_history(self, year: Optional[int] = None) -> List[InsuranceClaim]:
         """Get claims history, optionally filtered by year"""
