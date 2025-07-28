@@ -4,7 +4,7 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 from pydantic import BaseModel, Field, ConfigDict
-from typing import List, Union
+from typing import List, Union, Dict
 
 
 class StandardDeductionConfig(BaseModel):
@@ -68,7 +68,24 @@ class SocialSecurityConfig(BaseModel):
     max_credits_per_year: int
     max_years_of_income: int
     min_early_retirement_age: int
+    normal_retirement_age: int
     max_delayed_retirement_credit_age: int
+    delayed_retirement_credit: float = Field(ge=0)
+
+    # QC amount calculation base values
+    qc_credit_amount_1978: float
+    qc_avg_wage_index_1976: float
+
+    # Configuration for extrapolation beyond available data
+    last_avg_wage_index_year: int
+    last_avg_wage_index_increase: float
+    last_cost_of_living_adj_year: int
+    last_bend_points_year: int
+
+    # Historical data tables
+    avg_wage_index: Dict[int, float]
+    cost_of_living_adj: Dict[int, float]
+    bend_points: Dict[int, List[int]]
 
 
 class BankAccountConfig(BaseModel):

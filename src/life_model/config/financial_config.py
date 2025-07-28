@@ -5,7 +5,7 @@
 
 import yaml
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, List, Dict
 from .base_config import ScenarioConfig
 from .models import FinancialConfigModel
 from pydantic import ValidationError
@@ -88,3 +88,20 @@ class FinancialConfig(ScenarioConfig):
         """Get maximum tax rate for filing status"""
         brackets = self.get_federal_tax_brackets(filing_status)
         return brackets[-1][2] if brackets else 0.0
+
+    # Social Security convenience methods
+    def get_avg_wage_index(self, year: int) -> float:
+        """Get average wage index for a given year"""
+        return self.get(f'social_security.avg_wage_index.{year}')
+
+    def get_cost_of_living_adj(self, year: int) -> float:
+        """Get cost of living adjustment for a given year"""
+        return self.get(f'social_security.cost_of_living_adj.{year}')
+
+    def get_bend_points(self, year: int) -> List[int]:
+        """Get bend points for a given year"""
+        return self.get(f'social_security.bend_points.{year}')
+
+    def get_social_security_config(self) -> Dict:
+        """Get all social security configuration"""
+        return self.get('social_security', {})
