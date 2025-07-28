@@ -6,10 +6,8 @@
 from ..model import LifeModel
 from ..people.person import Person, Spending
 from ..people.family import Family
-from ..insurance.social_security import SocialSecurity, Income, bend_points, last_bend_points_year, \
-                                        cost_of_living_adj, last_cost_of_living_adj_year, \
-                                        last_avg_wage_index_increase, last_avg_wage_index_year, \
-                                        avg_wage_index
+from ..insurance.social_security import SocialSecurity, Income
+from ..config.config_manager import config
 
 import unittest
 
@@ -197,15 +195,25 @@ class TestSocialSecurity(unittest.TestCase):
             self.assertAlmostEqual(1000 * (pct / 100), ss.get_early_delayed_pia(1000), places=2)
 
     def test_variable_sanity_chk(self):
+        # Get social security configuration
+        ss_config = config.financial.get('social_security')
+
         # Make sure the last bend point year is accurate
+        last_bend_points_year = ss_config['last_bend_points_year']
+        bend_points = ss_config['bend_points']
         self.assertIn(last_bend_points_year, bend_points)
         self.assertNotIn(last_bend_points_year+1, bend_points)
 
         # Make sure the last cost of living year is accurate
+        last_cost_of_living_adj_year = ss_config['last_cost_of_living_adj_year']
+        cost_of_living_adj = ss_config['cost_of_living_adj']
         self.assertIn(last_cost_of_living_adj_year, cost_of_living_adj)
         self.assertNotIn(last_cost_of_living_adj_year+1, cost_of_living_adj)
 
         # Make sure the last avg wage index year is accurate
+        last_avg_wage_index_year = ss_config['last_avg_wage_index_year']
+        avg_wage_index = ss_config['avg_wage_index']
+        last_avg_wage_index_increase = ss_config['last_avg_wage_index_increase']
         self.assertIn(last_avg_wage_index_year, avg_wage_index)
         self.assertNotIn(last_avg_wage_index_year+1, avg_wage_index)
         chk_pct = avg_wage_index[last_avg_wage_index_year] / avg_wage_index[last_avg_wage_index_year-1]
