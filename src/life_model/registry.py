@@ -91,6 +91,16 @@ class LifeInsuranceRegistry(PersonRegistry['LifeInsurance']):
     pass
 
 
+class GeneralInsuranceRegistry(PersonRegistry['Insurance']):
+    """Registry for managing general Insurance policy relationships"""
+    pass
+
+
+class AnnuityRegistry(PersonRegistry['Annuity']):
+    """Registry for managing Annuity relationships"""
+    pass
+
+
 class ModelRegistries:
     """Container for all registries in a model"""
 
@@ -100,6 +110,8 @@ class ModelRegistries:
         self.homes = HomeRegistry()
         self.apartments = ApartmentRegistry()
         self.life_insurance_policies = LifeInsuranceRegistry()
+        self.general_insurance_policies = GeneralInsuranceRegistry()
+        self.annuities = AnnuityRegistry()
 
     def clear_all(self, owner: 'Person') -> None:
         """Clear all registries for a specific owner"""
@@ -108,3 +120,5 @@ class ModelRegistries:
         self.homes.clear(owner)
         self.apartments.clear(owner)
         self.life_insurance_policies.clear(owner)
+        self.general_insurance_policies.clear(owner)
+        self.annuities.clear(owner)
