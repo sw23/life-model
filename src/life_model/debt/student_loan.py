@@ -41,12 +41,56 @@ class StudentLoan(Loan):
 
     def get_monthly_payment(self) -> float:
         """ Calculate monthly payment using standard loan formula """
-        p = self.loan_amount
-        i = self.yearly_interest_rate / (100 * 12)
-        n = self.length_years * 12
-        if i == 0:
-            return p / n
-        return p * (i * ((1 + i) ** n)) / (((1 + i) ** n) - 1)
+        return self.calculate_monthly_payment()
+
+    def make_payment(self, payment_amount: float, extra_to_principal: float = 0) -> float:
+        """Make student loan payment"""
+        # Validate inputs
+        if payment_amount < 0:
+            raise ValueError("Payment amount cannot be negative")
+        if extra_to_principal < 0:
+            raise ValueError("Extra principal payment cannot be negative")
+
+        if payment_amount == 0 and extra_to_principal == 0:
+            # No payment made, but interest still accrues (negative amortization)
+            monthly_interest = self.get_interest_amount() / 12
+            self.principal += monthly_interest
+
+            # Track statistics
+            self.stat_principal_payment_history.append(0.0)
+            self.stat_interest_payment_history.append(0.0)
+
+            return 0.0
+
+        # Calculate monthly interest
+        monthly_interest = self.get_interest_amount() / 12
+
+        # Calculate how much goes to principal from the regular payment
+        available_for_principal = payment_amount - monthly_interest
+
+        # Principal payment cannot be negative and cannot exceed current principal balance
+        # Include extra principal in the total principal payment
+        total_principal_payment = max(0, available_for_principal) + extra_to_principal
+        principal_payment = min(total_principal_payment, self.principal)
+
+        # Calculate actual total payment made
+        # If payment_amount < monthly_interest, we only get partial interest payment
+        actual_interest_payment = min(payment_amount, monthly_interest)
+        total_payment = actual_interest_payment + principal_payment
+
+        # Update principal balance
+        # If payment doesn't cover interest, principal grows by unpaid interest
+        unpaid_interest = monthly_interest - actual_interest_payment
+        self.principal = self.principal - principal_payment + unpaid_interest
+
+        # Ensure principal doesn't go negative
+        self.principal = max(0.0, self.principal)
+
+        # Track statistics
+        self.stat_principal_payment_history.append(principal_payment)
+        self.stat_interest_payment_history.append(actual_interest_payment)
+
+        return total_payment
 
     def _repr_html_(self):
         desc = '<ul>'

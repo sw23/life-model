@@ -31,12 +31,16 @@ class CreditCard(Loan):
             yearly_interest_rate: Annual interest rate percentage
             minimum_payment_percent: Minimum payment as percentage of balance
         """
-        # Credit cards don't have a fixed term, so we'll use a default
+        # Credit cards don't have a fixed term, so we'll use a dummy value and override
+        # the monthly_payment calculation to use minimum payment instead
         super().__init__(person, current_balance, yearly_interest_rate,
-                         length_years=0, principal=current_balance)
+                         length_years=1, principal=current_balance,
+                         monthly_payment=0)  # We'll calculate this after initialization
         self.card_name = card_name
         self.credit_limit = credit_limit
         self.minimum_payment_percent = minimum_payment_percent
+        # Override the monthly payment with our minimum payment calculation
+        self.monthly_payment = self.get_minimum_payment()
 
     def get_available_credit(self) -> float:
         """Get available credit remaining"""
@@ -44,6 +48,10 @@ class CreditCard(Loan):
 
     def charge(self, amount: float) -> bool:
         """Charge amount to credit card. Returns success status"""
+        if amount < 0:
+            raise ValueError("Cannot charge negative amounts")
+        if amount == 0:
+            return True  # No-op for zero charges
         if amount <= self.get_available_credit():
             self.principal += amount
             return True
@@ -51,24 +59,50 @@ class CreditCard(Loan):
 
     def get_minimum_payment(self) -> float:
         """Calculate minimum payment required"""
-        return max(25, self.principal * (self.minimum_payment_percent / 100))
+        if self.principal <= 0:
+            return 0.0
+        # Minimum payment is typically 2-3% of balance, but at least $25 if there's a balance
+        calculated_minimum = self.principal * (self.minimum_payment_percent / 100)
+        return max(25.0, calculated_minimum) if self.principal > 0 else 0.0
 
     def make_payment(self, payment_amount: float, extra_to_principal: float = 0) -> float:
         """Make credit card payment"""
-        interest_amount = self.get_interest_amount() / 12  # Monthly interest
-        principal_payment = payment_amount - interest_amount + extra_to_principal
+        if payment_amount < 0:
+            raise ValueError("Payment amount cannot be negative")
+        if extra_to_principal < 0:
+            raise ValueError("Extra principal payment cannot be negative")
 
-        # Ensure we don't pay more than the balance
-        principal_payment = min(principal_payment, self.principal)
-        total_payment = principal_payment + interest_amount
+        if payment_amount == 0 and extra_to_principal == 0:
+            return 0.0  # No payment made
 
-        self.principal -= principal_payment
+        # Calculate monthly interest (credit cards use monthly compounding)
+        monthly_interest_rate = self.yearly_interest_rate / (100 * 12)
+        interest_amount = self.principal * monthly_interest_rate
+
+        # Total available for principal payment
+        total_available = payment_amount + extra_to_principal
+
+        # For credit cards, we pay interest first, then principal
+        if total_available <= interest_amount:
+            # Payment doesn't cover interest - principal increases
+            unpaid_interest = interest_amount - total_available
+            self.principal += unpaid_interest
+            principal_payment = 0.0
+            interest_payment = total_available
+        else:
+            # Payment covers interest and some principal
+            principal_payment = min(total_available - interest_amount, self.principal)
+            interest_payment = interest_amount
+            self.principal -= principal_payment
+
+        # Ensure principal doesn't go negative
+        self.principal = max(0.0, self.principal)
 
         # Track statistics
         self.stat_principal_payment_history.append(principal_payment)
-        self.stat_interest_payment_history.append(interest_amount)
+        self.stat_interest_payment_history.append(interest_payment)
 
-        return total_payment
+        return interest_payment + principal_payment
 
     def _repr_html_(self):
         desc = '<ul>'
