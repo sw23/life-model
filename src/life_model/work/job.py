@@ -3,6 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
+import html
 from typing import Optional, TYPE_CHECKING
 from ..model import LifeModelAgent, LifeModel, Event
 from ..limits import job_401k_contrib_limit
@@ -38,7 +39,7 @@ class Job(LifeModelAgent):
         self.model.registries.jobs.register(self.owner, self)
 
     def _repr_html_(self):
-        return f"{self.role} at {self.company}"
+        return f"{html.escape(self.role)} at {html.escape(self.company)}"
 
     # Using pre_step() so taxable_income will be set before person's step() is called
     def pre_step(self):

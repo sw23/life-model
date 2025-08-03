@@ -2,6 +2,7 @@
 #
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
+import html
 from ..people.person import Person
 from ..base_classes import Benefit
 
@@ -34,7 +35,7 @@ class Pension(Benefit):
 
     def _repr_html_(self):
         desc = '<ul>'
-        desc += f'<li>Company: {self.company}</li>'
+        desc += f'<li>Company: {html.escape(self.company)}</li>'
         desc += f'<li>Vesting Years: {self.vesting_years}</li>'
         desc += f'<li>Benefit Amount: ${self.benefit_amount:,.2f}</li>'
         desc += '</ul>'

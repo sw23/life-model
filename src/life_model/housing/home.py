@@ -3,6 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
+import html
 from typing import Optional
 from ..people.person import Person
 from ..model import LifeModelAgent, LifeModel
@@ -47,7 +48,7 @@ class Home(LifeModelAgent):
         return yearly_payment + extra_to_principal
 
     def _repr_html_(self):
-        return f"{self.name}, purchase price ${self.purchase_price:,}, " \
+        return f"{html.escape(self.name)}, purchase price ${self.purchase_price:,}, " \
                + f"monthly mortgage ${self.mortgage.monthly_payment:,}"
 
     def step(self):

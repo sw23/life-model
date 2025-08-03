@@ -2,6 +2,7 @@
 #
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
+import html
 from enum import Enum
 from ..people.person import Person
 from ..base_classes import Loan
@@ -71,7 +72,7 @@ class CreditCard(Loan):
 
     def _repr_html_(self):
         desc = '<ul>'
-        desc += f'<li>Card: {self.card_name}</li>'
+        desc += f'<li>Card: {html.escape(self.card_name)}</li>'
         desc += f'<li>Credit Limit: ${self.credit_limit:,.2f}</li>'
         desc += f'<li>Current Balance: ${self.principal:,.2f}</li>'
         desc += f'<li>Available Credit: ${self.get_available_credit():,.2f}</li>'

@@ -3,6 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
+import html
 from ..model import compound_interest
 from ..people.person import Person
 from ..base_classes import FinancialAccount
@@ -54,7 +55,7 @@ class BankAccount(FinancialAccount):
         return amount_withdrawn
 
     def _repr_html_(self):
-        return f"{self.type} account at {self.company} balance: ${self.balance:,}"
+        return f"{self.type} account at {html.escape(self.company)} balance: ${self.balance:,}"
 
     def step(self):
         # Apply interest

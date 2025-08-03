@@ -2,6 +2,7 @@
 #
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
+import html
 from enum import Enum
 from typing import Optional, List, cast
 from ..people.person import Person
@@ -256,7 +257,7 @@ class Insurance(LifeModelAgent):
     def _repr_html_(self):
         desc = '<ul>'
         desc += f'<li>Type: {self.insurance_type.value}</li>'
-        desc += f'<li>Company: {self.company}</li>'
+        desc += f'<li>Company: {html.escape(self.company)}</li>'
         desc += f'<li>Annual Premium: ${self.annual_premium:,.2f}</li>'
         desc += f'<li>Coverage: ${self.coverage_amount:,.2f}</li>'
         desc += f'<li>Deductible: ${self.deductible:,.2f}</li>'
