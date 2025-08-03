@@ -2,6 +2,7 @@
 #
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
+import html
 from ..people.person import Person
 from ..model import LifeModelAgent
 
@@ -22,7 +23,7 @@ class Child(LifeModelAgent):
 
     def _repr_html_(self):
         desc = '<ul>'
-        desc += f'<li>Name: {self.name}</li>'
+        desc += f'<li>Name: {html.escape(self.name)}</li>'
         desc += f'<li>Birth Year: {self.birth_year}</li>'
         desc += '</ul>'
         return desc

@@ -2,6 +2,7 @@
 #
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
+import html
 from enum import Enum
 from typing import Optional
 from ..people.person import Person
@@ -50,7 +51,7 @@ class StudentLoan(Loan):
     def _repr_html_(self):
         desc = '<ul>'
         desc += f'<li>Loan Type: {self.loan_type.value}</li>'
-        desc += f'<li>School: {self.school_name}</li>'
+        desc += f'<li>School: {html.escape(self.school_name)}</li>'
         desc += f'<li>Loan Amount: ${self.loan_amount:,.2f}</li>'
         desc += f'<li>Principal Balance: ${self.principal:,.2f}</li>'
         desc += f'<li>Monthly Payment: ${self.monthly_payment:,.2f}</li>'

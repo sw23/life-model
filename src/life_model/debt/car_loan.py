@@ -2,6 +2,7 @@
 #
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
+import html
 from typing import Optional
 from ..people.person import Person
 from ..base_classes import Loan
@@ -47,7 +48,7 @@ class CarLoan(Loan):
 
     def _repr_html_(self):
         desc = '<ul>'
-        desc += f'<li>Vehicle: {self.name}</li>'
+        desc += f'<li>Vehicle: {html.escape(self.name)}</li>'
         desc += f'<li>Loan Amount: ${self.loan_amount:,.2f}</li>'
         desc += f'<li>Principal Balance: ${self.principal:,.2f}</li>'
         desc += f'<li>Monthly Payment: ${self.monthly_payment:,.2f}</li>'

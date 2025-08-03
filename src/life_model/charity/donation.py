@@ -2,6 +2,7 @@
 #
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
+import html
 from enum import Enum
 from ..people.person import Person
 from ..model import LifeModelAgent
@@ -36,7 +37,7 @@ class Donation(LifeModelAgent):
 
     def _repr_html_(self):
         desc = '<ul>'
-        desc += f'<li>Charity: {self.charity_name}</li>'
+        desc += f'<li>Charity: {html.escape(self.charity_name)}</li>'
         desc += f'<li>Amount: ${self.amount:,.2f}</li>'
         desc += f'<li>Type: {self.donation_type.value}</li>'
         desc += f'<li>Tax Deductible: {self.tax_deductible}</li>'

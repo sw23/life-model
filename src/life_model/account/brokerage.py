@@ -2,6 +2,7 @@
 #
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
+import html
 from ..people.person import Person
 from ..base_classes import Investment
 
@@ -29,17 +30,21 @@ class BrokerageAccount(Investment):
         return self.balance
 
     def deposit(self, amount: float) -> bool:
+        if amount < 0:
+            raise ValueError("Deposit amount cannot be negative")
         self.balance += amount
         return True
 
     def withdraw(self, amount: float) -> float:
+        if amount < 0:
+            return 0.0  # Cannot withdraw negative amounts
         actual_withdrawal = min(amount, self.balance)
         self.balance -= actual_withdrawal
         return actual_withdrawal
 
     def _repr_html_(self):
         desc = '<ul>'
-        desc += f'<li>Company: {self.company}</li>'
+        desc += f'<li>Company: {html.escape(self.company)}</li>'
         desc += f'<li>Balance: ${self.balance:,.2f}</li>'
         desc += f'<li>Growth Rate: {self.growth_rate}%</li>'
         desc += '</ul>'
