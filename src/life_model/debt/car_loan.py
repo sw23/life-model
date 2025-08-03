@@ -27,18 +27,36 @@ class CarLoan(Loan):
 
     def make_payment(self, payment_amount: float, extra_to_principal: float = 0) -> float:
         """Make loan payment"""
+        # Validate inputs
+        if payment_amount < 0:
+            raise ValueError("Payment amount cannot be negative")
+        if extra_to_principal < 0:
+            raise ValueError("Extra principal payment cannot be negative")
+
+        # Calculate monthly interest
         interest_amount = self.get_interest_amount() / 12  # Monthly interest
-        principal_payment = payment_amount - interest_amount + extra_to_principal
 
-        # Ensure we don't pay more than the balance
-        principal_payment = min(principal_payment, self.principal)
-        total_payment = principal_payment + interest_amount
+        # Calculate how much goes to principal from the regular payment
+        available_for_principal = payment_amount - interest_amount
 
-        self.principal -= principal_payment
+        # Principal payment cannot be negative and cannot exceed current principal balance
+        # Include extra principal in the total principal payment
+        total_principal_payment = max(0, available_for_principal) + extra_to_principal
+        principal_payment = min(total_principal_payment, self.principal)
+
+        # Calculate actual total payment made
+        # If payment_amount < interest_amount, we only get partial interest payment
+        actual_interest_payment = min(payment_amount, interest_amount)
+        total_payment = actual_interest_payment + principal_payment
+
+        # Update principal balance
+        # If payment doesn't cover interest, principal grows by unpaid interest
+        unpaid_interest = interest_amount - actual_interest_payment
+        self.principal = self.principal - principal_payment + unpaid_interest
 
         # Track statistics
         self.stat_principal_payment_history.append(principal_payment)
-        self.stat_interest_payment_history.append(interest_amount)
+        self.stat_interest_payment_history.append(actual_interest_payment)
 
         return total_payment
 
