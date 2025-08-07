@@ -60,10 +60,12 @@ This package supports a comprehensive range of financial modeling components:
 - [ ] **529 Plans** - Education savings accounts
 - [x] **Brokerage Accounts** - Taxable investment accounts
 - [ ] **Pensions** - Defined benefit retirement plans
+- [ ] **Trust Accounts** - Revocable and irrevocable trusts for estate planning
 
 ### Insurance & Protection
 - [x] **Life Insurance** - Term and whole life policies with loans
 - [x] **General Insurance** - Health, auto, home, umbrella insurance
+- [ ] **Long Term Care Insurance** - Coverage for nursing home, assisted living, and in-home care
 - [x] **Annuities** - Fixed and variable annuities with various payout options
 - [x] **Social Security** - Comprehensive benefit calculations with timing strategies
 
@@ -84,9 +86,19 @@ This package supports a comprehensive range of financial modeling components:
 - [x] **Rental Housing** - Apartment leasing with rent increases
 - [x] **Life Events** - Marriage, retirement, career changes
 
+### Healthcare & Aging
+- [ ] **Medicare Coverage** - Parts A, B, C, D with premium calculations
+- [ ] **Long-Term Care Services** - Nursing homes, assisted living, home health aides
+- [ ] **Medical Expense Modeling** - Age-related healthcare cost increases
+- [ ] **Chronic Care Management** - Ongoing medical conditions and treatment costs
+- [ ] **Prescription Drug Coverage** - Medicare Part D and supplemental insurance
+
 ### Giving & Legacy
 - [ ] **Charitable Giving** - Tax-deductible donations
 - [ ] **Donor Advised Funds** - Charitable investment accounts
+- [ ] **Estate Planning** - Wills, trusts, and inheritance tax modeling
+- [ ] **End of Life Care** - Long-term care facilities and medical expenses
+- [ ] **Funeral and Final Expenses** - End-of-life costs and pre-planning
 
 ### Advanced Features
 - [x] **Economic Scenarios** - Configurable market conditions (recession, inflation, etc.)
