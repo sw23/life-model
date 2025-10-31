@@ -86,6 +86,11 @@ class Person(LifeModelAgent):
         return self.model.registries.life_insurance_policies.get_items(self)
 
     @property
+    def plan_529s(self):
+        """Get all 529 plans for this person from the registry"""
+        return self.model.registries.plan_529s.get_items(self)
+
+    @property
     def federal_deductions(self) -> float:
         # TODO - Using std deduction for now, but should be able to itemize
         return federal_standard_deduction[self.filing_status]

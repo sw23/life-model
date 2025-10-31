@@ -3,12 +3,15 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 import html
-from ..people.person import Person
+from typing import TYPE_CHECKING
 from ..model import LifeModelAgent
+
+if TYPE_CHECKING:
+    from ..people.person import Person
 
 
 class Child(LifeModelAgent):
-    def __init__(self, person: Person, name: str, birth_year: int):
+    def __init__(self, person: 'Person', name: str, birth_year: int):
         """ Models a child dependent for a person
 
         Args:
@@ -21,9 +24,15 @@ class Child(LifeModelAgent):
         self.name = name
         self.birth_year = birth_year
 
+    @property
+    def age(self) -> int:
+        """Calculate child's current age based on model year"""
+        return self.model.year - self.birth_year
+
     def _repr_html_(self):
         desc = '<ul>'
         desc += f'<li>Name: {html.escape(self.name)}</li>'
         desc += f'<li>Birth Year: {self.birth_year}</li>'
+        desc += f'<li>Age: {self.age}</li>'
         desc += '</ul>'
         return desc

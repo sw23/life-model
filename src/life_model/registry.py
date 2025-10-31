@@ -101,6 +101,11 @@ class AnnuityRegistry(PersonRegistry['Annuity']):
     pass
 
 
+class Plan529Registry(PersonRegistry['Plan529']):
+    """Registry for managing 529 Plan relationships"""
+    pass
+
+
 class ModelRegistries:
     """Container for all registries in a model"""
 
@@ -112,6 +117,7 @@ class ModelRegistries:
         self.life_insurance_policies = LifeInsuranceRegistry()
         self.general_insurance_policies = GeneralInsuranceRegistry()
         self.annuities = AnnuityRegistry()
+        self.plan_529s = Plan529Registry()
 
     def clear_all(self, owner: 'Person') -> None:
         """Clear all registries for a specific owner"""
@@ -122,3 +128,4 @@ class ModelRegistries:
         self.life_insurance_policies.clear(owner)
         self.general_insurance_policies.clear(owner)
         self.annuities.clear(owner)
+        self.plan_529s.clear(owner)
