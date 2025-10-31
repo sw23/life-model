@@ -57,7 +57,7 @@ This package supports a comprehensive range of financial modeling components:
 - [x] **401k Plans** - Traditional and Roth with employer matching
 - [x] **Traditional & Roth IRAs** - Individual retirement accounts
 - [x] **HSA** - Health Savings Accounts
-- [ ] **529 Plans** - Education savings accounts
+- [x] **529 Plans** - Education savings accounts
 - [x] **Brokerage Accounts** - Taxable investment accounts
 - [ ] **Pensions** - Defined benefit retirement plans
 - [ ] **Trust Accounts** - Revocable and irrevocable trusts for estate planning

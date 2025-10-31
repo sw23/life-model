@@ -366,6 +366,11 @@ accounts:
   hsa:
     contribution_limit: 4150
     default_employer_contribution: 0
+  plan_529:
+    annual_contribution_limit: 18000  # per beneficiary (2024 gift tax exclusion)
+    lifetime_contribution_limit: 500000  # typical state limit
+    default_growth_rate: 7.0  # percentage
+    qualified_expense_penalty: 10.0  # percentage penalty on earnings for non-qualified withdrawals
 
 insurance:
   life:
