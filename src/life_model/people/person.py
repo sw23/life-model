@@ -91,9 +91,59 @@ class Person(LifeModelAgent):
         return self.model.registries.plan_529s.get_items(self)
 
     @property
+    def donations(self):
+        """Get all donations for this person from the registry"""
+        return self.model.registries.donations.get_items(self)
+
+    @property
+    def donor_advised_funds(self):
+        """Get all donor advised funds for this person from the registry"""
+        return self.model.registries.donor_advised_funds.get_items(self)
+
+    @property
+    def charitable_deductions(self) -> float:
+        """Calculate total charitable deductions for the year
+
+        Includes:
+        - Direct donations (deductible at time of donation)
+        - DAF contributions (deductible at time of contribution, not distribution)
+        """
+        # Sum deductions from direct donations
+        donation_deductions = sum(d.get_tax_deduction_amount() for d in self.donations)
+
+        # Sum deductions from DAF contributions (tracked in stat_contributions_this_year)
+        # DAF contributions are deductible when contributed, not when distributed
+        daf_contribution_deductions = sum(
+            daf.stat_contributions_this_year for daf in self.donor_advised_funds
+        )
+
+        return donation_deductions + daf_contribution_deductions
+
+    @property
+    def total_itemized_deductions(self) -> float:
+        """Calculate total itemized deductions
+
+        Currently includes:
+        - Charitable contributions
+        - Mortgage interest (if applicable)
+
+        TODO: Add other itemized deductions (state taxes, medical expenses, etc.)
+        """
+        itemized = self.charitable_deductions
+
+        # Add mortgage interest deductions
+        for home in self.homes:
+            if hasattr(home, 'mortgage') and home.mortgage:
+                itemized += home.mortgage.get_interest_for_year()
+
+        return itemized
+
+    @property
     def federal_deductions(self) -> float:
-        # TODO - Using std deduction for now, but should be able to itemize
-        return federal_standard_deduction[self.filing_status]
+        """Get federal deductions - use greater of standard or itemized"""
+        standard_deduction = federal_standard_deduction[self.filing_status]
+        itemized_deductions = self.total_itemized_deductions
+        return max(standard_deduction, itemized_deductions)
 
     @property
     def all_retirement_accounts(self) -> List[Job401kAccount]:

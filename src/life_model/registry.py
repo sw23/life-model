@@ -106,6 +106,16 @@ class Plan529Registry(PersonRegistry['Plan529']):
     pass
 
 
+class DonationRegistry(PersonRegistry['Donation']):
+    """Registry for managing Donation relationships"""
+    pass
+
+
+class DonorAdvisedFundRegistry(PersonRegistry['DonorAdvisedFund']):
+    """Registry for managing DonorAdvisedFund relationships"""
+    pass
+
+
 class ModelRegistries:
     """Container for all registries in a model"""
 
@@ -118,6 +128,8 @@ class ModelRegistries:
         self.general_insurance_policies = GeneralInsuranceRegistry()
         self.annuities = AnnuityRegistry()
         self.plan_529s = Plan529Registry()
+        self.donations = DonationRegistry()
+        self.donor_advised_funds = DonorAdvisedFundRegistry()
 
     def clear_all(self, owner: 'Person') -> None:
         """Clear all registries for a specific owner"""
@@ -129,3 +141,5 @@ class ModelRegistries:
         self.general_insurance_policies.clear(owner)
         self.annuities.clear(owner)
         self.plan_529s.clear(owner)
+        self.donations.clear(owner)
+        self.donor_advised_funds.clear(owner)
