@@ -100,7 +100,8 @@ class LifeModel(mesa.Model):
         MoneyStat('stat_required_min_distrib', 'RMDs'),             # Money taken out from required minimum distrib.
         MoneyStat('stat_housing_costs',        'Housing'),          # Money paid towards mortgage or rent
         MoneyStat('stat_interest_paid',        'Interest Paid'),    # Money paid in interest for loans
-        MoneyStat('stat_ss_income',            'SS Income')         # Income from social security
+        MoneyStat('stat_ss_income',            'SS Income'),        # Income from social security
+        MoneyStat('stat_charitable_donations', 'Charity'),          # Total charitable donations in a year
     ]
 
     EXTRA_STATS = [

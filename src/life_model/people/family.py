@@ -21,8 +21,18 @@ class Family(LifeModelAgent):
 
     @property
     def federal_deductions(self) -> float:
-        # TODO - Using std deduction for now, but should be able to itemize
-        return federal_standard_deduction[self.filing_status]
+        """Get federal deductions - use greater of standard or itemized"""
+        standard_deduction = federal_standard_deduction[self.filing_status]
+        itemized_deductions = self.total_itemized_deductions
+        return max(standard_deduction, itemized_deductions)
+
+    @property
+    def total_itemized_deductions(self) -> float:
+        """Calculate total itemized deductions for the family
+
+        For married filing jointly, combine all family members' itemized deductions
+        """
+        return sum(member.total_itemized_deductions for member in self.members)
 
     @property
     def bank_account_balance(self) -> float:

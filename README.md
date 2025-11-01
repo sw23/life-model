@@ -94,8 +94,8 @@ This package supports a comprehensive range of financial modeling components:
 - [ ] **Prescription Drug Coverage** - Medicare Part D and supplemental insurance
 
 ### Giving & Legacy
-- [ ] **Charitable Giving** - Tax-deductible donations
-- [ ] **Donor Advised Funds** - Charitable investment accounts
+- [x] **Charitable Giving** - Tax-deductible donations with itemized deduction support
+- [x] **Donor Advised Funds** - Charitable investment accounts with growth, fees, and distributions
 - [ ] **Estate Planning** - Wills, trusts, and inheritance tax modeling
 - [ ] **End of Life Care** - Long-term care facilities and medical expenses
 - [ ] **Funeral and Final Expenses** - End-of-life costs and pre-planning
