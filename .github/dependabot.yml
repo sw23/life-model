@@ -17,3 +17,7 @@ updates:
     directory: "/deepqlearning" # Location of requirements-rl.txt
     schedule:
       interval: "weekly"
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
