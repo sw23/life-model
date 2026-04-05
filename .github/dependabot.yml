@@ -9,15 +9,31 @@ updates:
     directory: "/" # Location of package manifests
     schedule:
       interval: "weekly"
+    groups:
+      pip-dependencies:
+        patterns:
+          - "*"
   - package-ecosystem: "pip"
     directory: "/dashboard" # Location of requirements-dash.txt
     schedule:
       interval: "weekly"
+    groups:
+      dash-dependencies:
+        patterns:
+          - "*"
   - package-ecosystem: "pip"
     directory: "/deepqlearning" # Location of requirements-rl.txt
     schedule:
       interval: "weekly"
+    groups:
+      rl-dependencies:
+        patterns:
+          - "*"
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
