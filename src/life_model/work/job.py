@@ -88,7 +88,7 @@ class Job(LifeModelAgent):
         self.owner.deposit_into_bank_account(gross_income - yearly_401k_contrib)
 
         # Add to taxable income for the person
-        # - Taxes are dedudcted in the person class
+        # - Taxes are deducted in the person class
         # - Social security limits are handled in the SS class
         self.owner.taxable_income += gross_income - yearly_pretax_contrib
         if self.owner.social_security is not None:
@@ -122,5 +122,6 @@ class Salary(LifeModelAgent):
     def bonus(self) -> float:
         return self.base * (self.yearly_bonus / 100)
 
-    def step(self):
+    def post_step(self):
+        # Escalator runs after the year's income has been earned/deposited (consume-then-advance).
         self.base += self.base * (self.yearly_increase / 100)

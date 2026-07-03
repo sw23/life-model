@@ -92,6 +92,9 @@ class Loan(LifeModelAgent, ABC):
 class Investment(FinancialAccount, ABC):
     """Abstract base class for investment accounts with growth"""
 
+    # Apply growth before tax-unit settlement so withdrawals see the grown balance.
+    STEP_PRIORITY = {"step": -10}
+
     def __init__(self, person: "Person", balance: float = 0, growth_rate: float = 0):
         super().__init__(person, balance)
         self.growth_rate = growth_rate

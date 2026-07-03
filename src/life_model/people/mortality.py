@@ -5,7 +5,7 @@
 
 import random
 
-from .person import GenderAtBirth
+from .types import GenderAtBirth
 
 # Actuarial mortality table for the US population
 # https://www.ssa.gov/oact/STATS/table4c6.html

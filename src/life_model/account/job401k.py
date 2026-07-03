@@ -14,6 +14,10 @@ if TYPE_CHECKING:
 
 
 class Job401kAccount(RetirementAccount):
+    # Grow (and take RMDs) before the job deposits this year's contributions, so contributions
+    # are not counted in this year's growth (matches the documented, slightly-pessimistic model).
+    STEP_PRIORITY = {"pre_step": -10}
+
     def __init__(
         self,
         job: "Job",

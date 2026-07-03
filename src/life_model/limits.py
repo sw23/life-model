@@ -6,7 +6,7 @@
 from .config.config_manager import config
 
 
-def job_401k_contrib_limit(age) -> int:
+def job_401k_contrib_limit(age: int) -> int:
     """Get 401k contribution limit based on age"""
     return config.financial.get_job_401k_contrib_limit(age)
 
@@ -79,7 +79,7 @@ def get_rmd_distribution_periods() -> list:
     return config.financial.get("retirement.rmd_distribution_periods", rmd_distribution_period)
 
 
-def required_min_distrib(age, balance) -> float:
+def required_min_distrib(age: int, balance: float) -> float:
     """Calculate required minimum distribution"""
     periods = get_rmd_distribution_periods()
     if age < periods[0][0]:
