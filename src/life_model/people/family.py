@@ -4,7 +4,7 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 from ..model import LifeModel, LifeModelAgent
-from ..tax.federal import FilingStatus, federal_standard_deduction, max_tax_rate
+from ..tax.federal import FilingStatus, get_federal_standard_deduction, max_tax_rate
 from ..tax.tax import TaxesDue, get_income_taxes_due
 
 
@@ -22,7 +22,7 @@ class Family(LifeModelAgent):
     @property
     def federal_deductions(self) -> float:
         """Get federal deductions - use greater of standard or itemized"""
-        standard_deduction = federal_standard_deduction[self.filing_status]
+        standard_deduction = get_federal_standard_deduction(self.filing_status, self.model.config)
         itemized_deductions = self.total_itemized_deductions
         return max(standard_deduction, itemized_deductions)
 
@@ -98,7 +98,7 @@ class Family(LifeModelAgent):
         """
         income_amount = self.combined_taxable_income + additional_income
         if self.filing_status == FilingStatus.MARRIED_FILING_JOINTLY:
-            return get_income_taxes_due(income_amount, self.federal_deductions, self.filing_status)
+            return get_income_taxes_due(income_amount, self.federal_deductions, self.filing_status, self.model.config)
         else:
             raise NotImplementedError(f"Unsupported filing status: {self.filing_status}")
 
@@ -116,7 +116,7 @@ class Family(LifeModelAgent):
             amount_from_pretax_401k = max(0, spending_plus_pre_401k_taxes - self.bank_account_balance)
             yearly_taxes_plus_401k_income = self.get_income_taxes_due(amount_from_pretax_401k)
             taxes_from_pretax_401k = yearly_taxes_plus_401k_income.total - yearly_taxes.total
-            taxes_from_pretax_401k += taxes_from_pretax_401k * (max_tax_rate(self.filing_status) / 100)
+            taxes_from_pretax_401k += taxes_from_pretax_401k * (max_tax_rate(self.filing_status, self.model.config) / 100)
             self.withdraw_from_pretax_401ks(amount_from_pretax_401k + taxes_from_pretax_401k)
 
             # Now that 401k withdrawal is complete (if necessary), calculatue taxes

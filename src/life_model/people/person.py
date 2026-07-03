@@ -11,7 +11,7 @@ from ..limits import federal_retirement_age
 from ..model import Event, LifeModel, LifeModelAgent, ModelSetupException
 from ..services.payment_service import PaymentService
 from ..services.tax_calculation_service import TaxCalculationService
-from ..tax.federal import FilingStatus, federal_standard_deduction
+from ..tax.federal import FilingStatus, get_federal_standard_deduction
 from ..tax.tax import TaxesDue, get_income_taxes_due
 from .family import Family
 
@@ -140,7 +140,7 @@ class Person(LifeModelAgent):
     @property
     def federal_deductions(self) -> float:
         """Get federal deductions - use greater of standard or itemized"""
-        standard_deduction = federal_standard_deduction[self.filing_status]
+        standard_deduction = get_federal_standard_deduction(self.filing_status, self.model.config)
         itemized_deductions = self.total_itemized_deductions
         return max(standard_deduction, itemized_deductions)
 
@@ -268,7 +268,7 @@ class Person(LifeModelAgent):
 
         income_amount = self.taxable_income + additional_income
         if self.filing_status == FilingStatus.SINGLE:
-            return get_income_taxes_due(income_amount, self.federal_deductions, self.filing_status)
+            return get_income_taxes_due(income_amount, self.federal_deductions, self.filing_status, self.model.config)
         else:
             raise NotImplementedError(f"Unsupported filing status: {self.filing_status}")
 

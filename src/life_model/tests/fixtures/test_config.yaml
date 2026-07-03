@@ -1,0 +1,118 @@
+# Frozen synthetic configuration for unit tests that assert dollar amounts.
+#
+# These are deliberately round numbers (two-bracket 10%/25% tax, $10k standard
+# deduction, $110k Social Security wage base) so that expected values in tests
+# stay stable regardless of annual data refreshes to the real defaults. Do NOT
+# update these to track published figures — tests pin these exact values.
+
+tax:
+  federal:
+    standard_deduction:
+      single: 10000
+      married_filing_jointly: 20000
+    tax_brackets:
+      single:
+        - [0, 40000, 10]
+        - [40001, .inf, 25]
+      married_filing_jointly:
+        - [0, 80000, 10]
+        - [80001, .inf, 25]
+  state:
+    tax_rate: 5.0
+  fica:
+    social_security_rate: 6.2
+    social_security_max_income: 110000
+    medicare_rate: 1.45
+    medicare_additional_rate: 0.9
+    medicare_additional_rate_threshold:
+      single: 200000
+      married_filing_jointly: 250000
+
+retirement:
+  federal_retirement_age: 60
+  job_401k_contrib_limit:
+    base: 20000
+    catch_up_age: 50
+    catch_up_amount: 5000
+  ira:
+    contribution_limit: 6000
+    default_growth_rate: 7.0
+  rmd_distribution_periods:
+    - [72, 25.0]
+    - [73, 24.0]
+    - [74, 23.0]
+    - [75, 22.0]
+
+social_security:
+  min_eligible_credits: 40
+  max_credits_per_year: 4
+  max_years_of_income: 35
+  min_early_retirement_age: 62
+  normal_retirement_age: 67
+  max_delayed_retirement_credit_age: 70
+  delayed_retirement_credit: 8.0
+  qc_credit_amount_1978: 250.0
+  qc_avg_wage_index_1976: 9226.48
+  last_avg_wage_index_year: 2024
+  last_avg_wage_index_increase: 4.84
+  last_cost_of_living_adj_year: 2025
+  last_bend_points_year: 2026
+  avg_wage_index:
+    1976: 9226.48
+    2024: 69846.57
+  cost_of_living_adj:
+    2025: 2.8
+  bend_points:
+    2026: [1286, 7749]
+
+accounts:
+  bank:
+    default_interest_rate: 0.0
+    compound_rate: 12
+  brokerage:
+    default_growth_rate: 7.0
+  hsa:
+    contribution_limit: 4000
+    contribution_limit_family: 8000
+    default_employer_contribution: 0
+  plan_529:
+    annual_contribution_limit: 19000
+    lifetime_contribution_limit: 500000
+    default_growth_rate: 7.0
+    qualified_expense_penalty: 10.0
+
+insurance:
+  life:
+    default_loan_interest_rate: 6.0
+    default_cash_value_growth_rate: 0.0
+    default_max_missed_payments: 3
+    surrender_percentages:
+      early: 0.5
+      standard: 0.8
+
+debt:
+  credit_card:
+    default_interest_rate: 18.0
+    default_minimum_payment_percent: 2.0
+
+tax_years:
+  2020:
+    standard_deduction:
+      single: 10000
+      married_filing_jointly: 20000
+    tax_brackets:
+      single:
+        - [0, 40000, 10]
+        - [40001, .inf, 25]
+      married_filing_jointly:
+        - [0, 80000, 10]
+        - [80001, .inf, 25]
+    ss_wage_base: 110000
+    limit_401k_base: 20000
+    limit_401k_catch_up: 5000
+    limit_ira: 6000
+    limit_ira_catch_up: 1000
+    limit_hsa_self: 4000
+    limit_hsa_family: 8000
+    gift_exclusion: 15000
+    rmd_start_age: 72
