@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=77", "setuptools-scm>=8"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "life-model"
+dynamic = ["version"]
+description = "Modeling life events and how they impact finances"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+authors = [{ name = "Spencer Williams", email = "sw23@users.noreply.github.com" }]
+dependencies = [
+    "pandas",
+    "matplotlib",
+    "mesa>=3.3",
+    "networkx",
+    "pyyaml",
+    "pydantic>=2",
+    "jinja2",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+
+[project.urls]
+Homepage = "https://github.com/sw23/life-model"
+
+[tool.setuptools]
+# Only ship data explicitly declared below; otherwise setuptools-scm's VCS file
+# finder sweeps every tracked file (including tests/) into the wheel.
+include-package-data = false
+
+[tool.setuptools.packages.find]
+where = ["src"]
+exclude = ["life_model.tests*"]
+
+[tool.setuptools.package-data]
+"life_model.config" = ["data/*.yaml", "data/scenarios/*.yaml"]
+
+[tool.setuptools_scm]
+version_file = "src/life_model/_version.py"

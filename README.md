@@ -123,7 +123,7 @@ The deep learning module includes:
 - Training visualization and model evaluation tools
 
 ### Configuration System
-YAML-based configuration files in `/config/scenarios/` allow modeling of different economic conditions:
+YAML-based configuration files packaged with life-model (in `src/life_model/config/data/scenarios/`) allow modeling of different economic conditions:
 - `conservative.yaml` - Low growth, stable conditions
 - `aggressive.yaml` - High growth, volatile markets
 - `recession.yaml` - Economic downturn scenarios

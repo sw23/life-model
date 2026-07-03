@@ -10,8 +10,26 @@ to model different economic environments without manually changing individual va
 """
 
 import yaml
+from importlib.resources import files
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Optional
+
+# Optional user-supplied scenario directory. When set, it takes precedence over
+# the scenarios packaged with life-model.
+_user_scenario_dir: Optional[Path] = None
+
+
+def set_scenario_directory(directory: Optional[str]) -> None:
+    """Set a user-supplied directory to search for scenario YAML files.
+
+    Scenarios found here take precedence over the ones packaged with life-model.
+
+    Args:
+        directory: Path to a directory containing ``<name>.yaml`` scenario files,
+            or None to use only the packaged scenarios.
+    """
+    global _user_scenario_dir
+    _user_scenario_dir = Path(directory) if directory is not None else None
 
 
 def _load_scenario_from_yaml(filename: str) -> Dict[str, Any]:
@@ -26,17 +44,16 @@ def _load_scenario_from_yaml(filename: str) -> Dict[str, Any]:
     Raises:
         FileNotFoundError: If the scenario file cannot be found
     """
-    # Try multiple potential locations for scenario files
-    potential_paths = [
-        Path('config/scenarios') / filename,  # From project root
-        Path(__file__).parent.parent.parent.parent / 'config' / 'scenarios' / filename,  # Relative to this file
-        Path.cwd() / 'config' / 'scenarios' / filename,  # From current directory
-    ]
-
-    for path in potential_paths:
-        if path.exists():
-            with open(path, 'r') as f:
+    # A user-supplied directory takes precedence over packaged scenarios.
+    if _user_scenario_dir is not None:
+        user_path = _user_scenario_dir / filename
+        if user_path.exists():
+            with open(user_path, 'r') as f:
                 return yaml.safe_load(f)
+
+    packaged = files('life_model.config') / 'data' / 'scenarios' / filename
+    if packaged.is_file():
+        return yaml.safe_load(packaged.read_text(encoding='utf-8'))
 
     raise FileNotFoundError(f"Scenario file '{filename}' not found in any of the expected locations")
 
@@ -64,21 +81,17 @@ def get_scenario(name: str) -> Dict[str, Any]:
 
 def list_scenarios() -> list:
     """Get a list of all available predefined scenarios"""
-    scenarios = []
+    scenarios = set()
 
-    # Check all potential scenario directories
-    scenario_dir_paths = [
-        Path('config/scenarios'),
-        Path(__file__).parent.parent.parent.parent / 'config' / 'scenarios',
-        Path.cwd() / 'config' / 'scenarios',
-    ]
+    # Scenarios packaged with life-model.
+    packaged_dir = files('life_model.config') / 'data' / 'scenarios'
+    for entry in packaged_dir.iterdir():
+        if entry.name.endswith('.yaml'):
+            scenarios.add(entry.name[:-len('.yaml')])
 
-    for path in scenario_dir_paths:
-        if path.exists() and path.is_dir():
-            for yaml_file in path.glob('*.yaml'):
-                scenario_name = yaml_file.stem
-                if scenario_name not in scenarios:
-                    scenarios.append(scenario_name)
-            break  # Only use the first directory that exists
+    # User-supplied scenarios (take precedence but also add to the list).
+    if _user_scenario_dir is not None and _user_scenario_dir.is_dir():
+        for yaml_file in _user_scenario_dir.glob('*.yaml'):
+            scenarios.add(yaml_file.stem)
 
     return sorted(scenarios)
