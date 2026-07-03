@@ -23,5 +23,5 @@ repos:
       - id: nbstripout
         files: \.ipynb$
         # ExampleSimulation.ipynb intentionally commits its executed outputs as a
-        # reviewable baseline (see the re-baselining convention in CLAUDE.md).
+        # reviewable baseline, so it is exempt from stripping.
         exclude: ^ExampleSimulation\.ipynb$

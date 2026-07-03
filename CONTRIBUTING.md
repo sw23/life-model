@@ -1,7 +1,7 @@
 # Contributing to life-model
 
 Thanks for your interest in improving life-model! This guide covers the local
-development setup, the tox targets used by CI, and the plan-document workflow.
+development setup and the tox targets used by CI.
 
 ## Development setup
 
@@ -53,15 +53,12 @@ pytest src/life_model/tests/ -m "not notebooks" --cov
   `ExampleSimulation.ipynb`, which intentionally commits its executed outputs as
   a reviewable baseline.
 
-## The plan-document workflow
+## Making changes
 
-Substantive changes should follow the implementation plans in
-[`plans/`](plans/README.md). Each plan (`01`–`13`) states the problems it
-addresses with `file:line` evidence, the design decisions, an ordered task
-breakdown, and acceptance criteria. Execute plans in dependency order (see
-`plans/README.md`), write a failing test first for every bug fix, and don't
-change an existing test's expected values unless the plan says it pins
-buggy/stale behavior.
+Write a failing test first for every bug fix, and don't change an existing
+test's expected values to make a test pass unless that test was deliberately
+pinning buggy or stale behavior. Money-flow changes should be validated with a
+probe simulation and conservation checks, not just a green suite.
 
 ## Releasing
 
