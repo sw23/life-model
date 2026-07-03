@@ -52,15 +52,16 @@ jobs:
   type:
     name: Type check (mypy)
     runs-on: ubuntu-latest
-    # Lenient during Phase 0/1; does not block merges until later plans tighten types.
-    continue-on-error: true
+    # Lenient during Phase 0/1: mypy runs and reports, but does not fail the
+    # pipeline until later plans tighten types (then drop the `|| ...` guard).
     steps:
     - uses: actions/checkout@v7
     - uses: actions/setup-python@v6
       with:
         python-version: '3.12'
     - run: python -m pip install tox
-    - run: tox -e type
+    - name: Type check (non-blocking)
+      run: tox -e type || echo "::warning::mypy reported errors (non-blocking during Phase 0/1)"
 
   notebooks:
     name: Notebook tests
