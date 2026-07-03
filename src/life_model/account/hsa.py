@@ -38,9 +38,7 @@ class HealthSavingsAccount(FinancialAccount):
         hsa_config = person.model.config.accounts.hsa
         if contribution_limit is None:
             contribution_limit = (
-                hsa_config.contribution_limit_family
-                if hsa_type == HSAType.FAMILY
-                else hsa_config.contribution_limit
+                hsa_config.contribution_limit_family if hsa_type == HSAType.FAMILY else hsa_config.contribution_limit
             )
         if employer_contribution is None:
             employer_contribution = hsa_config.default_employer_contribution

@@ -116,7 +116,9 @@ class Family(LifeModelAgent):
             amount_from_pretax_401k = max(0, spending_plus_pre_401k_taxes - self.bank_account_balance)
             yearly_taxes_plus_401k_income = self.get_income_taxes_due(amount_from_pretax_401k)
             taxes_from_pretax_401k = yearly_taxes_plus_401k_income.total - yearly_taxes.total
-            taxes_from_pretax_401k += taxes_from_pretax_401k * (max_tax_rate(self.filing_status, self.model.config) / 100)
+            taxes_from_pretax_401k += taxes_from_pretax_401k * (
+                max_tax_rate(self.filing_status, self.model.config) / 100
+            )
             self.withdraw_from_pretax_401ks(amount_from_pretax_401k + taxes_from_pretax_401k)
 
             # Now that 401k withdrawal is complete (if necessary), calculatue taxes
