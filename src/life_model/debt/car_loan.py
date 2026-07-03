@@ -4,14 +4,23 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 import html
 from typing import Optional
-from ..people.person import Person
+
 from ..base_classes import Loan
+from ..people.person import Person
 
 
 class CarLoan(Loan):
-    def __init__(self, person: Person, loan_amount: float, length_years: int, yearly_interest_rate: float,
-                 name: str, principal: Optional[float] = None, monthly_payment: Optional[float] = None):
-        """ Models a car loan for a person
+    def __init__(
+        self,
+        person: Person,
+        loan_amount: float,
+        length_years: int,
+        yearly_interest_rate: float,
+        name: str,
+        principal: Optional[float] = None,
+        monthly_payment: Optional[float] = None,
+    ):
+        """Models a car loan for a person
 
         Args:
             person: The person to which this loan belongs
@@ -61,15 +70,15 @@ class CarLoan(Loan):
         return total_payment
 
     def get_monthly_payment(self) -> float:
-        """ Calculate monthly payment using standard loan formula """
+        """Calculate monthly payment using standard loan formula"""
         return self.calculate_monthly_payment()
 
     def _repr_html_(self):
-        desc = '<ul>'
-        desc += f'<li>Vehicle: {html.escape(self.name)}</li>'
-        desc += f'<li>Loan Amount: ${self.loan_amount:,.2f}</li>'
-        desc += f'<li>Principal Balance: ${self.principal:,.2f}</li>'
-        desc += f'<li>Monthly Payment: ${self.monthly_payment:,.2f}</li>'
-        desc += f'<li>Interest Rate: {self.yearly_interest_rate}%</li>'
-        desc += '</ul>'
+        desc = "<ul>"
+        desc += f"<li>Vehicle: {html.escape(self.name)}</li>"
+        desc += f"<li>Loan Amount: ${self.loan_amount:,.2f}</li>"
+        desc += f"<li>Principal Balance: ${self.principal:,.2f}</li>"
+        desc += f"<li>Monthly Payment: ${self.monthly_payment:,.2f}</li>"
+        desc += f"<li>Interest Rate: {self.yearly_interest_rate}%</li>"
+        desc += "</ul>"
         return desc

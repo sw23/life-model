@@ -3,13 +3,13 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-from typing import Dict, List, TypeVar, Generic, TYPE_CHECKING
 from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING, Dict, Generic, List, TypeVar
 
 if TYPE_CHECKING:
     from .people.person import Person
 
-T = TypeVar('T')
+T = TypeVar("T")
 
 
 class Registry(Generic[T], ABC):
@@ -19,18 +19,18 @@ class Registry(Generic[T], ABC):
         self._items: Dict[str, List[T]] = {}
 
     @abstractmethod
-    def _get_key(self, owner: 'Person') -> str:
+    def _get_key(self, owner: "Person") -> str:
         """Get the unique key for an owner"""
         pass
 
-    def register(self, owner: 'Person', item: T) -> None:
+    def register(self, owner: "Person", item: T) -> None:
         """Register an item for an owner"""
         key = self._get_key(owner)
         if key not in self._items:
             self._items[key] = []
         self._items[key].append(item)
 
-    def unregister(self, owner: 'Person', item: T) -> bool:
+    def unregister(self, owner: "Person", item: T) -> bool:
         """Unregister an item for an owner. Returns True if item was found and removed"""
         key = self._get_key(owner)
         if key in self._items and item in self._items[key]:
@@ -40,12 +40,12 @@ class Registry(Generic[T], ABC):
             return True
         return False
 
-    def get_items(self, owner: 'Person') -> List[T]:
+    def get_items(self, owner: "Person") -> List[T]:
         """Get all items for an owner"""
         key = self._get_key(owner)
         return self._items.get(key, [])
 
-    def clear(self, owner: 'Person') -> None:
+    def clear(self, owner: "Person") -> None:
         """Clear all items for an owner"""
         key = self._get_key(owner)
         if key in self._items:
@@ -62,57 +62,67 @@ class Registry(Generic[T], ABC):
 class PersonRegistry(Registry[T]):
     """Registry that uses Person's unique_id as the key"""
 
-    def _get_key(self, owner: 'Person') -> str:
+    def _get_key(self, owner: "Person") -> str:
         return str(owner.unique_id)
 
 
-class BankAccountRegistry(PersonRegistry['BankAccount']):
+class BankAccountRegistry(PersonRegistry["BankAccount"]):
     """Registry for managing BankAccount relationships"""
+
     pass
 
 
-class JobRegistry(PersonRegistry['Job']):
+class JobRegistry(PersonRegistry["Job"]):
     """Registry for managing Job relationships"""
+
     pass
 
 
-class HomeRegistry(PersonRegistry['Home']):
+class HomeRegistry(PersonRegistry["Home"]):
     """Registry for managing Home relationships"""
+
     pass
 
 
-class ApartmentRegistry(PersonRegistry['Apartment']):
+class ApartmentRegistry(PersonRegistry["Apartment"]):
     """Registry for managing Apartment relationships"""
+
     pass
 
 
-class LifeInsuranceRegistry(PersonRegistry['LifeInsurance']):
+class LifeInsuranceRegistry(PersonRegistry["LifeInsurance"]):
     """Registry for managing LifeInsurance policy relationships"""
+
     pass
 
 
-class GeneralInsuranceRegistry(PersonRegistry['Insurance']):
+class GeneralInsuranceRegistry(PersonRegistry["Insurance"]):
     """Registry for managing general Insurance policy relationships"""
+
     pass
 
 
-class AnnuityRegistry(PersonRegistry['Annuity']):
+class AnnuityRegistry(PersonRegistry["Annuity"]):
     """Registry for managing Annuity relationships"""
+
     pass
 
 
-class Plan529Registry(PersonRegistry['Plan529']):
+class Plan529Registry(PersonRegistry["Plan529"]):
     """Registry for managing 529 Plan relationships"""
+
     pass
 
 
-class DonationRegistry(PersonRegistry['Donation']):
+class DonationRegistry(PersonRegistry["Donation"]):
     """Registry for managing Donation relationships"""
+
     pass
 
 
-class DonorAdvisedFundRegistry(PersonRegistry['DonorAdvisedFund']):
+class DonorAdvisedFundRegistry(PersonRegistry["DonorAdvisedFund"]):
     """Registry for managing DonorAdvisedFund relationships"""
+
     pass
 
 
@@ -131,7 +141,7 @@ class ModelRegistries:
         self.donations = DonationRegistry()
         self.donor_advised_funds = DonorAdvisedFundRegistry()
 
-    def clear_all(self, owner: 'Person') -> None:
+    def clear_all(self, owner: "Person") -> None:
         """Clear all registries for a specific owner"""
         self.bank_accounts.clear(owner)
         self.jobs.clear(owner)

@@ -4,8 +4,8 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 from .federal import FilingStatus, federal_income_tax
+from .fica import medicare_tax, social_security_tax
 from .state import state_income_tax
-from .fica import social_security_tax, medicare_tax
 
 
 class TaxesDue:

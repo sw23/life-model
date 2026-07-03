@@ -4,28 +4,24 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 import unittest
+
+from ..account.bank import BankAccount
+from ..insurance.annuity import Annuity, AnnuityPayoutType, AnnuityType
 from ..model import LifeModel
 from ..people.family import Family
 from ..people.person import Person, Spending
-from ..account.bank import BankAccount
-from ..insurance.annuity import Annuity, AnnuityType, AnnuityPayoutType
 
 
 class TestAnnuity(unittest.TestCase):
-
     def setUp(self):
         """Set up test fixtures"""
         self.model = LifeModel(start_year=2023, end_year=2030)
         self.family = Family(self.model)
         self.john = Person(
-            family=self.family,
-            name='John',
-            age=45,
-            retirement_age=65,
-            spending=Spending(self.model, base=50000)
+            family=self.family, name="John", age=45, retirement_age=65, spending=Spending(self.model, base=50000)
         )
         # Set up bank accounts
-        BankAccount(owner=self.john, company='Bank', balance=100000)
+        BankAccount(owner=self.john, company="Bank", balance=100000)
 
     def test_fixed_deferred_annuity_creation(self):
         """Test creating a fixed deferred annuity"""
@@ -34,7 +30,7 @@ class TestAnnuity(unittest.TestCase):
             annuity_type=AnnuityType.FIXED,
             initial_balance=50000,
             interest_rate=4.0,
-            payout_start_age=65
+            payout_start_age=65,
         )
 
         self.assertEqual(annuity.person, self.john)
@@ -49,10 +45,7 @@ class TestAnnuity(unittest.TestCase):
     def test_annuity_interest_growth(self):
         """Test interest growth on annuity balance"""
         annuity = Annuity(
-            person=self.john,
-            annuity_type=AnnuityType.DEFERRED,
-            initial_balance=100000,
-            interest_rate=5.0
+            person=self.john, annuity_type=AnnuityType.DEFERRED, initial_balance=100000, interest_rate=5.0
         )
 
         initial_balance = annuity.balance
@@ -70,7 +63,7 @@ class TestAnnuity(unittest.TestCase):
             annuity_type=AnnuityType.DEFERRED,
             initial_balance=200000,
             interest_rate=4.0,
-            payout_start_age=45  # Same as current age
+            payout_start_age=45,  # Same as current age
         )
 
         result = annuity.annuitize()
@@ -84,10 +77,7 @@ class TestAnnuity(unittest.TestCase):
     def test_immediate_annuity_auto_annuitization(self):
         """Test that immediate annuities auto-annuitize in pre_step"""
         annuity = Annuity(
-            person=self.john,
-            annuity_type=AnnuityType.IMMEDIATE,
-            initial_balance=100000,
-            interest_rate=4.0
+            person=self.john, annuity_type=AnnuityType.IMMEDIATE, initial_balance=100000, interest_rate=4.0
         )
 
         self.assertFalse(annuity.is_annuitized)
@@ -98,5 +88,5 @@ class TestAnnuity(unittest.TestCase):
         self.assertIsNotNone(annuity.monthly_payout)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

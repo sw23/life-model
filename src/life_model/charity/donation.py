@@ -4,15 +4,17 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 import html
 from enum import Enum
-from typing import Optional, TYPE_CHECKING, cast
-from ..model import LifeModel, LifeModelAgent, Event
+from typing import TYPE_CHECKING, Optional, cast
+
+from ..model import Event, LifeModel, LifeModelAgent
 
 if TYPE_CHECKING:
     from ..people.person import Person
 
 
 class DonationType(Enum):
-    """ Enum for donation types """
+    """Enum for donation types"""
+
     CASH = "Cash"
     STOCK = "Stock"
     PROPERTY = "Property"
@@ -20,13 +22,18 @@ class DonationType(Enum):
 
 
 class Donation(LifeModelAgent):
-    def __init__(self, person: 'Person', charity_name: str, annual_amount: float,
-                 donation_type: DonationType = DonationType.CASH,
-                 tax_deductible: bool = True,
-                 frequency_years: int = 1,
-                 start_year: Optional[int] = None,
-                 end_year: Optional[int] = None):
-        """ Models a charitable donation for a person
+    def __init__(
+        self,
+        person: "Person",
+        charity_name: str,
+        annual_amount: float,
+        donation_type: DonationType = DonationType.CASH,
+        tax_deductible: bool = True,
+        frequency_years: int = 1,
+        start_year: Optional[int] = None,
+        end_year: Optional[int] = None,
+    ):
+        """Models a charitable donation for a person
 
         Args:
             person: The person making the donation
@@ -85,9 +92,7 @@ class Donation(LifeModelAgent):
 
             # Log the donation event
             model = cast(LifeModel, self.person.model)
-            model.event_log.add(Event(
-                f"{self.person.name} donated ${amount_withdrawn:,.0f} to {self.charity_name}"
-            ))
+            model.event_log.add(Event(f"{self.person.name} donated ${amount_withdrawn:,.0f} to {self.charity_name}"))
 
         return amount_withdrawn
 
@@ -98,14 +103,14 @@ class Donation(LifeModelAgent):
         return self.stat_charitable_donations
 
     def _repr_html_(self):
-        desc = '<ul>'
-        desc += f'<li>Charity: {html.escape(self.charity_name)}</li>'
-        desc += f'<li>Annual Amount: ${self.annual_amount:,.2f}</li>'
-        desc += f'<li>Type: {self.donation_type.value}</li>'
-        desc += f'<li>Tax Deductible: {self.tax_deductible}</li>'
-        desc += f'<li>Frequency: Every {self.frequency_years} year(s)</li>'
-        desc += f'<li>Total Donated: ${self.stat_total_donated:,.2f}</li>'
-        desc += '</ul>'
+        desc = "<ul>"
+        desc += f"<li>Charity: {html.escape(self.charity_name)}</li>"
+        desc += f"<li>Annual Amount: ${self.annual_amount:,.2f}</li>"
+        desc += f"<li>Type: {self.donation_type.value}</li>"
+        desc += f"<li>Tax Deductible: {self.tax_deductible}</li>"
+        desc += f"<li>Frequency: Every {self.frequency_years} year(s)</li>"
+        desc += f"<li>Total Donated: ${self.stat_total_donated:,.2f}</li>"
+        desc += "</ul>"
         return desc
 
     def pre_step(self):

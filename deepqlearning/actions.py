@@ -4,9 +4,9 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional
-from enum import Enum
 from dataclasses import dataclass
+from enum import Enum
+from typing import Dict, List, Optional
 
 from life_model.model import LifeModel
 from life_model.people.person import Person
@@ -66,6 +66,7 @@ class ActionType(Enum):
 @dataclass
 class ActionResult:
     """Result of executing a financial action"""
+
     success: bool
     amount_transferred: float = 0.0
     fees_paid: float = 0.0
@@ -106,11 +107,9 @@ class TransferAction(FinancialAction):
     def can_execute(self) -> bool:
         """Check if transfer is possible"""
         if self.action_type == ActionType.TRANSFER_BANK_TO_401K_PRETAX:
-            return (self.person.bank_account_balance >= self.amount and
-                    len(self.person.all_retirement_accounts) > 0)
+            return self.person.bank_account_balance >= self.amount and len(self.person.all_retirement_accounts) > 0
         elif self.action_type == ActionType.TRANSFER_BANK_TO_401K_ROTH:
-            return (self.person.bank_account_balance >= self.amount and
-                    len(self.person.all_retirement_accounts) > 0)
+            return self.person.bank_account_balance >= self.amount and len(self.person.all_retirement_accounts) > 0
         elif self.action_type == ActionType.TRANSFER_BANK_TO_BROKERAGE:
             return self.person.bank_account_balance >= self.amount
         # Add more conditions for other transfer types
@@ -147,7 +146,7 @@ class TransferAction(FinancialAction):
         return {
             "amount_transferred": self.amount,
             "bank_balance_change": -self.amount,
-            "retirement_balance_change": self.amount
+            "retirement_balance_change": self.amount,
         }
 
 
@@ -183,10 +182,7 @@ class WithdrawalAction(FinancialAction):
                 tax_implications = withdrawn  # Will be taxed as income
 
                 return ActionResult(
-                    success=True,
-                    amount_transferred=withdrawn,
-                    fees_paid=penalty,
-                    tax_implications=tax_implications
+                    success=True, amount_transferred=withdrawn, fees_paid=penalty, tax_implications=tax_implications
                 )
 
             # Add more withdrawal implementations
@@ -205,7 +201,7 @@ class WithdrawalAction(FinancialAction):
             "amount_withdrawn": self.amount,
             "penalty_paid": penalty,
             "net_to_bank": self.amount - penalty,
-            "tax_implications": self.amount
+            "tax_implications": self.amount,
         }
 
 
@@ -226,18 +222,12 @@ class SpendingAction(FinancialAction):
             if self.action_type == ActionType.INCREASE_SPENDING:
                 multiplier = 1 + self.percentage_change
                 self.person.spending.base *= multiplier
-                return ActionResult(
-                    success=True,
-                    message=f"Increased spending by {self.percentage_change*100:.1f}%"
-                )
+                return ActionResult(success=True, message=f"Increased spending by {self.percentage_change * 100:.1f}%")
 
             elif self.action_type == ActionType.DECREASE_SPENDING:
                 multiplier = 1 - self.percentage_change
                 self.person.spending.base *= multiplier
-                return ActionResult(
-                    success=True,
-                    message=f"Decreased spending by {self.percentage_change*100:.1f}%"
-                )
+                return ActionResult(success=True, message=f"Decreased spending by {self.percentage_change * 100:.1f}%")
 
             return ActionResult(success=False, message="Spending action not implemented")
 
@@ -252,10 +242,7 @@ class SpendingAction(FinancialAction):
         else:
             new_spending = current_spending * (1 - self.percentage_change)
 
-        return {
-            "spending_change": new_spending - current_spending,
-            "new_annual_spending": new_spending
-        }
+        return {"spending_change": new_spending - current_spending, "new_annual_spending": new_spending}
 
 
 class ActionSpace:
@@ -271,37 +258,34 @@ class ActionSpace:
 
         # Transfer actions (if person has bank account)
         if len(self.person.bank_accounts) > 0:
-            actions.extend([
-                ActionType.TRANSFER_BANK_TO_401K_PRETAX,
-                ActionType.TRANSFER_BANK_TO_401K_ROTH,
-                ActionType.TRANSFER_BANK_TO_IRA_TRADITIONAL,
-                ActionType.TRANSFER_BANK_TO_IRA_ROTH,
-                ActionType.TRANSFER_BANK_TO_BROKERAGE,
-                ActionType.TRANSFER_BANK_TO_HSA
-            ])
+            actions.extend(
+                [
+                    ActionType.TRANSFER_BANK_TO_401K_PRETAX,
+                    ActionType.TRANSFER_BANK_TO_401K_ROTH,
+                    ActionType.TRANSFER_BANK_TO_IRA_TRADITIONAL,
+                    ActionType.TRANSFER_BANK_TO_IRA_ROTH,
+                    ActionType.TRANSFER_BANK_TO_BROKERAGE,
+                    ActionType.TRANSFER_BANK_TO_HSA,
+                ]
+            )
 
         # Withdrawal actions (if person has retirement accounts)
         if len(self.person.all_retirement_accounts) > 0:
-            actions.extend([
-                ActionType.WITHDRAW_401K_PRETAX,
-                ActionType.WITHDRAW_401K_ROTH,
-                ActionType.WITHDRAW_IRA_TRADITIONAL,
-                ActionType.WITHDRAW_IRA_ROTH
-            ])
+            actions.extend(
+                [
+                    ActionType.WITHDRAW_401K_PRETAX,
+                    ActionType.WITHDRAW_401K_ROTH,
+                    ActionType.WITHDRAW_IRA_TRADITIONAL,
+                    ActionType.WITHDRAW_IRA_ROTH,
+                ]
+            )
 
         # Spending actions (always available)
-        actions.extend([
-            ActionType.INCREASE_SPENDING,
-            ActionType.DECREASE_SPENDING
-        ])
+        actions.extend([ActionType.INCREASE_SPENDING, ActionType.DECREASE_SPENDING])
 
         # Housing actions (if person has homes)
         if len(self.person.homes) > 0:
-            actions.extend([
-                ActionType.PAY_EXTRA_MORTGAGE,
-                ActionType.SELL_HOUSE,
-                ActionType.REFINANCE_MORTGAGE
-            ])
+            actions.extend([ActionType.PAY_EXTRA_MORTGAGE, ActionType.SELL_HOUSE, ActionType.REFINANCE_MORTGAGE])
         else:
             actions.append(ActionType.BUY_HOUSE)
 
@@ -330,24 +314,24 @@ class ActionExecutor:
     def __init__(self, model: LifeModel):
         self.model = model
 
-    def execute_action(self, person: Person, action_type: ActionType,
-                       amount: Optional[float] = None,
-                       **kwargs) -> ActionResult:
+    def execute_action(
+        self, person: Person, action_type: ActionType, amount: Optional[float] = None, **kwargs
+    ) -> ActionResult:
         """Execute a financial action"""
 
         # Create appropriate action instance
-        if action_type in [ActionType.TRANSFER_BANK_TO_401K_PRETAX,
-                           ActionType.TRANSFER_BANK_TO_401K_ROTH,
-                           ActionType.TRANSFER_BANK_TO_BROKERAGE]:
+        if action_type in [
+            ActionType.TRANSFER_BANK_TO_401K_PRETAX,
+            ActionType.TRANSFER_BANK_TO_401K_ROTH,
+            ActionType.TRANSFER_BANK_TO_BROKERAGE,
+        ]:
             action = TransferAction(action_type, person, amount or 1000.0)
 
-        elif action_type in [ActionType.WITHDRAW_401K_PRETAX,
-                             ActionType.WITHDRAW_401K_ROTH]:
+        elif action_type in [ActionType.WITHDRAW_401K_PRETAX, ActionType.WITHDRAW_401K_ROTH]:
             action = WithdrawalAction(action_type, person, amount or 1000.0)
 
-        elif action_type in [ActionType.INCREASE_SPENDING,
-                             ActionType.DECREASE_SPENDING]:
-            percentage = kwargs.get('percentage_change', 0.05)  # Default 5%
+        elif action_type in [ActionType.INCREASE_SPENDING, ActionType.DECREASE_SPENDING]:
+            percentage = kwargs.get("percentage_change", 0.05)  # Default 5%
             action = SpendingAction(action_type, person, percentage)
 
         elif action_type == ActionType.NO_ACTION:
@@ -359,23 +343,24 @@ class ActionExecutor:
         # Execute the action
         return action.execute()
 
-    def can_execute_action(self, person: Person, action_type: ActionType,
-                           amount: Optional[float] = None, **kwargs) -> bool:
+    def can_execute_action(
+        self, person: Person, action_type: ActionType, amount: Optional[float] = None, **kwargs
+    ) -> bool:
         """Check if an action can be executed"""
 
         # Create appropriate action instance for checking
-        if action_type in [ActionType.TRANSFER_BANK_TO_401K_PRETAX,
-                           ActionType.TRANSFER_BANK_TO_401K_ROTH,
-                           ActionType.TRANSFER_BANK_TO_BROKERAGE]:
+        if action_type in [
+            ActionType.TRANSFER_BANK_TO_401K_PRETAX,
+            ActionType.TRANSFER_BANK_TO_401K_ROTH,
+            ActionType.TRANSFER_BANK_TO_BROKERAGE,
+        ]:
             action = TransferAction(action_type, person, amount or 1000.0)
 
-        elif action_type in [ActionType.WITHDRAW_401K_PRETAX,
-                             ActionType.WITHDRAW_401K_ROTH]:
+        elif action_type in [ActionType.WITHDRAW_401K_PRETAX, ActionType.WITHDRAW_401K_ROTH]:
             action = WithdrawalAction(action_type, person, amount or 1000.0)
 
-        elif action_type in [ActionType.INCREASE_SPENDING,
-                             ActionType.DECREASE_SPENDING]:
-            percentage = kwargs.get('percentage_change', 0.05)
+        elif action_type in [ActionType.INCREASE_SPENDING, ActionType.DECREASE_SPENDING]:
+            percentage = kwargs.get("percentage_change", 0.05)
             action = SpendingAction(action_type, person, percentage)
 
         elif action_type == ActionType.NO_ACTION:

@@ -4,11 +4,12 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 import unittest
-from ..model import LifeModel
-from ..people.person import Person, Spending
-from ..people.family import Family
+
 from ..account.bank import BankAccount
 from ..charity.daf import DonorAdvisedFund
+from ..model import LifeModel
+from ..people.family import Family
+from ..people.person import Person, Spending
 
 
 class TestDAF(unittest.TestCase):
@@ -28,7 +29,7 @@ class TestDAF(unittest.TestCase):
             balance=50000,
             growth_rate=7.0,
             management_fee=0.6,
-            distribution_rate=5.0
+            distribution_rate=5.0,
         )
 
         self.assertEqual(daf.fund_name, "Family Foundation")
@@ -92,7 +93,7 @@ class TestDAF(unittest.TestCase):
             "Fee DAF",
             balance=100000,
             management_fee=0.6,
-            distribution_rate=0  # No distributions to isolate fee
+            distribution_rate=0,  # No distributions to isolate fee
         )
 
         initial_balance = daf.balance
@@ -116,7 +117,7 @@ class TestDAF(unittest.TestCase):
             balance=100000,
             distribution_rate=5.0,
             growth_rate=0,  # No growth to isolate distribution
-            management_fee=0  # No fees to isolate distribution
+            management_fee=0,  # No fees to isolate distribution
         )
 
         self.model.step()
@@ -135,7 +136,7 @@ class TestDAF(unittest.TestCase):
             self.person,
             "Manual DAF",
             balance=50000,
-            distribution_rate=0  # No automatic distribution
+            distribution_rate=0,  # No automatic distribution
         )
 
         amount_distributed = daf.distribute_to_charity(10000)
@@ -192,12 +193,7 @@ class TestDAF(unittest.TestCase):
     def test_daf_multi_year_tracking(self):
         """Test DAF tracking over multiple years"""
         daf = DonorAdvisedFund(
-            self.person,
-            "Multi-Year DAF",
-            balance=100000,
-            growth_rate=7.0,
-            management_fee=0.6,
-            distribution_rate=5.0
+            self.person, "Multi-Year DAF", balance=100000, growth_rate=7.0, management_fee=0.6, distribution_rate=5.0
         )
 
         # Year 1
@@ -258,13 +254,7 @@ class TestDAF(unittest.TestCase):
 
     def test_daf_with_zero_distribution_rate(self):
         """Test DAF that doesn't auto-distribute"""
-        daf = DonorAdvisedFund(
-            self.person,
-            "No Auto Dist",
-            balance=100000,
-            distribution_rate=0,
-            growth_rate=7.0
-        )
+        daf = DonorAdvisedFund(self.person, "No Auto Dist", balance=100000, distribution_rate=0, growth_rate=7.0)
 
         self.model.step()
 
@@ -285,5 +275,5 @@ class TestDAF(unittest.TestCase):
         self.assertGreaterEqual(self.person.charitable_deductions, 15000)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

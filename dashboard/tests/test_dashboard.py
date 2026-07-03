@@ -6,12 +6,13 @@ This module tests that the dashboard components work correctly
 without needing to run the full Solara server.
 """
 
-import sys
 import os
+import sys
+
 import pytest
 
 # Add the dashboard directory to Python path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', 'dashboard'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "dashboard"))
 
 from app import DashboardLifeModel  # noqa: E402
 
@@ -104,9 +105,9 @@ def test_model_creation():
     df = model.datacollector.get_model_vars_dataframe()
     assert not df.empty
     assert df.shape[0] == 5  # 5 years of data
-    assert 'Year' in df.columns
-    assert 'Income' in df.columns
-    assert 'Bank Balance' in df.columns
+    assert "Year" in df.columns
+    assert "Income" in df.columns
+    assert "Bank Balance" in df.columns
 
 
 def test_parameter_variations(single_person_model, couple_model):
@@ -128,8 +129,8 @@ def test_parameter_variations(single_person_model, couple_model):
     assert len(df_single) == len(df_couple)
 
     # Couple should generally have higher income and bank balance
-    final_balance_single = df_single['Bank Balance'].iloc[-1]
-    final_balance_couple = df_couple['Bank Balance'].iloc[-1]
+    final_balance_single = df_single["Bank Balance"].iloc[-1]
+    final_balance_couple = df_couple["Bank Balance"].iloc[-1]
 
     assert final_balance_single > 0
     assert final_balance_couple > 0

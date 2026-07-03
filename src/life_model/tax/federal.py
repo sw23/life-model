@@ -4,6 +4,7 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 from enum import Enum
+
 from ..config.config_manager import config
 
 
@@ -27,7 +28,7 @@ def _get_federal_standard_deduction_dict():
     """Legacy compatibility function"""
     return {
         FilingStatus.SINGLE: get_federal_standard_deduction(FilingStatus.SINGLE),
-        FilingStatus.MARRIED_FILING_JOINTLY: get_federal_standard_deduction(FilingStatus.MARRIED_FILING_JOINTLY)
+        FilingStatus.MARRIED_FILING_JOINTLY: get_federal_standard_deduction(FilingStatus.MARRIED_FILING_JOINTLY),
     }
 
 
@@ -35,7 +36,7 @@ def _get_federal_tax_brackets_dict():
     """Legacy compatibility function"""
     return {
         FilingStatus.SINGLE: get_federal_tax_brackets(FilingStatus.SINGLE),
-        FilingStatus.MARRIED_FILING_JOINTLY: get_federal_tax_brackets(FilingStatus.MARRIED_FILING_JOINTLY)
+        FilingStatus.MARRIED_FILING_JOINTLY: get_federal_tax_brackets(FilingStatus.MARRIED_FILING_JOINTLY),
     }
 
 
@@ -56,7 +57,7 @@ def federal_income_tax(income: float, filing_status: FilingStatus) -> float:
     """
     bracket = get_federal_tax_brackets(filing_status)
     total_tax = 0
-    for (start, end, percent) in bracket:
+    for start, end, percent in bracket:
         amount_in_bracket = min(max(income - start, 0), end - start)
         if amount_in_bracket == 0:
             break

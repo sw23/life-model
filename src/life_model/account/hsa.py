@@ -3,20 +3,28 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 from enum import Enum
-from ..people.person import Person
+
 from ..base_classes import FinancialAccount
+from ..people.person import Person
 
 
 class HSAType(Enum):
     """Types of Health Savings Accounts"""
+
     INDIVIDUAL = "Individual"
     FAMILY = "Family"
 
 
 class HealthSavingsAccount(FinancialAccount):
-    def __init__(self, person: Person, hsa_type: HSAType, balance: float = 0,
-                 contribution_limit: float = 4150, employer_contribution: float = 0):
-        """ Models a Health Savings Account (HSA)
+    def __init__(
+        self,
+        person: Person,
+        hsa_type: HSAType,
+        balance: float = 0,
+        contribution_limit: float = 4150,
+        employer_contribution: float = 0,
+    ):
+        """Models a Health Savings Account (HSA)
 
         Args:
             person: The person who owns this HSA
@@ -66,13 +74,13 @@ class HealthSavingsAccount(FinancialAccount):
         self.annual_contributions = 0
 
     def _repr_html_(self):
-        desc = '<ul>'
-        desc += f'<li>HSA Type: {self.hsa_type.value}</li>'
-        desc += f'<li>Balance: ${self.balance:,.2f}</li>'
-        desc += f'<li>Contribution Limit: ${self.contribution_limit:,.2f}</li>'
-        desc += f'<li>Contributions This Year: ${self.annual_contributions:,.2f}</li>'
-        desc += f'<li>Remaining Limit: ${self.contribution_limit - self.annual_contributions:,.2f}</li>'
-        desc += '</ul>'
+        desc = "<ul>"
+        desc += f"<li>HSA Type: {self.hsa_type.value}</li>"
+        desc += f"<li>Balance: ${self.balance:,.2f}</li>"
+        desc += f"<li>Contribution Limit: ${self.contribution_limit:,.2f}</li>"
+        desc += f"<li>Contributions This Year: ${self.annual_contributions:,.2f}</li>"
+        desc += f"<li>Remaining Limit: ${self.contribution_limit - self.annual_contributions:,.2f}</li>"
+        desc += "</ul>"
         return desc
 
     def step(self):

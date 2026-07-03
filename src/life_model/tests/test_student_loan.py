@@ -5,6 +5,7 @@
 
 import unittest
 from unittest.mock import Mock
+
 from ..debt.student_loan import StudentLoan, StudentLoanType
 from ..people.person import Person
 
@@ -23,19 +24,12 @@ class TestStudentLoan(unittest.TestCase):
             loan_amount=25000.0,
             yearly_interest_rate=4.5,
             length_years=10,
-            school_name="State University"
+            school_name="State University",
         )
 
     def test_init_default_values(self):
         """Test StudentLoan initialization with default values."""
-        loan = StudentLoan(
-            self.mock_person,
-            StudentLoanType.PRIVATE,
-            15000.0,
-            6.0,
-            8,
-            "Private College"
-        )
+        loan = StudentLoan(self.mock_person, StudentLoanType.PRIVATE, 15000.0, 6.0, 8, "Private College")
 
         self.assertEqual(loan.person, self.mock_person)
         self.assertEqual(loan.loan_type, StudentLoanType.PRIVATE)
@@ -59,7 +53,7 @@ class TestStudentLoan(unittest.TestCase):
             12,
             "Custom University",
             principal=custom_principal,
-            monthly_payment=custom_payment
+            monthly_payment=custom_payment,
         )
 
         self.assertEqual(loan.principal, custom_principal)
@@ -80,12 +74,7 @@ class TestStudentLoan(unittest.TestCase):
         rate = 5.0
 
         loan = StudentLoan(
-            self.mock_person,
-            StudentLoanType.FEDERAL_SUBSIDIZED,
-            loan_amount,
-            rate,
-            years,
-            "Test University"
+            self.mock_person, StudentLoanType.FEDERAL_SUBSIDIZED, loan_amount, rate, years, "Test University"
         )
 
         # Calculate expected payment manually using loan formula
@@ -101,12 +90,7 @@ class TestStudentLoan(unittest.TestCase):
     def test_get_monthly_payment_zero_interest(self):
         """Test monthly payment calculation with zero interest rate."""
         loan = StudentLoan(
-            self.mock_person,
-            StudentLoanType.FEDERAL_SUBSIDIZED,
-            24000.0,
-            0.0,
-            10,
-            "Zero Interest School"
+            self.mock_person, StudentLoanType.FEDERAL_SUBSIDIZED, 24000.0, 0.0, 10, "Zero Interest School"
         )
 
         # With 0% interest, payment should be loan_amount / num_payments
@@ -125,11 +109,7 @@ class TestStudentLoan(unittest.TestCase):
         total_paid = self.student_loan.make_payment(monthly_payment)
 
         self.assertAlmostEqual(total_paid, monthly_payment, places=2)
-        self.assertAlmostEqual(
-            self.student_loan.principal,
-            initial_principal - expected_principal_payment,
-            places=2
-        )
+        self.assertAlmostEqual(self.student_loan.principal, initial_principal - expected_principal_payment, places=2)
 
         # Check statistics tracking
         self.assertEqual(len(self.student_loan.stat_principal_payment_history), 1)
@@ -148,11 +128,7 @@ class TestStudentLoan(unittest.TestCase):
         total_paid = self.student_loan.make_payment(monthly_payment, extra_principal)
 
         self.assertAlmostEqual(total_paid, expected_total_payment, places=2)
-        self.assertAlmostEqual(
-            self.student_loan.principal,
-            initial_principal - expected_principal_payment,
-            places=2
-        )
+        self.assertAlmostEqual(self.student_loan.principal, initial_principal - expected_principal_payment, places=2)
 
     def test_make_payment_exceeds_balance(self):
         """Test making a payment that exceeds the remaining balance."""
@@ -210,7 +186,7 @@ class TestStudentLoan(unittest.TestCase):
         self.assertIn("Federal Subsidized", html)
         self.assertIn("State University", html)
         self.assertIn("$25,000.00", html)  # Loan amount
-        self.assertIn("4.5%", html)        # Interest rate
+        self.assertIn("4.5%", html)  # Interest rate
         self.assertIn("<ul>", html)
         self.assertIn("</ul>", html)
 
@@ -222,7 +198,7 @@ class TestStudentLoan(unittest.TestCase):
             10000.0,
             5.0,
             10,
-            'Evil University & Co <script>alert("XSS")</script>'
+            'Evil University & Co <script>alert("XSS")</script>',
         )
         html = loan._repr_html_()
 
@@ -242,14 +218,14 @@ class TestStudentLoan(unittest.TestCase):
     def test_inheritance_from_loan(self):
         """Test that StudentLoan properly inherits from Loan base class."""
         # Test that it has inherited attributes
-        self.assertTrue(hasattr(self.student_loan, 'stat_principal_payment_history'))
-        self.assertTrue(hasattr(self.student_loan, 'stat_interest_payment_history'))
-        self.assertTrue(hasattr(self.student_loan, 'stat_balance_history'))
+        self.assertTrue(hasattr(self.student_loan, "stat_principal_payment_history"))
+        self.assertTrue(hasattr(self.student_loan, "stat_interest_payment_history"))
+        self.assertTrue(hasattr(self.student_loan, "stat_balance_history"))
 
         # Test that it has inherited methods
-        self.assertTrue(hasattr(self.student_loan, 'get_interest_amount'))
-        self.assertTrue(hasattr(self.student_loan, 'step'))
-        self.assertTrue(hasattr(self.student_loan, 'calculate_monthly_payment'))
+        self.assertTrue(hasattr(self.student_loan, "get_interest_amount"))
+        self.assertTrue(hasattr(self.student_loan, "step"))
+        self.assertTrue(hasattr(self.student_loan, "calculate_monthly_payment"))
 
     def test_multiple_payments(self):
         """Test making multiple payments over time."""
@@ -275,7 +251,7 @@ class TestStudentLoan(unittest.TestCase):
             10000.0,
             25.0,  # 25% APR
             5,
-            "Expensive School"
+            "Expensive School",
         )
 
         monthly_interest = (25.0 / 100) * 10000.0 / 12
@@ -290,7 +266,7 @@ class TestStudentLoan(unittest.TestCase):
             5000.0,
             3.0,
             1,  # 1 year
-            "Quick Degree"
+            "Quick Degree",
         )
 
         # Payment should be higher for shorter term
@@ -303,9 +279,9 @@ class TestStudentLoan(unittest.TestCase):
             self.mock_person,
             StudentLoanType.FEDERAL_SUBSIDIZED,
             15000.0,  # Same amount for comparison
-            3.73,     # 2023-2024 rate
+            3.73,  # 2023-2024 rate
             10,
-            "Public University"
+            "Public University",
         )
 
         # Federal Unsubsidized (slightly higher rates, same amount)
@@ -313,9 +289,9 @@ class TestStudentLoan(unittest.TestCase):
             self.mock_person,
             StudentLoanType.FEDERAL_UNSUBSIDIZED,
             15000.0,  # Same amount for comparison
-            5.28,     # 2023-2024 rate
+            5.28,  # 2023-2024 rate
             10,
-            "Public University"
+            "Public University",
         )
 
         # Private loan (typically highest rates, same amount)
@@ -323,9 +299,9 @@ class TestStudentLoan(unittest.TestCase):
             self.mock_person,
             StudentLoanType.PRIVATE,
             15000.0,  # Same amount for comparison
-            8.5,      # Higher private rate
+            8.5,  # Higher private rate
             10,
-            "Private University"
+            "Private University",
         )
 
         # Verify payment amounts make sense relative to rates
@@ -339,5 +315,5 @@ class TestStudentLoan(unittest.TestCase):
         self.assertEqual(private.loan_type, StudentLoanType.PRIVATE)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

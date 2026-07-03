@@ -26,6 +26,14 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
+
+[project.optional-dependencies]
+docs = [
+    "sphinx>=7",
+    "furo",
+    "myst-parser",
 ]
 
 [project.urls]
@@ -45,3 +53,52 @@ exclude = ["life_model.tests*"]
 
 [tool.setuptools_scm]
 version_file = "src/life_model/_version.py"
+
+[tool.check-wheel-contents]
+# Empty __init__.py package markers are byte-identical; W002 flags them as
+# "duplicate files", which is a false positive here.
+ignore = ["W002"]
+
+[tool.ruff]
+line-length = 120
+extend-exclude = ["*.ipynb"]
+
+[tool.ruff.lint]
+# Default rules (E, F) plus isort import sorting.
+extend-select = ["I"]
+
+[tool.mypy]
+ignore_missing_imports = true
+# Lenient during Phase 0/1; strict flags will be enabled as later plans land.
+warn_unused_configs = true
+
+[tool.pytest.ini_options]
+testpaths = ["src/life_model/tests"]
+markers = [
+    "notebooks: end-to-end Jupyter notebook execution tests (slow; run in a dedicated CI job)",
+    "documentation: documentation-related tests",
+]
+
+[tool.coverage.run]
+source = ["life_model"]
+branch = true
+omit = [
+    "*/tests/*",
+    "*/_version.py",
+]
+
+[tool.coverage.report]
+fail_under = 69
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self\\.debug",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "return NotImplemented",
+    "if 0:",
+    "if False:",
+    "if __name__ == .__main__.:",
+    "while 0:",
+    "while False:",
+]

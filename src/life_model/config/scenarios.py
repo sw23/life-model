@@ -9,10 +9,11 @@ These scenarios allow users to easily adjust multiple configuration parameters
 to model different economic environments without manually changing individual values.
 """
 
-import yaml
 from importlib.resources import files
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
+
+import yaml
 
 # Optional user-supplied scenario directory. When set, it takes precedence over
 # the scenarios packaged with life-model.
@@ -48,12 +49,12 @@ def _load_scenario_from_yaml(filename: str) -> Dict[str, Any]:
     if _user_scenario_dir is not None:
         user_path = _user_scenario_dir / filename
         if user_path.exists():
-            with open(user_path, 'r') as f:
+            with open(user_path, "r") as f:
                 return yaml.safe_load(f)
 
-    packaged = files('life_model.config') / 'data' / 'scenarios' / filename
+    packaged = files("life_model.config") / "data" / "scenarios" / filename
     if packaged.is_file():
-        return yaml.safe_load(packaged.read_text(encoding='utf-8'))
+        return yaml.safe_load(packaged.read_text(encoding="utf-8"))
 
     raise FileNotFoundError(f"Scenario file '{filename}' not found in any of the expected locations")
 
@@ -84,14 +85,14 @@ def list_scenarios() -> list:
     scenarios = set()
 
     # Scenarios packaged with life-model.
-    packaged_dir = files('life_model.config') / 'data' / 'scenarios'
+    packaged_dir = files("life_model.config") / "data" / "scenarios"
     for entry in packaged_dir.iterdir():
-        if entry.name.endswith('.yaml'):
-            scenarios.add(entry.name[:-len('.yaml')])
+        if entry.name.endswith(".yaml"):
+            scenarios.add(entry.name[: -len(".yaml")])
 
     # User-supplied scenarios (take precedence but also add to the list).
     if _user_scenario_dir is not None and _user_scenario_dir.is_dir():
-        for yaml_file in _user_scenario_dir.glob('*.yaml'):
+        for yaml_file in _user_scenario_dir.glob("*.yaml"):
             scenarios.add(yaml_file.stem)
 
     return sorted(scenarios)

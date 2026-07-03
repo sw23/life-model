@@ -5,6 +5,7 @@
 
 import unittest
 from unittest.mock import Mock
+
 from ..account.brokerage import BrokerageAccount
 from ..people.person import Person
 
@@ -18,10 +19,7 @@ class TestBrokerage(unittest.TestCase):
 
         # Create a brokerage account for testing
         self.brokerage = BrokerageAccount(
-            person=self.mock_person,
-            company="Test Brokerage",
-            balance=10000.0,
-            growth_rate=7.0
+            person=self.mock_person, company="Test Brokerage", balance=10000.0, growth_rate=7.0
         )
 
     def test_init_default_values(self):
@@ -159,12 +157,7 @@ class TestBrokerage(unittest.TestCase):
     def test_repr_html_formatting(self):
         """Test HTML representation with different values and special characters."""
         # Test with HTML special characters that should be escaped
-        brokerage = BrokerageAccount(
-            self.mock_person,
-            'Test & Co <script>alert("XSS")</script>',
-            1234567.89,
-            12.5
-        )
+        brokerage = BrokerageAccount(self.mock_person, 'Test & Co <script>alert("XSS")</script>', 1234567.89, 12.5)
         html = brokerage._repr_html_()
 
         # Check that dangerous characters are escaped
@@ -181,11 +174,11 @@ class TestBrokerage(unittest.TestCase):
     def test_html_escaping_comprehensive(self):
         """Test comprehensive HTML escaping for various problematic characters."""
         test_cases = [
-            ('Ampersand & Co', 'Ampersand &amp; Co'),
-            ('<script>Company</script>', '&lt;script&gt;Company&lt;/script&gt;'),
-            ('Quote"Company', 'Quote&quot;Company'),
+            ("Ampersand & Co", "Ampersand &amp; Co"),
+            ("<script>Company</script>", "&lt;script&gt;Company&lt;/script&gt;"),
+            ('Quote"Company', "Quote&quot;Company"),
             ("Apostrophe's Company", "Apostrophe&#x27;s Company"),
-            ('Multi & <test> "quoted"', 'Multi &amp; &lt;test&gt; &quot;quoted&quot;'),
+            ('Multi & <test> "quoted"', "Multi &amp; &lt;test&gt; &quot;quoted&quot;"),
         ]
 
         for input_name, expected_escaped in test_cases:
@@ -194,18 +187,18 @@ class TestBrokerage(unittest.TestCase):
                 html_output = brokerage._repr_html_()
                 self.assertIn(expected_escaped, html_output)
                 # Ensure original dangerous characters are not present
-                self.assertNotIn('<script>', html_output)
-                self.assertNotIn('</script>', html_output)
+                self.assertNotIn("<script>", html_output)
+                self.assertNotIn("</script>", html_output)
 
     def test_inheritance_from_investment(self):
         """Test that BrokerageAccount properly inherits from Investment."""
         # Test that it has inherited attributes
-        self.assertTrue(hasattr(self.brokerage, 'stat_growth_history'))
-        self.assertTrue(hasattr(self.brokerage, 'stat_balance_history'))
+        self.assertTrue(hasattr(self.brokerage, "stat_growth_history"))
+        self.assertTrue(hasattr(self.brokerage, "stat_balance_history"))
 
         # Test that it has inherited methods
-        self.assertTrue(hasattr(self.brokerage, 'apply_growth'))
-        self.assertTrue(hasattr(self.brokerage, 'step'))
+        self.assertTrue(hasattr(self.brokerage, "apply_growth"))
+        self.assertTrue(hasattr(self.brokerage, "step"))
 
     def test_apply_growth_integration(self):
         """Test integration with inherited apply_growth method."""
@@ -233,5 +226,5 @@ class TestBrokerage(unittest.TestCase):
         self.assertEqual(len(self.brokerage.stat_growth_history), 1)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

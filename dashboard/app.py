@@ -9,18 +9,20 @@ Based on the ExampleSimulation.ipynb notebook.
 """
 
 from datetime import datetime
-from mesa.visualization import SolaraViz, make_plot_component, Slider
 from typing import Any
 
+from mesa.visualization import Slider, SolaraViz, make_plot_component
+
+from life_model.account.bank import BankAccount
 from life_model.model import LifeModel
 from life_model.people.family import Family
 from life_model.people.person import Person, Spending
-from life_model.account.bank import BankAccount
 from life_model.work.job import Job, Salary
 
 
 class SafeDict(dict):
     """Dictionary that tries to access 'values' first (i.e. Slider), otherwise direct value."""
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -39,81 +41,80 @@ class DashboardLifeModel(LifeModel):
     def __init__(self, **kwargs):
         """Initialize the model with dashboard parameters."""
         params = SafeDict(kwargs)
-        super().__init__(params.get('end_year', 2050),
-                         params.get('start_year', 2023))
+        super().__init__(params.get("end_year", 2050), params.get("start_year", 2023))
 
         # Create family
         family = Family(self)
 
         # Create people
-        if params.get('john_enabled', True):
+        if params.get("john_enabled", True):
             john = Person(
                 family=family,
-                name='John',
-                age=params.get('john_age', 44),
-                retirement_age=params.get('john_retirement_age', 60),
+                name="John",
+                age=params.get("john_age", 44),
+                retirement_age=params.get("john_retirement_age", 60),
                 spending=Spending(
                     model=self,
-                    base=params.get('john_spending', 12000),
-                    yearly_increase=params.get('spending_increase', 5)
-                )
+                    base=params.get("john_spending", 12000),
+                    yearly_increase=params.get("spending_increase", 5),
+                ),
             )
 
             # Add bank account for John
             BankAccount(
                 owner=john,
-                company='Bank',
-                type='Checking',
-                balance=params.get('john_bank_balance', 20000),
-                interest_rate=params.get('bank_interest_rate', 0.5)
+                company="Bank",
+                type="Checking",
+                balance=params.get("john_bank_balance", 20000),
+                interest_rate=params.get("bank_interest_rate", 0.5),
             )
 
             # Add job for John
             Job(
                 owner=john,
-                company=params.get('john_company', 'Company A'),
-                role=params.get('john_role', 'Manager'),
+                company=params.get("john_company", "Company A"),
+                role=params.get("john_role", "Manager"),
                 salary=Salary(
                     model=self,
-                    base=params.get('john_salary', 50000),
-                    yearly_increase=params.get('salary_increase', 1),
-                    yearly_bonus=params.get('john_bonus', 1)
-                )
+                    base=params.get("john_salary", 50000),
+                    yearly_increase=params.get("salary_increase", 1),
+                    yearly_bonus=params.get("john_bonus", 1),
+                ),
             )
 
-        if params.get('jane_enabled', False):
+        if params.get("jane_enabled", False):
             jane = Person(
                 family=family,
-                name='Jane',
-                age=params.get('jane_age', 45),
-                retirement_age=params.get('jane_retirement_age', 60),
+                name="Jane",
+                age=params.get("jane_age", 45),
+                retirement_age=params.get("jane_retirement_age", 60),
                 spending=Spending(
                     model=self,
-                    base=params.get('jane_spending', 12000),
-                    yearly_increase=params.get('spending_increase', 5)
-                )
+                    base=params.get("jane_spending", 12000),
+                    yearly_increase=params.get("spending_increase", 5),
+                ),
             )
 
             # Add bank account for Jane
             BankAccount(
                 owner=jane,
-                company='Credit Union',
-                type='Checking',
-                balance=params.get('jane_bank_balance', 30000),
-                interest_rate=params.get('bank_interest_rate', 0.5)
+                company="Credit Union",
+                type="Checking",
+                balance=params.get("jane_bank_balance", 30000),
+                interest_rate=params.get("bank_interest_rate", 0.5),
             )
 
             # Add job for Jane
             Job(
                 owner=jane,
-                company=params.get('jane_company', 'Company B'),
-                role=params.get('jane_role', 'Developer'),
+                company=params.get("jane_company", "Company B"),
+                role=params.get("jane_role", "Developer"),
                 salary=Salary(
                     model=self,
-                    base=params.get('jane_salary', 45000),
-                    yearly_increase=params.get('salary_increase', 1),
-                    yearly_bonus=params.get('jane_bonus', 1)
-                )
+                    base=params.get("jane_salary", 45000),
+                    yearly_increase=params.get("salary_increase", 1),
+                    yearly_bonus=params.get("jane_bonus", 1),
+                ),
             )
 
 
@@ -136,7 +137,6 @@ model_params = {
     "jane_salary": Slider("Jane's Salary ($)", 65000, 30000, 150000, 5000),
     "jane_spending": Slider("Jane's Annual Spending ($)", 12000, 5000, 50000, 1000),
     "jane_bank_balance": Slider("Jane's Initial Bank Balance ($)", 30000, 0, 100000, 5000),
-
 }
 
 
@@ -177,22 +177,36 @@ def post_process_taxes_and_income(ax):
 
 
 # Create visualization components
-financial_component = make_plot_component({'Income': 'tab:blue', 'Bank Balance': 'tab:orange',
-                                           '401k Balance': 'tab:green', 'Debt': 'tab:red',
-                                           'Spending': 'tab:purple'}, post_process_financial)
-balance_comparison_component = make_plot_component({'Bank Balance': 'tab:blue'}, post_process_balance_comparison)
-retirement_savings_component = make_plot_component({'401k Balance': 'tab:green', '401k Contrib': 'tab:orange',
-                                                    '401k Match': 'tab:purple'}, post_process_retirement_savings)
-taxes_and_income_component = make_plot_component({'Income': 'tab:blue',
-                                                  'Taxes': 'tab:red'}, post_process_taxes_and_income)
+financial_component = make_plot_component(
+    {
+        "Income": "tab:blue",
+        "Bank Balance": "tab:orange",
+        "401k Balance": "tab:green",
+        "Debt": "tab:red",
+        "Spending": "tab:purple",
+    },
+    post_process_financial,
+)
+balance_comparison_component = make_plot_component({"Bank Balance": "tab:blue"}, post_process_balance_comparison)
+retirement_savings_component = make_plot_component(
+    {"401k Balance": "tab:green", "401k Contrib": "tab:orange", "401k Match": "tab:purple"},
+    post_process_retirement_savings,
+)
+taxes_and_income_component = make_plot_component(
+    {"Income": "tab:blue", "Taxes": "tab:red"}, post_process_taxes_and_income
+)
 
 model = DashboardLifeModel(**model_params)
 
 # Create the SolaraViz dashboard
 page = SolaraViz(
     model,
-    components=[financial_component, balance_comparison_component,
-                retirement_savings_component, taxes_and_income_component],
+    components=[
+        financial_component,
+        balance_comparison_component,
+        retirement_savings_component,
+        taxes_and_income_component,
+    ],
     name="Life Model Financial Simulation Dashboard",
     model_params=model_params,
 )

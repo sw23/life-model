@@ -2,15 +2,14 @@
 #
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
-from ..people.person import Person
 from ..base_classes import Investment
 from ..model import compound_interest
+from ..people.person import Person
 
 
 class RothIRA(Investment):
-    def __init__(self, person: Person, balance: float = 0, growth_rate: float = 7.0,
-                 contribution_limit: float = 6500):
-        """ Models a Roth IRA account for a person
+    def __init__(self, person: Person, balance: float = 0, growth_rate: float = 7.0, contribution_limit: float = 6500):
+        """Models a Roth IRA account for a person
 
         Args:
             person: The person to which this IRA belongs
@@ -70,10 +69,10 @@ class RothIRA(Investment):
         self.contributions_this_year = 0
 
     def _repr_html_(self):
-        desc = '<ul>'
-        desc += f'<li>Balance: ${self.balance:,.2f}</li>'
-        desc += f'<li>Growth Rate: {self.growth_rate}%</li>'
-        desc += f'<li>Contribution Limit: ${self.contribution_limit:,.2f}</li>'
-        desc += f'<li>Contributions This Year: ${self.contributions_this_year:,.2f}</li>'
-        desc += '</ul>'
+        desc = "<ul>"
+        desc += f"<li>Balance: ${self.balance:,.2f}</li>"
+        desc += f"<li>Growth Rate: {self.growth_rate}%</li>"
+        desc += f"<li>Contribution Limit: ${self.contribution_limit:,.2f}</li>"
+        desc += f"<li>Contributions This Year: ${self.contributions_this_year:,.2f}</li>"
+        desc += "</ul>"
         return desc

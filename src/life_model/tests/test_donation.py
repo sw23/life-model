@@ -4,11 +4,12 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 import unittest
-from ..model import LifeModel
-from ..people.person import Person, Spending
-from ..people.family import Family
+
 from ..account.bank import BankAccount
 from ..charity.donation import Donation, DonationType
+from ..model import LifeModel
+from ..people.family import Family
+from ..people.person import Person, Spending
 
 
 class TestDonation(unittest.TestCase):
@@ -23,12 +24,7 @@ class TestDonation(unittest.TestCase):
 
     def test_donation_creation(self):
         """Test basic donation creation"""
-        donation = Donation(
-            self.person,
-            charity_name="Red Cross",
-            annual_amount=5000,
-            donation_type=DonationType.CASH
-        )
+        donation = Donation(self.person, charity_name="Red Cross", annual_amount=5000, donation_type=DonationType.CASH)
 
         self.assertEqual(donation.charity_name, "Red Cross")
         self.assertEqual(donation.annual_amount, 5000)
@@ -60,13 +56,7 @@ class TestDonation(unittest.TestCase):
 
     def test_multi_year_frequency(self):
         """Test donations with multi-year frequency"""
-        donation = Donation(
-            self.person,
-            "Every 2 Years",
-            annual_amount=10000,
-            frequency_years=2,
-            start_year=2025
-        )
+        donation = Donation(self.person, "Every 2 Years", annual_amount=10000, frequency_years=2, start_year=2025)
 
         # Year 1 (2025) - should donate
         self.model.step()
@@ -115,13 +105,7 @@ class TestDonation(unittest.TestCase):
 
     def test_donation_start_and_end_years(self):
         """Test donations respect start and end years"""
-        donation = Donation(
-            self.person,
-            "Limited Charity",
-            annual_amount=3000,
-            start_year=2027,
-            end_year=2028
-        )
+        donation = Donation(self.person, "Limited Charity", annual_amount=3000, start_year=2027, end_year=2028)
 
         # 2025 - before start, no donation
         self.model.step()
@@ -156,12 +140,7 @@ class TestDonation(unittest.TestCase):
 
     def test_non_tax_deductible_donation(self):
         """Test non-tax-deductible donations"""
-        donation = Donation(
-            self.person,
-            "Non-Deductible",
-            5000,
-            tax_deductible=False
-        )
+        donation = Donation(self.person, "Non-Deductible", 5000, tax_deductible=False)
 
         self.model.step()
 
@@ -231,5 +210,5 @@ class TestDonation(unittest.TestCase):
         self.assertEqual(property_donation.donation_type, DonationType.PROPERTY)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

@@ -5,14 +5,14 @@
 
 """life-model: year-step personal-finance simulation built on Mesa agent-based modeling."""
 
-from importlib.metadata import version, PackageNotFoundError
+from importlib.metadata import PackageNotFoundError, version
 
-from .model import LifeModel, LifeModelAgent
-from .people.person import Person, Spending, GenderAtBirth
-from .people.family import Family
-from .work.job import Job, Salary
 from .account.bank import BankAccount
+from .model import LifeModel, LifeModelAgent
+from .people.family import Family
+from .people.person import GenderAtBirth, Person, Spending
 from .tax.federal import FilingStatus
+from .work.job import Job, Salary
 
 try:
     __version__ = version("life-model")

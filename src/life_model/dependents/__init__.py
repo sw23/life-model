@@ -6,4 +6,4 @@
 from .child import Child
 from .plan529 import Plan529
 
-__all__ = ['Child', 'Plan529']
+__all__ = ["Child", "Plan529"]

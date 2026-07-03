@@ -5,6 +5,7 @@
 
 import unittest
 from unittest.mock import Mock
+
 from ..debt.credit_card import CreditCard, CreditCardType
 from ..people.person import Person
 
@@ -23,16 +24,12 @@ class TestCreditCard(unittest.TestCase):
             credit_limit=10000.0,
             current_balance=2000.0,
             yearly_interest_rate=18.0,
-            minimum_payment_percent=2.0
+            minimum_payment_percent=2.0,
         )
 
     def test_init_default_values(self):
         """Test CreditCard initialization with default values."""
-        card = CreditCard(
-            self.mock_person,
-            "Basic Card",
-            5000.0
-        )
+        card = CreditCard(self.mock_person, "Basic Card", 5000.0)
 
         self.assertEqual(card.person, self.mock_person)
         self.assertEqual(card.card_name, "Basic Card")
@@ -146,11 +143,7 @@ class TestCreditCard(unittest.TestCase):
         total_paid = self.credit_card.make_payment(payment_amount)
 
         self.assertAlmostEqual(total_paid, payment_amount, places=2)
-        self.assertAlmostEqual(
-            self.credit_card.principal,
-            initial_balance - expected_principal_payment,
-            places=2
-        )
+        self.assertAlmostEqual(self.credit_card.principal, initial_balance - expected_principal_payment, places=2)
 
     def test_make_payment_with_extra_principal(self):
         """Test making a payment with extra principal."""
@@ -165,11 +158,7 @@ class TestCreditCard(unittest.TestCase):
         total_paid = self.credit_card.make_payment(payment_amount, extra_principal)
 
         self.assertAlmostEqual(total_paid, expected_total_payment, places=2)
-        self.assertAlmostEqual(
-            self.credit_card.principal,
-            initial_balance - expected_principal_payment,
-            places=2
-        )
+        self.assertAlmostEqual(self.credit_card.principal, initial_balance - expected_principal_payment, places=2)
 
     def test_make_payment_pays_off_card(self):
         """Test making a payment that pays off the entire balance."""
@@ -227,11 +216,7 @@ class TestCreditCard(unittest.TestCase):
         expected_principal_payment = payment - monthly_interest
 
         self.credit_card.make_payment(payment)
-        self.assertAlmostEqual(
-            self.credit_card.principal,
-            expected_balance - expected_principal_payment,
-            places=2
-        )
+        self.assertAlmostEqual(self.credit_card.principal, expected_balance - expected_principal_payment, places=2)
 
     def test_repr_html(self):
         """Test HTML representation."""
@@ -239,20 +224,15 @@ class TestCreditCard(unittest.TestCase):
 
         self.assertIn("Chase Sapphire", html)
         self.assertIn("$10,000.00", html)  # Credit limit
-        self.assertIn("$2,000.00", html)   # Current balance
-        self.assertIn("$8,000.00", html)   # Available credit
-        self.assertIn("18.0%", html)       # Interest rate
+        self.assertIn("$2,000.00", html)  # Current balance
+        self.assertIn("$8,000.00", html)  # Available credit
+        self.assertIn("18.0%", html)  # Interest rate
         self.assertIn("<ul>", html)
         self.assertIn("</ul>", html)
 
     def test_repr_html_escaping(self):
         """Test HTML representation with special characters."""
-        card = CreditCard(
-            self.mock_person,
-            'Evil Bank & Co <script>alert("XSS")</script>',
-            5000.0,
-            1000.0
-        )
+        card = CreditCard(self.mock_person, 'Evil Bank & Co <script>alert("XSS")</script>', 5000.0, 1000.0)
         html = card._repr_html_()
 
         # Check that dangerous characters are escaped
@@ -271,13 +251,13 @@ class TestCreditCard(unittest.TestCase):
     def test_inheritance_from_loan(self):
         """Test that CreditCard properly inherits from Loan base class."""
         # Test that it has inherited attributes
-        self.assertTrue(hasattr(self.credit_card, 'stat_principal_payment_history'))
-        self.assertTrue(hasattr(self.credit_card, 'stat_interest_payment_history'))
-        self.assertTrue(hasattr(self.credit_card, 'stat_balance_history'))
+        self.assertTrue(hasattr(self.credit_card, "stat_principal_payment_history"))
+        self.assertTrue(hasattr(self.credit_card, "stat_interest_payment_history"))
+        self.assertTrue(hasattr(self.credit_card, "stat_balance_history"))
 
         # Test that it has inherited methods
-        self.assertTrue(hasattr(self.credit_card, 'get_interest_amount'))
-        self.assertTrue(hasattr(self.credit_card, 'step'))
+        self.assertTrue(hasattr(self.credit_card, "get_interest_amount"))
+        self.assertTrue(hasattr(self.credit_card, "step"))
 
     def test_credit_card_type_enum(self):
         """Test CreditCardType enum values."""
@@ -312,5 +292,5 @@ class TestCreditCard(unittest.TestCase):
         self.assertEqual(zero_rate_card.principal, initial_balance - payment)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

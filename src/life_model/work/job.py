@@ -4,9 +4,10 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 import html
-from typing import Optional, TYPE_CHECKING
-from ..model import LifeModelAgent, LifeModel, Event
+from typing import TYPE_CHECKING, Optional
+
 from ..limits import job_401k_contrib_limit
+from ..model import Event, LifeModel, LifeModelAgent
 from ..people.person import Person
 
 if TYPE_CHECKING:
@@ -14,7 +15,7 @@ if TYPE_CHECKING:
 
 
 class Job(LifeModelAgent):
-    def __init__(self, owner: Person, company: str, role: str, salary: 'Salary'):
+    def __init__(self, owner: Person, company: str, role: str, salary: "Salary"):
         """Job
 
         Args:
@@ -28,7 +29,7 @@ class Job(LifeModelAgent):
         self.company = company
         self.role = role
         self.salary = salary
-        self.retirement_account: Optional['Job401kAccount'] = None
+        self.retirement_account: Optional["Job401kAccount"] = None
         self.retired = False
 
         self.stat_gross_income = 0
@@ -54,8 +55,9 @@ class Job(LifeModelAgent):
         remaining_401k_contrib = min(self.salary.base, job_401k_contrib_limit(self.owner.age))
         # Deduct pre-tax contribution from income
         if self.retirement_account is not None:
-            yearly_pretax_contrib = min(remaining_401k_contrib,
-                                        self.retirement_account.pretax_contrib(self.salary.base))
+            yearly_pretax_contrib = min(
+                remaining_401k_contrib, self.retirement_account.pretax_contrib(self.salary.base)
+            )
             remaining_401k_contrib -= yearly_pretax_contrib
         else:
             yearly_pretax_contrib = 0
@@ -97,7 +99,7 @@ class Job(LifeModelAgent):
         self.stat_retirement_match = company_match
 
     def retire(self):
-        """Retire from the job """
+        """Retire from the job"""
         self.retired = True
         self.model.event_log.add(Event(f"{self.owner.name} retired from {self.company}"))
 

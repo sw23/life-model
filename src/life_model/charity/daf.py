@@ -4,18 +4,25 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 import html
 from typing import TYPE_CHECKING, cast
-from ..model import LifeModel, Event
+
 from ..base_classes import Investment
+from ..model import Event, LifeModel
 
 if TYPE_CHECKING:
     from ..people.person import Person
 
 
 class DonorAdvisedFund(Investment):
-    def __init__(self, person: 'Person', fund_name: str, balance: float = 0,
-                 growth_rate: float = 7.0, management_fee: float = 0.6,
-                 distribution_rate: float = 5.0):
-        """ Models a donor advised fund for a person
+    def __init__(
+        self,
+        person: "Person",
+        fund_name: str,
+        balance: float = 0,
+        growth_rate: float = 7.0,
+        management_fee: float = 0.6,
+        distribution_rate: float = 5.0,
+    ):
+        """Models a donor advised fund for a person
 
         Args:
             person: The person to which this fund belongs
@@ -65,9 +72,7 @@ class DonorAdvisedFund(Investment):
 
         # Log contribution event
         model = cast(LifeModel, self.person.model)
-        model.event_log.add(Event(
-            f"{self.person.name} contributed ${amount:,.0f} to {self.fund_name} DAF"
-        ))
+        model.event_log.add(Event(f"{self.person.name} contributed ${amount:,.0f} to {self.fund_name} DAF"))
         return True
 
     def withdraw(self, amount: float) -> float:
@@ -121,9 +126,7 @@ class DonorAdvisedFund(Investment):
 
         # Log distribution event
         model = cast(LifeModel, self.person.model)
-        model.event_log.add(Event(
-            f"{self.fund_name} DAF distributed ${actual_distribution:,.0f} to charity"
-        ))
+        model.event_log.add(Event(f"{self.fund_name} DAF distributed ${actual_distribution:,.0f} to charity"))
 
         return actual_distribution
 
@@ -148,15 +151,15 @@ class DonorAdvisedFund(Investment):
         return self.distribute_to_charity(distribution_amount)
 
     def _repr_html_(self):
-        desc = '<ul>'
-        desc += f'<li>Fund Name: {html.escape(self.fund_name)}</li>'
-        desc += f'<li>Balance: ${self.balance:,.2f}</li>'
-        desc += f'<li>Growth Rate: {self.growth_rate}%</li>'
-        desc += f'<li>Management Fee: {self.management_fee}%</li>'
-        desc += f'<li>Distribution Rate: {self.distribution_rate}%</li>'
-        desc += f'<li>Total Contributed: ${self.stat_total_contributions:,.2f}</li>'
-        desc += f'<li>Total Distributed: ${self.stat_total_donated:,.2f}</li>'
-        desc += '</ul>'
+        desc = "<ul>"
+        desc += f"<li>Fund Name: {html.escape(self.fund_name)}</li>"
+        desc += f"<li>Balance: ${self.balance:,.2f}</li>"
+        desc += f"<li>Growth Rate: {self.growth_rate}%</li>"
+        desc += f"<li>Management Fee: {self.management_fee}%</li>"
+        desc += f"<li>Distribution Rate: {self.distribution_rate}%</li>"
+        desc += f"<li>Total Contributed: ${self.stat_total_contributions:,.2f}</li>"
+        desc += f"<li>Total Distributed: ${self.stat_total_donated:,.2f}</li>"
+        desc += "</ul>"
         return desc
 
     def pre_step(self):

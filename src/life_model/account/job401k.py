@@ -3,20 +3,27 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-from typing import Optional, TYPE_CHECKING
-from ..model import continous_interest
-from ..limits import federal_retirement_age, required_min_distrib
+from typing import TYPE_CHECKING, Optional
+
 from ..base_classes import RetirementAccount
+from ..limits import federal_retirement_age, required_min_distrib
+from ..model import continous_interest
 
 if TYPE_CHECKING:
     from ..work.job import Job
 
 
 class Job401kAccount(RetirementAccount):
-    def __init__(self, job: 'Job',
-                 pretax_balance: float = 0, pretax_contrib_percent: float = 0,
-                 roth_balance: float = 0, roth_contrib_percent: float = 0,
-                 average_growth: float = 0, company_match_percent: float = 0):
+    def __init__(
+        self,
+        job: "Job",
+        pretax_balance: float = 0,
+        pretax_contrib_percent: float = 0,
+        roth_balance: float = 0,
+        roth_contrib_percent: float = 0,
+        average_growth: float = 0,
+        company_match_percent: float = 0,
+    ):
         """401k Account
 
         Args:
@@ -29,7 +36,7 @@ class Job401kAccount(RetirementAccount):
             company_match_percent (float, optional): Percentage that company matches contributions. Defaults to 0.
         """
         super().__init__(job.owner, 0)  # Initialize with 0, we'll handle balance ourselves
-        self.job: Optional['Job'] = job
+        self.job: Optional["Job"] = job
         self.pretax_balance = pretax_balance
         self.pretax_contrib_percent = pretax_contrib_percent
         self.roth_balance = roth_balance
@@ -110,7 +117,7 @@ class Job401kAccount(RetirementAccount):
 
         # Track balance history
         self.stat_balance_history.append(self.balance)
-        if (self.person.age > federal_retirement_age()):
+        if self.person.age > federal_retirement_age():
             self.stat_useable_balance = self.balance
 
         # Required minimum distributions

@@ -3,14 +3,14 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 import html
-from ..people.person import Person
+
 from ..base_classes import Investment
+from ..people.person import Person
 
 
 class BrokerageAccount(Investment):
-    def __init__(self, person: Person, company: str,
-                 balance: float = 0, growth_rate: float = 7.0):
-        """ Models a brokerage/investment account
+    def __init__(self, person: Person, company: str, balance: float = 0, growth_rate: float = 7.0):
+        """Models a brokerage/investment account
 
         Args:
             person: The person who owns this account
@@ -43,9 +43,9 @@ class BrokerageAccount(Investment):
         return actual_withdrawal
 
     def _repr_html_(self):
-        desc = '<ul>'
-        desc += f'<li>Company: {html.escape(self.company)}</li>'
-        desc += f'<li>Balance: ${self.balance:,.2f}</li>'
-        desc += f'<li>Growth Rate: {self.growth_rate}%</li>'
-        desc += '</ul>'
+        desc = "<ul>"
+        desc += f"<li>Company: {html.escape(self.company)}</li>"
+        desc += f"<li>Balance: ${self.balance:,.2f}</li>"
+        desc += f"<li>Growth Rate: {self.growth_rate}%</li>"
+        desc += "</ul>"
         return desc

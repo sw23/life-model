@@ -4,15 +4,17 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 import html
-from ..model import compound_interest
-from ..people.person import Person
+
 from ..base_classes import FinancialAccount
 from ..config.config_manager import config
+from ..model import compound_interest
+from ..people.person import Person
 
 
 class BankAccount(FinancialAccount):
-    def __init__(self, owner: Person, company: str, type: str = 'Bank',
-                 balance: float = 0, interest_rate: float = None):
+    def __init__(
+        self, owner: Person, company: str, type: str = "Bank", balance: float = 0, interest_rate: float = None
+    ):
         """Class modeling bank accounts
 
         Args:
@@ -25,9 +27,12 @@ class BankAccount(FinancialAccount):
         super().__init__(owner, balance)
         self.company = company
         self.type = type
-        self.interest_rate = (interest_rate if interest_rate is not None
-                              else config.financial.get('accounts.bank.default_interest_rate', 0.0))
-        self.compound_rate = config.financial.get('accounts.bank.compound_rate', 12)
+        self.interest_rate = (
+            interest_rate
+            if interest_rate is not None
+            else config.financial.get("accounts.bank.default_interest_rate", 0.0)
+        )
+        self.compound_rate = config.financial.get("accounts.bank.compound_rate", 12)
 
         self.stat_total_interest = 0
         self.stat_useable_balance = 0

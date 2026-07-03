@@ -4,8 +4,9 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 import html
-from ..people.person import Person
+
 from ..model import LifeModelAgent
+from ..people.person import Person
 
 
 class Apartment(LifeModelAgent):

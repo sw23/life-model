@@ -11,7 +11,6 @@ from ..people.person import GenderAtBirth
 
 
 class TestMortality(unittest.TestCase):
-
     def test_mortality_rates_age_sequence(self):
         """Test that mortality_rates contains all ages from 0 to 119 in sequence"""
         expected_ages = list(range(120))  # 0 through 119
@@ -55,10 +54,12 @@ class TestMortality(unittest.TestCase):
     def test_get_chance_of_mortality_boundary_ages(self):
         """Test get_chance_of_mortality for boundary conditions"""
         # Test negative age (should be bounded to 0)
-        self.assertEqual(get_chance_of_mortality(-1, GenderAtBirth.MALE),
-                         get_chance_of_mortality(0, GenderAtBirth.MALE))
-        self.assertEqual(get_chance_of_mortality(-10, GenderAtBirth.FEMALE),
-                         get_chance_of_mortality(0, GenderAtBirth.FEMALE))
+        self.assertEqual(
+            get_chance_of_mortality(-1, GenderAtBirth.MALE), get_chance_of_mortality(0, GenderAtBirth.MALE)
+        )
+        self.assertEqual(
+            get_chance_of_mortality(-10, GenderAtBirth.FEMALE), get_chance_of_mortality(0, GenderAtBirth.FEMALE)
+        )
 
         # Test age above 119 (should be bounded to 119)
         self.assertEqual(get_chance_of_mortality(120, GenderAtBirth.MALE), 1.0)
@@ -76,12 +77,12 @@ class TestMortality(unittest.TestCase):
     def test_get_random_mortality_deterministic(self):
         """Test get_random_mortality with mocked random values"""
         # Test with random value below mortality rate (should return True - death)
-        with patch('random.random', return_value=0.001):
+        with patch("random.random", return_value=0.001):
             self.assertTrue(get_random_mortality(50, GenderAtBirth.MALE))
             self.assertTrue(get_random_mortality(50, GenderAtBirth.FEMALE))
 
         # Test with random value above mortality rate (should return False - survival)
-        with patch('random.random', return_value=0.9):
+        with patch("random.random", return_value=0.9):
             self.assertFalse(get_random_mortality(0, GenderAtBirth.MALE))
             self.assertFalse(get_random_mortality(0, GenderAtBirth.FEMALE))
 
@@ -89,11 +90,11 @@ class TestMortality(unittest.TestCase):
         """Test get_random_mortality edge cases"""
         # Test with random value exactly equal to mortality rate
         mortality_rate = get_chance_of_mortality(25, GenderAtBirth.MALE)
-        with patch('random.random', return_value=mortality_rate):
+        with patch("random.random", return_value=mortality_rate):
             self.assertTrue(get_random_mortality(25, GenderAtBirth.MALE))
 
         # Test age 119 (mortality rate = 1.0, should always return True)
-        with patch('random.random', return_value=0.999):
+        with patch("random.random", return_value=0.999):
             self.assertTrue(get_random_mortality(119, GenderAtBirth.MALE))
             self.assertTrue(get_random_mortality(119, GenderAtBirth.FEMALE))
 
@@ -105,5 +106,5 @@ class TestMortality(unittest.TestCase):
                 self.assertIsInstance(result, bool, f"Result should be boolean for age {age}, gender {gender}")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

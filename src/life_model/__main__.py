@@ -6,18 +6,17 @@
 import argparse
 from datetime import date
 
-from life_model import Family, Person, Spending, LifeModel, BankAccount, __version__
+from life_model import BankAccount, Family, LifeModel, Person, Spending, __version__
 
 
 def get_parser():
     """
     Creates a new argument parser.
     """
-    parser = argparse.ArgumentParser('life-model')
-    version = '%(prog)s ' + __version__
-    parser.add_argument('--version', '-v', action='version', version=version)
-    parser.add_argument('--years', '-y', type=int, default=50,
-                        help='Number of years to simulate (default: 50).')
+    parser = argparse.ArgumentParser("life-model")
+    version = "%(prog)s " + __version__
+    parser.add_argument("--version", "-v", action="version", version=version)
+    parser.add_argument("--years", "-y", type=int, default=50, help="Number of years to simulate (default: 50).")
     return parser
 
 
@@ -37,9 +36,8 @@ def main(args=None):
     start_year = date.today().year
     model = LifeModel(start_year=start_year, end_year=start_year + args.years)
     family = Family(model)
-    person = Person(family=family, name='Spencer', age=45, retirement_age=55,
-                    spending=Spending(model, base=30000))
-    BankAccount(owner=person, company='Bank', balance=50000)
+    person = Person(family=family, name="Spencer", age=45, retirement_age=55, spending=Spending(model, base=30000))
+    BankAccount(owner=person, company="Bank", balance=50000)
 
     model.run()
 
@@ -47,5 +45,5 @@ def main(args=None):
     print(df.to_string(index=False))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

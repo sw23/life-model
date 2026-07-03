@@ -3,12 +3,14 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
+from datetime import date
+from math import e as const_e
+from typing import Callable, Dict, List, Optional
+
 import mesa
 import pandas as pd
-from datetime import date
-from typing import Optional, List, Callable, Dict
 from pandas.io.formats.style import Styler
-from math import e as const_e
+
 from .registry import ModelRegistries
 
 
@@ -20,12 +22,13 @@ def continous_interest(principal: float, rate: float, elapsed_time_periods: int 
     return principal * pow(const_e, (rate / 100) * elapsed_time_periods) - principal
 
 
-FMT_MONEY = '${:,.0f}'
+FMT_MONEY = "${:,.0f}"
 
 
 class Stat:
-    def __init__(self, name: str, title: Optional[str] = None, fmt: Optional[str] = None,
-                 aggregator: Optional[Callable] = None):
+    def __init__(
+        self, name: str, title: Optional[str] = None, fmt: Optional[str] = None, aggregator: Optional[Callable] = None
+    ):
         """Stat
 
         Args:
@@ -39,8 +42,8 @@ class Stat:
         self.fmt = fmt
         self.aggregator = aggregator or sum
 
-    def model_reporter(self, model: 'LifeModel'):
-        """ Return the value of the stat for the model. """
+    def model_reporter(self, model: "LifeModel"):
+        """Return the value of the stat for the model."""
         return self.aggregator(getattr(agent, self.name) for agent in model.agents)
 
 
@@ -64,7 +67,7 @@ class Event:
 
 
 class EventLog:
-    def __init__(self, model: 'LifeModel'):
+    def __init__(self, model: "LifeModel"):
         """Event Log
 
         Args:
@@ -86,32 +89,31 @@ class EventLog:
 
 
 class LifeModel(mesa.Model):
-
     STATS = [
-        MoneyStat('stat_gross_income',         'Income'),           # Gross income made in a year
-        MoneyStat('stat_bank_balance',         'Bank Balance'),     # Bank account balance at the end of each year
-        MoneyStat('stat_401k_balance',         '401k Balance'),     # Total 401k balance at the end of each year
-        MoneyStat('stat_useable_balance',      'Useable Balance'),  # Balance available for use in a year
-        MoneyStat('stat_debt',                 'Debt'),             # Total debt balance in each year
-        MoneyStat('stat_taxes_paid',           'Taxes'),            # Taxes paid in a year
-        MoneyStat('stat_money_spent',          'Spending'),         # Money spent in a year
-        MoneyStat('stat_retirement_contrib',   '401k Contrib'),     # Money contributed to retirement in a given year
-        MoneyStat('stat_retirement_match',     '401k Match'),       # Money matched by company in 401k in a given year
-        MoneyStat('stat_required_min_distrib', 'RMDs'),             # Money taken out from required minimum distrib.
-        MoneyStat('stat_housing_costs',        'Housing'),          # Money paid towards mortgage or rent
-        MoneyStat('stat_interest_paid',        'Interest Paid'),    # Money paid in interest for loans
-        MoneyStat('stat_ss_income',            'SS Income'),        # Income from social security
-        MoneyStat('stat_charitable_donations', 'Charity'),          # Total charitable donations in a year
+        MoneyStat("stat_gross_income", "Income"),  # Gross income made in a year
+        MoneyStat("stat_bank_balance", "Bank Balance"),  # Bank account balance at the end of each year
+        MoneyStat("stat_401k_balance", "401k Balance"),  # Total 401k balance at the end of each year
+        MoneyStat("stat_useable_balance", "Useable Balance"),  # Balance available for use in a year
+        MoneyStat("stat_debt", "Debt"),  # Total debt balance in each year
+        MoneyStat("stat_taxes_paid", "Taxes"),  # Taxes paid in a year
+        MoneyStat("stat_money_spent", "Spending"),  # Money spent in a year
+        MoneyStat("stat_retirement_contrib", "401k Contrib"),  # Money contributed to retirement in a given year
+        MoneyStat("stat_retirement_match", "401k Match"),  # Money matched by company in 401k in a given year
+        MoneyStat("stat_required_min_distrib", "RMDs"),  # Money taken out from required minimum distrib.
+        MoneyStat("stat_housing_costs", "Housing"),  # Money paid towards mortgage or rent
+        MoneyStat("stat_interest_paid", "Interest Paid"),  # Money paid in interest for loans
+        MoneyStat("stat_ss_income", "SS Income"),  # Income from social security
+        MoneyStat("stat_charitable_donations", "Charity"),  # Total charitable donations in a year
     ]
 
     EXTRA_STATS = [
-        MoneyStat('stat_taxes_paid_federal',   'Federal Taxes'),    # Federal income taxes paid in a year
-        MoneyStat('stat_taxes_paid_state',     'State Taxes'),      # State income taxes paid in a year
-        MoneyStat('stat_taxes_paid_ss',        'SS Taxes'),         # Social security taxes paid in a year
-        MoneyStat('stat_taxes_paid_medicare',  'Medicare Taxes'),   # Medicare taxes paid in a year
-        MoneyStat('stat_premium_payments',     'Life Ins Premiums'),  # Life insurance premiums paid in a year
-        MoneyStat('stat_cash_value',           'Life Ins Cash Value'),  # Life insurance cash value
-        MoneyStat('stat_death_benefit_paid',   'Death Benefits'),   # Death benefits paid out
+        MoneyStat("stat_taxes_paid_federal", "Federal Taxes"),  # Federal income taxes paid in a year
+        MoneyStat("stat_taxes_paid_state", "State Taxes"),  # State income taxes paid in a year
+        MoneyStat("stat_taxes_paid_ss", "SS Taxes"),  # Social security taxes paid in a year
+        MoneyStat("stat_taxes_paid_medicare", "Medicare Taxes"),  # Medicare taxes paid in a year
+        MoneyStat("stat_premium_payments", "Life Ins Premiums"),  # Life insurance premiums paid in a year
+        MoneyStat("stat_cash_value", "Life Ins Cash Value"),  # Life insurance cash value
+        MoneyStat("stat_death_benefit_paid", "Death Benefits"),  # Death benefits paid out
     ]
 
     def __init__(self, end_year: Optional[int] = None, start_year: Optional[int] = None, seed: Optional[int] = None):
@@ -140,12 +142,12 @@ class LifeModel(mesa.Model):
             model_reporters={
                 **{"Year": "year"},
                 **{x.title: lambda model, x=x: x.model_reporter(model) for x in self.STATS},
-                **{x.title: lambda model, x=x: x.model_reporter(model) for x in self.EXTRA_STATS}
+                **{x.title: lambda model, x=x: x.model_reporter(model) for x in self.EXTRA_STATS},
             },
             agent_reporters={
                 **{x.title: x.name for x in self.STATS},
                 **{x.title: x.name for x in self.EXTRA_STATS},
-            }
+            },
         )
 
     @classmethod
@@ -196,11 +198,11 @@ class LifeModel(mesa.Model):
         self.year += 1
 
     def get_year_range(self) -> range:
-        """ Get the range of years in the model """
+        """Get the range of years in the model"""
         return range(self.start_year, self.end_year + 1)
 
     def run(self):
-        """ Run the simulation """
+        """Run the simulation"""
         for _ in self.get_year_range():
             self.step()
 
@@ -218,9 +220,13 @@ class LifeModel(mesa.Model):
             if not hasattr(agent, attr_name):
                 setattr(agent, attr_name, 0)
 
-    def get_yearly_stat_df(self, columns: Optional[List[str]] = None, extra_columns: Optional[List[str]] = None,
-                           aggregate: Optional[Dict[str, Callable]] = None,
-                           column_formats: Optional[Dict[str, str]] = None) -> Styler:
+    def get_yearly_stat_df(
+        self,
+        columns: Optional[List[str]] = None,
+        extra_columns: Optional[List[str]] = None,
+        aggregate: Optional[Dict[str, Callable]] = None,
+        column_formats: Optional[Dict[str, str]] = None,
+    ) -> Styler:
         """Get a DataFrame of the yearly stats
 
         Args:
@@ -234,10 +240,10 @@ class LifeModel(mesa.Model):
         """
         # Get the list of columns to use
         if columns is None:
-            columns = ['Year'] + [x.name for x in self.STATS]
+            columns = ["Year"] + [x.name for x in self.STATS]
         if extra_columns is not None:
             for i, column in enumerate(extra_columns):
-                columns.insert(i+1, column)
+                columns.insert(i + 1, column)
         # Get the list of stats to use
         stats = []
         for column_name in columns:
@@ -250,14 +256,14 @@ class LifeModel(mesa.Model):
         df = df[columns]
         if aggregate is not None:
             # Aggregate the data if desired
-            aggregators = {**{'Year': 'max'}, **aggregate, **{x.title: x.aggregator.__name__ for x in stats}}
+            aggregators = {**{"Year": "max"}, **aggregate, **{x.title: x.aggregator.__name__ for x in stats}}
             df = df.aggregate(aggregators).reset_index().transpose()
             df.columns = df.iloc[0]
             df = df.drop(df.index[0])
         formats = {x.title: x.fmt for x in stats if x.fmt is not None}
         if column_formats is not None:
             formats.update(column_formats)
-        return df.style.format(precision=0, na_rep='MISSING', formatter=formats).hide()
+        return df.style.format(precision=0, na_rep="MISSING", formatter=formats).hide()
 
     def format_dataframe(self, df: pd.DataFrame, extra_formats: Optional[Dict[str, str]] = None) -> Styler:
         """Format a dataframe
@@ -273,7 +279,7 @@ class LifeModel(mesa.Model):
         stats = [x for x in stats if x is not None]
         formats = {x.title: x.fmt for x in stats if x.fmt is not None}
         formats = {**formats, **extra_formats} if extra_formats is not None else formats
-        return df.style.format(precision=0, na_rep='MISSING', formatter=formats).hide()
+        return df.style.format(precision=0, na_rep="MISSING", formatter=formats).hide()
 
     def aggregate_dataframe(self, df: pd.DataFrame, aggregate: Optional[Dict[str, Callable]] = None) -> pd.DataFrame:
         """Aggregate a dataframe
@@ -288,7 +294,7 @@ class LifeModel(mesa.Model):
         # Aggregate the data
         stats = [self.get_stat_by_title(str(x)) for x in df.columns]
         stats = [x for x in stats if x is not None]
-        aggregators = {**{'Year': 'max'}, **{x.title: x.aggregator.__name__ for x in stats}}
+        aggregators = {**{"Year": "max"}, **{x.title: x.aggregator.__name__ for x in stats}}
         df = df.aggregate(aggregators).reset_index().transpose()
         df.columns = df.iloc[0]
         return df.drop(df.index[0])
@@ -310,18 +316,19 @@ class LifeModelAgent(mesa.Agent):
             setattr(self, stat.name, 0)
 
     def pre_step(self):
-        """ Pre-step phase. Called for all agents before step phase. """
+        """Pre-step phase. Called for all agents before step phase."""
         pass
 
     def step(self):
-        """ Step phase. Called for all agents after pre-step phase. """
+        """Step phase. Called for all agents after pre-step phase."""
         pass
 
     def post_step(self):
-        """ Post-step phase. Called for all agents after post-step phase. """
+        """Post-step phase. Called for all agents after post-step phase."""
         pass
 
 
 class ModelSetupException(Exception):
     """Exception raised when there is an error setting up the model."""
+
     pass

@@ -130,7 +130,7 @@ YAML-based configuration files packaged with life-model (in `src/life_model/conf
 - `high_inflation.yaml` - Inflationary environment modeling
 
 ## Contributing
-This project is open source and welcomes contributions. Please see the test suite in `src/life_model/tests/` for examples of expected functionality and to ensure your changes don't break existing features.
+This project is open source and welcomes contributions. See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, the tox targets used by CI, and the `pre-commit install` step. The test suite in `src/life_model/tests/` shows examples of expected functionality.
 
 ## License
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
