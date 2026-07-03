@@ -20,12 +20,15 @@ class GlobalConfigManager:
         return cls._instance
 
     def __init__(self):
-        if self._financial_config is None:
-            self._financial_config = FinancialConfig()
+        # Config is loaded lazily on first access so that ``import life_model``
+        # never performs file I/O (see the ``financial`` property).
+        pass
 
     @property
     def financial(self) -> FinancialConfig:
         """Access to financial configuration"""
+        if self._financial_config is None:
+            self._financial_config = FinancialConfig()
         return self._financial_config
 
     def apply_scenario(self, scenario_name: str, overrides: Optional[Dict[str, Any]] = None) -> None:
@@ -39,7 +42,7 @@ class GlobalConfigManager:
         if overrides is None:
             overrides = get_scenario(scenario_name)
 
-        self._financial_config.apply_scenario(scenario_name, overrides)
+        self.financial.apply_scenario(scenario_name, overrides)
 
     def apply_predefined_scenario(self, scenario_name: str) -> None:
         """Apply a predefined scenario by name
@@ -48,7 +51,7 @@ class GlobalConfigManager:
             scenario_name: Name of the predefined scenario
         """
         overrides = get_scenario(scenario_name)
-        self._financial_config.apply_scenario(scenario_name, overrides)
+        self.financial.apply_scenario(scenario_name, overrides)
 
     def list_available_scenarios(self) -> list:
         """Get a list of all available predefined scenarios"""
@@ -56,11 +59,11 @@ class GlobalConfigManager:
 
     def reset_to_defaults(self) -> None:
         """Reset all configurations to their default values"""
-        self._financial_config.reset_to_defaults()
+        self.financial.reset_to_defaults()
 
     def get_current_scenario(self) -> Optional[str]:
         """Get the currently applied scenario name"""
-        return self._financial_config.scenario
+        return self.financial.scenario
 
 
 # Global configuration instance

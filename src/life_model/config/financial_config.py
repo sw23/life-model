@@ -4,7 +4,7 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 import yaml
-from pathlib import Path
+from importlib.resources import files
 from typing import TYPE_CHECKING, Optional, List, Dict
 from .base_config import ScenarioConfig
 from .models import FinancialConfigModel
@@ -28,33 +28,14 @@ class FinancialConfig(ScenarioConfig):
 
     def _initialize_defaults(self) -> None:
         """Initialize default financial configuration values from YAML file"""
-        # Determine config file path
+        # Determine config source. When no explicit file is given, load the
+        # packaged default from life_model/config/data/financial_defaults.yaml.
         if self.config_file is None:
-            # Look for config file relative to the project root
-            # Try multiple potential locations
-            potential_paths = [
-                Path('config/financial_defaults.yaml'),  # From project root
-                # Relative to this file
-                Path(__file__).parent.parent.parent.parent / 'config' / 'financial_defaults.yaml',
-                Path.cwd() / 'config' / 'financial_defaults.yaml',  # From current directory
-            ]
-
-            config_found = False
-            for path in potential_paths:
-                if path.exists():
-                    self.config_file = str(path)
-                    config_found = True
-                    break
-
-            if not config_found:
-                raise FileNotFoundError(
-                    "Configuration file 'financial_defaults.yaml' not found in any expected location. "
-                    "Please ensure the configuration files are included with the package."
-                )
-
-        # Load YAML configuration
-        with open(self.config_file, 'r') as f:
-            raw_config = yaml.safe_load(f)
+            data_file = files('life_model.config') / 'data' / 'financial_defaults.yaml'
+            raw_config = yaml.safe_load(data_file.read_text(encoding='utf-8'))
+        else:
+            with open(self.config_file, 'r') as f:
+                raw_config = yaml.safe_load(f)
 
         # Validate with Pydantic model
         try:

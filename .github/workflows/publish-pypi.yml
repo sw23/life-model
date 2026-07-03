@@ -26,14 +26,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v7
+      with:
+        fetch-depth: 0 # full history so setuptools-scm can derive the version from the tag
     - name: Set up Python
       uses: actions/setup-python@v6
       with:
         python-version: '3.13'
     - name: Install pypa/build
       run: python3 -m pip install build --user
-    - name: Set version number from tag
-      run: echo '${{ github.ref_name }}' | sed 's/^v//' > VERSION
     - name: Build a binary wheel and a source tarball
       run: python3 -m build
     - name: Store the distribution packages
