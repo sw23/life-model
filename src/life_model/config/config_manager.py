@@ -3,7 +3,8 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
+
 from .financial_config import FinancialConfig
 from .scenarios import get_scenario, list_scenarios
 
@@ -11,10 +12,10 @@ from .scenarios import get_scenario, list_scenarios
 class GlobalConfigManager:
     """Global configuration manager for the life-model package"""
 
-    _instance: Optional['GlobalConfigManager'] = None
+    _instance: Optional["GlobalConfigManager"] = None
     _financial_config: Optional[FinancialConfig] = None
 
-    def __new__(cls) -> 'GlobalConfigManager':
+    def __new__(cls) -> "GlobalConfigManager":
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance

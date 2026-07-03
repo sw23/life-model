@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 class PaymentService:
     """Service for handling payment prioritization and execution"""
 
-    def __init__(self, person: 'Person'):
+    def __init__(self, person: "Person"):
         self.person = person
 
     def pay_bills_with_prioritization(self, total_amount: float) -> float:

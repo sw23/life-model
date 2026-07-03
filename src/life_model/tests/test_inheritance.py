@@ -4,18 +4,19 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 import unittest
+
+from ..account.bank import BankAccount
+from ..account.brokerage import BrokerageAccount
+from ..account.hsa import HealthSavingsAccount, HSAType
+from ..account.job401k import Job401kAccount
+from ..account.pension import Pension
+from ..account.roth_IRA import RothIRA
+from ..account.traditional_IRA import TraditionalIRA
+from ..base_classes import Benefit, FinancialAccount, Investment, RetirementAccount
 from ..model import LifeModel
 from ..people.family import Family
 from ..people.person import Person, Spending
-from ..account.bank import BankAccount
-from ..account.job401k import Job401kAccount
-from ..account.hsa import HealthSavingsAccount, HSAType
-from ..account.brokerage import BrokerageAccount
-from ..account.traditional_IRA import TraditionalIRA
-from ..account.roth_IRA import RothIRA
-from ..account.pension import Pension
 from ..work.job import Job, Salary
-from ..base_classes import FinancialAccount, Investment, RetirementAccount, Benefit
 
 
 class TestInheritanceHierarchy(unittest.TestCase):
@@ -25,23 +26,11 @@ class TestInheritanceHierarchy(unittest.TestCase):
         self.model = LifeModel()
         self.family = Family(self.model)
         self.spending = Spending(model=self.model, base=12000, yearly_increase=2.0)
-        self.person = Person(
-            family=self.family,
-            name="Test Person",
-            age=30,
-            retirement_age=65,
-            spending=self.spending
-        )
+        self.person = Person(family=self.family, name="Test Person", age=30, retirement_age=65, spending=self.spending)
 
     def test_bank_account_inheritance(self):
         """Test that BankAccount properly inherits from FinancialAccount"""
-        bank = BankAccount(
-            owner=self.person,
-            company="Test Bank",
-            type="Checking",
-            balance=1000,
-            interest_rate=0.1
-        )
+        bank = BankAccount(owner=self.person, company="Test Bank", type="Checking", balance=1000, interest_rate=0.1)
 
         # Test inheritance
         self.assertIsInstance(bank, FinancialAccount)
@@ -58,12 +47,7 @@ class TestInheritanceHierarchy(unittest.TestCase):
         salary = Salary(model=self.model, base=100000, yearly_increase=3.0)
         job = Job(owner=self.person, company="Tech Corp", role="Engineer", salary=salary)
 
-        account = Job401kAccount(
-            job=job,
-            pretax_balance=10000,
-            roth_balance=5000,
-            average_growth=7.0
-        )
+        account = Job401kAccount(job=job, pretax_balance=10000, roth_balance=5000, average_growth=7.0)
 
         # Test inheritance
         self.assertIsInstance(account, RetirementAccount)
@@ -79,11 +63,7 @@ class TestInheritanceHierarchy(unittest.TestCase):
 
     def test_hsa_inheritance(self):
         """Test that HSA properly inherits from FinancialAccount"""
-        hsa = HealthSavingsAccount(
-            person=self.person,
-            hsa_type=HSAType.INDIVIDUAL,
-            balance=3000
-        )
+        hsa = HealthSavingsAccount(person=self.person, hsa_type=HSAType.INDIVIDUAL, balance=3000)
 
         # Test inheritance
         self.assertIsInstance(hsa, FinancialAccount)
@@ -95,24 +75,11 @@ class TestInheritanceHierarchy(unittest.TestCase):
 
     def test_investment_accounts_inheritance(self):
         """Test that investment accounts properly inherit from Investment"""
-        brokerage = BrokerageAccount(
-            person=self.person,
-            company="Vanguard",
-            balance=50000,
-            growth_rate=7.0
-        )
+        brokerage = BrokerageAccount(person=self.person, company="Vanguard", balance=50000, growth_rate=7.0)
 
-        traditional_ira = TraditionalIRA(
-            person=self.person,
-            balance=25000,
-            growth_rate=6.5
-        )
+        traditional_ira = TraditionalIRA(person=self.person, balance=25000, growth_rate=6.5)
 
-        roth_ira = RothIRA(
-            person=self.person,
-            balance=15000,
-            growth_rate=6.5
-        )
+        roth_ira = RothIRA(person=self.person, balance=15000, growth_rate=6.5)
 
         # Test inheritance
         self.assertIsInstance(brokerage, Investment)
@@ -125,18 +92,13 @@ class TestInheritanceHierarchy(unittest.TestCase):
         self.assertIsInstance(roth_ira, FinancialAccount)
 
         # Test that they all have growth functionality
-        self.assertTrue(hasattr(brokerage, 'calculate_growth'))
-        self.assertTrue(hasattr(traditional_ira, 'calculate_growth'))
-        self.assertTrue(hasattr(roth_ira, 'calculate_growth'))
+        self.assertTrue(hasattr(brokerage, "calculate_growth"))
+        self.assertTrue(hasattr(traditional_ira, "calculate_growth"))
+        self.assertTrue(hasattr(roth_ira, "calculate_growth"))
 
     def test_pension_inheritance(self):
         """Test that Pension properly inherits from Benefit"""
-        pension = Pension(
-            person=self.person,
-            company="Big Corp",
-            vesting_years=5,
-            benefit_amount=24000
-        )
+        pension = Pension(person=self.person, company="Big Corp", vesting_years=5, benefit_amount=24000)
 
         # Test inheritance
         self.assertIsInstance(pension, Benefit)
@@ -189,5 +151,5 @@ class TestInheritanceHierarchy(unittest.TestCase):
         self.assertEqual(new_total, 8300)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

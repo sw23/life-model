@@ -5,12 +5,14 @@
 import html
 from enum import Enum
 from typing import Optional
-from ..people.person import Person
+
 from ..base_classes import Loan
+from ..people.person import Person
 
 
 class StudentLoanType(Enum):
-    """ Enum for student loan types """
+    """Enum for student loan types"""
+
     FEDERAL_SUBSIDIZED = "Federal Subsidized"
     FEDERAL_UNSUBSIDIZED = "Federal Unsubsidized"
     PRIVATE = "Private"
@@ -18,11 +20,18 @@ class StudentLoanType(Enum):
 
 
 class StudentLoan(Loan):
-    def __init__(self, person: Person, loan_type: StudentLoanType, loan_amount: float,
-                 yearly_interest_rate: float, length_years: int,
-                 school_name: str, principal: Optional[float] = None,
-                 monthly_payment: Optional[float] = None):
-        """ Models a student loan for a person
+    def __init__(
+        self,
+        person: Person,
+        loan_type: StudentLoanType,
+        loan_amount: float,
+        yearly_interest_rate: float,
+        length_years: int,
+        school_name: str,
+        principal: Optional[float] = None,
+        monthly_payment: Optional[float] = None,
+    ):
+        """Models a student loan for a person
 
         Args:
             person: The person to which this loan belongs
@@ -34,13 +43,12 @@ class StudentLoan(Loan):
             principal: Current principal balance (defaults to loan_amount)
             monthly_payment: Monthly payment amount (calculated if not provided)
         """
-        super().__init__(person, loan_amount, yearly_interest_rate, length_years,
-                         principal, monthly_payment)
+        super().__init__(person, loan_amount, yearly_interest_rate, length_years, principal, monthly_payment)
         self.loan_type = loan_type
         self.school_name = school_name
 
     def get_monthly_payment(self) -> float:
-        """ Calculate monthly payment using standard loan formula """
+        """Calculate monthly payment using standard loan formula"""
         return self.calculate_monthly_payment()
 
     def make_payment(self, payment_amount: float, extra_to_principal: float = 0) -> float:
@@ -93,12 +101,12 @@ class StudentLoan(Loan):
         return total_payment
 
     def _repr_html_(self):
-        desc = '<ul>'
-        desc += f'<li>Loan Type: {self.loan_type.value}</li>'
-        desc += f'<li>School: {html.escape(self.school_name)}</li>'
-        desc += f'<li>Loan Amount: ${self.loan_amount:,.2f}</li>'
-        desc += f'<li>Principal Balance: ${self.principal:,.2f}</li>'
-        desc += f'<li>Monthly Payment: ${self.monthly_payment:,.2f}</li>'
-        desc += f'<li>Interest Rate: {self.yearly_interest_rate}%</li>'
-        desc += '</ul>'
+        desc = "<ul>"
+        desc += f"<li>Loan Type: {self.loan_type.value}</li>"
+        desc += f"<li>School: {html.escape(self.school_name)}</li>"
+        desc += f"<li>Loan Amount: ${self.loan_amount:,.2f}</li>"
+        desc += f"<li>Principal Balance: ${self.principal:,.2f}</li>"
+        desc += f"<li>Monthly Payment: ${self.monthly_payment:,.2f}</li>"
+        desc += f"<li>Interest Rate: {self.yearly_interest_rate}%</li>"
+        desc += "</ul>"
         return desc

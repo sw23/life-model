@@ -4,6 +4,7 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 import html
 from typing import TYPE_CHECKING
+
 from ..model import LifeModelAgent
 
 if TYPE_CHECKING:
@@ -11,8 +12,8 @@ if TYPE_CHECKING:
 
 
 class Child(LifeModelAgent):
-    def __init__(self, person: 'Person', name: str, birth_year: int):
-        """ Models a child dependent for a person
+    def __init__(self, person: "Person", name: str, birth_year: int):
+        """Models a child dependent for a person
 
         Args:
             person: The person to which this child belongs
@@ -30,9 +31,9 @@ class Child(LifeModelAgent):
         return self.model.year - self.birth_year
 
     def _repr_html_(self):
-        desc = '<ul>'
-        desc += f'<li>Name: {html.escape(self.name)}</li>'
-        desc += f'<li>Birth Year: {self.birth_year}</li>'
-        desc += f'<li>Age: {self.age}</li>'
-        desc += '</ul>'
+        desc = "<ul>"
+        desc += f"<li>Name: {html.escape(self.name)}</li>"
+        desc += f"<li>Birth Year: {self.birth_year}</li>"
+        desc += f"<li>Age: {self.age}</li>"
+        desc += "</ul>"
         return desc

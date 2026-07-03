@@ -3,12 +3,13 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-from typing import Optional, List, Callable
+from typing import Callable, List, Optional
+
 from .model import LifeModelAgent
 
 
 class LifeEvents(LifeModelAgent):
-    def __init__(self, model, life_events: Optional[List['LifeEvent']] = None):
+    def __init__(self, model, life_events: Optional[List["LifeEvent"]] = None):
         """List of life events
 
         Args:
@@ -30,7 +31,7 @@ class LifeEvents(LifeModelAgent):
         self.life_events = [x for x in self.life_events if not x.eval_event(self.model.year)]
 
 
-class LifeEvent():
+class LifeEvent:
     def __init__(self, year: int, name: str, event: Callable, *event_args):
         """Life Event.
 

@@ -3,8 +3,9 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-from pydantic import BaseModel, Field, ConfigDict
-from typing import List, Union, Dict
+from typing import Dict, List, Union
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class StandardDeductionConfig(BaseModel):
@@ -135,7 +136,8 @@ class DebtConfig(BaseModel):
 
 class FinancialConfigModel(BaseModel):
     """Complete financial configuration model with validation"""
-    model_config = ConfigDict(extra='forbid')
+
+    model_config = ConfigDict(extra="forbid")
 
     tax: TaxConfig
     retirement: RetirementConfig

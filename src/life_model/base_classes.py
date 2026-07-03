@@ -3,9 +3,10 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 from abc import ABC, abstractmethod
-from typing import Optional, TYPE_CHECKING
-from .model import LifeModelAgent
+from typing import TYPE_CHECKING, Optional
+
 from .limits import federal_retirement_age
+from .model import LifeModelAgent
 
 if TYPE_CHECKING:
     from .people.person import Person
@@ -14,7 +15,7 @@ if TYPE_CHECKING:
 class FinancialAccount(LifeModelAgent, ABC):
     """Abstract base class for all financial accounts with balances"""
 
-    def __init__(self, person: 'Person', balance: float = 0):
+    def __init__(self, person: "Person", balance: float = 0):
         super().__init__(person.model)
         self.person = person
         self.balance = balance
@@ -43,9 +44,15 @@ class FinancialAccount(LifeModelAgent, ABC):
 class Loan(LifeModelAgent, ABC):
     """Abstract base class for all loans with payment calculations"""
 
-    def __init__(self, person: 'Person', loan_amount: float, yearly_interest_rate: float,
-                 length_years: int, principal: Optional[float] = None,
-                 monthly_payment: Optional[float] = None):
+    def __init__(
+        self,
+        person: "Person",
+        loan_amount: float,
+        yearly_interest_rate: float,
+        length_years: int,
+        principal: Optional[float] = None,
+        monthly_payment: Optional[float] = None,
+    ):
         super().__init__(person.model)
         self.person = person
         self.loan_amount = loan_amount
@@ -85,7 +92,7 @@ class Loan(LifeModelAgent, ABC):
 class Investment(FinancialAccount, ABC):
     """Abstract base class for investment accounts with growth"""
 
-    def __init__(self, person: 'Person', balance: float = 0, growth_rate: float = 0):
+    def __init__(self, person: "Person", balance: float = 0, growth_rate: float = 0):
         super().__init__(person, balance)
         self.growth_rate = growth_rate
         self.stat_growth_history = []
@@ -111,7 +118,7 @@ class Investment(FinancialAccount, ABC):
 class RetirementAccount(FinancialAccount, ABC):
     """Abstract base class for retirement accounts (401k, IRA, etc.)"""
 
-    def __init__(self, person: 'Person', balance: float = 0):
+    def __init__(self, person: "Person", balance: float = 0):
         super().__init__(person, balance)
         self.stat_useable_balance = 0
 
@@ -130,7 +137,7 @@ class RetirementAccount(FinancialAccount, ABC):
 class Benefit(LifeModelAgent, ABC):
     """Abstract base class for benefits that provide periodic payments"""
 
-    def __init__(self, person: 'Person', company: str):
+    def __init__(self, person: "Person", company: str):
         super().__init__(person.model)
         self.person = person
         self.company = company

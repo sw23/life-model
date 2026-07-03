@@ -4,12 +4,14 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 import html
 from enum import Enum
-from ..people.person import Person
+
 from ..base_classes import Loan
+from ..people.person import Person
 
 
 class CreditCardType(Enum):
     """Types of credit cards"""
+
     VISA = "Visa"
     MASTERCARD = "MasterCard"
     AMERICAN_EXPRESS = "American Express"
@@ -18,10 +20,16 @@ class CreditCardType(Enum):
 
 
 class CreditCard(Loan):
-    def __init__(self, person: Person, card_name: str, credit_limit: float,
-                 current_balance: float = 0, yearly_interest_rate: float = 18.0,
-                 minimum_payment_percent: float = 2.0):
-        """ Models a credit card for a person
+    def __init__(
+        self,
+        person: Person,
+        card_name: str,
+        credit_limit: float,
+        current_balance: float = 0,
+        yearly_interest_rate: float = 18.0,
+        minimum_payment_percent: float = 2.0,
+    ):
+        """Models a credit card for a person
 
         Args:
             person: The person who owns this credit card
@@ -33,9 +41,9 @@ class CreditCard(Loan):
         """
         # Credit cards don't have a fixed term, so we'll use a dummy value and override
         # the monthly_payment calculation to use minimum payment instead
-        super().__init__(person, current_balance, yearly_interest_rate,
-                         length_years=1, principal=current_balance,
-                         monthly_payment=0)  # We'll calculate this after initialization
+        super().__init__(
+            person, current_balance, yearly_interest_rate, length_years=1, principal=current_balance, monthly_payment=0
+        )  # We'll calculate this after initialization
         self.card_name = card_name
         self.credit_limit = credit_limit
         self.minimum_payment_percent = minimum_payment_percent
@@ -105,12 +113,12 @@ class CreditCard(Loan):
         return interest_payment + principal_payment
 
     def _repr_html_(self):
-        desc = '<ul>'
-        desc += f'<li>Card: {html.escape(self.card_name)}</li>'
-        desc += f'<li>Credit Limit: ${self.credit_limit:,.2f}</li>'
-        desc += f'<li>Current Balance: ${self.principal:,.2f}</li>'
-        desc += f'<li>Available Credit: ${self.get_available_credit():,.2f}</li>'
-        desc += f'<li>Interest Rate: {self.yearly_interest_rate}%</li>'
-        desc += f'<li>Minimum Payment: ${self.get_minimum_payment():,.2f}</li>'
-        desc += '</ul>'
+        desc = "<ul>"
+        desc += f"<li>Card: {html.escape(self.card_name)}</li>"
+        desc += f"<li>Credit Limit: ${self.credit_limit:,.2f}</li>"
+        desc += f"<li>Current Balance: ${self.principal:,.2f}</li>"
+        desc += f"<li>Available Credit: ${self.get_available_credit():,.2f}</li>"
+        desc += f"<li>Interest Rate: {self.yearly_interest_rate}%</li>"
+        desc += f"<li>Minimum Payment: ${self.get_minimum_payment():,.2f}</li>"
+        desc += "</ul>"
         return desc

@@ -9,18 +9,18 @@ This module provides utilities for executing and testing Jupyter notebooks
 in different environments, including tox virtual environments.
 """
 
+import json
 import os
 import sys
 import tempfile
-import json
 import unittest
 
 # First set the environment variable before any Jupyter imports
-os.environ['JUPYTER_PLATFORM_DIRS'] = '1'
+os.environ["JUPYTER_PLATFORM_DIRS"] = "1"
 
 import nbformat  # noqa: E402
-from nbconvert.preprocessors import ExecutePreprocessor  # noqa: E402
 from jupyter_client import kernelspec  # noqa: E402
+from nbconvert.preprocessors import ExecutePreprocessor  # noqa: E402
 
 
 def get_repo_root():
@@ -46,12 +46,12 @@ def get_available_kernel():
         kernel_specs = ksm.get_all_specs()
 
         # Look for Python kernels, prioritizing python3
-        if 'python3' in kernel_specs:
-            return 'python3'
+        if "python3" in kernel_specs:
+            return "python3"
 
         # Look for any Python kernel
         for name, spec in kernel_specs.items():
-            if 'python' in name.lower():
+            if "python" in name.lower():
                 return name
 
         # If we're in a tox environment and no suitable kernel found, create one
@@ -65,7 +65,7 @@ def get_available_kernel():
             return create_temporary_kernel()
 
     # Return python3 as a fallback (may fail but provides a clearer error)
-    return 'python3'
+    return "python3"
 
 
 def create_temporary_kernel():
@@ -78,7 +78,7 @@ def create_temporary_kernel():
     kernel_name = f"python-tox-{os.getpid()}"
 
     # Create a temporary directory for the kernel spec
-    temp_dir = tempfile.mkdtemp(prefix='kernel-')
+    temp_dir = tempfile.mkdtemp(prefix="kernel-")
 
     # Create the kernel.json file
     kernel_json = {
@@ -90,7 +90,7 @@ def create_temporary_kernel():
     }
 
     # Write the kernel.json file
-    with open(os.path.join(temp_dir, 'kernel.json'), 'w') as f:
+    with open(os.path.join(temp_dir, "kernel.json"), "w") as f:
         json.dump(kernel_json, f, indent=2)
 
     # Install the kernel spec
@@ -107,7 +107,7 @@ def is_running_in_tox():
     Returns:
         bool: True if running in tox, False otherwise
     """
-    return 'TOX_ENV_NAME' in os.environ
+    return "TOX_ENV_NAME" in os.environ
 
 
 class JupyterNotebookTestBase(unittest.TestCase):
@@ -142,11 +142,10 @@ class JupyterNotebookTestBase(unittest.TestCase):
         """
         # Ensure notebook path exists
         notebook_path = self.notebook_path
-        self.assertTrue(os.path.exists(notebook_path),
-                        f"Notebook not found at expected path: {notebook_path}")
+        self.assertTrue(os.path.exists(notebook_path), f"Notebook not found at expected path: {notebook_path}")
 
         # Load the notebook
-        with open(notebook_path, 'r', encoding='utf-8') as f:
+        with open(notebook_path, "r", encoding="utf-8") as f:
             notebook = nbformat.read(f, as_version=4)
 
         # Get available kernel
@@ -159,14 +158,11 @@ class JupyterNotebookTestBase(unittest.TestCase):
         # Configure the notebook executor
         execute_preprocessor = ExecutePreprocessor(
             timeout=600,  # Allow up to 10 minutes for execution
-            kernel_name=kernel_name
+            kernel_name=kernel_name,
         )
 
         try:
             # Execute the notebook
-            execute_preprocessor.preprocess(
-                notebook,
-                {'metadata': {'path': os.path.dirname(notebook_path)}}
-            )
+            execute_preprocessor.preprocess(notebook, {"metadata": {"path": os.path.dirname(notebook_path)}})
         except Exception as e:
             self.fail(f"Error executing the notebook: {str(e)}")

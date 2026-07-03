@@ -5,6 +5,7 @@
 
 import unittest
 from unittest.mock import Mock
+
 from ..debt.car_loan import CarLoan
 from ..people.person import Person
 
@@ -22,18 +23,12 @@ class TestCarLoan(unittest.TestCase):
             loan_amount=30000.0,
             length_years=5,
             yearly_interest_rate=6.0,
-            name="Honda Civic 2023"
+            name="Honda Civic 2023",
         )
 
     def test_init_default_values(self):
         """Test CarLoan initialization with default values."""
-        car_loan = CarLoan(
-            self.mock_person,
-            25000.0,
-            4,
-            5.5,
-            "Toyota Camry"
-        )
+        car_loan = CarLoan(self.mock_person, 25000.0, 4, 5.5, "Toyota Camry")
 
         self.assertEqual(car_loan.person, self.mock_person)
         self.assertEqual(car_loan.loan_amount, 25000.0)
@@ -49,13 +44,7 @@ class TestCarLoan(unittest.TestCase):
         custom_payment = 600.0
 
         car_loan = CarLoan(
-            self.mock_person,
-            30000.0,
-            5,
-            6.0,
-            "Custom Car",
-            principal=custom_principal,
-            monthly_payment=custom_payment
+            self.mock_person, 30000.0, 5, 6.0, "Custom Car", principal=custom_principal, monthly_payment=custom_payment
         )
 
         self.assertEqual(car_loan.principal, custom_principal)
@@ -106,20 +95,12 @@ class TestCarLoan(unittest.TestCase):
         total_paid = self.car_loan.make_payment(monthly_payment)
 
         self.assertAlmostEqual(total_paid, expected_total_payment, places=2)
-        self.assertAlmostEqual(
-            self.car_loan.principal,
-            initial_principal - expected_principal_payment,
-            places=2
-        )
+        self.assertAlmostEqual(self.car_loan.principal, initial_principal - expected_principal_payment, places=2)
 
         # Check statistics tracking
         self.assertEqual(len(self.car_loan.stat_principal_payment_history), 1)
         self.assertEqual(len(self.car_loan.stat_interest_payment_history), 1)
-        self.assertAlmostEqual(
-            self.car_loan.stat_principal_payment_history[0],
-            expected_principal_payment,
-            places=2
-        )
+        self.assertAlmostEqual(self.car_loan.stat_principal_payment_history[0], expected_principal_payment, places=2)
 
     def test_make_payment_with_extra_principal(self):
         """Test making a payment with extra principal."""
@@ -134,11 +115,7 @@ class TestCarLoan(unittest.TestCase):
         total_paid = self.car_loan.make_payment(monthly_payment, extra_principal)
 
         self.assertAlmostEqual(total_paid, expected_total_payment, places=2)
-        self.assertAlmostEqual(
-            self.car_loan.principal,
-            initial_principal - expected_principal_payment,
-            places=2
-        )
+        self.assertAlmostEqual(self.car_loan.principal, initial_principal - expected_principal_payment, places=2)
 
     def test_make_payment_exceeds_balance(self):
         """Test making a payment that exceeds the remaining balance."""
@@ -209,13 +186,7 @@ class TestCarLoan(unittest.TestCase):
 
     def test_repr_html_escaping(self):
         """Test HTML representation with special characters."""
-        car_loan = CarLoan(
-            self.mock_person,
-            25000.0,
-            4,
-            5.0,
-            'Car & Truck <script>alert("XSS")</script>'
-        )
+        car_loan = CarLoan(self.mock_person, 25000.0, 4, 5.0, 'Car & Truck <script>alert("XSS")</script>')
         html = car_loan._repr_html_()
 
         # Check that dangerous characters are escaped
@@ -234,14 +205,14 @@ class TestCarLoan(unittest.TestCase):
     def test_inheritance_from_loan(self):
         """Test that CarLoan properly inherits from Loan base class."""
         # Test that it has inherited attributes
-        self.assertTrue(hasattr(self.car_loan, 'stat_principal_payment_history'))
-        self.assertTrue(hasattr(self.car_loan, 'stat_interest_payment_history'))
-        self.assertTrue(hasattr(self.car_loan, 'stat_balance_history'))
+        self.assertTrue(hasattr(self.car_loan, "stat_principal_payment_history"))
+        self.assertTrue(hasattr(self.car_loan, "stat_interest_payment_history"))
+        self.assertTrue(hasattr(self.car_loan, "stat_balance_history"))
 
         # Test that it has inherited methods
-        self.assertTrue(hasattr(self.car_loan, 'calculate_monthly_payment'))
-        self.assertTrue(hasattr(self.car_loan, 'get_interest_amount'))
-        self.assertTrue(hasattr(self.car_loan, 'step'))
+        self.assertTrue(hasattr(self.car_loan, "calculate_monthly_payment"))
+        self.assertTrue(hasattr(self.car_loan, "get_interest_amount"))
+        self.assertTrue(hasattr(self.car_loan, "step"))
 
     def test_edge_case_very_short_loan(self):
         """Test edge case with very short loan term."""
@@ -312,5 +283,5 @@ class TestCarLoan(unittest.TestCase):
         self.assertAlmostEqual(total_paid, payoff_amount, places=2)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

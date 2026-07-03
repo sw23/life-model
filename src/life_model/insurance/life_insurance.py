@@ -3,32 +3,40 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 from enum import Enum
-from typing import Optional, cast, Union
+from typing import Optional, Union, cast
+
+from ..model import Event, LifeModel, LifeModelAgent, compound_interest
 from ..people.person import Person
-from ..model import LifeModel, LifeModelAgent, Event, compound_interest
 
 
 class LifeInsuranceType(Enum):
-    """ Enum for life insurance types """
+    """Enum for life insurance types"""
+
     TERM = "Term"
     WHOLE = "Whole"
 
 
 class PremiumIncreaseType(Enum):
-    """ Enum for premium increase calculation types """
+    """Enum for premium increase calculation types"""
+
     AGE_BASED = "age_based"
     YEARLY = "yearly"
 
 
 class LifeInsurance(LifeModelAgent):
-    def __init__(self, person: Person, policy_type: LifeInsuranceType,
-                 death_benefit: float, monthly_premium: float,
-                 term_years: Optional[int] = None,
-                 premium_increase_rate: Union[float, dict, None] = None,
-                 cash_value_growth_rate: float = 0.0,
-                 loan_interest_rate: float = 6.0,
-                 max_missed_payments: int = 3):
-        """ Models life insurance policy for a person
+    def __init__(
+        self,
+        person: Person,
+        policy_type: LifeInsuranceType,
+        death_benefit: float,
+        monthly_premium: float,
+        term_years: Optional[int] = None,
+        premium_increase_rate: Union[float, dict, None] = None,
+        cash_value_growth_rate: float = 0.0,
+        loan_interest_rate: float = 6.0,
+        max_missed_payments: int = 3,
+    ):
+        """Models life insurance policy for a person
 
         Args:
             person: The person to which this policy belongs
@@ -43,7 +51,7 @@ class LifeInsurance(LifeModelAgent):
             max_missed_payments: Maximum consecutive missed payments before lapse
         """
         super().__init__(cast(LifeModel, person.model))
-        self.model: 'LifeModel' = cast('LifeModel', self.model)  # Type override for better intellisense
+        self.model: "LifeModel" = cast("LifeModel", self.model)  # Type override for better intellisense
         self.person = person
         self.policy_type = policy_type
         self.death_benefit = death_benefit
@@ -70,9 +78,20 @@ class LifeInsurance(LifeModelAgent):
             self.premium_increase_type = PremiumIncreaseType.AGE_BASED
             self.yearly_increase_rate = 0.0
             self.age_multipliers = {
-                20: 1.0, 25: 1.1, 30: 1.3, 35: 1.6, 40: 2.1,
-                45: 2.8, 50: 3.8, 55: 5.2, 60: 7.1, 65: 10.0,
-                70: 15.0, 75: 23.0, 80: 35.0, 85: 55.0
+                20: 1.0,
+                25: 1.1,
+                30: 1.3,
+                35: 1.6,
+                40: 2.1,
+                45: 2.8,
+                50: 3.8,
+                55: 5.2,
+                60: 7.1,
+                65: 10.0,
+                70: 15.0,
+                75: 23.0,
+                80: 35.0,
+                85: 55.0,
             }
 
         # Policy state
@@ -194,7 +213,8 @@ class LifeInsurance(LifeModelAgent):
             if surrender_value > 0:
                 self.person.deposit_into_bank_account(surrender_value)
                 self.model.event_log.add(
-                    Event(f"{self.person.name} surrendered life insurance policy for ${surrender_value:,.0f}"))
+                    Event(f"{self.person.name} surrendered life insurance policy for ${surrender_value:,.0f}")
+                )
                 self.cash_value = 0.0
 
         self.model.event_log.add(Event(f"{self.person.name} voluntarily dropped their life insurance policy"))
@@ -236,13 +256,13 @@ class LifeInsurance(LifeModelAgent):
         benefit_amount = self.net_death_benefit
         if benefit_amount > 0:
             # For simplicity, add to spouse's bank account if married, otherwise to family
-            if self.person.spouse and hasattr(self.person.spouse, 'deposit_into_bank_account'):
+            if self.person.spouse and hasattr(self.person.spouse, "deposit_into_bank_account"):
                 self.person.spouse.deposit_into_bank_account(benefit_amount)
                 recipient = self.person.spouse.name
             else:
                 # Add to family's primary account (first family member with bank account)
                 for member in self.person.family.members:
-                    if member != self.person and hasattr(member, 'bank_accounts') and member.bank_accounts:
+                    if member != self.person and hasattr(member, "bank_accounts") and member.bank_accounts:
                         member.deposit_into_bank_account(benefit_amount)
                         recipient = member.name
                         break
@@ -251,7 +271,8 @@ class LifeInsurance(LifeModelAgent):
 
             self.stat_death_benefit_paid = benefit_amount
             self.model.event_log.add(
-                Event(f"Life insurance death benefit of ${benefit_amount:,.0f} paid to {recipient}"))
+                Event(f"Life insurance death benefit of ${benefit_amount:,.0f} paid to {recipient}")
+            )
 
         return benefit_amount
 
@@ -346,22 +367,24 @@ class LifeInsurance(LifeModelAgent):
             # Log significant premium increases (>20%)
             if self.monthly_premium > old_premium * 1.2:
                 increase_pct = ((self.monthly_premium - old_premium) / old_premium) * 100
-                self.model.event_log.add(Event(
-                    f"{self.person.name}'s term life premium increased {increase_pct:.0f}% "
-                    f"(${old_premium:.0f} -> ${self.monthly_premium:.0f}/month) due to age"
-                ))
+                self.model.event_log.add(
+                    Event(
+                        f"{self.person.name}'s term life premium increased {increase_pct:.0f}% "
+                        f"(${old_premium:.0f} -> ${self.monthly_premium:.0f}/month) due to age"
+                    )
+                )
 
     def _repr_html_(self):
-        desc = '<ul>'
-        desc += f'<li>Policy Type: {self.policy_type.value}</li>'
-        desc += f'<li>Death Benefit: ${self.death_benefit:,}</li>'
-        desc += f'<li>Monthly Premium: ${self.monthly_premium:,.2f}</li>'
+        desc = "<ul>"
+        desc += f"<li>Policy Type: {self.policy_type.value}</li>"
+        desc += f"<li>Death Benefit: ${self.death_benefit:,}</li>"
+        desc += f"<li>Monthly Premium: ${self.monthly_premium:,.2f}</li>"
         if self.policy_type == LifeInsuranceType.TERM and self.term_years:
-            desc += f'<li>Term: {self.term_years} years</li>'
+            desc += f"<li>Term: {self.term_years} years</li>"
         if self.policy_type == LifeInsuranceType.WHOLE:
-            desc += f'<li>Cash Value: ${self.cash_value:,.2f}</li>'
+            desc += f"<li>Cash Value: ${self.cash_value:,.2f}</li>"
             if self.outstanding_loan_balance > 0:
-                desc += f'<li>Outstanding Loan: ${self.outstanding_loan_balance:,.2f}</li>'
-        desc += f'<li>Status: {"Active" if self.is_active else "Lapsed"}</li>'
-        desc += '</ul>'
+                desc += f"<li>Outstanding Loan: ${self.outstanding_loan_balance:,.2f}</li>"
+        desc += f"<li>Status: {'Active' if self.is_active else 'Lapsed'}</li>"
+        desc += "</ul>"
         return desc

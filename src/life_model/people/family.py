@@ -3,9 +3,9 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-from ..tax.federal import FilingStatus, max_tax_rate, federal_standard_deduction
-from ..tax.tax import get_income_taxes_due, TaxesDue
-from ..model import LifeModelAgent, LifeModel
+from ..model import LifeModel, LifeModelAgent
+from ..tax.federal import FilingStatus, federal_standard_deduction, max_tax_rate
+from ..tax.tax import TaxesDue, get_income_taxes_due
 
 
 class Family(LifeModelAgent):
@@ -60,11 +60,11 @@ class Family(LifeModelAgent):
         return matches[key]
 
     def _repr_html_(self):
-        return '<b>Family:</b><ul>' + ''.join(f"<li>{x._repr_html_()}</li>" for x in self.members) + '</ul>'
+        return "<b>Family:</b><ul>" + "".join(f"<li>{x._repr_html_()}</li>" for x in self.members) + "</ul>"
 
     def withdraw_from_pretax_401ks(self, amount: float) -> float:
         for member in self.members:
-            if (amount == 0):
+            if amount == 0:
                 break
             amount -= member.withdraw_from_pretax_401ks(amount)
         return amount
@@ -79,7 +79,7 @@ class Family(LifeModelAgent):
             float: Balance remaining after paying bills.
         """
         for member in self.members:
-            if (spending_balance == 0):
+            if spending_balance == 0:
                 return 0
             spending_balance = member.pay_bills(spending_balance)
         return spending_balance

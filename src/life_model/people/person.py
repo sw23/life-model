@@ -4,15 +4,16 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 from enum import Enum
-from typing import List, Optional, TYPE_CHECKING
-from ..model import LifeModelAgent, LifeModel, Event, ModelSetupException
-from .family import Family
-from ..limits import federal_retirement_age
-from ..tax.federal import FilingStatus, federal_standard_deduction
-from ..tax.tax import get_income_taxes_due, TaxesDue
+from typing import TYPE_CHECKING, List, Optional
+
 from ..account.job401k import Job401kAccount
-from ..services.tax_calculation_service import TaxCalculationService
+from ..limits import federal_retirement_age
+from ..model import Event, LifeModel, LifeModelAgent, ModelSetupException
 from ..services.payment_service import PaymentService
+from ..services.tax_calculation_service import TaxCalculationService
+from ..tax.federal import FilingStatus, federal_standard_deduction
+from ..tax.tax import TaxesDue, get_income_taxes_due
+from .family import Family
 
 if TYPE_CHECKING:
     from ..insurance.social_security import SocialSecurity
@@ -25,7 +26,7 @@ class GenderAtBirth(Enum):
 
 
 class Person(LifeModelAgent):
-    def __init__(self, family: Family, name: str, age: int, retirement_age: float, spending: 'Spending'):
+    def __init__(self, family: Family, name: str, age: int, retirement_age: float, spending: "Spending"):
         """Person
 
         Args:
@@ -113,9 +114,7 @@ class Person(LifeModelAgent):
 
         # Sum deductions from DAF contributions (tracked in stat_contributions_this_year)
         # DAF contributions are deductible when contributed, not when distributed
-        daf_contribution_deductions = sum(
-            daf.stat_contributions_this_year for daf in self.donor_advised_funds
-        )
+        daf_contribution_deductions = sum(daf.stat_contributions_this_year for daf in self.donor_advised_funds)
 
         return donation_deductions + daf_contribution_deductions
 
@@ -133,7 +132,7 @@ class Person(LifeModelAgent):
 
         # Add mortgage interest deductions
         for home in self.homes:
-            if hasattr(home, 'mortgage') and home.mortgage:
+            if hasattr(home, "mortgage") and home.mortgage:
                 itemized += home.mortgage.get_interest_for_year()
 
         return itemized
@@ -156,15 +155,15 @@ class Person(LifeModelAgent):
 
     def _repr_html_(self):
         desc = self.name
-        desc += '<ul>'
-        desc += f'<li>Age: {self.age}</li>'
-        desc += f'<li>Retirement Age: {self.retirement_age}</li>'
-        desc += ''.join(f"<li>{x._repr_html_()}</li>" for x in self.jobs)
-        desc += ''.join(f"<li>{x._repr_html_()}</li>" for x in self.bank_accounts)
-        desc += ''.join(f"<li>{x._repr_html_()}</li>" for x in self.homes)
-        desc += ''.join(f"<li>{x._repr_html_()}</li>" for x in self.apartments)
-        desc += f'<li>Debt: {self.debt}</li>'
-        desc += '</ul>'
+        desc += "<ul>"
+        desc += f"<li>Age: {self.age}</li>"
+        desc += f"<li>Retirement Age: {self.retirement_age}</li>"
+        desc += "".join(f"<li>{x._repr_html_()}</li>" for x in self.jobs)
+        desc += "".join(f"<li>{x._repr_html_()}</li>" for x in self.bank_accounts)
+        desc += "".join(f"<li>{x._repr_html_()}</li>" for x in self.homes)
+        desc += "".join(f"<li>{x._repr_html_()}</li>" for x in self.apartments)
+        desc += f"<li>Debt: {self.debt}</li>"
+        desc += "</ul>"
         return desc
 
     @property
@@ -182,7 +181,7 @@ class Person(LifeModelAgent):
         """
         spending_balance = amount
         for bank_account in self.bank_accounts:
-            if (spending_balance == 0):
+            if spending_balance == 0:
                 break
             spending_balance -= bank_account.withdraw(spending_balance)
         return spending_balance
@@ -198,7 +197,7 @@ class Person(LifeModelAgent):
         """
         spending_balance = amount
         for retirement_account in self.all_retirement_accounts:
-            if (spending_balance == 0):
+            if spending_balance == 0:
                 break
             spending_balance -= retirement_account.deduct_pretax(spending_balance)
         return spending_balance
@@ -214,7 +213,7 @@ class Person(LifeModelAgent):
         """
         spending_balance = amount
         for retirement_account in self.all_retirement_accounts:
-            if (spending_balance == 0):
+            if spending_balance == 0:
                 break
             spending_balance -= retirement_account.deduct_roth(spending_balance)
         return spending_balance
@@ -240,7 +239,7 @@ class Person(LifeModelAgent):
             amount (float): Amount to deposit.
         """
         if len(self.bank_accounts) == 0:
-            raise ModelSetupException('No Bank Account. Create a bank account before making deposits.')
+            raise ModelSetupException("No Bank Account. Create a bank account before making deposits.")
         self.bank_accounts[0].balance += amount
 
     def pay_bills(self, spending_balance: float) -> float:
@@ -273,7 +272,7 @@ class Person(LifeModelAgent):
         else:
             raise NotImplementedError(f"Unsupported filing status: {self.filing_status}")
 
-    def get_married(self, spouse: 'Person', link_spouse: bool = True):
+    def get_married(self, spouse: "Person", link_spouse: bool = True):
         """Get  married.
 
         Args:
@@ -325,7 +324,7 @@ class Person(LifeModelAgent):
         else:
             yearly_taxes = TaxesDue()
 
-        if (self.age == int(federal_retirement_age())):
+        if self.age == int(federal_retirement_age()):
             self.model.event_log.add(Event(f"{self.name} reached retirement age (age {federal_retirement_age()})"))
 
         self.stat_money_spent = discretionary_spending
@@ -379,5 +378,5 @@ class Spending(LifeModelAgent):
         self.base = self.base * (base_percent / 100)
 
     def step(self):
-        self.base += (self.base * (self.yearly_increase / 100))
+        self.base += self.base * (self.yearly_increase / 100)
         self.one_time_expenses = 0

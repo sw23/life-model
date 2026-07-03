@@ -4,36 +4,28 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 import unittest
+
+from ..account.bank import BankAccount
+from ..insurance.life_insurance import LifeInsurance, LifeInsuranceType, PremiumIncreaseType
 from ..model import LifeModel
 from ..people.family import Family
 from ..people.person import Person, Spending
-from ..account.bank import BankAccount
-from ..insurance.life_insurance import LifeInsurance, LifeInsuranceType, PremiumIncreaseType
 
 
 class TestLifeInsurance(unittest.TestCase):
-
     def setUp(self):
         """Set up test fixtures"""
         self.model = LifeModel(start_year=2023, end_year=2030)
         self.family = Family(self.model)
         self.john = Person(
-            family=self.family,
-            name='John',
-            age=35,
-            retirement_age=65,
-            spending=Spending(self.model, base=50000)
+            family=self.family, name="John", age=35, retirement_age=65, spending=Spending(self.model, base=50000)
         )
         self.jane = Person(
-            family=self.family,
-            name='Jane',
-            age=33,
-            retirement_age=65,
-            spending=Spending(self.model, base=45000)
+            family=self.family, name="Jane", age=33, retirement_age=65, spending=Spending(self.model, base=45000)
         )
         # Set up bank accounts
-        BankAccount(owner=self.john, company='Bank', balance=10000)
-        BankAccount(owner=self.jane, company='Bank', balance=15000)
+        BankAccount(owner=self.john, company="Bank", balance=10000)
+        BankAccount(owner=self.jane, company="Bank", balance=15000)
 
     def test_term_life_policy_creation(self):
         """Test creating a term life insurance policy"""
@@ -42,7 +34,7 @@ class TestLifeInsurance(unittest.TestCase):
             policy_type=LifeInsuranceType.TERM,
             death_benefit=500000,
             monthly_premium=50,
-            term_years=20
+            term_years=20,
         )
 
         self.assertEqual(policy.person, self.john)
@@ -62,7 +54,7 @@ class TestLifeInsurance(unittest.TestCase):
             policy_type=LifeInsuranceType.WHOLE,
             death_benefit=300000,
             monthly_premium=200,
-            cash_value_growth_rate=3.0
+            cash_value_growth_rate=3.0,
         )
 
         self.assertEqual(policy.policy_type, LifeInsuranceType.WHOLE)
@@ -73,10 +65,7 @@ class TestLifeInsurance(unittest.TestCase):
     def test_premium_payment_success(self):
         """Test successful premium payment"""
         policy = LifeInsurance(
-            person=self.john,
-            policy_type=LifeInsuranceType.TERM,
-            death_benefit=500000,
-            monthly_premium=50
+            person=self.john, policy_type=LifeInsuranceType.TERM, death_benefit=500000, monthly_premium=50
         )
 
         initial_balance = self.john.bank_account_balance
@@ -94,7 +83,7 @@ class TestLifeInsurance(unittest.TestCase):
             person=self.john,
             policy_type=LifeInsuranceType.TERM,
             death_benefit=500000,
-            monthly_premium=1000  # $12000/year - more than bank balance
+            monthly_premium=1000,  # $12000/year - more than bank balance
         )
 
         result = policy.make_premium_payment()
@@ -110,7 +99,7 @@ class TestLifeInsurance(unittest.TestCase):
             policy_type=LifeInsuranceType.TERM,
             death_benefit=500000,
             monthly_premium=2000,  # Too expensive
-            max_missed_payments=2
+            max_missed_payments=2,
         )
 
         # Miss first payment
@@ -130,7 +119,7 @@ class TestLifeInsurance(unittest.TestCase):
             policy_type=LifeInsuranceType.WHOLE,
             death_benefit=300000,
             monthly_premium=200,
-            cash_value_growth_rate=5.0
+            cash_value_growth_rate=5.0,
         )
 
         # Make a payment to build initial cash value
@@ -149,7 +138,7 @@ class TestLifeInsurance(unittest.TestCase):
             policy_type=LifeInsuranceType.WHOLE,
             death_benefit=300000,
             monthly_premium=100,
-            cash_value_growth_rate=3.0
+            cash_value_growth_rate=3.0,
         )
 
         # Build up cash value
@@ -170,10 +159,7 @@ class TestLifeInsurance(unittest.TestCase):
     def test_term_life_loan_not_allowed(self):
         """Test that term life policies don't allow loans"""
         policy = LifeInsurance(
-            person=self.john,
-            policy_type=LifeInsuranceType.TERM,
-            death_benefit=500000,
-            monthly_premium=50
+            person=self.john, policy_type=LifeInsuranceType.TERM, death_benefit=500000, monthly_premium=50
         )
 
         loan_amount = policy.take_loan(5000)
@@ -183,11 +169,7 @@ class TestLifeInsurance(unittest.TestCase):
     def test_term_policy_expiration(self):
         """Test term policy expiration"""
         policy = LifeInsurance(
-            person=self.john,
-            policy_type=LifeInsuranceType.TERM,
-            death_benefit=500000,
-            monthly_premium=50,
-            term_years=5
+            person=self.john, policy_type=LifeInsuranceType.TERM, death_benefit=500000, monthly_premium=50, term_years=5
         )
 
         # Fast-forward to policy expiration
@@ -205,7 +187,7 @@ class TestLifeInsurance(unittest.TestCase):
             policy_type=LifeInsuranceType.TERM,
             death_benefit=500000,
             monthly_premium=50,
-            premium_increase_rate=5.0  # 5% annual increase
+            premium_increase_rate=5.0,  # 5% annual increase
         )
 
         initial_premium = policy.monthly_premium
@@ -217,10 +199,7 @@ class TestLifeInsurance(unittest.TestCase):
     def test_death_benefit_calculation(self):
         """Test death benefit calculation with loans"""
         policy = LifeInsurance(
-            person=self.jane,
-            policy_type=LifeInsuranceType.WHOLE,
-            death_benefit=300000,
-            monthly_premium=100
+            person=self.jane, policy_type=LifeInsuranceType.WHOLE, death_benefit=300000, monthly_premium=100
         )
 
         # No loans - full death benefit
@@ -240,7 +219,7 @@ class TestLifeInsurance(unittest.TestCase):
             person=self.jane,
             policy_type=LifeInsuranceType.WHOLE,
             death_benefit=300000,
-            monthly_premium=500  # High premium
+            monthly_premium=500,  # High premium
         )
 
         # Build up cash value but drain bank account
@@ -259,7 +238,7 @@ class TestLifeInsurance(unittest.TestCase):
             policy_type=LifeInsuranceType.WHOLE,
             death_benefit=300000,
             monthly_premium=100,
-            loan_interest_rate=6.0
+            loan_interest_rate=6.0,
         )
 
         # Take a loan
@@ -275,10 +254,7 @@ class TestLifeInsurance(unittest.TestCase):
     def test_policy_statistics_tracking(self):
         """Test that policy statistics are properly tracked"""
         policy = LifeInsurance(
-            person=self.john,
-            policy_type=LifeInsuranceType.TERM,
-            death_benefit=500000,
-            monthly_premium=50
+            person=self.john, policy_type=LifeInsuranceType.TERM, death_benefit=500000, monthly_premium=50
         )
 
         # Make a payment
@@ -291,10 +267,7 @@ class TestLifeInsurance(unittest.TestCase):
 
         # For whole life
         whole_policy = LifeInsurance(
-            person=self.jane,
-            policy_type=LifeInsuranceType.WHOLE,
-            death_benefit=300000,
-            monthly_premium=100
+            person=self.jane, policy_type=LifeInsuranceType.WHOLE, death_benefit=300000, monthly_premium=100
         )
 
         whole_policy.make_premium_payment()
@@ -309,15 +282,15 @@ class TestLifeInsurance(unittest.TestCase):
             policy_type=LifeInsuranceType.TERM,
             death_benefit=500000,
             monthly_premium=50,
-            term_years=20
+            term_years=20,
         )
 
         html = policy._repr_html_()
-        self.assertIn('Term', html)
-        self.assertIn('$500,000', html)
-        self.assertIn('$50.00', html)
-        self.assertIn('20 years', html)
-        self.assertIn('Active', html)
+        self.assertIn("Term", html)
+        self.assertIn("$500,000", html)
+        self.assertIn("$50.00", html)
+        self.assertIn("20 years", html)
+        self.assertIn("Active", html)
 
     def test_age_based_premium_increases(self):
         """Test realistic age-based premium increases for term life"""
@@ -326,7 +299,7 @@ class TestLifeInsurance(unittest.TestCase):
             policy_type=LifeInsuranceType.TERM,
             death_benefit=500000,
             monthly_premium=50,
-            term_years=30
+            term_years=30,
         )
 
         initial_premium = policy.monthly_premium
@@ -347,10 +320,7 @@ class TestLifeInsurance(unittest.TestCase):
     def test_policy_drop_with_surrender_value(self):
         """Test voluntarily dropping a whole life policy with cash surrender"""
         policy = LifeInsurance(
-            person=self.jane,
-            policy_type=LifeInsuranceType.WHOLE,
-            death_benefit=300000,
-            monthly_premium=200
+            person=self.jane, policy_type=LifeInsuranceType.WHOLE, death_benefit=300000, monthly_premium=200
         )
 
         # Make payments to build cash value
@@ -377,10 +347,7 @@ class TestLifeInsurance(unittest.TestCase):
     def test_policy_drop_term_life(self):
         """Test dropping a term life policy (no surrender value)"""
         policy = LifeInsurance(
-            person=self.john,
-            policy_type=LifeInsuranceType.TERM,
-            death_benefit=500000,
-            monthly_premium=75
+            person=self.john, policy_type=LifeInsuranceType.TERM, death_benefit=500000, monthly_premium=75
         )
 
         initial_bank_balance = self.john.bank_accounts[0].balance
@@ -398,9 +365,7 @@ class TestLifeInsurance(unittest.TestCase):
     def test_configurable_age_multipliers(self):
         """Test that age multipliers can be customized via constructor"""
         # Create custom age multipliers for a more aggressive pricing structure
-        custom_multipliers = {
-            20: 1.0, 30: 2.0, 40: 4.0, 50: 8.0, 60: 16.0, 70: 32.0
-        }
+        custom_multipliers = {20: 1.0, 30: 2.0, 40: 4.0, 50: 8.0, 60: 16.0, 70: 32.0}
 
         policy = LifeInsurance(
             person=self.john,  # age 35
@@ -408,7 +373,7 @@ class TestLifeInsurance(unittest.TestCase):
             death_benefit=500000,
             monthly_premium=50,
             term_years=30,
-            premium_increase_rate=custom_multipliers  # Pass dict as premium_increase_rate
+            premium_increase_rate=custom_multipliers,  # Pass dict as premium_increase_rate
         )
 
         # Test that the custom multipliers are used
@@ -434,14 +399,25 @@ class TestLifeInsurance(unittest.TestCase):
             policy_type=LifeInsuranceType.TERM,
             death_benefit=500000,
             monthly_premium=50,
-            term_years=30
+            term_years=30,
         )
 
         # Should have default age multipliers
         expected_defaults = {
-            20: 1.0, 25: 1.1, 30: 1.3, 35: 1.6, 40: 2.1,
-            45: 2.8, 50: 3.8, 55: 5.2, 60: 7.1, 65: 10.0,
-            70: 15.0, 75: 23.0, 80: 35.0, 85: 55.0
+            20: 1.0,
+            25: 1.1,
+            30: 1.3,
+            35: 1.6,
+            40: 2.1,
+            45: 2.8,
+            50: 3.8,
+            55: 5.2,
+            60: 7.1,
+            65: 10.0,
+            70: 15.0,
+            75: 23.0,
+            80: 35.0,
+            85: 55.0,
         }
         self.assertEqual(policy.age_multipliers, expected_defaults)
 
@@ -452,7 +428,7 @@ class TestLifeInsurance(unittest.TestCase):
             policy_type=LifeInsuranceType.TERM,
             death_benefit=500000,
             monthly_premium=50,
-            term_years=30
+            term_years=30,
         )
 
         initial_premium = policy.monthly_premium
@@ -475,7 +451,7 @@ class TestLifeInsurance(unittest.TestCase):
             policy_type=LifeInsuranceType.TERM,
             death_benefit=500000,
             monthly_premium=50,
-            premium_increase_rate=5.0  # 5% yearly increase
+            premium_increase_rate=5.0,  # 5% yearly increase
         )
 
         self.assertEqual(yearly_policy.premium_increase_type, PremiumIncreaseType.YEARLY)
@@ -489,7 +465,7 @@ class TestLifeInsurance(unittest.TestCase):
             policy_type=LifeInsuranceType.TERM,
             death_benefit=500000,
             monthly_premium=50,
-            premium_increase_rate=age_multipliers
+            premium_increase_rate=age_multipliers,
         )
 
         self.assertEqual(age_policy.premium_increase_type, PremiumIncreaseType.AGE_BASED)
@@ -502,7 +478,7 @@ class TestLifeInsurance(unittest.TestCase):
             policy_type=LifeInsuranceType.TERM,
             death_benefit=500000,
             monthly_premium=50,
-            premium_increase_rate=None
+            premium_increase_rate=None,
         )
 
         self.assertEqual(default_policy.premium_increase_type, PremiumIncreaseType.AGE_BASED)
@@ -510,5 +486,5 @@ class TestLifeInsurance(unittest.TestCase):
         self.assertGreater(len(default_policy.age_multipliers), 0)  # Should have default multipliers
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

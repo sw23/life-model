@@ -4,13 +4,15 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 import html
 from enum import Enum
-from typing import Optional, List, cast
+from typing import List, Optional, cast
+
+from ..model import Event, LifeModel, LifeModelAgent
 from ..people.person import Person
-from ..model import LifeModel, LifeModelAgent, Event
 
 
 class InsuranceType(Enum):
     """Types of insurance coverage"""
+
     AUTO = "Auto"
     HOME = "Home"
     HEALTH = "Health"
@@ -23,6 +25,7 @@ class InsuranceType(Enum):
 
 class ClaimStatus(Enum):
     """Status of insurance claims"""
+
     PENDING = "Pending"
     APPROVED = "Approved"
     DENIED = "Denied"
@@ -32,8 +35,7 @@ class ClaimStatus(Enum):
 class InsuranceClaim:
     """Represents an insurance claim"""
 
-    def __init__(self, claim_id: str, amount: float, description: str,
-                 claim_date: int, deductible: float = 0.0):
+    def __init__(self, claim_id: str, amount: float, description: str, claim_date: int, deductible: float = 0.0):
         self.claim_id = claim_id
         self.amount = amount
         self.description = description
@@ -45,13 +47,20 @@ class InsuranceClaim:
 
 
 class Insurance(LifeModelAgent):
-    def __init__(self, person: Person, insurance_type: InsuranceType,
-                 company: str, annual_premium: float, coverage_amount: float,
-                 deductible: float = 0, coverage_start_age: Optional[int] = None,
-                 coverage_end_age: Optional[int] = None,
-                 premium_increase_rate: float = 3.0,
-                 max_claims_per_year: int = 3):
-        """ Models insurance coverage for a person
+    def __init__(
+        self,
+        person: Person,
+        insurance_type: InsuranceType,
+        company: str,
+        annual_premium: float,
+        coverage_amount: float,
+        deductible: float = 0,
+        coverage_start_age: Optional[int] = None,
+        coverage_end_age: Optional[int] = None,
+        premium_increase_rate: float = 3.0,
+        max_claims_per_year: int = 3,
+    ):
+        """Models insurance coverage for a person
 
         Args:
             person: The person who owns this insurance
@@ -66,7 +75,7 @@ class Insurance(LifeModelAgent):
             max_claims_per_year: Maximum claims allowed per year
         """
         super().__init__(cast(LifeModel, person.model))
-        self.model: 'LifeModel' = cast('LifeModel', self.model)
+        self.model: "LifeModel" = cast("LifeModel", self.model)
         self.person = person
         self.insurance_type = insurance_type
         self.company = company
@@ -127,9 +136,9 @@ class Insurance(LifeModelAgent):
             if amount_paid > 0:
                 self.stat_premiums_paid += amount_paid
             self.is_active = False
-            self.model.event_log.add(Event(
-                f"{self.person.name}'s {self.insurance_type.value} insurance lapsed due to non-payment"
-            ))
+            self.model.event_log.add(
+                Event(f"{self.person.name}'s {self.insurance_type.value} insurance lapsed due to non-payment")
+            )
             return False
 
     def file_claim(self, claim_amount: float, description: str) -> Optional[InsuranceClaim]:
@@ -138,9 +147,9 @@ class Insurance(LifeModelAgent):
             return None
 
         if self.claims_this_year >= self.max_claims_per_year:
-            self.model.event_log.add(Event(
-                f"{self.person.name} cannot file more claims this year ({self.insurance_type.value})"
-            ))
+            self.model.event_log.add(
+                Event(f"{self.person.name} cannot file more claims this year ({self.insurance_type.value})")
+            )
             return None
 
         # Create claim
@@ -150,7 +159,7 @@ class Insurance(LifeModelAgent):
             amount=claim_amount,
             description=description,
             claim_date=self.model.year,
-            deductible=self.deductible
+            deductible=self.deductible,
         )
 
         self.claims_history.append(claim)
@@ -160,9 +169,9 @@ class Insurance(LifeModelAgent):
         # Process claim automatically (simplified)
         self.process_claim(claim)
 
-        self.model.event_log.add(Event(
-            f"{self.person.name} filed {self.insurance_type.value} claim for ${claim_amount:,.0f}"
-        ))
+        self.model.event_log.add(
+            Event(f"{self.person.name} filed {self.insurance_type.value} claim for ${claim_amount:,.0f}")
+        )
         return claim
 
     def process_claim(self, claim: InsuranceClaim) -> bool:
@@ -217,9 +226,9 @@ class Insurance(LifeModelAgent):
         coverage_ratio = new_coverage_amount / old_coverage
         self.annual_premium = self.base_annual_premium * coverage_ratio
 
-        self.model.event_log.add(Event(
-            f"{self.person.name} updated {self.insurance_type.value} coverage to ${new_coverage_amount:,.0f}"
-        ))
+        self.model.event_log.add(
+            Event(f"{self.person.name} updated {self.insurance_type.value} coverage to ${new_coverage_amount:,.0f}")
+        )
 
     def get_claim_history(self, year: Optional[int] = None) -> List[InsuranceClaim]:
         """Get claims history, optionally filtered by year"""
@@ -247,7 +256,7 @@ class Insurance(LifeModelAgent):
 
         # Apply premium increases
         if self.years_active > 0:
-            self.annual_premium *= (1 + self.premium_increase_rate / 100)
+            self.annual_premium *= 1 + self.premium_increase_rate / 100
 
     def pre_step(self):
         """Pre-step processing - pay premiums"""
@@ -255,14 +264,14 @@ class Insurance(LifeModelAgent):
             self.pay_premium()
 
     def _repr_html_(self):
-        desc = '<ul>'
-        desc += f'<li>Type: {self.insurance_type.value}</li>'
-        desc += f'<li>Company: {html.escape(self.company)}</li>'
-        desc += f'<li>Annual Premium: ${self.annual_premium:,.2f}</li>'
-        desc += f'<li>Coverage: ${self.coverage_amount:,.2f}</li>'
-        desc += f'<li>Deductible: ${self.deductible:,.2f}</li>'
-        desc += f'<li>Status: {"Active" if self.is_coverage_active else "Inactive"}</li>'
-        desc += f'<li>Claims Filed: {self.stat_claims_filed}</li>'
-        desc += f'<li>Total Payouts: ${self.stat_claims_paid_out:,.2f}</li>'
-        desc += '</ul>'
+        desc = "<ul>"
+        desc += f"<li>Type: {self.insurance_type.value}</li>"
+        desc += f"<li>Company: {html.escape(self.company)}</li>"
+        desc += f"<li>Annual Premium: ${self.annual_premium:,.2f}</li>"
+        desc += f"<li>Coverage: ${self.coverage_amount:,.2f}</li>"
+        desc += f"<li>Deductible: ${self.deductible:,.2f}</li>"
+        desc += f"<li>Status: {'Active' if self.is_coverage_active else 'Inactive'}</li>"
+        desc += f"<li>Claims Filed: {self.stat_claims_filed}</li>"
+        desc += f"<li>Total Payouts: ${self.stat_claims_paid_out:,.2f}</li>"
+        desc += "</ul>"
         return desc

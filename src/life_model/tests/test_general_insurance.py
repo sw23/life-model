@@ -4,43 +4,39 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 import unittest
+
+from ..account.bank import BankAccount
+from ..insurance.general_insurance import ClaimStatus, Insurance, InsuranceType
 from ..model import LifeModel
 from ..people.family import Family
 from ..people.person import Person, Spending
-from ..account.bank import BankAccount
-from ..insurance.general_insurance import Insurance, InsuranceType, ClaimStatus
 
 
 class TestGeneralInsurance(unittest.TestCase):
-
     def setUp(self):
         """Set up test fixtures"""
         self.model = LifeModel(start_year=2023, end_year=2030)
         self.family = Family(self.model)
         self.john = Person(
-            family=self.family,
-            name='John',
-            age=35,
-            retirement_age=65,
-            spending=Spending(self.model, base=50000)
+            family=self.family, name="John", age=35, retirement_age=65, spending=Spending(self.model, base=50000)
         )
         # Set up bank account
-        BankAccount(owner=self.john, company='Bank', balance=50000)
+        BankAccount(owner=self.john, company="Bank", balance=50000)
 
     def test_auto_insurance_creation(self):
         """Test creating auto insurance policy"""
         insurance = Insurance(
             person=self.john,
             insurance_type=InsuranceType.AUTO,
-            company='State Farm',
+            company="State Farm",
             annual_premium=1200,
             coverage_amount=300000,
-            deductible=500
+            deductible=500,
         )
 
         self.assertEqual(insurance.person, self.john)
         self.assertEqual(insurance.insurance_type, InsuranceType.AUTO)
-        self.assertEqual(insurance.company, 'State Farm')
+        self.assertEqual(insurance.company, "State Farm")
         self.assertEqual(insurance.annual_premium, 1200)
         self.assertEqual(insurance.coverage_amount, 300000)
         self.assertEqual(insurance.deductible, 500)
@@ -52,11 +48,11 @@ class TestGeneralInsurance(unittest.TestCase):
         insurance = Insurance(
             person=self.john,
             insurance_type=InsuranceType.HOME,
-            company='Allstate',
+            company="Allstate",
             annual_premium=2000,
             coverage_amount=500000,
             deductible=1000,
-            premium_increase_rate=4.0
+            premium_increase_rate=4.0,
         )
 
         self.assertEqual(insurance.insurance_type, InsuranceType.HOME)
@@ -68,10 +64,10 @@ class TestGeneralInsurance(unittest.TestCase):
         insurance = Insurance(
             person=self.john,
             insurance_type=InsuranceType.AUTO,
-            company='GEICO',
+            company="GEICO",
             annual_premium=1500,
             coverage_amount=250000,
-            deductible=250
+            deductible=250,
         )
 
         initial_balance = self.john.bank_account_balance
@@ -87,10 +83,10 @@ class TestGeneralInsurance(unittest.TestCase):
         insurance = Insurance(
             person=self.john,
             insurance_type=InsuranceType.AUTO,
-            company='Progressive',
+            company="Progressive",
             annual_premium=60000,  # More than available balance
             coverage_amount=250000,
-            deductible=500
+            deductible=500,
         )
 
         result = insurance.pay_premium()
@@ -104,10 +100,10 @@ class TestGeneralInsurance(unittest.TestCase):
         insurance = Insurance(
             person=self.john,
             insurance_type=InsuranceType.AUTO,
-            company='State Farm',
+            company="State Farm",
             annual_premium=1200,
             coverage_amount=100000,
-            deductible=1000
+            deductible=1000,
         )
 
         initial_balance = self.john.bank_account_balance
@@ -131,10 +127,10 @@ class TestGeneralInsurance(unittest.TestCase):
         insurance = Insurance(
             person=self.john,
             insurance_type=InsuranceType.AUTO,
-            company='GEICO',
+            company="GEICO",
             annual_premium=1000,
             coverage_amount=50000,
-            deductible=500
+            deductible=500,
         )
 
         claim = insurance.file_claim(75000, "Major accident")
@@ -150,10 +146,10 @@ class TestGeneralInsurance(unittest.TestCase):
         insurance = Insurance(
             person=self.john,
             insurance_type=InsuranceType.AUTO,
-            company='Progressive',
+            company="Progressive",
             annual_premium=1200,
             coverage_amount=100000,
-            deductible=2000
+            deductible=2000,
         )
 
         claim = insurance.file_claim(1500, "Minor damage")
@@ -168,11 +164,11 @@ class TestGeneralInsurance(unittest.TestCase):
         insurance = Insurance(
             person=self.john,
             insurance_type=InsuranceType.AUTO,
-            company='State Farm',
+            company="State Farm",
             annual_premium=1200,
             coverage_amount=100000,
             deductible=500,
-            max_claims_per_year=2
+            max_claims_per_year=2,
         )
 
         # File first claim
@@ -195,12 +191,12 @@ class TestGeneralInsurance(unittest.TestCase):
         insurance = Insurance(
             person=self.john,
             insurance_type=InsuranceType.DISABILITY,
-            company='MetLife',
+            company="MetLife",
             annual_premium=1800,
             coverage_amount=75000,
             deductible=0,
             coverage_start_age=25,
-            coverage_end_age=65
+            coverage_end_age=65,
         )
 
         # Current age (35) is within coverage range
@@ -219,10 +215,10 @@ class TestGeneralInsurance(unittest.TestCase):
         insurance = Insurance(
             person=self.john,
             insurance_type=InsuranceType.HOME,
-            company='Allstate',
+            company="Allstate",
             annual_premium=2000,
             coverage_amount=400000,
-            deductible=1000
+            deductible=1000,
         )
 
         original_premium = insurance.annual_premium
@@ -239,10 +235,10 @@ class TestGeneralInsurance(unittest.TestCase):
         insurance = Insurance(
             person=self.john,
             insurance_type=InsuranceType.AUTO,
-            company='GEICO',
+            company="GEICO",
             annual_premium=1200,
             coverage_amount=250000,
-            deductible=500
+            deductible=500,
         )
 
         self.assertTrue(insurance.is_active)
@@ -254,10 +250,10 @@ class TestGeneralInsurance(unittest.TestCase):
         insurance = Insurance(
             person=self.john,
             insurance_type=InsuranceType.HOME,
-            company='State Farm',
+            company="State Farm",
             annual_premium=2000,
             coverage_amount=500000,
-            deductible=2000
+            deductible=2000,
         )
 
         # File multiple claims
@@ -285,11 +281,11 @@ class TestGeneralInsurance(unittest.TestCase):
         insurance = Insurance(
             person=self.john,
             insurance_type=InsuranceType.AUTO,
-            company='Progressive',
+            company="Progressive",
             annual_premium=1000,
             coverage_amount=200000,
             deductible=500,
-            premium_increase_rate=5.0
+            premium_increase_rate=5.0,
         )
 
         original_premium = insurance.annual_premium
@@ -307,10 +303,10 @@ class TestGeneralInsurance(unittest.TestCase):
         insurance = Insurance(
             person=self.john,
             insurance_type=InsuranceType.AUTO,
-            company='State Farm',
+            company="State Farm",
             annual_premium=1200,
             coverage_amount=250000,
-            deductible=500
+            deductible=500,
         )
 
         initial_balance = self.john.bank_account_balance
@@ -325,10 +321,10 @@ class TestGeneralInsurance(unittest.TestCase):
         insurance = Insurance(
             person=self.john,
             insurance_type=InsuranceType.HEALTH,
-            company='Blue Cross',
+            company="Blue Cross",
             annual_premium=6000,
             coverage_amount=1000000,
-            deductible=3000
+            deductible=3000,
         )
 
         self.assertEqual(insurance.insurance_type, InsuranceType.HEALTH)
@@ -344,10 +340,10 @@ class TestGeneralInsurance(unittest.TestCase):
         insurance = Insurance(
             person=self.john,
             insurance_type=InsuranceType.UMBRELLA,
-            company='State Farm',
+            company="State Farm",
             annual_premium=300,
             coverage_amount=2000000,
-            deductible=0
+            deductible=0,
         )
 
         self.assertEqual(insurance.insurance_type, InsuranceType.UMBRELLA)
@@ -359,10 +355,10 @@ class TestGeneralInsurance(unittest.TestCase):
         insurance = Insurance(
             person=self.john,
             insurance_type=InsuranceType.AUTO,
-            company='GEICO',
+            company="GEICO",
             annual_premium=1200,
             coverage_amount=300000,
-            deductible=500
+            deductible=500,
         )
 
         # File a claim to test claims display
@@ -370,14 +366,14 @@ class TestGeneralInsurance(unittest.TestCase):
 
         html = insurance._repr_html_()
 
-        self.assertIn('Auto', html)
-        self.assertIn('GEICO', html)
-        self.assertIn('1,200', html)
-        self.assertIn('300,000', html)
-        self.assertIn('500', html)
-        self.assertIn('Active', html)
-        self.assertIn('Claims Filed: 1', html)
+        self.assertIn("Auto", html)
+        self.assertIn("GEICO", html)
+        self.assertIn("1,200", html)
+        self.assertIn("300,000", html)
+        self.assertIn("500", html)
+        self.assertIn("Active", html)
+        self.assertIn("Claims Filed: 1", html)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

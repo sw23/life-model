@@ -4,9 +4,10 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 import unittest
+
 from ..config.base_config import ConfigurationManager, ScenarioConfig
-from ..config.financial_config import FinancialConfig
 from ..config.config_manager import GlobalConfigManager
+from ..config.financial_config import FinancialConfig
 from ..tax.federal import FilingStatus
 
 
@@ -16,60 +17,51 @@ class TestConfigurationManager(unittest.TestCase):
     def setUp(self):
         class TestConfig(ConfigurationManager):
             def _initialize_defaults(self):
-                self._config_data = {
-                    'test': {
-                        'value1': 100,
-                        'value2': 'hello'
-                    },
-                    'simple': 42
-                }
+                self._config_data = {"test": {"value1": 100, "value2": "hello"}, "simple": 42}
 
         self.config = TestConfig()
 
     def test_get_simple_value(self):
         """Test getting a simple configuration value"""
-        self.assertEqual(self.config.get('simple'), 42)
+        self.assertEqual(self.config.get("simple"), 42)
 
     def test_get_nested_value(self):
         """Test getting a nested configuration value"""
-        self.assertEqual(self.config.get('test.value1'), 100)
-        self.assertEqual(self.config.get('test.value2'), 'hello')
+        self.assertEqual(self.config.get("test.value1"), 100)
+        self.assertEqual(self.config.get("test.value2"), "hello")
 
     def test_get_nonexistent_value(self):
         """Test getting a non-existent value returns default"""
-        self.assertIsNone(self.config.get('nonexistent'))
-        self.assertEqual(self.config.get('nonexistent', 'default'), 'default')
+        self.assertIsNone(self.config.get("nonexistent"))
+        self.assertEqual(self.config.get("nonexistent", "default"), "default")
 
     def test_set_simple_value(self):
         """Test setting a simple configuration value"""
-        self.config.set('new_value', 123)
-        self.assertEqual(self.config.get('new_value'), 123)
+        self.config.set("new_value", 123)
+        self.assertEqual(self.config.get("new_value"), 123)
 
     def test_set_nested_value(self):
         """Test setting a nested configuration value"""
-        self.config.set('nested.new.value', 456)
-        self.assertEqual(self.config.get('nested.new.value'), 456)
+        self.config.set("nested.new.value", 456)
+        self.assertEqual(self.config.get("nested.new.value"), 456)
 
     def test_update_config(self):
         """Test updating configuration with a dictionary"""
-        updates = {
-            'test': {'value3': 'new'},
-            'another': {'nested': {'deep': 789}}
-        }
+        updates = {"test": {"value3": "new"}, "another": {"nested": {"deep": 789}}}
         self.config.update(updates)
 
-        self.assertEqual(self.config.get('test.value1'), 100)  # Should still exist
-        self.assertEqual(self.config.get('test.value3'), 'new')  # Should be added
-        self.assertEqual(self.config.get('another.nested.deep'), 789)
+        self.assertEqual(self.config.get("test.value1"), 100)  # Should still exist
+        self.assertEqual(self.config.get("test.value3"), "new")  # Should be added
+        self.assertEqual(self.config.get("another.nested.deep"), 789)
 
     def test_reset_to_defaults(self):
         """Test resetting configuration to defaults"""
-        self.config.set('new_value', 999)
-        self.assertEqual(self.config.get('new_value'), 999)
+        self.config.set("new_value", 999)
+        self.assertEqual(self.config.get("new_value"), 999)
 
         self.config.reset_to_defaults()
-        self.assertIsNone(self.config.get('new_value'))
-        self.assertEqual(self.config.get('simple'), 42)  # Default should be restored
+        self.assertIsNone(self.config.get("new_value"))
+        self.assertEqual(self.config.get("simple"), 42)  # Default should be restored
 
 
 class TestScenarioConfig(unittest.TestCase):
@@ -78,26 +70,20 @@ class TestScenarioConfig(unittest.TestCase):
     def setUp(self):
         class TestScenarioConfig(ScenarioConfig):
             def _initialize_defaults(self):
-                self._config_data = {
-                    'base_value': 100,
-                    'scenario_value': 200
-                }
+                self._config_data = {"base_value": 100, "scenario_value": 200}
 
         self.config = TestScenarioConfig()
 
     def test_apply_scenario(self):
         """Test applying scenario-specific overrides"""
-        overrides = {
-            'scenario_value': 300,
-            'new_value': 400
-        }
+        overrides = {"scenario_value": 300, "new_value": 400}
 
-        self.config.apply_scenario('test_scenario', overrides)
+        self.config.apply_scenario("test_scenario", overrides)
 
-        self.assertEqual(self.config.scenario, 'test_scenario')
-        self.assertEqual(self.config.get('base_value'), 100)  # Unchanged
-        self.assertEqual(self.config.get('scenario_value'), 300)  # Overridden
-        self.assertEqual(self.config.get('new_value'), 400)  # Added
+        self.assertEqual(self.config.scenario, "test_scenario")
+        self.assertEqual(self.config.get("base_value"), 100)  # Unchanged
+        self.assertEqual(self.config.get("scenario_value"), 300)  # Overridden
+        self.assertEqual(self.config.get("new_value"), 400)  # Added
 
 
 class TestFinancialConfig(unittest.TestCase):
@@ -109,15 +95,15 @@ class TestFinancialConfig(unittest.TestCase):
     def test_default_values(self):
         """Test that default financial values are properly initialized"""
         # Test tax values
-        self.assertEqual(self.config.get('tax.state.tax_rate'), 6.0)
-        self.assertEqual(self.config.get('tax.fica.social_security_rate'), 6.2)
+        self.assertEqual(self.config.get("tax.state.tax_rate"), 6.0)
+        self.assertEqual(self.config.get("tax.fica.social_security_rate"), 6.2)
 
         # Test retirement values
-        self.assertEqual(self.config.get('retirement.federal_retirement_age'), 59.5)
-        self.assertEqual(self.config.get('retirement.ira.contribution_limit'), 6500)
+        self.assertEqual(self.config.get("retirement.federal_retirement_age"), 59.5)
+        self.assertEqual(self.config.get("retirement.ira.contribution_limit"), 6500)
 
         # Test account values
-        self.assertEqual(self.config.get('accounts.bank.compound_rate'), 12)
+        self.assertEqual(self.config.get("accounts.bank.compound_rate"), 12)
 
     def test_get_federal_standard_deduction(self):
         """Test getting federal standard deduction"""
@@ -155,26 +141,26 @@ class TestFinancialConfig(unittest.TestCase):
         """Test scenario-specific configuration overrides"""
         # Test high tax scenario
         high_tax_overrides = {
-            'tax': {
-                'federal': {
-                    'tax_brackets': {
-                        'single': [
+            "tax": {
+                "federal": {
+                    "tax_brackets": {
+                        "single": [
                             [0, 10000, 15],  # Higher rates
                             [10001, 50000, 25],
-                            [50001, float('inf'), 45]
+                            [50001, float("inf"), 45],
                         ]
                     }
                 },
-                'state': {
-                    'tax_rate': 10.0  # Higher state tax
-                }
+                "state": {
+                    "tax_rate": 10.0  # Higher state tax
+                },
             }
         }
 
-        self.config.apply_scenario('high_tax', high_tax_overrides)
+        self.config.apply_scenario("high_tax", high_tax_overrides)
 
         # Check that overrides are applied
-        self.assertEqual(self.config.get('tax.state.tax_rate'), 10.0)
+        self.assertEqual(self.config.get("tax.state.tax_rate"), 10.0)
         brackets = self.config.get_federal_tax_brackets(FilingStatus.SINGLE)
         self.assertEqual(brackets[0][2], 15)  # Higher first bracket rate
         self.assertEqual(self.config.get_max_tax_rate(FilingStatus.SINGLE), 45.0)
@@ -197,7 +183,7 @@ class TestGlobalConfigManager(unittest.TestCase):
         self.assertIsInstance(config_manager.financial, FinancialConfig)
 
         # Test that we can get values through the manager
-        rate = config_manager.financial.get('tax.state.tax_rate')
+        rate = config_manager.financial.get("tax.state.tax_rate")
         self.assertEqual(rate, 6.0)
 
     def test_apply_scenario(self):
@@ -206,33 +192,33 @@ class TestGlobalConfigManager(unittest.TestCase):
 
         # Apply a scenario
         recession_overrides = {
-            'accounts': {
-                'bank': {
-                    'default_interest_rate': 0.1  # Lower interest rates
+            "accounts": {
+                "bank": {
+                    "default_interest_rate": 0.1  # Lower interest rates
                 },
-                'brokerage': {
-                    'default_growth_rate': 3.0  # Lower growth expectations
-                }
+                "brokerage": {
+                    "default_growth_rate": 3.0  # Lower growth expectations
+                },
             }
         }
 
-        config_manager.apply_scenario('recession', recession_overrides)
+        config_manager.apply_scenario("recession", recession_overrides)
 
-        self.assertEqual(config_manager.get_current_scenario(), 'recession')
-        self.assertEqual(config_manager.financial.get('accounts.bank.default_interest_rate'), 0.1)
-        self.assertEqual(config_manager.financial.get('accounts.brokerage.default_growth_rate'), 3.0)
+        self.assertEqual(config_manager.get_current_scenario(), "recession")
+        self.assertEqual(config_manager.financial.get("accounts.bank.default_interest_rate"), 0.1)
+        self.assertEqual(config_manager.financial.get("accounts.brokerage.default_growth_rate"), 3.0)
 
     def test_reset_to_defaults(self):
         """Test resetting to default values"""
         config_manager = GlobalConfigManager()
 
         # Apply overrides - need to use nested structure
-        config_manager.apply_scenario('test', {'tax': {'state': {'tax_rate': 99.0}}})
-        self.assertEqual(config_manager.financial.get('tax.state.tax_rate'), 99.0)
+        config_manager.apply_scenario("test", {"tax": {"state": {"tax_rate": 99.0}}})
+        self.assertEqual(config_manager.financial.get("tax.state.tax_rate"), 99.0)
 
         # Reset to defaults
         config_manager.reset_to_defaults()
-        self.assertEqual(config_manager.financial.get('tax.state.tax_rate'), 6.0)
+        self.assertEqual(config_manager.financial.get("tax.state.tax_rate"), 6.0)
         self.assertIsNone(config_manager.get_current_scenario())
 
 
@@ -253,7 +239,7 @@ class TestConfigurationIntegration(unittest.TestCase):
 
     def test_limits_functions_use_config(self):
         """Test that limits functions use configuration values"""
-        from ..limits import job_401k_contrib_limit, federal_retirement_age
+        from ..limits import federal_retirement_age, job_401k_contrib_limit
 
         # Test 401k limits
         self.assertEqual(job_401k_contrib_limit(40), 20500)
@@ -263,5 +249,5 @@ class TestConfigurationIntegration(unittest.TestCase):
         self.assertEqual(federal_retirement_age(), 59.5)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

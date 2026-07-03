@@ -7,9 +7,13 @@
 
 import os
 import unittest
+
+import pytest
+
 from .notebook_test_base import JupyterNotebookTestBase, get_repo_root
 
 
+@pytest.mark.notebooks
 class TestExampleSimulationNotebook(JupyterNotebookTestBase):
     """Test class for the ExampleSimulation.ipynb notebook."""
 
@@ -17,12 +21,12 @@ class TestExampleSimulationNotebook(JupyterNotebookTestBase):
     def notebook_path(self):
         """Return the path to the ExampleSimulation.ipynb notebook."""
         repo_root = get_repo_root()
-        return os.path.join(repo_root, 'ExampleSimulation.ipynb')
+        return os.path.join(repo_root, "ExampleSimulation.ipynb")
 
     def test_notebook_execution(self):
         """Test that the ExampleSimulation.ipynb notebook executes without errors."""
         self._execute_notebook()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

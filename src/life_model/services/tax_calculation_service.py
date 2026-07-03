@@ -4,8 +4,9 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 from typing import TYPE_CHECKING
-from ..tax.tax import TaxesDue
+
 from ..tax.federal import max_tax_rate
+from ..tax.tax import TaxesDue
 
 if TYPE_CHECKING:
     from ..people.person import Person
@@ -14,7 +15,7 @@ if TYPE_CHECKING:
 class TaxCalculationService:
     """Service for handling tax calculations and 401k withdrawal planning"""
 
-    def __init__(self, person: 'Person'):
+    def __init__(self, person: "Person"):
         self.person = person
 
     def calculate_pretax_401k_withdrawal_needed(self, total_expenses: float) -> float:

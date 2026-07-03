@@ -5,13 +5,22 @@
 
 import html
 from typing import Optional
+
+from ..model import LifeModel, LifeModelAgent
 from ..people.person import Person
-from ..model import LifeModelAgent, LifeModel
 
 
 class Home(LifeModelAgent):
-    def __init__(self, person: Person, name: str, purchase_price: float, value_yearly_increase: float,
-                 down_payment: float, mortgage: 'Mortgage', expenses: 'HomeExpenses'):
+    def __init__(
+        self,
+        person: Person,
+        name: str,
+        purchase_price: float,
+        value_yearly_increase: float,
+        down_payment: float,
+        mortgage: "Mortgage",
+        expenses: "HomeExpenses",
+    ):
         """Home
 
         Args:
@@ -48,19 +57,28 @@ class Home(LifeModelAgent):
         return yearly_payment + extra_to_principal
 
     def _repr_html_(self):
-        return f"{html.escape(self.name)}, purchase price ${self.purchase_price:,}, " \
-               + f"monthly mortgage ${self.mortgage.monthly_payment:,}"
+        return (
+            f"{html.escape(self.name)}, purchase price ${self.purchase_price:,}, "
+            + f"monthly mortgage ${self.mortgage.monthly_payment:,}"
+        )
 
     def step(self):
         self.home_value += self.home_value * (self.value_yearly_increase / 100)
 
 
 class HomeExpenses(LifeModelAgent):
-    def __init__(self, model: LifeModel,
-                 property_tax_percent: float, home_insurance_percent: float,
-                 maintenance_amount: float, maintenance_increase: float,
-                 improvement_amount: float, improvement_increase: float,
-                 hoa_amount: float, hoa_increase: float):
+    def __init__(
+        self,
+        model: LifeModel,
+        property_tax_percent: float,
+        home_insurance_percent: float,
+        maintenance_amount: float,
+        maintenance_increase: float,
+        improvement_amount: float,
+        improvement_increase: float,
+        hoa_amount: float,
+        hoa_increase: float,
+    ):
         """Home Expenses
 
         Args:
@@ -102,8 +120,15 @@ class HomeExpenses(LifeModelAgent):
 # https://www.valuepenguin.com/mortgages/mortgage-payments-calculator
 # https://www.investopedia.com/calculate-principal-and-interest-5211981
 class Mortgage:
-    def __init__(self, loan_amount: float, start_date: float, length_years: int, yearly_interest_rate: float,
-                 principal: Optional[float] = None, monthly_payment: Optional[float] = None):
+    def __init__(
+        self,
+        loan_amount: float,
+        start_date: float,
+        length_years: int,
+        yearly_interest_rate: float,
+        principal: Optional[float] = None,
+        monthly_payment: Optional[float] = None,
+    ):
         """Mortgage
 
         Args:
@@ -134,8 +159,7 @@ class Mortgage:
         return p * (i * ((1 + i) ** n)) / (((1 + i) ** n) - 1)
 
     def get_payment_due_for_year(self) -> float:
-        return min(self.yearly_payment,
-                   self.principal + (self.principal * (self.yearly_interest_rate / 100)))
+        return min(self.yearly_payment, self.principal + (self.principal * (self.yearly_interest_rate / 100)))
 
     def get_interest_for_year(self) -> float:
         return self.principal * (self.yearly_interest_rate / 100)

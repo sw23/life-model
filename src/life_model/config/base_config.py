@@ -3,8 +3,8 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-from typing import Dict, Any, Optional
 from abc import ABC, abstractmethod
+from typing import Any, Dict, Optional
 
 
 class ConfigurationManager(ABC):
@@ -29,7 +29,7 @@ class ConfigurationManager(ABC):
         Returns:
             Configuration value or default
         """
-        keys = key.split('.')
+        keys = key.split(".")
         current = self._config_data
 
         for k in keys:
@@ -47,7 +47,7 @@ class ConfigurationManager(ABC):
             key: Configuration key (supports dot notation)
             value: Value to set
         """
-        keys = key.split('.')
+        keys = key.split(".")
         current = self._config_data
 
         # Navigate to the parent of the target key

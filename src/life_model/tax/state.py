@@ -11,11 +11,11 @@ from ..config.config_manager import config
 
 def get_state_tax_rate() -> float:
     """Get the configured state tax rate"""
-    return config.financial.get('tax.state.tax_rate', 6.0)
+    return config.financial.get("tax.state.tax_rate", 6.0)
 
 
 def state_income_tax(income: float) -> float:
-    """ Calculates state income taxes due
+    """Calculates state income taxes due
 
     Args:
         income (float): Income subject to state income taxes.

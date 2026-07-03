@@ -3,13 +3,14 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 import html
-from ..people.person import Person
+
 from ..base_classes import Benefit
+from ..people.person import Person
 
 
 class Pension(Benefit):
     def __init__(self, person: Person, company: str, vesting_years: int, benefit_amount: float):
-        """ Models a pension plan for a person
+        """Models a pension plan for a person
 
         Args:
             person: The person to which this pension belongs
@@ -34,9 +35,9 @@ class Pension(Benefit):
         return self.person.is_retired
 
     def _repr_html_(self):
-        desc = '<ul>'
-        desc += f'<li>Company: {html.escape(self.company)}</li>'
-        desc += f'<li>Vesting Years: {self.vesting_years}</li>'
-        desc += f'<li>Benefit Amount: ${self.benefit_amount:,.2f}</li>'
-        desc += '</ul>'
+        desc = "<ul>"
+        desc += f"<li>Company: {html.escape(self.company)}</li>"
+        desc += f"<li>Vesting Years: {self.vesting_years}</li>"
+        desc += f"<li>Benefit Amount: ${self.benefit_amount:,.2f}</li>"
+        desc += "</ul>"
         return desc

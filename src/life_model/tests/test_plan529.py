@@ -5,10 +5,11 @@
 
 import unittest
 from unittest.mock import Mock
-from ..dependents.plan529 import Plan529
+
 from ..dependents.child import Child
-from ..people.person import Person
+from ..dependents.plan529 import Plan529
 from ..model import LifeModel
+from ..people.person import Person
 
 
 class TestPlan529(unittest.TestCase):
@@ -30,11 +31,7 @@ class TestPlan529(unittest.TestCase):
 
         # Create a 529 plan for testing
         self.plan = Plan529(
-            owner=self.mock_person,
-            beneficiary=self.mock_child,
-            balance=10000.0,
-            state='NY',
-            growth_rate=7.0
+            owner=self.mock_person, beneficiary=self.mock_child, balance=10000.0, state="NY", growth_rate=7.0
         )
 
     def test_init_default_values(self):
@@ -44,7 +41,7 @@ class TestPlan529(unittest.TestCase):
         self.assertEqual(plan.person, self.mock_person)
         self.assertIsNone(plan.beneficiary)
         self.assertEqual(plan.balance, 0)
-        self.assertEqual(plan.state, 'NY')
+        self.assertEqual(plan.state, "NY")
         self.assertEqual(plan.growth_rate, 7.0)
         self.assertEqual(plan.total_contributions, 0)
         self.assertEqual(plan.total_earnings, 0)
@@ -54,7 +51,7 @@ class TestPlan529(unittest.TestCase):
         self.assertEqual(self.plan.person, self.mock_person)
         self.assertEqual(self.plan.beneficiary, self.mock_child)
         self.assertEqual(self.plan.balance, 10000.0)
-        self.assertEqual(self.plan.state, 'NY')
+        self.assertEqual(self.plan.state, "NY")
         self.assertEqual(self.plan.growth_rate, 7.0)
         self.assertEqual(self.plan.total_contributions, 10000.0)
         self.assertEqual(self.plan.total_earnings, 0)
@@ -83,11 +80,7 @@ class TestPlan529(unittest.TestCase):
 
     def test_contribute_exceeds_lifetime_limit(self):
         """Test contribution limited by lifetime limit."""
-        plan = Plan529(
-            self.mock_person,
-            balance=490000.0,
-            lifetime_contribution_limit=500000.0
-        )
+        plan = Plan529(self.mock_person, balance=490000.0, lifetime_contribution_limit=500000.0)
 
         # Try to contribute more than remaining lifetime limit
         contribution = plan.contribute(20000.0)
@@ -232,12 +225,7 @@ class TestPlan529(unittest.TestCase):
         mock_child_malicious = Mock(spec=Child)
         mock_child_malicious.name = '<script>alert("XSS")</script>'
 
-        plan = Plan529(
-            self.mock_person,
-            beneficiary=mock_child_malicious,
-            state='<test>',
-            balance=1000.0
-        )
+        plan = Plan529(self.mock_person, beneficiary=mock_child_malicious, state="<test>", balance=1000.0)
         html = plan._repr_html_()
 
         # Check that dangerous characters are escaped
@@ -286,12 +274,7 @@ class TestPlan529(unittest.TestCase):
 
     def test_full_year_cycle(self):
         """Test a complete year cycle with contributions, growth, and withdrawals."""
-        plan = Plan529(
-            self.mock_person,
-            beneficiary=self.mock_child,
-            balance=0,
-            growth_rate=7.0
-        )
+        plan = Plan529(self.mock_person, beneficiary=self.mock_child, balance=0, growth_rate=7.0)
 
         # Year start: Make contributions
         plan.contribute(10000.0)
@@ -335,12 +318,12 @@ class TestPlan529(unittest.TestCase):
     def test_inheritance_from_investment(self):
         """Test that Plan529 properly inherits from Investment."""
         # Test that it has inherited attributes
-        self.assertTrue(hasattr(self.plan, 'stat_growth_history'))
-        self.assertTrue(hasattr(self.plan, 'stat_balance_history'))
+        self.assertTrue(hasattr(self.plan, "stat_growth_history"))
+        self.assertTrue(hasattr(self.plan, "stat_balance_history"))
 
         # Test that it has inherited methods
-        self.assertTrue(hasattr(self.plan, 'apply_growth'))
-        self.assertTrue(hasattr(self.plan, 'calculate_growth'))
+        self.assertTrue(hasattr(self.plan, "apply_growth"))
+        self.assertTrue(hasattr(self.plan, "calculate_growth"))
 
     def test_registry_registration(self):
         """Test that plan registers with model registry."""
@@ -349,5 +332,5 @@ class TestPlan529(unittest.TestCase):
         self.assertIn(self.plan, registered_plans)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

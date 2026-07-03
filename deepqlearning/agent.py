@@ -3,22 +3,20 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
+import os
+import random
+from collections import deque, namedtuple
+from typing import Dict, List, Optional
+
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.optim as optim
 import torch.nn.functional as F
-from collections import deque, namedtuple
-import random
-from typing import Dict, List, Optional
-import os
-
+import torch.optim as optim
 from environment import FinancialLifeEnv
 
-
 # Experience tuple for replay buffer
-Experience = namedtuple('Experience',
-                        ['state', 'action', 'reward', 'next_state', 'done', 'legal_actions'])
+Experience = namedtuple("Experience", ["state", "action", "reward", "next_state", "done", "legal_actions"])
 
 
 class DQNNetwork(nn.Module):
@@ -75,22 +73,14 @@ class DuelingDQN(nn.Module):
             nn.Dropout(0.1),
             nn.Linear(hidden_sizes[0], hidden_sizes[1]),
             nn.ReLU(),
-            nn.Dropout(0.1)
+            nn.Dropout(0.1),
         )
 
         # Value stream
-        self.value_stream = nn.Sequential(
-            nn.Linear(hidden_sizes[1], 128),
-            nn.ReLU(),
-            nn.Linear(128, 1)
-        )
+        self.value_stream = nn.Sequential(nn.Linear(hidden_sizes[1], 128), nn.ReLU(), nn.Linear(128, 1))
 
         # Advantage stream
-        self.advantage_stream = nn.Sequential(
-            nn.Linear(hidden_sizes[1], 128),
-            nn.ReLU(),
-            nn.Linear(128, action_size)
-        )
+        self.advantage_stream = nn.Sequential(nn.Linear(hidden_sizes[1], 128), nn.ReLU(), nn.Linear(128, action_size))
 
         self.apply(self._init_weights)
 
@@ -132,26 +122,23 @@ class ReplayBuffer:
 class FinancialDQNAgent:
     """Deep Q-Network agent for financial decision making"""
 
-    def __init__(self,
-                 state_size: int,
-                 action_size: int,
-                 config: Optional[Dict] = None):
+    def __init__(self, state_size: int, action_size: int, config: Optional[Dict] = None):
 
         # Default configuration
         self.config = {
-            'learning_rate': 1e-4,
-            'batch_size': 64,
-            'gamma': 0.99,
-            'epsilon_start': 1.0,
-            'epsilon_end': 0.01,
-            'epsilon_decay': 0.995,
-            'target_update_freq': 100,
-            'replay_buffer_size': 100000,
-            'min_replay_size': 1000,
-            'hidden_sizes': [512, 256, 128],
-            'use_dueling': True,
-            'use_double_dqn': True,
-            'use_prioritized_replay': False
+            "learning_rate": 1e-4,
+            "batch_size": 64,
+            "gamma": 0.99,
+            "epsilon_start": 1.0,
+            "epsilon_end": 0.01,
+            "epsilon_decay": 0.995,
+            "target_update_freq": 100,
+            "replay_buffer_size": 100000,
+            "min_replay_size": 1000,
+            "hidden_sizes": [512, 256, 128],
+            "use_dueling": True,
+            "use_double_dqn": True,
+            "use_prioritized_replay": False,
         }
 
         if config:
@@ -162,24 +149,24 @@ class FinancialDQNAgent:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         # Initialize networks
-        if self.config['use_dueling']:
-            self.q_network = DuelingDQN(state_size, action_size, self.config['hidden_sizes']).to(self.device)
-            self.target_network = DuelingDQN(state_size, action_size, self.config['hidden_sizes']).to(self.device)
+        if self.config["use_dueling"]:
+            self.q_network = DuelingDQN(state_size, action_size, self.config["hidden_sizes"]).to(self.device)
+            self.target_network = DuelingDQN(state_size, action_size, self.config["hidden_sizes"]).to(self.device)
         else:
-            self.q_network = DQNNetwork(state_size, action_size, self.config['hidden_sizes']).to(self.device)
-            self.target_network = DQNNetwork(state_size, action_size, self.config['hidden_sizes']).to(self.device)
+            self.q_network = DQNNetwork(state_size, action_size, self.config["hidden_sizes"]).to(self.device)
+            self.target_network = DQNNetwork(state_size, action_size, self.config["hidden_sizes"]).to(self.device)
 
         # Copy weights to target network
         self.target_network.load_state_dict(self.q_network.state_dict())
 
         # Optimizer
-        self.optimizer = optim.Adam(self.q_network.parameters(), lr=self.config['learning_rate'])
+        self.optimizer = optim.Adam(self.q_network.parameters(), lr=self.config["learning_rate"])
 
         # Replay buffer
-        self.replay_buffer = ReplayBuffer(self.config['replay_buffer_size'])
+        self.replay_buffer = ReplayBuffer(self.config["replay_buffer_size"])
 
         # Training state
-        self.epsilon = self.config['epsilon_start']
+        self.epsilon = self.config["epsilon_start"]
         self.steps_done = 0
         self.training_losses = []
         self.episode_rewards = []
@@ -202,25 +189,32 @@ class FinancialDQNAgent:
 
         # Mask illegal actions
         masked_q_values = q_values.clone()
-        mask = torch.full_like(masked_q_values, float('-inf'))
+        mask = torch.full_like(masked_q_values, float("-inf"))
         mask[0, legal_actions] = 0
         masked_q_values += mask
 
         return masked_q_values.argmax().item()
 
-    def store_experience(self, state: np.ndarray, action: int, reward: float,
-                         next_state: np.ndarray, done: bool, legal_actions: List[int]):
+    def store_experience(
+        self,
+        state: np.ndarray,
+        action: int,
+        reward: float,
+        next_state: np.ndarray,
+        done: bool,
+        legal_actions: List[int],
+    ):
         """Store experience in replay buffer"""
         self.replay_buffer.push(state, action, reward, next_state, done, legal_actions)
 
     def train(self) -> Optional[float]:
         """Train the agent on a batch of experiences"""
 
-        if len(self.replay_buffer) < self.config['min_replay_size']:
+        if len(self.replay_buffer) < self.config["min_replay_size"]:
             return None
 
         # Sample batch
-        experiences = self.replay_buffer.sample(self.config['batch_size'])
+        experiences = self.replay_buffer.sample(self.config["batch_size"])
         batch = Experience(*zip(*experiences))
 
         # Convert to tensors
@@ -235,7 +229,7 @@ class FinancialDQNAgent:
 
         # Next Q values
         with torch.no_grad():
-            if self.config['use_double_dqn']:
+            if self.config["use_double_dqn"]:
                 # Double DQN: use main network to select action, target network to evaluate
                 next_actions = self.q_network(next_state_batch).argmax(1)
                 next_q_values = self.target_network(next_state_batch).gather(1, next_actions.unsqueeze(1))
@@ -246,7 +240,7 @@ class FinancialDQNAgent:
 
             # Compute target Q values
             target_q_values = reward_batch.unsqueeze(1)
-            target_q_values += (self.config['gamma'] * next_q_values * ~done_batch.unsqueeze(1))
+            target_q_values += self.config["gamma"] * next_q_values * ~done_batch.unsqueeze(1)
 
         # Compute loss
         loss = F.mse_loss(current_q_values, target_q_values)
@@ -261,12 +255,12 @@ class FinancialDQNAgent:
         self.optimizer.step()
 
         # Update target network
-        if self.steps_done % self.config['target_update_freq'] == 0:
+        if self.steps_done % self.config["target_update_freq"] == 0:
             self.target_network.load_state_dict(self.q_network.state_dict())
 
         # Update epsilon
-        if self.epsilon > self.config['epsilon_end']:
-            self.epsilon *= self.config['epsilon_decay']
+        if self.epsilon > self.config["epsilon_end"]:
+            self.epsilon *= self.config["epsilon_decay"]
 
         self.steps_done += 1
         loss_value = loss.item()
@@ -277,14 +271,14 @@ class FinancialDQNAgent:
     def save_model(self, filepath: str):
         """Save model and training state"""
         save_dict = {
-            'q_network_state_dict': self.q_network.state_dict(),
-            'target_network_state_dict': self.target_network.state_dict(),
-            'optimizer_state_dict': self.optimizer.state_dict(),
-            'config': self.config,
-            'epsilon': self.epsilon,
-            'steps_done': self.steps_done,
-            'training_losses': self.training_losses,
-            'episode_rewards': self.episode_rewards
+            "q_network_state_dict": self.q_network.state_dict(),
+            "target_network_state_dict": self.target_network.state_dict(),
+            "optimizer_state_dict": self.optimizer.state_dict(),
+            "config": self.config,
+            "epsilon": self.epsilon,
+            "steps_done": self.steps_done,
+            "training_losses": self.training_losses,
+            "episode_rewards": self.episode_rewards,
         }
         torch.save(save_dict, filepath)
         print(f"Model saved to {filepath}")
@@ -297,14 +291,14 @@ class FinancialDQNAgent:
 
         save_dict = torch.load(filepath, map_location=self.device)
 
-        self.q_network.load_state_dict(save_dict['q_network_state_dict'])
-        self.target_network.load_state_dict(save_dict['target_network_state_dict'])
-        self.optimizer.load_state_dict(save_dict['optimizer_state_dict'])
+        self.q_network.load_state_dict(save_dict["q_network_state_dict"])
+        self.target_network.load_state_dict(save_dict["target_network_state_dict"])
+        self.optimizer.load_state_dict(save_dict["optimizer_state_dict"])
 
-        self.epsilon = save_dict.get('epsilon', self.config['epsilon_end'])
-        self.steps_done = save_dict.get('steps_done', 0)
-        self.training_losses = save_dict.get('training_losses', [])
-        self.episode_rewards = save_dict.get('episode_rewards', [])
+        self.epsilon = save_dict.get("epsilon", self.config["epsilon_end"])
+        self.steps_done = save_dict.get("steps_done", 0)
+        self.training_losses = save_dict.get("training_losses", [])
+        self.episode_rewards = save_dict.get("episode_rewards", [])
 
         print(f"Model loaded from {filepath}")
         print(f"Training steps: {self.steps_done}, Epsilon: {self.epsilon:.4f}")
@@ -313,23 +307,20 @@ class FinancialDQNAgent:
 class FinancialDQNTrainer:
     """Trainer for the financial DQN agent"""
 
-    def __init__(self,
-                 env: FinancialLifeEnv,
-                 agent: FinancialDQNAgent,
-                 config: Optional[Dict] = None):
+    def __init__(self, env: FinancialLifeEnv, agent: FinancialDQNAgent, config: Optional[Dict] = None):
 
         self.env = env
         self.agent = agent
 
         # Training configuration
         self.config = {
-            'num_episodes': 1000,
-            'max_steps_per_episode': None,  # Use environment default
-            'save_freq': 100,
-            'eval_freq': 50,
-            'eval_episodes': 10,
-            'print_freq': 10,
-            'model_save_path': 'financial_dqn_model.pt'
+            "num_episodes": 1000,
+            "max_steps_per_episode": None,  # Use environment default
+            "save_freq": 100,
+            "eval_freq": 50,
+            "eval_episodes": 10,
+            "print_freq": 10,
+            "model_save_path": "financial_dqn_model.pt",
         }
 
         if config:
@@ -337,12 +328,7 @@ class FinancialDQNTrainer:
 
         self.episode_rewards = []
         self.eval_rewards = []
-        self.training_metrics = {
-            'avg_reward': [],
-            'avg_net_worth': [],
-            'success_rate': [],
-            'avg_retirement_age': []
-        }
+        self.training_metrics = {"avg_reward": [], "avg_net_worth": [], "success_rate": [], "avg_retirement_age": []}
 
     def train(self):
         """Train the agent"""
@@ -351,31 +337,33 @@ class FinancialDQNTrainer:
         print(f"Action space size: {self.env.action_space['action_type'].n}")
         print(f"State space size: {self.env.observation_space.shape[0]}")
 
-        for episode in range(self.config['num_episodes']):
+        for episode in range(self.config["num_episodes"]):
             episode_reward = self._run_episode(training=True)
             self.episode_rewards.append(episode_reward)
             self.agent.episode_rewards.append(episode_reward)
 
             # Print progress
-            if episode % self.config['print_freq'] == 0:
+            if episode % self.config["print_freq"] == 0:
                 avg_reward = np.mean(self.episode_rewards[-100:])
-                print(f"Episode {episode:4d}, "
-                      f"Reward: {episode_reward:8.2f}, "
-                      f"Avg Reward (100): {avg_reward:8.2f}, "
-                      f"Epsilon: {self.agent.epsilon:.4f}")
+                print(
+                    f"Episode {episode:4d}, "
+                    f"Reward: {episode_reward:8.2f}, "
+                    f"Avg Reward (100): {avg_reward:8.2f}, "
+                    f"Epsilon: {self.agent.epsilon:.4f}"
+                )
 
             # Evaluate agent
-            if episode % self.config['eval_freq'] == 0 and episode > 0:
+            if episode % self.config["eval_freq"] == 0 and episode > 0:
                 eval_reward = self._evaluate_agent()
                 self.eval_rewards.append(eval_reward)
                 print(f"Evaluation at episode {episode}: {eval_reward:.2f}")
 
             # Save model
-            if episode % self.config['save_freq'] == 0 and episode > 0:
-                self.agent.save_model(self.config['model_save_path'])
+            if episode % self.config["save_freq"] == 0 and episode > 0:
+                self.agent.save_model(self.config["model_save_path"])
 
         # Final save
-        self.agent.save_model(self.config['model_save_path'])
+        self.agent.save_model(self.config["model_save_path"])
         print("Training completed!")
 
     def _run_episode(self, training: bool = True) -> float:
@@ -383,7 +371,7 @@ class FinancialDQNTrainer:
         state = self.env.reset()
         total_reward = 0.0
         step = 0
-        max_steps = self.config['max_steps_per_episode'] or self.env.max_steps
+        max_steps = self.config["max_steps_per_episode"] or self.env.max_steps
 
         while step < max_steps:
             # Get legal actions
@@ -396,10 +384,7 @@ class FinancialDQNTrainer:
             # For now, use a moderate percentage
             amount_percentage = np.array([0.1])  # 10% of available amount
 
-            action = {
-                'action_type': action_type,
-                'amount_percentage': amount_percentage
-            }
+            action = {"action_type": action_type, "amount_percentage": amount_percentage}
 
             # Take action
             next_state, reward, done, info = self.env.step(action)
@@ -429,12 +414,12 @@ class FinancialDQNTrainer:
         successful_completions = 0
         total_ages_at_death = []
 
-        for _ in range(self.config['eval_episodes']):
+        for _ in range(self.config["eval_episodes"]):
             reward = self._run_episode(training=False)
             eval_rewards.append(reward)
 
             # Track evaluation metrics
-            if hasattr(self.env, 'died_from_natural_causes') and self.env.died_from_natural_causes:
+            if hasattr(self.env, "died_from_natural_causes") and self.env.died_from_natural_causes:
                 mortality_deaths += 1
                 natural_deaths += 1
             elif self.env._calculate_net_worth() < -100000:
@@ -446,19 +431,21 @@ class FinancialDQNTrainer:
 
         # Print evaluation summary
         avg_age_at_death = np.mean(total_ages_at_death)
-        print(f"  Eval Summary: Natural deaths: {natural_deaths}/{self.config['eval_episodes']}, "
-              f"Bankruptcies: {bankruptcy_deaths}/{self.config['eval_episodes']}, "
-              f"Successful completions: {successful_completions}/{self.config['eval_episodes']}, "
-              f"Avg age at death: {avg_age_at_death:.1f}")
+        print(
+            f"  Eval Summary: Natural deaths: {natural_deaths}/{self.config['eval_episodes']}, "
+            f"Bankruptcies: {bankruptcy_deaths}/{self.config['eval_episodes']}, "
+            f"Successful completions: {successful_completions}/{self.config['eval_episodes']}, "
+            f"Avg age at death: {avg_age_at_death:.1f}"
+        )
 
         return float(np.mean(eval_rewards))
 
     def get_training_stats(self) -> Dict:
         """Get training statistics"""
         return {
-            'episode_rewards': self.episode_rewards,
-            'eval_rewards': self.eval_rewards,
-            'training_losses': self.agent.training_losses,
-            'total_episodes': len(self.episode_rewards),
-            'total_steps': self.agent.steps_done
+            "episode_rewards": self.episode_rewards,
+            "eval_rewards": self.eval_rewards,
+            "training_losses": self.agent.training_losses,
+            "total_episodes": len(self.episode_rewards),
+            "total_steps": self.agent.steps_done,
         }

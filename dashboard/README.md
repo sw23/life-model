@@ -58,7 +58,7 @@ Then open your browser to http://localhost:8765
 ### Financial Overview Chart
 Shows the progression of key financial metrics over time:
 - Income (blue line)
-- Bank Balance (orange line) 
+- Bank Balance (orange line)
 - 401k Balance (green line)
 - Debt (red line)
 - Spending (purple line)

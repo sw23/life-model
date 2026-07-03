@@ -2,7 +2,10 @@
 API Reference
 =============
 
-API documentation for the life-model module.
+API documentation for the ``life_model`` package, generated from source.
 
-.. automodule:: life-model
-   :members:
+.. autosummary::
+   :toctree: _autosummary
+   :recursive:
+
+   life_model
