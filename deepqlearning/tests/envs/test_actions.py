@@ -181,15 +181,27 @@ class TestActionEffects(unittest.TestCase):
         # Only up to the contribution room (and bank balance) can move.
         self.assertLessEqual(env.traditional_ira.balance, room + 1e-6)
 
-    def test_withdraw_401k_pretax_applies_early_penalty(self):
+    def test_withdraw_401k_pretax_records_early_penalty_for_settlement(self):
         env = self._fresh_env()
         env.job401k.pretax_balance = 10000.0
         bank_before = env.person.bank_account_balance
         result = env.action_executor.execute_action(env.person, ActionType.WITHDRAW_401K_PRETAX, amount=1000.0)
         self.assertTrue(result.success)
-        # Person is 25 (< 59.5), so a 10% penalty applies: only $900 reaches the bank.
+        # The gross reaches the bank; the person is 25 (< 59.5), so the core model records a 10%
+        # penalty that is paid as federal tax when the year settles.
+        self.assertAlmostEqual(result.fees_paid, 0.0)
+        self.assertAlmostEqual(env.person.bank_account_balance, bank_before + 1000.0)
+        self.assertAlmostEqual(env.person.income.penalties, 100.0)
+
+    def test_withdraw_401k_roth_penalty_stays_at_action_level(self):
+        env = self._fresh_env()
+        env.job401k.roth_balance = 10000.0
+        bank_before = env.person.bank_account_balance
+        result = env.action_executor.execute_action(env.person, ActionType.WITHDRAW_401K_ROTH, amount=1000.0)
+        self.assertTrue(result.success)
         self.assertAlmostEqual(result.fees_paid, 100.0)
         self.assertAlmostEqual(env.person.bank_account_balance, bank_before + 900.0)
+        self.assertAlmostEqual(env.person.income.penalties, 0.0)
 
     def test_retire_early_brings_retirement_age_forward(self):
         env = self._fresh_env()

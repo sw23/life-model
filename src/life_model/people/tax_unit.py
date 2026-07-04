@@ -138,16 +138,17 @@ class TaxUnit:
         return self.federal_deductions_combined(0.0, 0.0)
 
     def _prospective_withdrawal_allocation(self, amount: float) -> dict[int, float]:
-        """Predict how ``withdraw_from_pretax_401ks`` would split ``amount`` across members.
+        """Predict how ``withdraw_from_pretax_accounts`` would split ``amount`` across members.
 
         Mirrors the withdrawal order exactly (members in sequence, each up to their combined
-        pre-tax balance) without moving any money, so income-dependent deductions can be
-        evaluated during sizing against the same per-member incomes settlement will see.
+        pre-tax 401k + Traditional IRA balance) without moving any money, so income-dependent
+        deductions and early-withdrawal penalties can be evaluated during sizing against the same
+        per-member amounts settlement will see.
         """
         allocation: dict[int, float] = {}
         remaining = amount
         for member in self.members:
-            available = sum(acct.pretax_balance for acct in member.all_retirement_accounts)
+            available = member.pretax_account_balance
             take = min(remaining, available)
             allocation[member.unique_id] = take
             remaining -= take
@@ -158,7 +159,7 @@ class TaxUnit:
 
         - The 7.5%-of-income medical floor depends on ordinary income, so a prospective
           401k withdrawal (``additional_income``) changes the deduction. It is allocated across
-          members exactly as ``withdraw_from_pretax_401ks`` will split it, so each member's floor
+          members exactly as ``withdraw_from_pretax_accounts`` will split it, so each member's floor
           matches what settlement will see — otherwise sizing over-estimates the medical deduction
           and the shortfall lands as phantom year-end debt.
         - The unit's state income tax (``state_income_tax_paid``) enters the head's SALT
@@ -279,6 +280,14 @@ class TaxUnit:
             taxes.credits += child_tax_credit(
                 num_children, ordinary_income, taxes.federal, self.filing_status, self.config
             )
+        # Early-withdrawal penalties are additional federal tax (added after the credit so the
+        # nonrefundable CTC cannot offset them): those already on members' ledgers plus the ones a
+        # prospective pre-tax draw of ``additional_income`` would trigger, split across members in
+        # the order the draw will actually happen.
+        taxes.federal += sum(m.income.penalties for m in self.members)
+        if additional_income > 0:
+            allocation = self._prospective_withdrawal_allocation(additional_income)
+            taxes.federal += sum(m.early_withdrawal_penalty(allocation.get(m.unique_id, 0.0)) for m in self.members)
         return taxes
 
     def withdraw_from_pretax_401ks(self, amount: float) -> float:
@@ -287,6 +296,18 @@ class TaxUnit:
             if amount <= 0:
                 break
             amount -= member.withdraw_from_pretax_401ks(amount)
+        return amount
+
+    def withdraw_from_pretax_accounts(self, amount: float) -> float:
+        """Withdraw ``amount`` from members' pre-tax 401ks then Traditional IRAs, member by member.
+
+        Returns the amount not withdrawn. This order is what ``_prospective_withdrawal_allocation``
+        predicts during sizing.
+        """
+        for member in self.members:
+            if amount <= 0:
+                break
+            amount -= member.withdraw_from_pretax_accounts(amount)
         return amount
 
     def pay_bills(self, amount: float) -> float:
@@ -548,8 +569,9 @@ class TaxUnit:
         self._record_stats(taxes, spending_by_member, housing_by_member, interest_by_member)
 
     def _solve_withdrawals_and_taxes(self, bills: float) -> TaxesDue:
-        """Withdraw enough pre-tax 401k to cover bills + the taxes the withdrawal itself triggers
-        when the bank can't, then return the final taxes due.
+        """Withdraw enough pre-tax money (401k, then Traditional IRA) to cover bills + the taxes
+        and penalties the withdrawal itself triggers when the bank can't, then return the final
+        taxes due.
 
         The gross withdrawal is sized by a fixed-point iteration rather than a max-marginal-rate
         buffer: ``gross = bills + taxes(gross) - bank_balance``. Because the marginal tax rate is
@@ -558,11 +580,14 @@ class TaxUnit:
         """
         gross = self._size_gross_withdrawal(bills)
         if gross > 0:
-            self.withdraw_from_pretax_401ks(gross)
+            self.withdraw_from_pretax_accounts(gross)
         return self.get_income_taxes_due()
 
     def _size_gross_withdrawal(self, bills: float) -> float:
-        """Pure fixed-point solve for the pre-tax 401k withdrawal needed to cover bills + taxes.
+        """Pure fixed-point solve for the pre-tax withdrawal needed to cover bills + taxes.
+
+        Penalties scale linearly with the draw (10% below 59.5), so the map stays a contraction as
+        long as marginal tax plus penalty stays below 100%.
 
         Side-effect-free: computes the gross amount without moving any money.
         """

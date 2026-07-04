@@ -308,6 +308,9 @@ class IRAConfig(StrictModel):
 
 class RetirementConfig(StrictModel):
     federal_retirement_age: float = Field(ge=0)
+    # Additional tax on early (pre-``federal_retirement_age``) distributions from pre-tax accounts and
+    # on non-qualified Roth IRA earnings (IRC §72(t)). Statutory, unindexed.
+    early_withdrawal_penalty_rate: float = Field(default=10.0, ge=0, le=100)
     job_401k_contrib_limit: Job401kContribLimitConfig
     ira: IRAConfig
     rmd_distribution_periods: list[list[float]]
@@ -376,6 +379,10 @@ class HSAAccountConfig(StrictModel):
     catch_up_amount: int = Field(ge=0)
     contribution_limit_family: int = Field(ge=0)
     default_employer_contribution: int = Field(ge=0)
+    # Non-medical distributions are ordinary income plus this additional tax below the penalty age
+    # (IRC §223(f)(2), (f)(4)). Statutory, unindexed.
+    non_medical_penalty_rate: float = Field(default=20.0, ge=0, le=100)
+    non_medical_penalty_age: int = Field(default=65, ge=0)
 
 
 class Plan529Config(StrictModel):

@@ -145,17 +145,25 @@ class TestPersonWithdrawalHelpers(unittest.TestCase):
         self.assertEqual(person.bank_account_balance, 11000)
         self.assertEqual(person.taxable_income, 0)
 
-    def test_withdraw_from_hsas_and_brokerage_are_untaxed_transfers(self):
+    def test_withdraw_from_brokerage_without_gain_is_untaxed_transfer(self):
         from ..account.brokerage import BrokerageAccount
+
+        _model, person = self._make_person()
+        BrokerageAccount(person=person, company="Broker", balance=8000)
+        self.assertEqual(person.withdraw_from_brokerage_accounts(3000), 3000)
+        self.assertEqual(person.bank_account_balance, 4000)
+        self.assertEqual(person.taxable_income, 0)
+
+    def test_withdraw_from_hsas_is_a_taxed_non_medical_distribution(self):
+        """Cash pulled to the bank is non-medical: ordinary income plus 20% additional tax before 65."""
         from ..account.hsa import HealthSavingsAccount, HSAType
 
         _model, person = self._make_person()
         HealthSavingsAccount(person=person, hsa_type=HSAType.INDIVIDUAL, balance=5000)
-        BrokerageAccount(person=person, company="Broker", balance=8000)
         self.assertEqual(person.withdraw_from_hsas(2000), 2000)
-        self.assertEqual(person.withdraw_from_brokerage_accounts(3000), 3000)
-        self.assertEqual(person.bank_account_balance, 6000)
-        self.assertEqual(person.taxable_income, 0)
+        self.assertEqual(person.bank_account_balance, 3000)
+        self.assertEqual(person.taxable_income, 2000)
+        self.assertAlmostEqual(person.income.penalties, 400.0)
 
     def test_withdrawals_are_capped_at_available_balance(self):
         from ..account.traditional_IRA import TraditionalIRA

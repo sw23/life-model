@@ -70,16 +70,35 @@ class HealthSavingsAccount(TaxAdvantagedAccount):
             base += hsa_config.catch_up_amount
         return base
 
+    def contribute(self, amount: float) -> float:
+        """Contribute up to the remaining limit; the owner's contribution is deductible.
+
+        Employer contributions (see :meth:`step`) never entered the owner's income, so they are
+        not deducted.
+        """
+        actual = super().contribute(amount)
+        self.person.income.add_deduction(actual)
+        return actual
+
     def withdraw_medical(self, amount: float) -> float:
         """Withdraw for qualified medical expenses (always tax-free)."""
         return self.withdraw(amount)
 
     def withdraw_non_medical(self, amount: float) -> float:
-        """Withdraw for non-medical expenses (taxable + 20% penalty under 65).
+        """Withdraw for non-medical expenses.
 
-        Tax/penalty ledger reporting is added with the account tax semantics.
+        The distribution is ordinary income; below the penalty age (65) it also incurs the 20%
+        additional tax. Both are recorded on the owner's income ledger and settled at year end.
         """
-        return self.withdraw(amount)
+        from ..tax.income import IncomeType
+
+        withdrawn = self.withdraw(amount)
+        if withdrawn > 0:
+            hsa_config = self.model.config.accounts.hsa
+            self.person.income.add(IncomeType.PRETAX_DISTRIBUTION, withdrawn)
+            if self.person.age < hsa_config.non_medical_penalty_age:
+                self.person.income.add_penalty(withdrawn * hsa_config.non_medical_penalty_rate / 100)
+        return withdrawn
 
     def _repr_html_(self):
         limit = self.annual_contribution_limit()

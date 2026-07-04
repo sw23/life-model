@@ -4,7 +4,9 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 from ..base_classes import TaxAdvantagedAccount, TaxTreatment
+from ..limits import federal_retirement_age
 from ..people.person import Person
+from ..tax.income import IncomeType
 
 
 class RothIRA(TaxAdvantagedAccount):
@@ -41,6 +43,29 @@ class RothIRA(TaxAdvantagedAccount):
         if self._contribution_limit_override is not None:
             return self._contribution_limit_override
         return self.person.model.config.retirement.ira.contribution_limit
+
+    def withdraw(self, amount: float) -> float:
+        """Withdraw contribution basis first (always tax-free), then earnings.
+
+        Earnings withdrawn before the federal retirement age are a non-qualified distribution:
+        ordinary income plus the early-withdrawal additional tax, both recorded on the owner's
+        income ledger. On or after that age, withdrawals are qualified and tax-free. (The five-year
+        holding rule is not modeled.)
+        """
+        basis_before = self.contribution_basis
+        withdrawn = super().withdraw(amount)
+        earnings_withdrawn = withdrawn - (basis_before - self.contribution_basis)
+        config = self.model.config
+        if earnings_withdrawn > 0 and self.person.age < federal_retirement_age(config):
+            self.person.income.add(IncomeType.PRETAX_DISTRIBUTION, earnings_withdrawn)
+            self.person.income.add_penalty(earnings_withdrawn * config.retirement.early_withdrawal_penalty_rate / 100)
+        return withdrawn
+
+    def tax_free_withdrawable(self) -> float:
+        """Amount that can be withdrawn right now without creating taxable income."""
+        if self.person.age >= federal_retirement_age(self.model.config):
+            return self.balance
+        return min(self.balance, self.contribution_basis)
 
     def _repr_html_(self):
         desc = "<ul>"

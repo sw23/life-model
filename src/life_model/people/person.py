@@ -455,7 +455,11 @@ class Person(LifeModelAgent):
         return self._withdraw_sequence((account.deduct_roth for account in self.all_retirement_accounts), amount)
 
     def deduct_from_roth_iras(self, amount: float) -> float:
-        """Deducts money from Roth IRAs (contribution basis is drawn before earnings).
+        """Deducts money from Roth IRAs, taking only what can come out tax-free.
+
+        This runs on the bill-payment path, after the year's taxes are computed, so it must not
+        create taxable income: before 59.5 only contribution basis is drawn; from 59.5 the whole
+        balance is a qualified, tax-free distribution.
 
         Args:
             amount (float): Amount to deduct.
@@ -463,7 +467,11 @@ class Person(LifeModelAgent):
         Returns:
             float: Amount that could not be deducted.
         """
-        return self._withdraw_sequence((account.withdraw for account in self.roth_iras), amount)
+        withdrawers = (
+            (lambda remaining, a=account: a.withdraw(min(remaining, a.tax_free_withdrawable())))
+            for account in self.roth_iras
+        )
+        return self._withdraw_sequence(withdrawers, amount)
 
     def withdraw_from_pretax_401ks(self, amount: float) -> float:
         """Withdraws money from pre-tax 401ks into the bank account.
@@ -479,8 +487,44 @@ class Person(LifeModelAgent):
         withdrawn = amount - self.deduct_from_pretax_401ks(amount)
         # Pre-tax 401k distributions are ordinary income but are NOT FICA wages.
         self.income.add(IncomeType.PRETAX_DISTRIBUTION, withdrawn)
+        self._charge_early_withdrawal_penalty(withdrawn)
         self.receive_cash(withdrawn)
         return withdrawn
+
+    @property
+    def pretax_account_balance(self) -> float:
+        """Combined pre-tax balance: 401k pre-tax sub-balances plus Traditional IRAs."""
+        return sum(a.pretax_balance for a in self.all_retirement_accounts) + sum(
+            a.balance for a in self.traditional_iras
+        )
+
+    def withdraw_from_pretax_accounts(self, amount: float) -> float:
+        """Withdraw from pre-tax 401ks, then Traditional IRAs, into the bank account.
+
+        This is the order the tax unit's settlement solver assumes when it sizes a pre-tax draw.
+
+        Returns:
+            float: Amount actually withdrawn.
+        """
+        withdrawn = self.withdraw_from_pretax_401ks(amount)
+        if amount - withdrawn > 0:
+            withdrawn += self.withdraw_from_traditional_iras(amount - withdrawn)
+        return withdrawn
+
+    def early_withdrawal_penalty(self, amount: float) -> float:
+        """Additional tax a pre-tax distribution of ``amount`` would incur at this person's age.
+
+        IRC §72(t): distributions before the federal retirement age (59.5) carry the configured
+        additional tax. Exceptions (age-55 separation, SEPP, disability, ...) are not modeled.
+        """
+        config = self.model.config
+        if amount <= 0 or self.age >= federal_retirement_age(config):
+            return 0.0
+        return amount * config.retirement.early_withdrawal_penalty_rate / 100
+
+    def _charge_early_withdrawal_penalty(self, amount: float) -> None:
+        """Record the early-withdrawal additional tax for a pre-tax distribution on the ledger."""
+        self.income.add_penalty(self.early_withdrawal_penalty(amount))
 
     # ------------------------------------------------------------------
     # Person-level withdrawal helpers.
@@ -490,8 +534,10 @@ class Person(LifeModelAgent):
     # tax unit settles the year inside model.step(). Taxes therefore bite at year-end settlement,
     # not at the moment of withdrawal — that is the simulator's actual semantics.
     #
-    # Early-withdrawal penalties are intentionally NOT applied here; they remain the caller's
-    # concern until the core penalty backlog item lands.
+    # Early-withdrawal penalties are recorded on the ledger as additional federal tax: 10% on
+    # pre-tax 401k/IRA distributions and non-qualified Roth IRA earnings before age 59.5, 20% on
+    # non-medical HSA distributions before 65. Roth 401k withdrawals are not penalized here
+    # because Roth 401k basis is not tracked.
     # ------------------------------------------------------------------
 
     @property
@@ -538,11 +584,15 @@ class Person(LifeModelAgent):
         """
         withdrawn = amount - self._withdraw_sequence((acct.withdraw for acct in self.traditional_iras), amount)
         self.income.add(IncomeType.PRETAX_DISTRIBUTION, withdrawn)
+        self._charge_early_withdrawal_penalty(withdrawn)
         self.receive_cash(withdrawn)
         return withdrawn
 
     def withdraw_from_roth_iras(self, amount: float) -> float:
-        """Withdraws money from Roth IRAs into the bank account (tax-free distribution).
+        """Withdraws money from Roth IRAs into the bank account.
+
+        Basis comes out first, tax-free; earnings withdrawn before 59.5 are taxed and penalized by
+        the account itself (see :meth:`RothIRA.withdraw`).
 
         Returns:
             float: Amount actually withdrawn.
@@ -552,15 +602,15 @@ class Person(LifeModelAgent):
         return withdrawn
 
     def withdraw_from_hsas(self, amount: float) -> float:
-        """Withdraws money from HSAs into the bank account.
+        """Withdraws money from HSAs into the bank account as a non-medical distribution.
 
-        Modeled as a qualified-medical (tax-free) distribution; taxing non-medical HSA
-        withdrawals is a documented simplification pending the core penalty backlog item.
+        Cash moved to the bank is not tied to a medical bill (the simulation pays medical costs
+        through spending), so it is ordinary income plus the 20% additional tax before 65.
 
         Returns:
             float: Amount actually withdrawn.
         """
-        withdrawn = amount - self._withdraw_sequence((acct.withdraw for acct in self.hsas), amount)
+        withdrawn = amount - self._withdraw_sequence((acct.withdraw_non_medical for acct in self.hsas), amount)
         self.receive_cash(withdrawn)
         return withdrawn
 
@@ -672,7 +722,7 @@ class Person(LifeModelAgent):
         legacy_agi = max(total_income - self.federal_deductions_with_state_tax(0.0, additional_income), 0)
         state_tax = state_income_tax_for_unit(totals, self.filing_status, self.state, legacy_agi, self.model.config)
         deductions = self.federal_deductions_with_state_tax(state_tax, additional_income)
-        return compute_taxes(
+        taxes = compute_taxes(
             ordinary_income,
             deductions,
             self.filing_status,
@@ -682,6 +732,10 @@ class Person(LifeModelAgent):
             preferential_income=self.preferential_income,
             net_investment_income=self.income.net_investment_income,
         )
+        # Early-withdrawal penalties are additional federal tax: those already on the ledger plus
+        # the one a prospective pre-tax withdrawal of ``additional_income`` would trigger.
+        taxes.federal += self.income.penalties + self.early_withdrawal_penalty(additional_income)
+        return taxes
 
     def get_married(self, spouse: "Person", link_spouse: bool = True):
         """Get married.
@@ -774,8 +828,9 @@ class Person(LifeModelAgent):
                 job.retire()
             self.retirement_triggered = True
 
-        if not self._retirement_age_event_logged and self.age >= int(federal_retirement_age()):
-            self.model.event_log.add(Event(f"{self.name} reached retirement age (age {federal_retirement_age()})"))
+        retirement_age = federal_retirement_age(self.model.config)
+        if not self._retirement_age_event_logged and self.age >= int(retirement_age):
+            self.model.event_log.add(Event(f"{self.name} reached retirement age (age {retirement_age})"))
             self._retirement_age_event_logged = True
 
     def die(self):

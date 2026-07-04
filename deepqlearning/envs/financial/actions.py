@@ -89,16 +89,11 @@ _WITHDRAW_HELPERS = {
     ActionType.WITHDRAW_HSA: Person.withdraw_from_hsas,
 }
 
-# Withdrawals from these account types incur a 10% early-withdrawal penalty before age 59.5.
-_PENALIZED_WITHDRAWALS = frozenset(
-    {
-        ActionType.WITHDRAW_401K_PRETAX,
-        ActionType.WITHDRAW_401K_ROTH,
-        ActionType.WITHDRAW_IRA_TRADITIONAL,
-        ActionType.WITHDRAW_IRA_ROTH,
-        ActionType.WITHDRAW_HSA,
-    }
-)
+# Early-withdrawal penalties for pre-tax 401k, Traditional IRA, Roth IRA earnings and non-medical HSA
+# withdrawals are charged by the core model on the income ledger and settled as federal tax at year
+# end. Roth 401k basis is not tracked in the core, so its penalty stays at the action level: 10% of
+# the whole withdrawal before age 59.5 (a conservative stand-in for the pro-rata earnings rule).
+_PENALIZED_WITHDRAWALS = frozenset({ActionType.WITHDRAW_401K_ROTH})
 
 TRANSFER_ACTIONS = frozenset(_TRANSFER_TARGETS)
 WITHDRAWAL_ACTIONS = frozenset(_WITHDRAW_SOURCES)
@@ -280,9 +275,9 @@ class WithdrawalAction(FinancialAction):
 
     Execution goes through the person-level helpers (``_WITHDRAW_HELPERS``), so taxable
     withdrawals create income-ledger entries and are taxed at year-end settlement inside
-    ``model.step()`` — not instantly. The early-withdrawal penalty stays at the action level
-    (deducted from the bank after the helper's deposit) until the core penalty backlog item
-    lands.
+    ``model.step()`` — not instantly. Early-withdrawal penalties are likewise recorded by the core
+    model and settled at year end, except for Roth 401k withdrawals (see ``_PENALIZED_WITHDRAWALS``),
+    whose penalty is still deducted from the bank here.
     """
 
     def _available(self) -> float:

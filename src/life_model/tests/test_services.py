@@ -79,14 +79,15 @@ class TestTaxCalculationService(unittest.TestCase):
     def test_calculate_taxes_on_401k_withdrawal_unmocked_against_fixture(self):
         """Real tax path against the frozen fixture: no other income, $30k pre-tax withdrawal.
 
-        Federal: ($30,000 - $10,000 standard deduction) x 10% = $2,000 (no FICA on distributions).
+        Federal: ($30,000 - $10,000 standard deduction) x 10% = $2,000 (no FICA on distributions),
+        plus the 10% early-withdrawal additional tax because the owner is 30: $3,000.
         State: the DEFAULT pack's flat 5% applies to the federal-style AGI base, i.e. after the
         federal deduction: $20,000 x 5% = $1,000.
-        Buffer: $3,000 x 25% (fixture top bracket) = $750. Total $3,750.
+        Buffer: $6,000 x 25% (fixture top bracket) = $1,500. Total $7,500.
         """
         self.assertEqual(self.person.taxable_income, 0)
         result = self.tax_service.calculate_taxes_on_401k_withdrawal(30000)
-        self.assertAlmostEqual(result, 3750.0, places=2)
+        self.assertAlmostEqual(result, 7500.0, places=2)
 
     def test_calculate_taxes_on_401k_withdrawal_zero_amount(self):
         """Test tax calculation with zero withdrawal amount"""

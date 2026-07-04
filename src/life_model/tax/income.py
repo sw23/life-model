@@ -77,6 +77,10 @@ class IncomeLedger:
 
     def __init__(self):
         self.entries: list[IncomeEntry] = []
+        # Additional federal tax from early-withdrawal / non-qualified-distribution penalties (e.g.
+        # 10% on early pre-tax distributions, 20% on non-medical HSA distributions). Settled as
+        # federal tax with the year's return.
+        self.penalties = 0.0
 
     def add(self, income_type: IncomeType, amount: float, fica_wages: float = 0.0) -> None:
         """Append an income entry."""
@@ -91,9 +95,24 @@ class IncomeLedger:
         """
         self.add(IncomeType.WAGES, ordinary_amount, fica_wages)
 
+    def add_deduction(self, amount: float) -> None:
+        """Record an above-the-line deduction (e.g. a deductible IRA or HSA contribution).
+
+        Modeled as negative ordinary income, the same way the student-loan interest deduction is,
+        so it reduces the income-tax base (and AGI) without touching FICA wages.
+        """
+        if amount > 0:
+            self.add(IncomeType.ORDINARY, -amount)
+
+    def add_penalty(self, amount: float) -> None:
+        """Record an additional federal tax (10% early withdrawal, 20% HSA non-medical)."""
+        if amount > 0:
+            self.penalties += amount
+
     def clear(self) -> None:
         """Reset the ledger for the next year (mirrors the old ``taxable_income = 0``)."""
         self.entries.clear()
+        self.penalties = 0.0
 
     @property
     def ordinary_taxable(self) -> float:

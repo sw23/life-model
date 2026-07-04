@@ -261,16 +261,18 @@ class TestPerAccountBeneficiary(unittest.TestCase):
         cfg.model.estate.inherited_pretax_mode = "lump_sum"
         model = LifeModel(start_year=2026, end_year=2027, config=cfg)
         family = Family(model)
+        # Everyone stays below RMD age (73) so the IRA balance isolates the death transfer itself:
+        # Traditional IRAs take required minimum distributions, which would otherwise draw it down.
         breadwinner = Person(
             family,
             "Bread",
-            age=75,
+            age=69,
             retirement_age=50,
             spending=Spending(model, 0),
             mortality_mode=MortalityMode.FIXED_AGE,
-            death_age=76,
+            death_age=70,
         )
-        spouse = Person(family, "Spouse", age=74, retirement_age=50, spending=Spending(model, 0))
+        spouse = Person(family, "Spouse", age=68, retirement_age=50, spending=Spending(model, 0))
         breadwinner.get_married(spouse)
         child = Person(family, "Kid", age=40, retirement_age=100, spending=Spending(model, 0))
         BankAccount(breadwinner, "B1", balance=50000, interest_rate=0)
