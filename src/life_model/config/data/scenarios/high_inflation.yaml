@@ -1,12 +1,14 @@
-# High inflation scenario - Protect against purchasing power erosion
-accounts:
-  bank:
-    default_interest_rate: 5.0  # Higher nominal rates
-  brokerage:
-    default_growth_rate: 5.0  # Lower real returns
+# High inflation scenario - elevated inflation, higher nominal yields, lower real equity returns.
+economy:
+  mode: fixed
+  inflation: 8.0         # sustained high inflation
+  wage_growth: 6.0       # wages chase prices (but lag)
+  equity_return: 5.0     # lower real returns
+  cash_yield: 5.0        # higher nominal rates
+  home_appreciation: 8.0 # home prices track inflation
 debt:
   credit_card:
-    default_interest_rate: 25.0  # Higher borrowing costs
+    default_interest_rate: 25.0  # higher borrowing costs
 insurance:
   life:
-    default_loan_interest_rate: 8.0  # Higher loan rates
+    default_loan_interest_rate: 8.0  # higher loan rates

@@ -28,7 +28,9 @@ class BankAccount(FinancialAccount):
         self.company = company
         self.type = type
         bank_config = self.model.config.accounts.bank
-        self.interest_rate = interest_rate if interest_rate is not None else bank_config.default_interest_rate
+        # An explicit interest_rate overrides the economy (back-compat); None defers to the
+        # economy's cash yield, re-read each year.
+        self._interest_rate_override = interest_rate
         self.compound_rate = bank_config.compound_rate
 
         self.stat_total_interest = 0
@@ -36,6 +38,17 @@ class BankAccount(FinancialAccount):
 
         # Register with the model registry
         self.model.registries.bank_accounts.register(owner, self)
+
+    @property
+    def interest_rate(self) -> float:
+        """Annual interest rate (percent): the explicit override if set, else the economy's yield."""
+        if self._interest_rate_override is not None:
+            return self._interest_rate_override
+        return self.model.economy.cash_yield(self.model.year)
+
+    @interest_rate.setter
+    def interest_rate(self, value: Optional[float]) -> None:
+        self._interest_rate_override = value
 
     def get_balance(self) -> float:
         """Get current account balance"""

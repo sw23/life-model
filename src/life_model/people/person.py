@@ -644,18 +644,30 @@ class Person(LifeModelAgent):
 
 
 class Spending(LifeModelAgent):
-    def __init__(self, model: LifeModel, base: float = 0, yearly_increase: float = 0):
+    def __init__(self, model: LifeModel, base: float = 0, yearly_increase: Optional[float] = 0):
         """Spending
 
         Args:
             model (LifeModel): LifeModel instance.
             base (float): Base spending amount.
-            yearly_increase (float): Yearly percentage increase in spending. 10 = 10%.
+            yearly_increase (float, optional): Yearly percentage increase in spending. 10 = 10%.
+                Pass None to grow with the economy's inflation each year. Defaults to 0 (no increase).
         """
         super().__init__(model)
         self.base = base
-        self.yearly_increase = yearly_increase
+        self._yearly_increase_override = yearly_increase
         self.one_time_expenses = 0
+
+    @property
+    def yearly_increase(self) -> float:
+        """Yearly percentage increase: the explicit override if set, else the economy's inflation."""
+        if self._yearly_increase_override is not None:
+            return self._yearly_increase_override
+        return self.model.economy.inflation(self.model.year)
+
+    @yearly_increase.setter
+    def yearly_increase(self, value: Optional[float]) -> None:
+        self._yearly_increase_override = value
 
     def add_expense(self, amount: float):
         """Adds a one-time expense.

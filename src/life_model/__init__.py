@@ -8,7 +8,9 @@
 from importlib.metadata import PackageNotFoundError, version
 
 from .account.bank import BankAccount
+from .economy import EconomyModel
 from .model import LifeModel, LifeModelAgent
+from .montecarlo import MonteCarlo, MonteCarloResult
 from .people.family import Family
 from .people.person import GenderAtBirth, MortalityMode, Person, Spending
 from .tax.federal import FilingStatus
@@ -22,6 +24,9 @@ except PackageNotFoundError:  # package is not installed (e.g. source checkout w
 __all__ = [
     "LifeModel",
     "LifeModelAgent",
+    "EconomyModel",
+    "MonteCarlo",
+    "MonteCarloResult",
     "Person",
     "Family",
     "Spending",

@@ -395,6 +395,36 @@ housing:
     single: 250000
     married_filing_jointly: 500000
 
+# Economy-wide rates driving account returns, wage growth, and inflation. A single
+# EconomyModel per simulation reads this section and answers per-year rate queries.
+# The defaults reproduce the pre-economy per-account constants, so `mode: fixed` leaves
+# simulation output unchanged. See docs/configuration.md for path/stochastic modes.
+economy:
+  mode: fixed  # fixed | path | stochastic
+  inflation: 3.0          # percent CPI (drives spending/rent increases when opted in)
+  wage_growth: 3.0        # percent nominal wage growth (salary increases when opted in)
+  equity_return: 7.0      # percent (brokerage / IRA / 529 default return)
+  bond_return: 3.0        # percent
+  cash_yield: 0.0         # percent (bank account default interest)
+  home_appreciation: 4.0  # percent home value appreciation
+  paths: {}               # PATH mode: {rate_name: {year: percent, ...}, ...}
+  stochastic:             # STOCHASTIC mode distribution parameters (percent)
+    equity_mean: 7.0
+    equity_vol: 15.0
+    bond_mean: 3.0
+    bond_vol: 5.0
+    inflation_mean: 3.0
+    inflation_vol: 1.5
+    cash_yield_mean: 0.0
+    cash_yield_vol: 0.5
+    home_appreciation_mean: 4.0
+    home_appreciation_vol: 6.0
+    wage_growth_mean: 3.0
+    wage_growth_vol: 1.0
+    equity_bond_correlation: 0.1
+    equity_inflation_correlation: -0.1
+    bond_inflation_correlation: -0.2
+
 # Year-indexed tax parameters (published values, 2022-2026). Accessed via
 # config.tax_year(year). Years outside the table are projected: earliest entry
 # for prior years, frozen at the latest entry for future years, most-recent

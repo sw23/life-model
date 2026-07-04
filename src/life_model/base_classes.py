@@ -192,10 +192,33 @@ class Investment(FinancialAccount, ABC):
     # Apply growth before tax-unit settlement so withdrawals see the grown balance.
     STEP_PRIORITY = {"step": -10}
 
-    def __init__(self, person: "Person", balance: float = 0, growth_rate: float = 0):
+    # Maps an account's asset class to the economy rate that drives its return.
+    _ASSET_CLASS_RATES = {"equity": "equity_return", "bond": "bond_return", "cash": "cash_yield"}
+
+    def __init__(
+        self, person: "Person", balance: float = 0, growth_rate: Optional[float] = None, asset_class: str = "equity"
+    ):
         super().__init__(person, balance)
-        self.growth_rate = growth_rate
+        # An explicit growth_rate overrides the economy (back-compat); None defers to the economy's
+        # return for this account's asset class, re-read each year so path/stochastic economies flow
+        # through to account growth.
+        self._growth_rate_override = growth_rate
+        if asset_class not in self._ASSET_CLASS_RATES:
+            raise ValueError(f"Unknown asset_class {asset_class!r}; expected one of {list(self._ASSET_CLASS_RATES)}")
+        self.asset_class = asset_class
         self.stat_growth_history = []
+
+    @property
+    def growth_rate(self) -> float:
+        """Annual growth rate (percent): the explicit override if set, else the economy's return."""
+        if self._growth_rate_override is not None:
+            return self._growth_rate_override
+        rate_name = self._ASSET_CLASS_RATES[self.asset_class]
+        return self.model.economy.rate(rate_name, self.model.year)
+
+    @growth_rate.setter
+    def growth_rate(self, value: Optional[float]) -> None:
+        self._growth_rate_override = value
 
     @abstractmethod
     def calculate_growth(self) -> float:

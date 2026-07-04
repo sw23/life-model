@@ -17,10 +17,9 @@ class BrokerageAccount(Investment):
             person: The person who owns this account
             company: Brokerage company name
             balance: Current account balance
-            growth_rate: Expected annual growth rate percentage. Uses configured default if None.
+            growth_rate: Expected annual growth rate percentage. Defers to the economy's equity
+                return when None.
         """
-        if growth_rate is None:
-            growth_rate = person.model.config.accounts.brokerage.default_growth_rate
         super().__init__(person, balance, growth_rate)
         self.company = company
         self.investments = []  # List of individual investments

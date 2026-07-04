@@ -1,12 +1,12 @@
-# Deflationary scenario - Low or negative growth
-accounts:
-  bank:
-    default_interest_rate: 0.0  # Near zero rates
-  brokerage:
-    default_growth_rate: 2.0  # Low growth expectations
-retirement:
-  ira:
-    default_growth_rate: 3.0  # Conservative growth
+# Deflationary scenario - sustained low/negative inflation with depressed returns.
+economy:
+  mode: fixed
+  inflation: -0.5        # falling prices
+  wage_growth: 0.5
+  equity_return: 2.0     # low growth expectations
+  bond_return: 1.0
+  cash_yield: 0.0        # near-zero rates
+  home_appreciation: 0.0
 debt:
   credit_card:
-    default_interest_rate: 12.0  # Lower nominal rates
+    default_interest_rate: 12.0  # lower nominal rates

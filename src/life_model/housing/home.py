@@ -19,7 +19,7 @@ class Home(LifeModelAgent):
         person: Person,
         name: str,
         purchase_price: float,
-        value_yearly_increase: float,
+        value_yearly_increase: Optional[float],
         down_payment: float,
         mortgage: "Mortgage",
         expenses: "HomeExpenses",
@@ -31,7 +31,8 @@ class Home(LifeModelAgent):
             person (Person): Primary resident or person that pays the bills.
             name (string): Name of the house or neighborhood.
             purchase_price (float): Purchase price of the home.
-            value_yearly_increase (float): Percentage of yearly home value appreciation.
+            value_yearly_increase (float): Percentage of yearly home value appreciation. Pass None to
+                appreciate with the economy's home-appreciation rate each year.
             down_payment (float): Amount of down payment.
             mortgage (Mortgage): Mortgage associated with the home.
             expenses (HomeExpenses): Home expenses associated with the home.
@@ -43,7 +44,7 @@ class Home(LifeModelAgent):
         self.person = person
         self.name = name
         self.purchase_price = purchase_price
-        self.value_yearly_increase = value_yearly_increase
+        self._value_yearly_increase_override = value_yearly_increase
         self.down_payment = down_payment
         self.mortgage = mortgage
         self.expenses = expenses
@@ -67,6 +68,17 @@ class Home(LifeModelAgent):
 
         if purchase:
             self.buy()
+
+    @property
+    def value_yearly_increase(self) -> float:
+        """Yearly appreciation percent: the explicit override if set, else the economy's rate."""
+        if self._value_yearly_increase_override is not None:
+            return self._value_yearly_increase_override
+        return self.model.economy.home_appreciation(self.model.year)
+
+    @value_yearly_increase.setter
+    def value_yearly_increase(self, value: Optional[float]) -> None:
+        self._value_yearly_increase_override = value
 
     @property
     def yearly_expenses_due(self) -> float:

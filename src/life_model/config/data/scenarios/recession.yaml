@@ -1,9 +1,20 @@
-# Recession scenario - Lower interest rates and growth expectations
-accounts:
-  bank:
-    default_interest_rate: 0.5  # Lower interest rates
-  brokerage:
-    default_growth_rate: 3.0  # Lower growth expectations
+# Recession scenario - a multi-year downturn in equity returns and yields, then recovery.
+# PATH mode overrides individual calendar years; unlisted years fall back to the fixed
+# economy constants. The window below is illustrative (near-term); shift it to match your
+# simulation's start year if needed.
+economy:
+  mode: path
+  paths:
+    equity_return:
+      2027: -12.0  # market drawdown
+      2028: -4.0
+      2029: 3.0    # recovery begins
+    cash_yield:
+      2027: 0.5    # lower rates
+      2028: 0.5
+    inflation:
+      2027: 1.5    # disinflation
+      2028: 1.0
 tax:
   state:
-    tax_rate: 5.0  # Potential tax reduction
+    tax_rate: 5.0  # potential tax relief

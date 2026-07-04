@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-from typing import Dict, List, Union
+from typing import Dict, List, Literal, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -260,6 +260,56 @@ class YearlyTaxParameters(StrictModel):
     rmd_start_age: int = Field(ge=0)
 
 
+class StochasticEconomyConfig(StrictModel):
+    """Distribution parameters for the ``stochastic`` economy mode.
+
+    Annual returns are drawn as correlated normals (equity/bond/inflation share a
+    correlation matrix); the remaining series are drawn independently. All values are
+    percentages. Defaults reproduce the ``fixed``-mode means with historically typical
+    volatilities.
+    """
+
+    equity_mean: float = 7.0
+    equity_vol: float = Field(default=15.0, ge=0)
+    bond_mean: float = 3.0
+    bond_vol: float = Field(default=5.0, ge=0)
+    inflation_mean: float = 3.0
+    inflation_vol: float = Field(default=1.5, ge=0)
+    cash_yield_mean: float = 0.0
+    cash_yield_vol: float = Field(default=0.5, ge=0)
+    home_appreciation_mean: float = 4.0
+    home_appreciation_vol: float = Field(default=6.0, ge=0)
+    wage_growth_mean: float = 3.0
+    wage_growth_vol: float = Field(default=1.0, ge=0)
+    equity_bond_correlation: float = Field(default=0.1, ge=-1, le=1)
+    equity_inflation_correlation: float = Field(default=-0.1, ge=-1, le=1)
+    bond_inflation_correlation: float = Field(default=-0.2, ge=-1, le=1)
+
+
+class EconomyConfig(StrictModel):
+    """Economy-wide rates that drive account returns, wage growth, and inflation.
+
+    A single :class:`~life_model.economy.EconomyModel` per simulation reads this section
+    and answers per-year rate queries. In ``fixed`` mode every year returns these constants;
+    in ``path`` mode the ``paths`` table overrides individual years; in ``stochastic`` mode
+    rates are drawn from ``stochastic``. All rates are percentages. The defaults reproduce
+    the pre-economy per-account constants, so a fixed economy leaves simulation output
+    unchanged.
+    """
+
+    mode: Literal["fixed", "path", "stochastic"] = "fixed"
+    inflation: float = 3.0
+    wage_growth: float = 3.0
+    equity_return: float = 7.0
+    bond_return: float = 3.0
+    cash_yield: float = 0.0
+    home_appreciation: float = 4.0
+    # PATH mode: per-rate, per-year overrides, e.g. {"equity_return": {2027: -10.0, 2028: -4.0}}.
+    # Years absent from a rate's table fall back to that rate's fixed constant above.
+    paths: Dict[str, Dict[int, float]] = Field(default_factory=dict)
+    stochastic: StochasticEconomyConfig = Field(default_factory=StochasticEconomyConfig)
+
+
 class FinancialConfigModel(StrictModel):
     """Complete financial configuration model with validation"""
 
@@ -270,4 +320,5 @@ class FinancialConfigModel(StrictModel):
     insurance: InsuranceConfig
     debt: DebtConfig
     housing: HousingConfig = Field(default_factory=HousingConfig)
+    economy: EconomyConfig = Field(default_factory=EconomyConfig)
     tax_years: Dict[int, YearlyTaxParameters]
