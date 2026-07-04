@@ -36,6 +36,12 @@ class FederalTaxConfig(StrictModel):
     # vintage: 2026, source: IRC §163(h)(3) TCJA acquisition-debt limit; §164(b)(6) SALT cap (OBBBA).
     mortgage_interest_debt_limit: int = Field(default=750000, ge=0)
     salt_deduction_cap: int = Field(default=40000, ge=0)
+    # Estate transfer parameters (defaults let existing configs load without these keys).
+    # The unified exemption shelters estate value below it; transfers to a surviving spouse are
+    # fully sheltered by the unlimited marital deduction regardless of the exemption.
+    # vintage: 2026, source: IRC §2010 unified credit (post-OBBBA ~$15M); §2001(c) top rate 40%.
+    estate_tax_exemption: int = Field(default=15000000, ge=0)
+    estate_tax_rate: float = Field(default=40.0, ge=0, le=100)
 
 
 class StateTaxConfig(StrictModel):

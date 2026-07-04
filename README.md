@@ -84,7 +84,7 @@ This package supports a comprehensive range of financial modeling components:
 ### Housing & Lifestyle
 - [x] **Home Ownership** - Purchase, mortgage, appreciation, and selling
 - [x] **Rental Housing** - Apartment leasing with rent increases
-- [x] **Life Events** - Marriage, retirement, career changes
+- [x] **Life Events** - Marriage, retirement, career changes, and mortality (stochastic or fixed-age death)
 
 ### Healthcare & Aging
 - [ ] **Medicare Coverage** - Parts A, B, C, D with premium calculations
@@ -96,7 +96,7 @@ This package supports a comprehensive range of financial modeling components:
 ### Giving & Legacy
 - [x] **Charitable Giving** - Tax-deductible donations with itemized deduction support
 - [x] **Donor Advised Funds** - Charitable investment accounts with growth, fees, and distributions
-- [ ] **Estate Planning** - Wills, trusts, and inheritance tax modeling
+- [~] **Estate Planning** - Mortality-driven death, spousal/beneficiary estate transfer, and estate tax (trusts and the 10-year inherited-account rule are not yet modeled)
 - [ ] **End of Life Care** - Long-term care facilities and medical expenses
 - [ ] **Funeral and Final Expenses** - End-of-life costs and pre-planning
 
