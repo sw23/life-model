@@ -56,23 +56,21 @@ class DonorAdvisedFund(Investment):
         return self.balance
 
     def deposit(self, amount: float) -> bool:
-        """Make a contribution to the DAF (tax deductible at contribution time)
+        """Add funds directly to the DAF balance.
+
+        This does NOT create a tax deduction: only a cash contribution from the person's bank
+        account (see :meth:`contribute`) is deductible. Depositing without cash leaving the
+        person's accounts must not reduce their taxes.
 
         Args:
-            amount: Amount to contribute
+            amount: Amount to add to the balance.
 
         Returns:
-            True if successful, False otherwise
+            True if successful, False otherwise.
         """
         if amount <= 0:
             return False
         self.balance += amount
-        self.stat_contributions_this_year += amount
-        self.stat_total_contributions += amount
-
-        # Log contribution event
-        model = cast(LifeModel, self.person.model)
-        model.event_log.add(Event(f"{self.person.name} contributed ${amount:,.0f} to {self.fund_name} DAF"))
         return True
 
     def withdraw(self, amount: float) -> float:
@@ -103,7 +101,13 @@ class DonorAdvisedFund(Investment):
         amount_withdrawn = amount - remaining_balance
 
         if amount_withdrawn > 0:
-            self.deposit(amount_withdrawn)
+            # The deduction keys off cash actually leaving the person's accounts.
+            self.balance += amount_withdrawn
+            self.stat_contributions_this_year += amount_withdrawn
+            self.stat_total_contributions += amount_withdrawn
+            model = cast(LifeModel, self.person.model)
+            event = f"{self.person.name} contributed ${amount_withdrawn:,.0f} to {self.fund_name} DAF"
+            model.event_log.add(Event(event))
 
         return amount_withdrawn
 

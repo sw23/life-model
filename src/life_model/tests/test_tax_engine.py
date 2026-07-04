@@ -15,6 +15,8 @@ from pathlib import Path
 
 from ..account.bank import BankAccount
 from ..account.job401k import Job401kAccount
+from ..charity.daf import DonorAdvisedFund
+from ..charity.donation import Donation
 from ..config.financial_config import FinancialConfig
 from ..model import LifeModel
 from ..people.family import Family
@@ -142,6 +144,43 @@ class TestWithdrawalSizing(unittest.TestCase):
         # The bank actually received at least the $50k net need (before it was spent).
         withdrawn = 1000000 - job.retirement_account.pretax_balance
         self.assertGreaterEqual(withdrawn, 50000 - 1.0)
+
+
+class TestDeductionTiming(unittest.TestCase):
+    """Bugs 5-6: charitable deductions must reduce taxes and only when cash actually leaves."""
+
+    def _federal_tax_with_donation(self, donation_amount: float) -> float:
+        model = LifeModel(start_year=2020, end_year=2020, config=_fixture_config())
+        family = Family(model)
+        person = Person(family, "Giver", age=40, retirement_age=70, spending=Spending(model, base=0))
+        BankAccount(person, "Bank", balance=50000, interest_rate=0)
+        Job(person, "Co", "Dev", Salary(model=model, base=100000))
+        if donation_amount > 0:
+            Donation(person, "Charity", annual_amount=donation_amount)
+        model.step()
+        return person.stat_taxes_paid_federal
+
+    def test_recurring_donation_reduces_federal_tax(self):
+        # Bug 5: a donation made this year must be deductible this year. Itemizing $30k (vs the
+        # $10k fixture standard deduction) lowers taxable income by $20k -> $5k less tax at 25%.
+        tax_without = self._federal_tax_with_donation(0)
+        tax_with = self._federal_tax_with_donation(30000)
+        self.assertLess(tax_with, tax_without)
+        self.assertAlmostEqual(tax_without - tax_with, (30000 - 10000) * 0.25, places=2)
+
+    def test_daf_deposit_creates_no_deduction(self):
+        # Bug 6: a bare deposit (no cash leaving the person) is not a deductible contribution.
+        model = LifeModel(start_year=2020, end_year=2020, config=_fixture_config())
+        family = Family(model)
+        person = Person(family, "DAF Owner", age=40, retirement_age=70, spending=Spending(model, base=0))
+        BankAccount(person, "Bank", balance=100000, interest_rate=0)
+        daf = DonorAdvisedFund(person, "Fund", balance=0)
+
+        daf.deposit(10000)
+        self.assertEqual(daf.stat_contributions_this_year, 0)
+
+        daf.contribute(10000)
+        self.assertEqual(daf.stat_contributions_this_year, 10000)
 
 
 if __name__ == "__main__":

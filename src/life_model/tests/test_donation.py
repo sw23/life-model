@@ -73,22 +73,22 @@ class TestDonation(unittest.TestCase):
     def test_donation_with_insufficient_funds(self):
         """Test donation when insufficient funds in bank account
 
-        Donations happen in post_step (after bills/spending), so if there aren't
-        enough funds after essential expenses, the donation won't be made.
+        Donations happen in pre_step (before the tax unit settles spending/bills) so the
+        deduction is available at tax time. A donation is limited to the cash on hand, and any
+        spending that can no longer be covered becomes debt.
         """
-        # Set balance less than spending amount - spending will consume all funds
+        # Set balance less than the donation amount.
         self.bank_account.balance = 3000
         donation = Donation(self.person, "Big Charity", 5000)
 
         self.model.step()
 
-        # Spending ($50,000) happens first in step(), consuming the $3000
-        # No funds left for donation in post_step
-        self.assertEqual(donation.stat_charitable_donations, 0)
+        # The donation takes all $3000 available (partial), leaving nothing for spending.
+        self.assertEqual(donation.stat_charitable_donations, 3000)
         self.assertEqual(self.bank_account.balance, 0)
-        # Person goes into debt for remaining spending ($50k - $3k = $47k debt)
+        # The full $50k spending is now unfunded and becomes debt.
         self.assertGreater(self.person.debt, 0)
-        self.assertEqual(self.person.debt, 47000)
+        self.assertEqual(self.person.debt, 50000)
 
     def test_donation_with_sufficient_funds_after_expenses(self):
         """Test donation succeeds when funds remain after bills/spending"""
