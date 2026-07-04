@@ -111,4 +111,6 @@ class Family(LifeModelAgent):
         for unit in TaxUnit.build_units(self):
             unit.settle_year()
 
-        self.stat_debt = self.debt
+        # Debt stat reflects the unpaid-bills carryover plus outstanding balances on registered
+        # debts and mortgages, so serviced debt is visible in net-worth reporting.
+        self.stat_debt = self.debt + sum(m.outstanding_debt_balance for m in self.members)

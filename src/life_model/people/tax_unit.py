@@ -111,6 +111,7 @@ class TaxUnit:
         spending_by_member: Dict[int, float] = {}
         housing_by_member: Dict[int, float] = {}
         interest_by_member: Dict[int, float] = {}
+        debt_payment_by_member: Dict[int, float] = {}
 
         # Personal debt carried by members is settled exactly once (fixes double-pay / phantom
         # debt): zero it here and fold it into this year's bills.
@@ -130,12 +131,20 @@ class TaxUnit:
             for apartment in member.apartments:
                 member_housing += apartment.yearly_rent
 
+            # Service the member's personal debts (car loans, credit cards, student loans). Each
+            # debt accrues 12 months of interest and receives 12 scheduled payments internally; the
+            # cash paid is folded into this year's bills, the interest into the interest statistic.
+            member_debt_paid, member_debt_interest = member.debt_service.service_year()
+            member_interest += member_debt_interest
+
             housing_by_member[member.unique_id] = member_housing
             interest_by_member[member.unique_id] = member_interest
+            debt_payment_by_member[member.unique_id] = member_debt_paid
 
         total_spending = sum(spending_by_member.values())
         total_housing = sum(housing_by_member.values())
-        bills = total_spending + total_housing + existing_debt
+        total_debt_payments = sum(debt_payment_by_member.values())
+        bills = total_spending + total_housing + total_debt_payments + existing_debt
 
         # Size and perform any pre-tax 401k withdrawal, then get the final taxes owed.
         taxes = self._solve_withdrawals_and_taxes(bills)

@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, List, Optional
 from ..account.job401k import Job401kAccount
 from ..limits import federal_retirement_age
 from ..model import Event, LifeModel, LifeModelAgent
+from ..services.debt_service import DebtService
 from ..services.payment_service import PaymentService
 from ..services.tax_calculation_service import TaxCalculationService
 from ..tax.federal import FilingStatus, get_federal_standard_deduction
@@ -63,6 +64,7 @@ class Person(LifeModelAgent):
         # Initialize services for business logic
         self.tax_service = TaxCalculationService(self)
         self.payment_service = PaymentService(self)
+        self.debt_service = DebtService(self)
 
         self.family.members.append(self)
 
