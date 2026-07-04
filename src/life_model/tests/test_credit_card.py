@@ -20,6 +20,7 @@ class TestCreditCard(unittest.TestCase):
         cc_config = self.mock_person.model.config.debt.credit_card
         cc_config.default_interest_rate = 18.0
         cc_config.default_minimum_payment_percent = 2.0
+        cc_config.default_minimum_payment_floor = 25.0
 
         # Create a credit card for testing
         self.credit_card = CreditCard(
@@ -187,22 +188,23 @@ class TestCreditCard(unittest.TestCase):
         self.assertLessEqual(total_paid, large_payment)
 
     def test_make_payment_zero_amount(self):
-        """Test making a zero payment."""
+        """Test making a zero payment (interest still accrues -> balance grows)."""
         initial_balance = self.credit_card.principal
 
         total_paid = self.credit_card.make_payment(0.0)
 
-        # With zero payment, no payment should be processed
+        # No cash is paid.
         self.assertEqual(total_paid, 0.0)
-        # Balance should remain unchanged
-        self.assertEqual(self.credit_card.principal, initial_balance)
+        # An unpaid month of interest is capitalized onto the balance (negative amortization).
+        monthly_interest = (self.credit_card.yearly_interest_rate / 100) * initial_balance / 12
+        self.assertAlmostEqual(self.credit_card.principal, initial_balance + monthly_interest, places=2)
 
     def test_get_interest_amount(self):
-        """Test annual interest calculation."""
+        """Test per-period interest calculation (monthly default, yearly on request)."""
         expected_annual_interest = self.credit_card.principal * (self.credit_card.yearly_interest_rate / 100)
-        actual_annual_interest = self.credit_card.get_interest_amount()
-
-        self.assertEqual(actual_annual_interest, expected_annual_interest)
+        self.assertAlmostEqual(self.credit_card.get_interest_amount(), expected_annual_interest / 12, places=6)
+        self.assertAlmostEqual(self.credit_card.get_interest_amount("month"), expected_annual_interest / 12, places=6)
+        self.assertAlmostEqual(self.credit_card.get_interest_amount("year"), expected_annual_interest, places=6)
 
     def test_multiple_charges_and_payments(self):
         """Test multiple charges and payments over time."""

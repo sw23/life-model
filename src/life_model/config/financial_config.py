@@ -15,6 +15,7 @@ from .models import (
     AccountsConfig,
     DebtConfig,
     FinancialConfigModel,
+    HousingConfig,
     InsuranceConfig,
     RetirementConfig,
     SocialSecurityConfig,
@@ -96,6 +97,10 @@ class FinancialConfig(ScenarioConfig):
     @property
     def debt(self) -> DebtConfig:
         return self._model.debt
+
+    @property
+    def housing(self) -> HousingConfig:
+        return self._model.housing
 
     def tax_year(self, year: int) -> YearlyTaxParameters:
         """Get the tax parameters applicable to a given calendar year.

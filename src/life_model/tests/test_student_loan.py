@@ -173,11 +173,11 @@ class TestStudentLoan(unittest.TestCase):
         self.assertIn("cannot be negative", str(context.exception).lower())
 
     def test_get_interest_amount(self):
-        """Test annual interest amount calculation."""
+        """Test per-period interest amount calculation (monthly default, yearly on request)."""
         expected_annual_interest = self.student_loan.principal * (self.student_loan.yearly_interest_rate / 100)
-        actual_annual_interest = self.student_loan.get_interest_amount()
-
-        self.assertEqual(actual_annual_interest, expected_annual_interest)
+        self.assertAlmostEqual(self.student_loan.get_interest_amount(), expected_annual_interest / 12, places=6)
+        self.assertAlmostEqual(self.student_loan.get_interest_amount("month"), expected_annual_interest / 12, places=6)
+        self.assertAlmostEqual(self.student_loan.get_interest_amount("year"), expected_annual_interest, places=6)
 
     def test_repr_html(self):
         """Test HTML representation."""

@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Dict, List
 
 from ..model import round_money
 from ..tax.federal import FilingStatus, get_federal_standard_deduction
+from ..tax.income import IncomeType
 from ..tax.tax import TaxesDue, compute_taxes
 
 if TYPE_CHECKING:
@@ -111,6 +112,7 @@ class TaxUnit:
         spending_by_member: Dict[int, float] = {}
         housing_by_member: Dict[int, float] = {}
         interest_by_member: Dict[int, float] = {}
+        debt_payment_by_member: Dict[int, float] = {}
 
         # Personal debt carried by members is settled exactly once (fixes double-pay / phantom
         # debt): zero it here and fold it into this year's bills.
@@ -124,18 +126,36 @@ class TaxUnit:
             member_housing = 0.0
             member_interest = 0.0
             for home in member.homes:
-                # Capture interest for the year *before* the payment reduces the principal.
-                member_interest += home.mortgage.get_interest_for_year()
+                # Amortize the mortgage (12 monthly periods) then read the interest actually
+                # charged this year — captured on the mortgage as the year is amortized.
                 member_housing += home.make_yearly_payment()
+                if home.mortgage is not None:
+                    member_interest += home.mortgage.interest_paid_this_year
             for apartment in member.apartments:
                 member_housing += apartment.yearly_rent
 
+            # Service the member's personal debts (car loans, credit cards, student loans). Each
+            # debt accrues 12 months of interest and receives 12 scheduled payments internally; the
+            # cash paid is folded into this year's bills, the interest into the interest statistic.
+            member_debt_paid, member_debt_interest = member.debt_service.service_year()
+            member_interest += member_debt_interest
+
+            # Above-the-line student-loan interest deduction (IRC §221): the interest actually paid
+            # on student loans this year, capped, reduces ordinary taxable income (not FICA wages).
+            student_loan_interest = sum(sl.interest_paid_this_year for sl in member.student_loans)
+            deduction_limit = self.config.debt.student_loan.interest_deduction_limit
+            student_loan_deduction = min(student_loan_interest, deduction_limit)
+            if student_loan_deduction > 0:
+                member.income.add(IncomeType.ORDINARY, -student_loan_deduction)
+
             housing_by_member[member.unique_id] = member_housing
             interest_by_member[member.unique_id] = member_interest
+            debt_payment_by_member[member.unique_id] = member_debt_paid
 
         total_spending = sum(spending_by_member.values())
         total_housing = sum(housing_by_member.values())
-        bills = total_spending + total_housing + existing_debt
+        total_debt_payments = sum(debt_payment_by_member.values())
+        bills = total_spending + total_housing + total_debt_payments + existing_debt
 
         # Size and perform any pre-tax 401k withdrawal, then get the final taxes owed.
         taxes = self._solve_withdrawals_and_taxes(bills)

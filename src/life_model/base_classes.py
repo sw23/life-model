@@ -42,7 +42,16 @@ class FinancialAccount(LifeModelAgent, ABC):
 
 
 class Loan(LifeModelAgent, ABC):
-    """Abstract base class for all loans with payment calculations"""
+    """Abstract base class for amortizing loans.
+
+    The ABC owns amortization: :meth:`make_payment` applies a single **monthly** payment (loans
+    compound and amortize monthly) with all the clamps — interest is charged on the current
+    principal, principal never goes negative, and extra principal that exceeds the balance simply
+    pays the loan off. :meth:`make_yearly_payment` runs the twelve monthly periods that make up
+    one simulated year, so annual results match a real amortization schedule. Concrete subclasses
+    supply only rate/term/identification and register themselves; they do not re-implement payment
+    math.
+    """
 
     def __init__(
         self,
@@ -58,31 +67,119 @@ class Loan(LifeModelAgent, ABC):
         self.loan_amount = loan_amount
         self.yearly_interest_rate = yearly_interest_rate
         self.length_years = length_years
-        self.principal = principal or loan_amount
-        self.monthly_payment = monthly_payment or self.calculate_monthly_payment()
+        self.principal = loan_amount if principal is None else principal
+        self.monthly_payment = self.calculate_monthly_payment() if monthly_payment is None else monthly_payment
 
-        # Statistics tracking
+        # Interest actually charged over the current year, captured as the year is amortized so the
+        # itemized deduction / interest stats aren't understated by reading the post-payment principal.
+        self.interest_paid_this_year = 0.0
+
+        # Statistics tracking. The per-payment histories record one entry per *monthly* period; the
+        # yearly histories record one aggregated entry per simulated year (convenient for plotting
+        # against the yearly simulation timeline).
         self.stat_principal_payment_history = []
         self.stat_interest_payment_history = []
         self.stat_balance_history = []
+        self.stat_yearly_principal_payment_history = []
+        self.stat_yearly_interest_payment_history = []
+
+    @property
+    def monthly_interest_rate(self) -> float:
+        """Per-month interest rate as a fraction (e.g. 6% APR -> 0.005)."""
+        return self.yearly_interest_rate / (100 * 12)
 
     def calculate_monthly_payment(self) -> float:
-        """Calculate monthly payment using standard loan formula"""
+        """Fully-amortizing monthly payment using the standard loan formula.
+
+        Guards the zero-interest case (avoids division by zero) and a zero-length term.
+        """
         p = self.loan_amount
-        i = self.yearly_interest_rate / (100 * 12)
+        i = self.monthly_interest_rate
         n = self.length_years * 12
+        if n == 0:
+            return p
         if i == 0:
             return p / n
         return p * (i * ((1 + i) ** n)) / (((1 + i) ** n) - 1)
 
-    @abstractmethod
-    def make_payment(self, payment_amount: float, extra_to_principal: float = 0) -> float:
-        """Make loan payment. Returns total amount paid"""
-        pass
+    def get_interest_amount(self, period: str = "month") -> float:
+        """Interest accrued on the current principal for one period.
 
-    def get_interest_amount(self) -> float:
-        """Calculate interest amount for current period"""
-        return self.principal * (self.yearly_interest_rate / 100)
+        Args:
+            period: ``"month"`` (default) for a single month's interest — the period the loan
+                actually amortizes over — or ``"year"`` for a full year's simple interest.
+        """
+        annual = self.principal * (self.yearly_interest_rate / 100)
+        if period == "year":
+            return annual
+        if period == "month":
+            return annual / 12
+        raise ValueError(f"Unknown period {period!r}; expected 'month' or 'year'")
+
+    def make_payment(self, payment_amount: float, extra_to_principal: float = 0) -> float:
+        """Apply a single monthly payment.
+
+        Interest is charged on the current principal first; the remainder plus any
+        ``extra_to_principal`` reduces the principal. The principal is clamped at zero (paying
+        more than the balance simply pays the loan off), and if a payment doesn't cover the
+        month's interest the shortfall is added to the principal (negative amortization).
+
+        Returns:
+            float: The total cash actually paid this month (interest + principal).
+        """
+        if payment_amount < 0:
+            raise ValueError("Payment amount cannot be negative")
+        if extra_to_principal < 0:
+            raise ValueError("Extra principal payment cannot be negative")
+
+        monthly_interest = self.get_interest_amount("month")
+        actual_interest_payment = min(payment_amount, monthly_interest)
+        available_for_principal = payment_amount - actual_interest_payment
+        total_principal_payment = available_for_principal + extra_to_principal
+        principal_payment = min(total_principal_payment, self.principal)
+
+        unpaid_interest = monthly_interest - actual_interest_payment
+        self.principal = max(0.0, self.principal - principal_payment + unpaid_interest)
+
+        self.stat_principal_payment_history.append(principal_payment)
+        self.stat_interest_payment_history.append(actual_interest_payment)
+
+        return actual_interest_payment + principal_payment
+
+    def make_yearly_payment(self, monthly_payment: Optional[float] = None, extra_to_principal: float = 0) -> float:
+        """Amortize one simulated year as twelve monthly payments.
+
+        ``extra_to_principal`` is applied once (in the first month). Payments stop early once the
+        loan is paid off. ``interest_paid_this_year`` is updated to the interest charged across the
+        year.
+
+        Returns:
+            float: Total cash paid across the year.
+        """
+        if monthly_payment is None:
+            monthly_payment = self.monthly_payment
+        total_paid = 0.0
+        interest_this_year = 0.0
+        principal_this_year = 0.0
+        for month in range(12):
+            if self.principal <= 0:
+                break
+            extra = extra_to_principal if month == 0 else 0.0
+            total_paid += self.make_payment(monthly_payment, extra)
+            interest_this_year += self.stat_interest_payment_history[-1]
+            principal_this_year += self.stat_principal_payment_history[-1]
+        self.interest_paid_this_year = interest_this_year
+        self.stat_yearly_principal_payment_history.append(principal_this_year)
+        self.stat_yearly_interest_payment_history.append(interest_this_year)
+        return total_paid
+
+    def service_year(self) -> float:
+        """Service this loan for one simulated year at its scheduled payment.
+
+        Called by the debt-servicing pipeline during tax-unit settlement. Returns the total cash
+        paid this year (which is collected through the unit's bills).
+        """
+        return self.make_yearly_payment(self.monthly_payment)
 
     def step(self):
         """Track loan balance history"""

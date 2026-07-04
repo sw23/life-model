@@ -168,11 +168,12 @@ class TestCarLoan(unittest.TestCase):
         self.assertEqual(len(self.car_loan.stat_interest_payment_history), 12)
 
     def test_get_interest_amount(self):
-        """Test annual interest amount calculation."""
+        """Test per-period interest amount calculation (monthly default, yearly on request)."""
         expected_annual_interest = self.car_loan.principal * (self.car_loan.yearly_interest_rate / 100)
-        actual_annual_interest = self.car_loan.get_interest_amount()
-
-        self.assertEqual(actual_annual_interest, expected_annual_interest)
+        # Default period is one month (the period the loan amortizes over).
+        self.assertAlmostEqual(self.car_loan.get_interest_amount(), expected_annual_interest / 12, places=6)
+        self.assertAlmostEqual(self.car_loan.get_interest_amount("month"), expected_annual_interest / 12, places=6)
+        self.assertAlmostEqual(self.car_loan.get_interest_amount("year"), expected_annual_interest, places=6)
 
     def test_repr_html(self):
         """Test HTML representation."""

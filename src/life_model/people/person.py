@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, List, Optional
 from ..account.job401k import Job401kAccount
 from ..limits import federal_retirement_age
 from ..model import Event, LifeModel, LifeModelAgent
+from ..services.debt_service import DebtService
 from ..services.payment_service import PaymentService
 from ..services.tax_calculation_service import TaxCalculationService
 from ..tax.federal import FilingStatus, get_federal_standard_deduction
@@ -63,6 +64,7 @@ class Person(LifeModelAgent):
         # Initialize services for business logic
         self.tax_service = TaxCalculationService(self)
         self.payment_service = PaymentService(self)
+        self.debt_service = DebtService(self)
 
         self.family.members.append(self)
 
@@ -105,6 +107,40 @@ class Person(LifeModelAgent):
     def donor_advised_funds(self):
         """Get all donor advised funds for this person from the registry"""
         return self.model.registries.donor_advised_funds.get_items(self)
+
+    @property
+    def car_loans(self):
+        """Get all car loans for this person from the registry"""
+        return self.model.registries.car_loans.get_items(self)
+
+    @property
+    def credit_cards(self):
+        """Get all credit cards (revolving debt) for this person from the registry"""
+        return self.model.registries.credit_cards.get_items(self)
+
+    @property
+    def student_loans(self):
+        """Get all student loans for this person from the registry"""
+        return self.model.registries.student_loans.get_items(self)
+
+    @property
+    def all_debts(self):
+        """All personal debts serviced by the simulation (car loans, credit cards, student loans).
+
+        Mortgages are serviced through the owning ``Home`` and are not included here.
+        """
+        return [*self.car_loans, *self.credit_cards, *self.student_loans]
+
+    @property
+    def outstanding_debt_balance(self) -> float:
+        """Total outstanding principal/balance across all serviced personal debts and mortgages.
+
+        Used for net-worth / debt statistics so registered debts are visible (not just the
+        unpaid-bills ``debt`` carryover).
+        """
+        total = sum(d.principal for d in self.all_debts)
+        total += sum(home.mortgage.principal for home in self.homes if home.mortgage is not None)
+        return total
 
     @property
     def charitable_deductions(self) -> float:
