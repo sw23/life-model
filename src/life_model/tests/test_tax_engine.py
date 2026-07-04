@@ -19,6 +19,7 @@ from ..charity.daf import DonorAdvisedFund
 from ..charity.donation import Donation
 from ..config.financial_config import FinancialConfig
 from ..housing.home import Home, HomeExpenses, Mortgage
+from ..limits import required_min_distrib, rmd_start_age
 from ..model import LifeModel
 from ..people.family import Family
 from ..people.person import Person, Spending
@@ -240,6 +241,40 @@ class TestHousingDeductions(unittest.TestCase):
 
         full_interest = 1500000 * 0.05
         self.assertAlmostEqual(person.total_itemized_deductions, full_interest * (750000 / 1500000), places=2)
+
+
+class TestRmdStartAge(unittest.TestCase):
+    """Item 13: RMD start-age gate and a clamped, IndexError-free table lookup."""
+
+    def setUp(self):
+        # Fixture RMD table: ages 72-75 with periods 25/24/23/22.
+        self.config = _fixture_config()
+
+    def test_no_distribution_before_start_age(self):
+        self.assertEqual(required_min_distrib(72, 100000, config=self.config, start_age=73), 0)
+
+    def test_distribution_at_start_age(self):
+        # $240,000 / 24.0 (age-73 period) = $10,000.
+        self.assertAlmostEqual(
+            required_min_distrib(73, 240000, config=self.config, start_age=73), 10000.0, places=2
+        )
+
+    def test_fractional_age_does_not_raise(self):
+        # A non-integer age must clamp to int(age) instead of failing an exact-match lookup.
+        self.assertAlmostEqual(
+            required_min_distrib(73.5, 240000, config=self.config, start_age=73), 10000.0, places=2
+        )
+
+    def test_age_beyond_table_clamps_to_last_row(self):
+        # $220,000 / 22.0 (last, age-75 period) = $10,000.
+        self.assertAlmostEqual(
+            required_min_distrib(130, 220000, config=self.config, start_age=73), 10000.0, places=2
+        )
+
+    def test_secure_20_start_age(self):
+        # Born 1960 or later start at 75; earlier cohorts use the year-indexed base (fixture: 72).
+        self.assertEqual(rmd_start_age(1965), 75)
+        self.assertEqual(rmd_start_age(1959, config=self.config, year=2020), 72)
 
 
 if __name__ == "__main__":

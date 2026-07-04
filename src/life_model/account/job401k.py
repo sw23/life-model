@@ -6,7 +6,7 @@
 from typing import TYPE_CHECKING, Optional
 
 from ..base_classes import RetirementAccount
-from ..limits import federal_retirement_age, required_min_distrib
+from ..limits import federal_retirement_age, required_min_distrib, rmd_start_age
 from ..model import continous_interest
 from ..tax.income import IncomeType
 
@@ -127,7 +127,12 @@ class Job401kAccount(RetirementAccount):
 
         # Required minimum distributions
         # - Based on the owner's age, force withdraw the required minium
-        required_min_dist_amount = self.deduct_pretax(required_min_distrib(self.person.age, self.pretax_balance))
+        config = self.person.model.config
+        birth_year = self.person.model.year - self.person.age
+        start_age = rmd_start_age(birth_year, config=config, year=self.person.model.year)
+        required_min_dist_amount = self.deduct_pretax(
+            required_min_distrib(self.person.age, self.pretax_balance, config=config, start_age=start_age)
+        )
         self.person.deposit_into_bank_account(required_min_dist_amount)
         # RMDs are ordinary income, not FICA wages.
         self.person.income.add(IncomeType.PRETAX_DISTRIBUTION, required_min_dist_amount)
