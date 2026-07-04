@@ -348,6 +348,7 @@ debt:
   credit_card:
     default_interest_rate: 18.0  # percentage
     default_minimum_payment_percent: 2.0  # percentage
+    default_minimum_payment_floor: 25.0  # dollars, typical card minimum-payment floor
 
 # Year-indexed tax parameters (published values, 2022-2026). Accessed via
 # config.tax_year(year). Years outside the table are projected: earliest entry

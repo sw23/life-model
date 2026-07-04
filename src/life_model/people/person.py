@@ -107,6 +107,40 @@ class Person(LifeModelAgent):
         return self.model.registries.donor_advised_funds.get_items(self)
 
     @property
+    def car_loans(self):
+        """Get all car loans for this person from the registry"""
+        return self.model.registries.car_loans.get_items(self)
+
+    @property
+    def credit_cards(self):
+        """Get all credit cards (revolving debt) for this person from the registry"""
+        return self.model.registries.credit_cards.get_items(self)
+
+    @property
+    def student_loans(self):
+        """Get all student loans for this person from the registry"""
+        return self.model.registries.student_loans.get_items(self)
+
+    @property
+    def all_debts(self):
+        """All personal debts serviced by the simulation (car loans, credit cards, student loans).
+
+        Mortgages are serviced through the owning ``Home`` and are not included here.
+        """
+        return [*self.car_loans, *self.credit_cards, *self.student_loans]
+
+    @property
+    def outstanding_debt_balance(self) -> float:
+        """Total outstanding principal/balance across all serviced personal debts and mortgages.
+
+        Used for net-worth / debt statistics so registered debts are visible (not just the
+        unpaid-bills ``debt`` carryover).
+        """
+        total = sum(d.principal for d in self.all_debts)
+        total += sum(home.mortgage.principal for home in self.homes if home.mortgage is not None)
+        return total
+
+    @property
     def charitable_deductions(self) -> float:
         """Calculate total charitable deductions for the year
 

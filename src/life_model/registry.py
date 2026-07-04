@@ -126,6 +126,24 @@ class DonorAdvisedFundRegistry(PersonRegistry["DonorAdvisedFund"]):
     pass
 
 
+class CarLoanRegistry(PersonRegistry["CarLoan"]):
+    """Registry for managing CarLoan relationships"""
+
+    pass
+
+
+class CreditCardRegistry(PersonRegistry["RevolvingDebt"]):
+    """Registry for managing credit-card / revolving-debt relationships"""
+
+    pass
+
+
+class StudentLoanRegistry(PersonRegistry["StudentLoan"]):
+    """Registry for managing StudentLoan relationships"""
+
+    pass
+
+
 class ModelRegistries:
     """Container for all registries in a model"""
 
@@ -140,6 +158,9 @@ class ModelRegistries:
         self.plan_529s = Plan529Registry()
         self.donations = DonationRegistry()
         self.donor_advised_funds = DonorAdvisedFundRegistry()
+        self.car_loans = CarLoanRegistry()
+        self.credit_cards = CreditCardRegistry()
+        self.student_loans = StudentLoanRegistry()
 
     def clear_all(self, owner: "Person") -> None:
         """Clear all registries for a specific owner"""
@@ -153,3 +174,6 @@ class ModelRegistries:
         self.plan_529s.clear(owner)
         self.donations.clear(owner)
         self.donor_advised_funds.clear(owner)
+        self.car_loans.clear(owner)
+        self.credit_cards.clear(owner)
+        self.student_loans.clear(owner)

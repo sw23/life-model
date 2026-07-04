@@ -152,6 +152,8 @@ class InsuranceConfig(StrictModel):
 class CreditCardConfig(StrictModel):
     default_interest_rate: float = Field(ge=0)
     default_minimum_payment_percent: float = Field(ge=0, le=100)
+    # Dollar floor on the monthly minimum payment (defaults keep existing configs loadable).
+    default_minimum_payment_floor: float = Field(default=25.0, ge=0)
 
 
 class DebtConfig(StrictModel):
