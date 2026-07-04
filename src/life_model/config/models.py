@@ -143,10 +143,31 @@ class LifeInsuranceConfig(StrictModel):
     default_cash_value_growth_rate: float = Field(ge=0)
     default_max_missed_payments: int = Field(ge=0)
     surrender_percentages: SurrenderPercentagesConfig
+    # Fraction of the yearly premium that funds cash value for whole-life policies.
+    cash_value_premium_fraction_first_year: float = Field(ge=0, le=1)
+    cash_value_premium_fraction_later: float = Field(ge=0, le=1)
+
+
+class AnnuityConfig(StrictModel):
+    default_interest_rate: float = Field(ge=0)
+    default_payout_start_age: int = Field(ge=0)
+    default_surrender_charge_years: int = Field(ge=0)
+    default_surrender_charge_rate: float = Field(ge=0)
+    default_period_certain_years: int = Field(ge=0)
+    # Actuarial projection horizon and survival cutoff used by the annuity-factor integration.
+    max_projection_age: int = Field(ge=0)
+    survival_probability_cutoff: float = Field(gt=0, le=1)
+
+
+class GeneralInsuranceConfig(StrictModel):
+    default_premium_increase_rate: float = Field(ge=0)
+    default_max_claims_per_year: int = Field(ge=0)
 
 
 class InsuranceConfig(StrictModel):
     life: LifeInsuranceConfig
+    annuity: AnnuityConfig
+    general: GeneralInsuranceConfig
 
 
 class CreditCardConfig(StrictModel):

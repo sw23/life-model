@@ -89,6 +89,19 @@ insurance:
     surrender_percentages:
       early: 0.5
       standard: 0.8
+    cash_value_premium_fraction_first_year: 0.3
+    cash_value_premium_fraction_later: 0.6
+  annuity:
+    default_interest_rate: 3.0
+    default_payout_start_age: 65
+    default_surrender_charge_years: 7
+    default_surrender_charge_rate: 7.0
+    default_period_certain_years: 10
+    max_projection_age: 120
+    survival_probability_cutoff: 0.001
+  general:
+    default_premium_increase_rate: 3.0
+    default_max_claims_per_year: 3
 
 debt:
   credit_card:
