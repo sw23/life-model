@@ -33,18 +33,15 @@ class IncomeType(Enum):
 
 @dataclass
 class IncomeEntry:
-    """A single income event for the year.
+    """A single income event for the year."""
 
-    Attributes:
-        income_type: The category of income.
-        amount: The ordinary-taxable portion this entry contributes (income tax base).
-        fica_wages: The FICA-subject wages this entry contributes (payroll tax base). Non-zero
-            only for :attr:`IncomeType.WAGES`; note it can differ from ``amount`` because pre-tax
-            401k deferrals reduce ordinary income but are still FICA wages.
-    """
-
+    #: The category of income.
     income_type: IncomeType
+    #: The ordinary-taxable portion this entry contributes (income tax base).
     amount: float
+    #: The FICA-subject wages this entry contributes (payroll tax base). Non-zero only for
+    #: :attr:`IncomeType.WAGES`; it can differ from ``amount`` because pre-tax 401k deferrals
+    #: reduce ordinary income but are still FICA wages.
     fica_wages: float = 0.0
 
 
