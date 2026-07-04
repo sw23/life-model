@@ -131,6 +131,20 @@ social_security:
   last_avg_wage_index_increase: 4.84
   last_cost_of_living_adj_year: 2025
   last_bend_points_year: 2026
+  # Long-run assumptions applied beyond the published tables. A long-run COLA equal to the last
+  # published value and a 0% bend-point increase keep projected benefits flat past the table.
+  long_run_cost_of_living_adj: 2.8  # percentage; matches the last published (2025) COLA
+  long_run_bend_point_increase: 0.0  # percentage; 0 == freeze bend points at last published year
+
+  # Provisional-income taxation of benefits (IRS Pub. 915). Thresholds are statutory and are
+  # NOT inflation-indexed. vintage: statutory (1984 lower tier / 1994 upper tier)
+  benefit_taxation:
+    lower_threshold_single: 25000
+    upper_threshold_single: 34000
+    lower_threshold_married_filing_jointly: 32000
+    upper_threshold_married_filing_jointly: 44000
+    lower_inclusion_rate: 0.5
+    upper_inclusion_rate: 0.85
 
   # Average Wage Index Series
   # https://www.ssa.gov/OACT/COLA/awiseries.html
@@ -343,6 +357,20 @@ insurance:
     surrender_percentages:
       early: 0.5  # less than 3 years
       standard: 0.8  # 3+ years
+    cash_value_premium_fraction_first_year: 0.3  # fraction of premium to cash value in year 1
+    cash_value_premium_fraction_later: 0.6  # fraction of premium to cash value after year 1
+    loan_to_value_ratio: 0.9  # max fraction of available cash value borrowable
+  annuity:
+    default_interest_rate: 3.0  # percentage
+    default_payout_start_age: 65
+    default_surrender_charge_years: 7
+    default_surrender_charge_rate: 7.0  # percentage
+    default_period_certain_years: 10
+    max_projection_age: 120  # actuarial horizon for annuity-factor integration
+    survival_probability_cutoff: 0.001  # stop integrating once survival falls below this
+  general:
+    default_premium_increase_rate: 3.0  # percentage
+    default_max_claims_per_year: 3
 
 debt:
   credit_card:

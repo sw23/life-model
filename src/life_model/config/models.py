@@ -79,6 +79,20 @@ class RetirementConfig(StrictModel):
     rmd_distribution_periods: List[List[float]]
 
 
+class SocialSecurityBenefitTaxationConfig(StrictModel):
+    """Statutory (non-indexed) provisional-income thresholds for taxing benefits.
+
+    See IRS Pub. 915. Thresholds have been fixed in statute since 1984/1994.
+    """
+
+    lower_threshold_single: int = Field(ge=0)
+    upper_threshold_single: int = Field(ge=0)
+    lower_threshold_married_filing_jointly: int = Field(ge=0)
+    upper_threshold_married_filing_jointly: int = Field(ge=0)
+    lower_inclusion_rate: float = Field(ge=0, le=1)
+    upper_inclusion_rate: float = Field(ge=0, le=1)
+
+
 class SocialSecurityConfig(StrictModel):
     min_eligible_credits: int = Field(ge=0)
     max_credits_per_year: int = Field(ge=0)
@@ -97,11 +111,17 @@ class SocialSecurityConfig(StrictModel):
     last_avg_wage_index_increase: float
     last_cost_of_living_adj_year: int
     last_bend_points_year: int
+    # Long-run assumptions applied for years beyond the published tables.
+    long_run_cost_of_living_adj: float = Field(ge=0)
+    long_run_bend_point_increase: float = Field(ge=0)
 
     # Historical data tables
     avg_wage_index: Dict[int, float]
     cost_of_living_adj: Dict[int, float]
     bend_points: Dict[int, List[int]]
+
+    # Provisional-income taxation of benefits
+    benefit_taxation: SocialSecurityBenefitTaxationConfig
 
 
 class BankAccountConfig(StrictModel):
@@ -143,10 +163,33 @@ class LifeInsuranceConfig(StrictModel):
     default_cash_value_growth_rate: float = Field(ge=0)
     default_max_missed_payments: int = Field(ge=0)
     surrender_percentages: SurrenderPercentagesConfig
+    # Fraction of the yearly premium that funds cash value for whole-life policies.
+    cash_value_premium_fraction_first_year: float = Field(ge=0, le=1)
+    cash_value_premium_fraction_later: float = Field(ge=0, le=1)
+    # Maximum fraction of available cash value that can be borrowed against.
+    loan_to_value_ratio: float = Field(ge=0, le=1)
+
+
+class AnnuityConfig(StrictModel):
+    default_interest_rate: float = Field(ge=0)
+    default_payout_start_age: int = Field(ge=0)
+    default_surrender_charge_years: int = Field(ge=0)
+    default_surrender_charge_rate: float = Field(ge=0)
+    default_period_certain_years: int = Field(ge=0)
+    # Actuarial projection horizon and survival cutoff used by the annuity-factor integration.
+    max_projection_age: int = Field(ge=0)
+    survival_probability_cutoff: float = Field(gt=0, le=1)
+
+
+class GeneralInsuranceConfig(StrictModel):
+    default_premium_increase_rate: float = Field(ge=0)
+    default_max_claims_per_year: int = Field(ge=0)
 
 
 class InsuranceConfig(StrictModel):
     life: LifeInsuranceConfig
+    annuity: AnnuityConfig
+    general: GeneralInsuranceConfig
 
 
 class CreditCardConfig(StrictModel):

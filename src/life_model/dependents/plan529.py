@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Optional
 
 from ..base_classes import Investment
 from ..model import compound_interest
+from ..tax.income import IncomeType
 
 if TYPE_CHECKING:
     from ..people.person import Person
@@ -68,6 +69,7 @@ class Plan529(Investment):
         self.stat_contributions_history = []
         self.stat_qualified_withdrawals_history = []
         self.stat_non_qualified_withdrawals_history = []
+        self.stat_penalties_paid = 0.0
         self.stat_529_balance = 0
 
         # Register with the model registry
@@ -100,6 +102,21 @@ class Plan529(Investment):
 
         return actual_contribution
 
+    def _reduce_basis_pro_rata(self, withdrawal_amount: float) -> float:
+        """Reduce tracked contributions and earnings pro-rata for a withdrawal.
+
+        Returns the earnings portion of the withdrawal (based on the pre-withdrawal
+        composition). Keeping contributions/earnings in sync with the balance prevents the
+        earnings ratio from drifting toward/past 1.0 after successive withdrawals.
+        """
+        if self.balance <= 0 or withdrawal_amount <= 0:
+            return 0.0
+        fraction = withdrawal_amount / self.balance
+        earnings_withdrawn = self.total_earnings * fraction
+        self.total_contributions -= self.total_contributions * fraction
+        self.total_earnings -= earnings_withdrawn
+        return earnings_withdrawn
+
     def withdraw_qualified(self, amount: float) -> float:
         """Withdraw funds for qualified education expenses (tax-free)
 
@@ -114,14 +131,22 @@ class Plan529(Investment):
 
         actual_withdrawal = min(self.balance, amount)
         if actual_withdrawal > 0:
+            # Reduce basis pro-rata before drawing down the balance.
+            self._reduce_basis_pro_rata(actual_withdrawal)
             self.balance -= actual_withdrawal
             self.total_withdrawals += actual_withdrawal
             self.qualified_withdrawals += actual_withdrawal
+            # Qualified withdrawals are tax-free; deposit the cash to the owner.
+            self.person.receive_cash(actual_withdrawal, source="529 qualified withdrawal")
 
         return actual_withdrawal
 
     def withdraw_non_qualified(self, amount: float) -> tuple[float, float]:
         """Withdraw funds for non-qualified expenses (subject to penalty on earnings)
+
+        The earnings portion of the withdrawal is ordinary taxable income and is subject to a
+        penalty; the full withdrawal is deposited into the owner's bank account and the penalty
+        is debited from it.
 
         Args:
             amount: Amount to withdraw
@@ -136,14 +161,8 @@ class Plan529(Investment):
         if actual_withdrawal == 0:
             return (0.0, 0.0)
 
-        # Calculate earnings portion of withdrawal
-        # Earnings are proportional to total account composition
-        if self.balance > 0:
-            earnings_ratio = self.total_earnings / self.balance
-        else:
-            earnings_ratio = 0
-
-        earnings_withdrawn = actual_withdrawal * earnings_ratio
+        # Earnings portion is proportional to the account's pre-withdrawal composition.
+        earnings_withdrawn = self._reduce_basis_pro_rata(actual_withdrawal)
 
         # Apply penalty to earnings portion
         penalty_rate = self.model.config.accounts.plan_529.qualified_expense_penalty / 100
@@ -152,6 +171,15 @@ class Plan529(Investment):
         self.balance -= actual_withdrawal
         self.total_withdrawals += actual_withdrawal
         self.non_qualified_withdrawals += actual_withdrawal
+
+        # Route the cash and taxes: full withdrawal to the owner's bank, the earnings portion is
+        # ordinary income, and the penalty is debited from the owner.
+        self.person.receive_cash(actual_withdrawal, source="529 non-qualified withdrawal")
+        if earnings_withdrawn > 0:
+            self.person.income.add(IncomeType.ORDINARY, earnings_withdrawn)
+        if penalty_amount > 0:
+            self.person.deduct_from_bank_accounts(penalty_amount)
+            self.stat_penalties_paid += penalty_amount
 
         return (actual_withdrawal, penalty_amount)
 

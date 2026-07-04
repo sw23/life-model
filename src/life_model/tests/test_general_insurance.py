@@ -118,8 +118,9 @@ class TestGeneralInsurance(unittest.TestCase):
         self.assertEqual(insurance.stat_claims_filed, 1)
         self.assertEqual(insurance.stat_claims_paid_out, 14000)
 
-        # Check that payout was added to bank account and deductible was deducted
-        expected_balance = initial_balance + 14000 - 1000
+        # Single-deductible convention: the person bears the $15k loss and the insurer
+        # reimburses $14k, so the net cash effect is exactly the $1,000 deductible.
+        expected_balance = initial_balance - 1000
         self.assertEqual(self.john.bank_account_balance, expected_balance)
 
     def test_file_claim_exceeds_coverage(self):
@@ -373,6 +374,73 @@ class TestGeneralInsurance(unittest.TestCase):
         self.assertIn("500", html)
         self.assertIn("Active", html)
         self.assertIn("Claims Filed: 1", html)
+
+
+class TestGeneralInsuranceClaims(unittest.TestCase):
+    """Claim settlement (single-deductible) and coverage/premium updates."""
+
+    def setUp(self):
+        self.model = LifeModel(start_year=2023, end_year=2040)
+        self.family = Family(self.model)
+        self.john = Person(
+            family=self.family, name="John", age=35, retirement_age=65, spending=Spending(self.model, base=50000)
+        )
+        BankAccount(owner=self.john, company="Bank", balance=50000)
+
+    def test_claim_net_cash_is_single_deductible(self):
+        """A $10k claim with a $1k deductible changes net cash by exactly -$1k."""
+        insurance = Insurance(
+            person=self.john,
+            insurance_type=InsuranceType.AUTO,
+            company="Acme",
+            annual_premium=1200,
+            coverage_amount=100000,
+            deductible=1000,
+        )
+        initial = self.john.bank_account_balance
+        insurance.file_claim(10000, "Fender bender")
+        self.assertEqual(self.john.bank_account_balance, initial - 1000)
+
+    def test_update_coverage_preserves_accumulated_increases(self):
+        """update_coverage scales the current (compounded) premium, not the base."""
+        insurance = Insurance(
+            person=self.john,
+            insurance_type=InsuranceType.HOME,
+            company="Acme",
+            annual_premium=2000,
+            coverage_amount=400000,
+            deductible=1000,
+            premium_increase_rate=10.0,
+        )
+        # Let the premium compound for two years.
+        insurance.policy_start_year = self.model.year - 1
+        insurance.step()  # 2000 -> 2200
+        insurance.step()  # 2200 -> 2420
+        self.assertAlmostEqual(insurance.annual_premium, 2420, places=2)
+        insurance.update_coverage(600000)  # 1.5x coverage
+        # Current premium scales, preserving the accumulated increases: 2420 * 1.5 = 3630.
+        self.assertAlmostEqual(insurance.annual_premium, 3630, places=2)
+
+    def test_premium_increase_rate_from_config(self):
+        """General insurance default premium increase rate is config-driven (scenario override)."""
+        from pathlib import Path
+
+        from ..config.financial_config import FinancialConfig
+
+        cfg = FinancialConfig(config_file=str(Path(__file__).parent / "fixtures" / "test_config.yaml"))
+        cfg.apply_scenario("custom", {"insurance": {"general": {"default_premium_increase_rate": 7.5}}})
+        model = LifeModel(start_year=2023, end_year=2030, config=cfg)
+        family = Family(model)
+        person = Person(family=family, name="P", age=35, retirement_age=65, spending=Spending(model, base=1000))
+        BankAccount(owner=person, company="Bank", balance=1000)
+        insurance = Insurance(
+            person=person,
+            insurance_type=InsuranceType.AUTO,
+            company="Acme",
+            annual_premium=1000,
+            coverage_amount=100000,
+        )
+        self.assertEqual(insurance.premium_increase_rate, 7.5)
 
 
 if __name__ == "__main__":

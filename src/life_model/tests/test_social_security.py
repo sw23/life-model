@@ -5,6 +5,7 @@
 
 import unittest
 
+from ..account.bank import BankAccount
 from ..config.config_manager import config
 from ..insurance.social_security import Income, SocialSecurity
 from ..model import LifeModel
@@ -215,3 +216,69 @@ class TestSocialSecurity(unittest.TestCase):
         self.assertNotIn(last_avg_wage_index_year + 1, avg_wage_index)
         chk_pct = avg_wage_index[last_avg_wage_index_year] / avg_wage_index[last_avg_wage_index_year - 1]
         self.assertAlmostEqual(chk_pct * 100, last_avg_wage_index_increase + 100, places=2)
+
+
+class TestSocialSecurityBenefitsAndWageBase(unittest.TestCase):
+    """Per-year wage-base capping, benefit ledger routing/taxation, and extrapolation."""
+
+    def _person(self, start_year=2020, age=67):
+        model = LifeModel(start_year=start_year, end_year=start_year + 10)
+        person = Person(family=Family(model), name="SS", age=age, retirement_age=62, spending=Spending(model, 10000))
+        BankAccount(owner=person, company="Bank", balance=0)
+        return model, person
+
+    def test_wage_base_capping_uses_each_years_base(self):
+        """AIME income is capped at each year's own wage base, not a single frozen value."""
+        _, person = self._person()
+        ss = SocialSecurity(person=person, withdrawal_start_age=67)
+        ss.add_income_for_year(200000, 2024)
+        ss.add_income_for_year(200000, 2025)
+        by_year = {inc.year: inc.amount for inc in ss.income_history}
+        # Published wage bases: 2024 = $168,600, 2025 = $176,100.
+        self.assertEqual(by_year[2024], 168600)
+        self.assertEqual(by_year[2025], 176100)
+
+    def test_benefits_route_through_income_ledger(self):
+        """Benefits deposit as cash and record an SS_BENEFIT ledger entry."""
+        from ..tax.income import IncomeType
+
+        model, person = self._person(start_year=2030, age=67)
+        income_history = [(y, 60000) for y in range(1985, 2025)]
+        ss = SocialSecurity(person=person, withdrawal_start_age=67, income_history=income_history)
+        bank_before = person.bank_account_balance
+        ss.pre_step()
+        yearly_pia = ss.get_pia() * 12
+        self.assertGreater(yearly_pia, 0)
+        self.assertAlmostEqual(person.bank_account_balance - bank_before, yearly_pia, places=2)
+        self.assertTrue(any(e.income_type == IncomeType.SS_BENEFIT for e in person.income.entries))
+        self.assertEqual(person.stat_ss_income, yearly_pia)
+
+    def test_benefit_taxable_portion_zero_when_no_other_income(self):
+        """A modest benefit with no other income falls below the provisional threshold."""
+        _, person = self._person()
+        ss = SocialSecurity(person=person, withdrawal_start_age=67)
+        # $20k benefit, provisional = 0.5*20000 = 10000 < 25000 single threshold -> not taxable.
+        self.assertEqual(ss._taxable_benefit_portion(20000), 0.0)
+
+    def test_benefit_taxable_portion_capped_at_85_percent(self):
+        """With high other income, up to 85% of the benefit is taxable."""
+        _, person = self._person()
+        ss = SocialSecurity(person=person, withdrawal_start_age=67)
+        person.income.add_wages(100000, 100000)
+        # Provisional income well above the upper threshold -> capped at 85% of the benefit.
+        self.assertAlmostEqual(ss._taxable_benefit_portion(20000), 0.85 * 20000, places=2)
+
+    def test_ineligible_person_gets_zero_aime(self):
+        """Fewer than 40 credits yields no AIME/benefit (eligibility gating)."""
+        _, person = self._person()
+        # Only two years of income -> well under 40 credits.
+        ss = SocialSecurity(person=person, withdrawal_start_age=67, income_history=[(2020, 50000), (2021, 50000)])
+        self.assertEqual(ss.get_aime(), 0)
+
+    def test_cost_of_living_adj_uses_long_run_beyond_table(self):
+        """COLA beyond the published table uses the configured long-run assumption."""
+        from ..insurance.social_security import get_cost_of_living_adj
+
+        last_year = config.financial.social_security.last_cost_of_living_adj_year
+        long_run = config.financial.social_security.long_run_cost_of_living_adj
+        self.assertEqual(get_cost_of_living_adj(last_year + 5), long_run)

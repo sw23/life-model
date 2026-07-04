@@ -22,6 +22,9 @@ class TestPlan529(unittest.TestCase):
         self.mock_person = Mock(spec=Person)
         self.mock_person.model = self.model
         self.mock_person.unique_id = 1
+        # ``income`` is a per-instance IncomeLedger on real Persons; provide a stub so the
+        # withdrawal cash/tax routing can record entries against the mock.
+        self.mock_person.income = Mock()
 
         # Create a mock child
         self.mock_child = Mock(spec=Child)
@@ -330,6 +333,72 @@ class TestPlan529(unittest.TestCase):
         # Verify the plan is in the registry
         registered_plans = self.model.registries.plan_529s.get_items(self.mock_person)
         self.assertIn(self.plan, registered_plans)
+
+
+class TestPlan529BasisAndWithdrawals(unittest.TestCase):
+    """Pro-rata basis tracking and cash/penalty/tax routing on 529 withdrawals."""
+
+    def setUp(self):
+        from ..account.bank import BankAccount
+        from ..people.family import Family
+        from ..people.person import Spending
+
+        self.model = LifeModel(start_year=2025, end_year=2050)
+        self.owner = Person(
+            family=Family(self.model),
+            name="Owner",
+            age=45,
+            retirement_age=65,
+            spending=Spending(self.model, base=1000),
+        )
+        self.bank = BankAccount(owner=self.owner, company="Bank", balance=0)
+
+    def test_qualified_withdrawal_deposits_cash_and_is_untaxed(self):
+        """Qualified withdrawals deposit cash to the owner and are not taxed."""
+        plan = Plan529(owner=self.owner, balance=10000.0)
+        plan.total_earnings = 4000.0
+        plan.total_contributions = 6000.0
+        plan.withdraw_qualified(5000.0)
+        self.assertEqual(self.owner.bank_account_balance, 5000.0)
+        self.assertEqual(self.owner.taxable_income, 0.0)
+        # Basis tracked pro-rata: half withdrawn -> half of each remains.
+        self.assertAlmostEqual(plan.total_contributions, 3000.0, places=2)
+        self.assertAlmostEqual(plan.total_earnings, 2000.0, places=2)
+
+    def test_worked_example_pro_rata_earnings(self):
+        """Contribute 50k, grow to 100k, withdraw 50k qualified then 10k non-qualified.
+
+        The non-qualified withdrawal must tax/penalize exactly the pro-rata earnings share.
+        """
+        plan = Plan529(owner=self.owner, balance=0.0, lifetime_contribution_limit=500000)
+        plan.annual_contribution_limit = 500000  # allow the lump contribution
+        plan.contribute(50000)
+        # Simulate growth to $100k (earnings = 50k).
+        plan.balance = 100000
+        plan.total_earnings = 50000
+        # Withdraw 50k qualified: pro-rata leaves 25k contributions / 25k earnings.
+        plan.withdraw_qualified(50000)
+        self.assertAlmostEqual(plan.total_contributions, 25000, places=2)
+        self.assertAlmostEqual(plan.total_earnings, 25000, places=2)
+        self.assertEqual(self.owner.bank_account_balance, 50000)
+
+        # Withdraw 10k non-qualified: earnings share is 50% -> 5k taxable, 500 penalty.
+        withdrawn, penalty = plan.withdraw_non_qualified(10000)
+        self.assertEqual(withdrawn, 10000)
+        self.assertAlmostEqual(penalty, 500.0, places=2)
+        self.assertAlmostEqual(self.owner.taxable_income, 5000.0, places=2)
+        # Net cash: +50k (qualified) +10k (non-qualified) -500 (penalty) = 59,500.
+        self.assertAlmostEqual(self.owner.bank_account_balance, 59500.0, places=2)
+
+    def test_repeated_withdrawals_keep_earnings_ratio_stable(self):
+        """Successive withdrawals must not corrupt the earnings ratio."""
+        plan = Plan529(owner=self.owner, balance=10000.0)
+        plan.total_contributions = 6000.0
+        plan.total_earnings = 4000.0  # 40% earnings ratio
+        for _ in range(3):
+            plan.withdraw_qualified(2000.0)
+        # Ratio stays ~40% instead of drifting toward/above 1.0.
+        self.assertAlmostEqual(plan.total_earnings / plan.balance, 0.4, places=6)
 
 
 if __name__ == "__main__":

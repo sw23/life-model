@@ -147,14 +147,16 @@ class TestLifeInsurance(unittest.TestCase):
 
         # Take a loan
         loan_amount = policy.take_loan(5000)
-        self.assertEqual(loan_amount, 4500)  # 90% of cash value available for loan
-        self.assertEqual(policy.outstanding_loan_balance, 4500)
-        self.assertEqual(self.jane.bank_account_balance, initial_balance + 4500)
+        # 90% of cash value is the loan *cap*, not a per-request haircut. A $5,000
+        # request against $10,000 cash value (cap $9,000) is honored in full.
+        self.assertEqual(loan_amount, 5000)
+        self.assertEqual(policy.outstanding_loan_balance, 5000)
+        self.assertEqual(self.jane.bank_account_balance, initial_balance + 5000)
 
         # Repay part of the loan
         repayment = policy.repay_loan(2000)
         self.assertEqual(repayment, 2000)
-        self.assertEqual(policy.outstanding_loan_balance, 2500)
+        self.assertEqual(policy.outstanding_loan_balance, 3000)
 
     def test_term_life_loan_not_allowed(self):
         """Test that term life policies don't allow loans"""
@@ -484,6 +486,100 @@ class TestLifeInsurance(unittest.TestCase):
         self.assertEqual(default_policy.premium_increase_type, PremiumIncreaseType.AGE_BASED)
         self.assertEqual(default_policy.yearly_increase_rate, 0.0)
         self.assertGreater(len(default_policy.age_multipliers), 0)  # Should have default multipliers
+
+
+class TestLifeInsuranceLoansAndSurrender(unittest.TestCase):
+    """Whole-life loan caps, over-loan lapse, surrender taxation, and death benefits."""
+
+    def setUp(self):
+        self.model = LifeModel(start_year=2023, end_year=2040)
+        self.family = Family(self.model)
+        self.jane = Person(
+            family=self.family, name="Jane", age=40, retirement_age=65, spending=Spending(self.model, base=45000)
+        )
+        BankAccount(owner=self.jane, company="Bank", balance=50000)
+
+    def _whole_policy(self, **kwargs):
+        params = dict(
+            person=self.jane,
+            policy_type=LifeInsuranceType.WHOLE,
+            death_benefit=300000,
+            monthly_premium=100,
+        )
+        params.update(kwargs)
+        return LifeInsurance(**params)
+
+    def test_loan_request_under_cap_is_fully_honored(self):
+        """A loan request within the 90% cap is not haircut."""
+        policy = self._whole_policy()
+        policy.cash_value = 10000
+        self.assertEqual(policy.take_loan(5000), 5000)
+
+    def test_loan_request_over_cap_is_capped(self):
+        """A loan request above the 90% cap is limited to the cap."""
+        policy = self._whole_policy()
+        policy.cash_value = 10000
+        self.assertEqual(policy.take_loan(9500), 9000)
+
+    def test_policy_lapses_when_loan_exceeds_cash_value(self):
+        """The policy lapses and gain is taxed when loan balance exceeds cash value."""
+        policy = self._whole_policy(loan_interest_rate=50.0)  # high rate to force loan > cash value
+        policy.cash_value = 10000
+        policy.total_premiums_paid = 1000
+        policy.take_loan(9000)  # max cap
+        self.assertFalse(policy.is_lapsed)
+        policy.step()  # loan balance 13,500 > cash value 10,000 -> lapse
+        self.assertTrue(policy.is_lapsed)
+        self.assertFalse(policy.is_active)
+        # Loan over basis ($1,000 premiums) recorded as taxable ordinary income.
+        self.assertGreater(self.jane.taxable_income, 0)
+
+    def test_surrender_gain_is_taxed(self):
+        """Dropping a whole-life policy taxes the surrender gain over basis."""
+        policy = self._whole_policy()
+        policy.cash_value = 20000
+        policy.total_premiums_paid = 5000
+        policy.policy_start_year = self.model.year - 5  # mature policy -> 0.8 surrender
+        policy.drop_policy()
+        # Surrender value 0.8 * 20000 = 16000; gain over 5000 basis = 11000 taxable.
+        self.assertAlmostEqual(self.jane.taxable_income, 11000, places=2)
+
+    def test_death_benefit_net_of_loans_paid_to_spouse(self):
+        """process_death_benefit pays the loan-netted benefit to the spouse."""
+        john = Person(
+            family=self.family, name="John", age=42, retirement_age=65, spending=Spending(self.model, base=50000)
+        )
+        BankAccount(owner=john, company="Bank", balance=1000)
+        john.get_married(self.jane)
+        policy = LifeInsurance(
+            person=john, policy_type=LifeInsuranceType.WHOLE, death_benefit=300000, monthly_premium=100
+        )
+        policy.outstanding_loan_balance = 50000
+        jane_before = self.jane.bank_account_balance
+        paid = policy.process_death_benefit()
+        # Net of the $50k loan.
+        self.assertEqual(paid, 250000)
+        self.assertEqual(self.jane.bank_account_balance, jane_before + 250000)
+        # Death benefit is not taxable income.
+        self.assertEqual(self.jane.taxable_income, 0)
+
+    def test_loan_to_value_ratio_from_config(self):
+        """Loan-to-value cap is config-driven (scenario override)."""
+        from pathlib import Path
+
+        from ..config.financial_config import FinancialConfig
+
+        cfg = FinancialConfig(config_file=str(Path(__file__).parent / "fixtures" / "test_config.yaml"))
+        cfg.apply_scenario("custom", {"insurance": {"life": {"loan_to_value_ratio": 0.5}}})
+        model = LifeModel(start_year=2023, end_year=2030, config=cfg)
+        family = Family(model)
+        person = Person(family=family, name="P", age=40, retirement_age=65, spending=Spending(model, base=1000))
+        BankAccount(owner=person, company="Bank", balance=1000)
+        policy = LifeInsurance(
+            person=person, policy_type=LifeInsuranceType.WHOLE, death_benefit=100000, monthly_premium=50
+        )
+        policy.cash_value = 10000
+        self.assertEqual(policy.take_loan(9000), 5000)  # capped at 50% of cash value
 
 
 if __name__ == "__main__":
