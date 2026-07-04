@@ -4,12 +4,16 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 from typing import Optional
 
-from ..base_classes import Investment
-from ..model import compound_interest
+from ..base_classes import TaxAdvantagedAccount, TaxTreatment
+from ..limits import federal_retirement_age
 from ..people.person import Person
+from ..tax.income import IncomeType
 
 
-class RothIRA(Investment):
+class RothIRA(TaxAdvantagedAccount):
+    tax_treatment = TaxTreatment.ROTH
+    is_rmd_eligible = False
+
     def __init__(
         self,
         person: Person,
@@ -17,75 +21,57 @@ class RothIRA(Investment):
         growth_rate: Optional[float] = None,
         contribution_limit: Optional[float] = None,
     ):
-        """Models a Roth IRA account for a person
+        """Models a Roth IRA account for a person.
+
+        Contributions are made with after-tax dollars; qualified withdrawals (and withdrawals of
+        contribution basis at any time) are tax- and penalty-free. Contribution/withdraw/growth and
+        the annual-limit reset are inherited from :class:`TaxAdvantagedAccount`.
 
         Args:
             person: The person to which this IRA belongs
             balance: Current balance in the IRA
             growth_rate: Expected annual growth rate percentage. Uses configured default if None.
-            contribution_limit: Annual contribution limit. Uses configured default if None.
+            contribution_limit: Override for the annual contribution limit. Uses the configured
+                IRA limit when None. Note the IRA limit is shared across all of a person's IRAs.
         """
         ira_config = person.model.config.retirement.ira
         if growth_rate is None:
             growth_rate = ira_config.default_growth_rate
-        if contribution_limit is None:
-            contribution_limit = ira_config.contribution_limit
         super().__init__(person, balance, growth_rate)
-        self.contribution_limit = contribution_limit
-        self.contributions_this_year = 0
+        self._contribution_limit_override = contribution_limit
+        self.model.registries.roth_iras.register(person, self)
 
-    def contribute(self, amount: float) -> float:
-        """Make a contribution to the IRA
+    def annual_contribution_limit(self) -> float:
+        if self._contribution_limit_override is not None:
+            return self._contribution_limit_override
+        return self.person.model.config.retirement.ira.contribution_limit
 
-        Args:
-            amount: Amount to contribute
-
-        Returns:
-            Amount actually contributed (limited by contribution limit)
-        """
-        available_limit = self.contribution_limit - self.contributions_this_year
-        actual_contribution = min(amount, available_limit)
-
-        if actual_contribution > 0:
-            self.balance += actual_contribution
-            self.contributions_this_year += actual_contribution
-
-        return actual_contribution
-
-    def get_balance(self) -> float:
-        """Get current account balance"""
-        return self.balance
-
-    def deposit(self, amount: float) -> bool:
-        """Deposit amount into account. Returns success status"""
-        if amount <= 0:
-            return False
-        contribution = self.contribute(amount)
-        return contribution > 0
+    def sibling_contributions_ytd(self) -> float:
+        # The IRA limit is shared across all of the person's IRAs; count contributions to every
+        # IRA except this one.
+        return sum(
+            a.contributions_ytd for a in (*self.person.roth_iras, *self.person.traditional_iras) if a is not self
+        )
 
     def withdraw(self, amount: float) -> float:
-        """Withdraw amount from account. Returns actual amount withdrawn"""
-        if amount <= 0:
-            return 0.0
-        # Roth IRA contributions can be withdrawn penalty-free
-        # but for simplicity we'll allow all withdrawals up to balance
-        amount_withdrawn = min(self.balance, amount)
-        self.balance -= amount_withdrawn
-        return amount_withdrawn
+        """Withdraw contribution basis first (tax-free); non-qualified earnings are taxed + penalized.
 
-    def calculate_growth(self) -> float:
-        """Calculate investment growth for the period"""
-        return compound_interest(self.balance, self.growth_rate, 1, 1)
-
-    def reset_annual_contributions(self):
-        """Reset annual contribution tracking (called at year end)"""
-        self.contributions_this_year = 0
+        Withdrawing earnings before the federal retirement age realizes ordinary income plus a 10%
+        early-withdrawal penalty. Qualified (on/after retirement age) withdrawals are tax-free.
+        """
+        basis_before = self.contribution_basis
+        withdrawn = super().withdraw(amount)
+        earnings_withdrawn = withdrawn - (basis_before - self.contribution_basis)
+        if earnings_withdrawn > 0 and self.person.age < federal_retirement_age():
+            self.person.income.add(IncomeType.PRETAX_DISTRIBUTION, earnings_withdrawn)
+            self.person.income.add_penalty(0.10 * earnings_withdrawn)
+        return withdrawn
 
     def _repr_html_(self):
         desc = "<ul>"
         desc += f"<li>Balance: ${self.balance:,.2f}</li>"
         desc += f"<li>Growth Rate: {self.growth_rate}%</li>"
-        desc += f"<li>Contribution Limit: ${self.contribution_limit:,.2f}</li>"
-        desc += f"<li>Contributions This Year: ${self.contributions_this_year:,.2f}</li>"
+        desc += f"<li>Contribution Limit: ${self.annual_contribution_limit():,.2f}</li>"
+        desc += f"<li>Contributions This Year: ${self.contributions_ytd:,.2f}</li>"
         desc += "</ul>"
         return desc

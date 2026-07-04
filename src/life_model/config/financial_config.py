@@ -141,6 +141,10 @@ class FinancialConfig(ScenarioConfig):
         limit = self._model.retirement.job_401k_contrib_limit
         return limit.base + (limit.catch_up_amount if age >= limit.catch_up_age else 0)
 
+    def get_job_401k_annual_additions_limit(self) -> int:
+        """Get the 415(c) overall annual-additions limit (employee + employer, per plan)."""
+        return self._model.retirement.job_401k_contrib_limit.annual_additions_limit
+
     def get_max_tax_rate(self, filing_status: "FilingStatus") -> float:
         """Get maximum tax rate for filing status"""
         brackets = self.get_federal_tax_brackets(filing_status)

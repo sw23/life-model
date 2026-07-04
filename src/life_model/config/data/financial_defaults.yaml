@@ -55,6 +55,9 @@ retirement:
     base: 24500
     catch_up_age: 50
     catch_up_amount: 8000
+    # 415(c) overall annual-additions limit (employee + employer contributions per plan).
+    # confidence: estimate; verify against IRS Notice 2025-67 before relying on it.
+    annual_additions_limit: 72000
   ira:
     contribution_limit: 7500
     default_growth_rate: 7.0  # percentage
@@ -329,6 +332,9 @@ accounts:
     contribution_limit: 4400  # self-only
     contribution_limit_family: 8750
     default_employer_contribution: 0
+    # vintage: statutory (unindexed), source: IRC §223(b)(3) age-55 catch-up
+    catch_up_age: 55
+    catch_up_amount: 1000
   plan_529:
     annual_contribution_limit: 19000  # per beneficiary (2025/2026 gift tax exclusion)
     lifetime_contribution_limit: 500000  # typical state limit

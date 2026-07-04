@@ -37,25 +37,6 @@ class BankAccount(FinancialAccount):
         # Register with the model registry
         self.model.registries.bank_accounts.register(owner, self)
 
-    def get_balance(self) -> float:
-        """Get current account balance"""
-        return self.balance
-
-    def deposit(self, amount: float) -> bool:
-        """Deposit amount into account. Returns success status"""
-        if amount <= 0:
-            return False
-        self.balance += amount
-        return True
-
-    def withdraw(self, amount: float) -> float:
-        """Withdraw amount from account. Returns actual amount withdrawn"""
-        if amount <= 0:
-            return 0.0
-        amount_withdrawn = min(self.balance, amount)
-        self.balance -= amount_withdrawn
-        return amount_withdrawn
-
     def _repr_html_(self):
         return f"{self.type} account at {html.escape(self.company)} balance: ${self.balance:,}"
 

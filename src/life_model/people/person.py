@@ -52,6 +52,10 @@ class Person(LifeModelAgent):
         # Cash held when the person has no bank account (see receive_cash).
         self.cash = 0.0
         self._warned_no_bank_account = False
+        # Elective 401k deferrals (pre-tax + Roth employee contributions) made this year, aggregated
+        # across all of the person's jobs so two jobs can't each use the full 402(g) limit. Reset in
+        # post_step.
+        self._elective_deferrals_ytd = 0.0
 
         self.stat_money_spent = 0.0
         self.stat_taxes_paid = 0.0
@@ -75,6 +79,31 @@ class Person(LifeModelAgent):
     def bank_accounts(self):
         """Get all bank accounts for this person from the registry"""
         return self.model.registries.bank_accounts.get_items(self)
+
+    @property
+    def brokerage_accounts(self):
+        """Get all brokerage accounts for this person from the registry"""
+        return self.model.registries.brokerage_accounts.get_items(self)
+
+    @property
+    def hsa_accounts(self):
+        """Get all health savings accounts for this person from the registry"""
+        return self.model.registries.hsa_accounts.get_items(self)
+
+    @property
+    def roth_iras(self):
+        """Get all Roth IRAs for this person from the registry"""
+        return self.model.registries.roth_iras.get_items(self)
+
+    @property
+    def traditional_iras(self):
+        """Get all Traditional IRAs for this person from the registry"""
+        return self.model.registries.traditional_iras.get_items(self)
+
+    @property
+    def pensions(self):
+        """Get all pensions for this person from the registry"""
+        return self.model.registries.pensions.get_items(self)
 
     @property
     def homes(self):
@@ -165,7 +194,32 @@ class Person(LifeModelAgent):
 
     @property
     def all_retirement_accounts(self) -> List[Job401kAccount]:
-        return [x.retirement_account for x in self.jobs if x.retirement_account is not None]
+        """All 401k accounts owned by this person (registry-backed)."""
+        return self.model.registries.job_401k_accounts.get_items(self)
+
+    @property
+    def all_tax_advantaged_accounts(self):
+        """All tax-advantaged accounts (HSA, Roth IRA, Traditional IRA) owned by this person."""
+        return [*self.hsa_accounts, *self.roth_iras, *self.traditional_iras]
+
+    def remaining_401k_elective_room(self) -> float:
+        """Remaining 402(g) elective-deferral room this year, aggregated across all jobs."""
+        from ..limits import job_401k_contrib_limit
+
+        limit = job_401k_contrib_limit(self.age, self.model.config)
+        return max(0.0, limit - self._elective_deferrals_ytd)
+
+    def record_401k_elective_deferral(self, amount: float) -> None:
+        """Record an elective 401k deferral against this year's aggregated 402(g) room."""
+        self._elective_deferrals_ytd += amount
+
+    @property
+    def ira_contributions_ytd(self) -> float:
+        """Total contributions made to all of this person's IRAs (Roth + Traditional) this year.
+
+        Used to enforce the single IRA contribution limit shared across account types.
+        """
+        return sum(a.contributions_ytd for a in (*self.roth_iras, *self.traditional_iras))
 
     @property
     def is_retired(self) -> bool:
@@ -248,10 +302,22 @@ class Person(LifeModelAgent):
         """
         return self._withdraw_sequence((account.deduct_roth for account in self.all_retirement_accounts), amount)
 
+    def deduct_from_roth_iras(self, amount: float) -> float:
+        """Deducts money from Roth IRAs (contribution basis first, tax-free).
+
+        Args:
+            amount (float): Amount to deduct.
+
+        Returns:
+            float: Amount that could not be deducted.
+        """
+        return self._withdraw_sequence((account.withdraw for account in self.roth_iras), amount)
+
     def withdraw_from_pretax_401ks(self, amount: float) -> float:
         """Withdraws money from pre-tax 401ks into the bank account.
 
-        The amount actually withdrawn is added to taxable income and deposited into the bank.
+        The amount actually withdrawn is added to taxable income and deposited into the bank. A 10%
+        early-withdrawal penalty is charged if the person is below the federal retirement age.
 
         Args:
             amount (float): Amount to withdraw.
@@ -262,8 +328,58 @@ class Person(LifeModelAgent):
         withdrawn = amount - self.deduct_from_pretax_401ks(amount)
         # Pre-tax 401k distributions are ordinary income but are NOT FICA wages.
         self.income.add(IncomeType.PRETAX_DISTRIBUTION, withdrawn)
+        self._charge_early_withdrawal_penalty(withdrawn)
         self.receive_cash(withdrawn)
         return withdrawn
+
+    def withdraw_from_traditional_iras(self, amount: float) -> float:
+        """Withdraws money from Traditional IRAs into the bank account.
+
+        Traditional IRA distributions are ordinary income (not FICA wages) and incur a 10% early-
+        withdrawal penalty below the federal retirement age.
+
+        Args:
+            amount (float): Amount to withdraw.
+
+        Returns:
+            float: Amount actually withdrawn.
+        """
+        remaining = self._withdraw_sequence((account.withdraw for account in self.traditional_iras), amount)
+        withdrawn = amount - remaining
+        self.income.add(IncomeType.PRETAX_DISTRIBUTION, withdrawn)
+        self._charge_early_withdrawal_penalty(withdrawn)
+        self.receive_cash(withdrawn)
+        return withdrawn
+
+    def _charge_early_withdrawal_penalty(self, amount: float) -> None:
+        """Charge the 10% early-withdrawal penalty on a pre-tax distribution taken before the
+        federal retirement age."""
+        if amount > 0 and self.age < federal_retirement_age():
+            self.income.add_penalty(0.10 * amount)
+
+    @property
+    def brokerage_balance(self) -> float:
+        return sum(x.balance for x in self.brokerage_accounts)
+
+    def withdraw_from_brokerage(self, amount: float) -> float:
+        """Sells brokerage holdings to raise ``amount`` of cash into the bank account.
+
+        Each sale realizes a proportional long-term capital gain (recorded in the income ledger by
+        the account). Returns the cash proceeds raised.
+
+        Args:
+            amount (float): Cash amount to raise.
+
+        Returns:
+            float: Cash proceeds actually raised.
+        """
+        raised = 0.0
+        for account in self.brokerage_accounts:
+            if amount - raised <= 0:
+                break
+            raised += account.sell(amount - raised)
+        self.receive_cash(raised)
+        return raised
 
     def receive_cash(self, amount: float, source: str = "income"):
         """Receive cash into the person's primary bank account.
@@ -378,6 +494,7 @@ class Person(LifeModelAgent):
 
     def post_step(self):
         self.income.clear()
+        self._elective_deferrals_ytd = 0.0
 
 
 class Spending(LifeModelAgent):

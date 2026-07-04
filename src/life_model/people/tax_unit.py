@@ -88,7 +88,11 @@ class TaxUnit:
         # income but not FICA wages, so it is not added to the per-member wage bases.
         ordinary_income = self.taxable_income + additional_income
         wage_incomes = [m.fica_wages for m in self.members]
-        return compute_taxes(ordinary_income, self.federal_deductions, self.filing_status, wage_incomes, self.config)
+        taxes = compute_taxes(ordinary_income, self.federal_deductions, self.filing_status, wage_incomes, self.config)
+        # Early-withdrawal / non-qualified-distribution penalties recorded on members' ledgers are
+        # additional federal tax.
+        taxes.federal += sum(m.income.penalties for m in self.members)
+        return taxes
 
     def withdraw_from_pretax_401ks(self, amount: float) -> float:
         """Withdraw ``amount`` from members' pre-tax 401ks. Returns the amount not withdrawn."""
@@ -147,33 +151,88 @@ class TaxUnit:
         self._record_stats(taxes, spending_by_member, housing_by_member, interest_by_member)
 
     def _solve_withdrawals_and_taxes(self, bills: float) -> TaxesDue:
-        """Withdraw enough pre-tax 401k to cover bills + the taxes the withdrawal itself triggers
-        when the bank can't, then return the final taxes due.
+        """Raise enough cash from investments to cover bills + the taxes the liquidation itself
+        triggers when the bank can't, then return the final taxes due.
 
-        The gross withdrawal is sized by a fixed-point iteration rather than a max-marginal-rate
-        buffer: ``gross = bills + taxes(gross) - bank_balance``. Because the marginal tax rate is
-        piecewise-constant and below 100%, the map is a contraction and converges quickly. This
-        avoids the old heuristic's systematic over-withdrawal.
+        Cash is raised in a tax-efficient priority order — taxable brokerage holdings first (only
+        the embedded gain is taxed), then pre-tax 401k balances (fully taxable) — sized by a
+        fixed-point iteration over ``bills + taxes(liquidation) - bank_balance``. Roth balances are
+        left for the final tax-free drain in :meth:`pay_bills`.
         """
-        gross = self._size_gross_withdrawal(bills)
-        if gross > 0:
-            self.withdraw_from_pretax_401ks(gross)
+        cash = self._size_investment_liquidation(bills)
+        if cash > 0:
+            self._raise_investment_cash(cash)
         return self.get_income_taxes_due()
 
-    def _size_gross_withdrawal(self, bills: float) -> float:
-        """Pure fixed-point solve for the pre-tax 401k withdrawal needed to cover bills + taxes.
+    def _size_investment_liquidation(self, bills: float) -> float:
+        """Pure fixed-point solve for the cash to raise from investments to cover bills + taxes.
 
-        Side-effect-free: computes the gross amount without moving any money.
+        Side-effect-free: computes the amount without moving any money. The map
+        ``cash = bills + taxes(taxable_income(cash)) - bank`` is a contraction (piecewise-constant
+        marginal rate below 100%) and converges quickly.
         """
         bank = self.bank_account_balance
-        gross = 0.0
+        cash = 0.0
         for _ in range(100):
-            taxes = self.get_income_taxes_due(gross).total
+            taxable = self._taxable_income_for_investment_cash(cash)
+            taxes = self.get_income_taxes_due(taxable).total
             needed = max(0.0, bills + taxes - bank)
-            if abs(needed - gross) < 0.001:
+            if abs(needed - cash) < 0.001:
                 return needed
-            gross = needed
-        return gross
+            cash = needed
+        return cash
+
+    def _taxable_income_for_investment_cash(self, cash: float) -> float:
+        """Ordinary-taxable income that raising ``cash`` from investments would generate.
+
+        Mirrors the liquidation order in :meth:`_raise_investment_cash`: brokerage sales realize
+        only their proportional gain; pre-tax 401k withdrawals are fully taxable.
+        """
+        remaining = cash
+        taxable = 0.0
+        for member in self.members:
+            for account in member.brokerage_accounts:
+                if remaining <= 0:
+                    break
+                take = min(remaining, account.balance)
+                taxable += take * account.gain_fraction()
+                remaining -= take
+        for member in self.members:
+            for account in member.all_retirement_accounts:
+                if remaining <= 0:
+                    break
+                take = min(remaining, account.pretax_balance)
+                taxable += take
+                remaining -= take
+        for member in self.members:
+            for account in member.traditional_iras:
+                if remaining <= 0:
+                    break
+                take = min(remaining, account.balance)
+                taxable += take
+                remaining -= take
+        return taxable
+
+    def _raise_investment_cash(self, cash: float) -> float:
+        """Raise ``cash`` into the members' bank accounts, taxing each source as it is drained.
+
+        Brokerage holdings are sold first (only the gain is taxed), then pre-tax 401k balances and
+        Traditional IRAs are withdrawn (fully taxable). Returns any shortfall that could not be
+        raised.
+        """
+        remaining = cash
+        for member in self.members:
+            if remaining <= 0:
+                break
+            remaining -= member.withdraw_from_brokerage(remaining)
+        if remaining > 0:
+            remaining = self.withdraw_from_pretax_401ks(remaining)
+        if remaining > 0:
+            for member in self.members:
+                if remaining <= 0:
+                    break
+                remaining -= member.withdraw_from_traditional_iras(remaining)
+        return remaining
 
     def _record_stats(
         self,

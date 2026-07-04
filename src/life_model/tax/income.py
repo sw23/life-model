@@ -30,6 +30,7 @@ class IncomeType(Enum):
     PRETAX_DISTRIBUTION = "pretax_distribution"  # 401k/IRA withdrawals & RMDs: ordinary income, no FICA.
     SS_BENEFIT = "ss_benefit"  # Social Security benefits: taxed under provisional-income rules (future).
     INTEREST = "interest"  # Interest income: ordinary, no FICA.
+    LONG_TERM_CAPITAL_GAINS = "long_term_capital_gains"  # Realized LTCG. Taxed as ordinary until Plan 05 adds rates.
     ORDINARY = "ordinary"  # Generic ordinary income: no FICA.
 
 
@@ -52,6 +53,9 @@ class IncomeLedger:
 
     def __init__(self):
         self.entries: List[IncomeEntry] = []
+        # Additional federal tax from early-withdrawal / non-qualified-distribution penalties
+        # (e.g. 10% on early pre-tax distributions, 20% on non-medical HSA distributions).
+        self.penalties = 0.0
 
     def add(self, income_type: IncomeType, amount: float, fica_wages: float = 0.0) -> None:
         """Append an income entry."""
@@ -66,9 +70,24 @@ class IncomeLedger:
         """
         self.add(IncomeType.WAGES, ordinary_amount, fica_wages)
 
+    def add_deduction(self, amount: float) -> None:
+        """Record an above-the-line deduction (e.g. a pre-tax IRA contribution).
+
+        Modeled as negative ordinary income so it reduces the income-tax base without affecting
+        FICA wages.
+        """
+        if amount > 0:
+            self.add(IncomeType.ORDINARY, -amount)
+
+    def add_penalty(self, amount: float) -> None:
+        """Record an additional federal tax penalty (10% early withdrawal, 20% HSA non-medical)."""
+        if amount > 0:
+            self.penalties += amount
+
     def clear(self) -> None:
         """Reset the ledger for the next year (mirrors the old ``taxable_income = 0``)."""
         self.entries.clear()
+        self.penalties = 0.0
 
     @property
     def ordinary_taxable(self) -> float:
