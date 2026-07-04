@@ -43,7 +43,8 @@ from typing import List, Optional, Tuple, Union
 from ..config.config_manager import config
 from ..model import LifeModelAgent
 from ..people.person import Person
-from ..tax.fica import get_social_security_max_income
+from ..tax.federal import FilingStatus
+from ..tax.income import IncomeType
 
 
 def get_avg_wage_index(year: int) -> float:
@@ -99,8 +100,8 @@ def get_cost_of_living_adj(year: int) -> float:
         # Years in this range are in the table
         return ss_config.cost_of_living_adj[year]
     else:
-        # Years after this range use the last available value
-        return ss_config.cost_of_living_adj[last_year]
+        # Years after this range use the configured long-run assumption (Plan 08 item 15).
+        return ss_config.long_run_cost_of_living_adj
 
 
 def get_bend_points(year: int) -> Tuple[float, float]:
@@ -126,10 +127,15 @@ def get_bend_points(year: int) -> Tuple[float, float]:
         bend_point_data = ss_config.bend_points[year]
         return (float(bend_point_data[0]), float(bend_point_data[1]))
     else:
-        # Years after this range use the last available values
-        # TODO - Add some way of estimating bend points after last_year
+        # Years after this range grow the last published bend points by the configured long-run
+        # increase (Plan 08 item 15). A 0% increase freezes them at the last published year.
         bend_point_data = ss_config.bend_points[last_year]
-        return (float(bend_point_data[0]), float(bend_point_data[1]))
+        bp0, bp1 = float(bend_point_data[0]), float(bend_point_data[1])
+        rate = ss_config.long_run_bend_point_increase / 100.0
+        for _ in range(last_year, year):
+            bp0 *= 1 + rate
+            bp1 *= 1 + rate
+        return (bp0, bp1)
 
 
 def get_qc_earnings_for_year(year: int) -> int:
@@ -298,8 +304,9 @@ class SocialSecurity(LifeModelAgent):
             income_obj = Income(year, amount)
             self.income_history.append(income_obj)
 
-        # Cap income at the maximum amount
-        max_income = get_social_security_max_income()
+        # Cap income at THAT year's Social Security wage base (Plan 08 bug 13), not a single
+        # frozen value applied to every year.
+        max_income = self.model.config.tax_year(income_obj.year).ss_wage_base
         if income_obj.amount > max_income:
             income_obj.amount = max_income
 
@@ -394,13 +401,52 @@ class SocialSecurity(LifeModelAgent):
         return round(pia, 2)
 
     def pre_step(self):
-
-        # Add social security income to the person's income
-        # TODO - The model does not tax this income, which isn't correct in some cases
+        # Add social security income to the person's income once benefits have started. Benefits
+        # route through the income ledger as SS_BENEFIT (Plan 08 item 14): the taxable portion
+        # (per the provisional-income rules) enters ordinary taxable income, while the full
+        # benefit is deposited as cash. SocialSecurity runs after jobs in pre_step (default
+        # priority 0 > job priority -10), so wages are already in the ledger.
         if self.model.year >= self.withdrawal_start_year:
             yearly_pia = self.get_pia() * 12
-            self.person.deposit_into_bank_account(yearly_pia)
+            taxable_portion = self._taxable_benefit_portion(yearly_pia)
+            self.person.income.add(IncomeType.SS_BENEFIT, taxable_portion)
+            self.person.receive_cash(yearly_pia, source="social security")
             self.person.stat_ss_income = yearly_pia
+
+    def _taxable_benefit_portion(self, annual_benefit: float) -> float:
+        """Compute the taxable portion of Social Security benefits (IRS Pub. 915).
+
+        Uses provisional income = other ordinary taxable income already recorded this year plus
+        half of the benefit. This is a simplification: it ignores tax-exempt interest and, for
+        joint filers, does not pool the spouse's income.
+        """
+        if annual_benefit <= 0:
+            return 0.0
+
+        bt = self.model.config.social_security.benefit_taxation
+        if self.person.filing_status == FilingStatus.MARRIED_FILING_JOINTLY:
+            lower = bt.lower_threshold_married_filing_jointly
+            upper = bt.upper_threshold_married_filing_jointly
+        else:
+            lower = bt.lower_threshold_single
+            upper = bt.upper_threshold_single
+
+        # Other ordinary income already in the ledger (wages, pre-tax distributions, etc.).
+        other_income = self.person.income.ordinary_taxable
+        provisional = other_income + bt.lower_inclusion_rate * annual_benefit
+
+        if provisional <= lower:
+            return 0.0
+
+        lower_band_taxable = bt.lower_inclusion_rate * min(annual_benefit, provisional - lower)
+        if provisional <= upper:
+            return round(lower_band_taxable, 2)
+
+        # Above the upper threshold: the lower band is capped at half the (upper-lower) spread.
+        capped_lower_band = bt.lower_inclusion_rate * min(annual_benefit, upper - lower)
+        taxable = bt.upper_inclusion_rate * (provisional - upper) + capped_lower_band
+        taxable = min(taxable, bt.upper_inclusion_rate * annual_benefit)
+        return round(taxable, 2)
 
     @property
     def html_report(self) -> str:

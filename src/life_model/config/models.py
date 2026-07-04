@@ -79,6 +79,20 @@ class RetirementConfig(StrictModel):
     rmd_distribution_periods: List[List[float]]
 
 
+class SocialSecurityBenefitTaxationConfig(StrictModel):
+    """Statutory (non-indexed) provisional-income thresholds for taxing benefits.
+
+    See IRS Pub. 915. Thresholds have been fixed in statute since 1984/1994.
+    """
+
+    lower_threshold_single: int = Field(ge=0)
+    upper_threshold_single: int = Field(ge=0)
+    lower_threshold_married_filing_jointly: int = Field(ge=0)
+    upper_threshold_married_filing_jointly: int = Field(ge=0)
+    lower_inclusion_rate: float = Field(ge=0, le=1)
+    upper_inclusion_rate: float = Field(ge=0, le=1)
+
+
 class SocialSecurityConfig(StrictModel):
     min_eligible_credits: int = Field(ge=0)
     max_credits_per_year: int = Field(ge=0)
@@ -97,11 +111,17 @@ class SocialSecurityConfig(StrictModel):
     last_avg_wage_index_increase: float
     last_cost_of_living_adj_year: int
     last_bend_points_year: int
+    # Long-run assumptions applied for years beyond the published tables (Plan 08 item 15).
+    long_run_cost_of_living_adj: float = Field(ge=0)
+    long_run_bend_point_increase: float = Field(ge=0)
 
     # Historical data tables
     avg_wage_index: Dict[int, float]
     cost_of_living_adj: Dict[int, float]
     bend_points: Dict[int, List[int]]
+
+    # Provisional-income taxation of benefits
+    benefit_taxation: SocialSecurityBenefitTaxationConfig
 
 
 class BankAccountConfig(StrictModel):

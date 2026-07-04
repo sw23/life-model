@@ -57,6 +57,8 @@ social_security:
   last_avg_wage_index_increase: 4.84
   last_cost_of_living_adj_year: 2025
   last_bend_points_year: 2026
+  long_run_cost_of_living_adj: 2.8
+  long_run_bend_point_increase: 0.0
   avg_wage_index:
     1976: 9226.48
     2024: 69846.57
@@ -64,6 +66,13 @@ social_security:
     2025: 2.8
   bend_points:
     2026: [1286, 7749]
+  benefit_taxation:
+    lower_threshold_single: 25000
+    upper_threshold_single: 34000
+    lower_threshold_married_filing_jointly: 32000
+    upper_threshold_married_filing_jointly: 44000
+    lower_inclusion_rate: 0.5
+    upper_inclusion_rate: 0.85
 
 accounts:
   bank:

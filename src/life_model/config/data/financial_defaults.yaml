@@ -131,6 +131,21 @@ social_security:
   last_avg_wage_index_increase: 4.84
   last_cost_of_living_adj_year: 2025
   last_bend_points_year: 2026
+  # Long-run assumptions applied beyond the published tables (Plan 08 item 15). Defaults
+  # preserve prior behavior (reuse the last published COLA; freeze bend points). Tie into
+  # Plan 10 inflation modeling when it lands.
+  long_run_cost_of_living_adj: 2.8  # percentage; matches the last published (2025) COLA
+  long_run_bend_point_increase: 0.0  # percentage; 0 == freeze bend points at last published year
+
+  # Provisional-income taxation of benefits (IRS Pub. 915). Thresholds are statutory and are
+  # NOT inflation-indexed. vintage: statutory (1984 lower tier / 1994 upper tier)
+  benefit_taxation:
+    lower_threshold_single: 25000
+    upper_threshold_single: 34000
+    lower_threshold_married_filing_jointly: 32000
+    upper_threshold_married_filing_jointly: 44000
+    lower_inclusion_rate: 0.5
+    upper_inclusion_rate: 0.85
 
   # Average Wage Index Series
   # https://www.ssa.gov/OACT/COLA/awiseries.html
