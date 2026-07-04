@@ -74,10 +74,14 @@ class Loan(LifeModelAgent, ABC):
         # itemized deduction / interest stats aren't understated by reading the post-payment principal.
         self.interest_paid_this_year = 0.0
 
-        # Statistics tracking
+        # Statistics tracking. The per-payment histories record one entry per *monthly* period; the
+        # yearly histories record one aggregated entry per simulated year (convenient for plotting
+        # against the yearly simulation timeline).
         self.stat_principal_payment_history = []
         self.stat_interest_payment_history = []
         self.stat_balance_history = []
+        self.stat_yearly_principal_payment_history = []
+        self.stat_yearly_interest_payment_history = []
 
     @property
     def monthly_interest_rate(self) -> float:
@@ -156,13 +160,17 @@ class Loan(LifeModelAgent, ABC):
             monthly_payment = self.monthly_payment
         total_paid = 0.0
         interest_this_year = 0.0
+        principal_this_year = 0.0
         for month in range(12):
             if self.principal <= 0:
                 break
             extra = extra_to_principal if month == 0 else 0.0
             total_paid += self.make_payment(monthly_payment, extra)
             interest_this_year += self.stat_interest_payment_history[-1]
+            principal_this_year += self.stat_principal_payment_history[-1]
         self.interest_paid_this_year = interest_this_year
+        self.stat_yearly_principal_payment_history.append(principal_this_year)
+        self.stat_yearly_interest_payment_history.append(interest_this_year)
         return total_paid
 
     def service_year(self) -> float:

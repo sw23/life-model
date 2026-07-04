@@ -286,6 +286,8 @@ class Mortgage(Loan):
         self.stat_principal_payment_history = []
         self.stat_interest_payment_history = []
         self.stat_balance_history = []
+        self.stat_yearly_principal_payment_history = []
+        self.stat_yearly_interest_payment_history = []
 
     def _attach(self, person: Person) -> None:
         """Bind this mortgage to its owner and register it as a model agent."""
