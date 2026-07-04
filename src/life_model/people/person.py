@@ -11,6 +11,7 @@ from ..model import Event, LifeModel, LifeModelAgent
 from ..services.payment_service import PaymentService
 from ..services.tax_calculation_service import TaxCalculationService
 from ..tax.federal import FilingStatus, get_federal_standard_deduction
+from ..tax.income import IncomeLedger, IncomeType
 from ..tax.tax import TaxesDue, get_income_taxes_due
 from .family import Family
 from .types import GenderAtBirth  # noqa: F401  (re-exported for backward compatibility)
@@ -40,7 +41,9 @@ class Person(LifeModelAgent):
         self.retirement_age = retirement_age
         self.spending = spending
         self.debt = 0
-        self.taxable_income: float = 0
+        # Per-person income ledger: separates FICA wages from ordinary taxable income so that
+        # payroll tax and income tax each see the correct base (see tax/income.py).
+        self.income = IncomeLedger()
         self.spouse = None
         self.filing_status = FilingStatus.SINGLE
         self.social_security: Optional[SocialSecurity] = None
@@ -172,6 +175,16 @@ class Person(LifeModelAgent):
     def bank_account_balance(self) -> float:
         return sum(x.balance for x in self.bank_accounts)
 
+    @property
+    def taxable_income(self) -> float:
+        """Ordinary taxable income accumulated this year (income tax base)."""
+        return self.income.ordinary_taxable
+
+    @property
+    def fica_wages(self) -> float:
+        """Earned income subject to FICA this year (payroll tax base)."""
+        return self.income.fica_wages
+
     @staticmethod
     def _withdraw_sequence(withdrawers, amount: float) -> float:
         """Withdraw ``amount`` from a sequence of withdraw callables, in order.
@@ -233,7 +246,8 @@ class Person(LifeModelAgent):
             float: Amount actually withdrawn (may be less than requested if funds are short).
         """
         withdrawn = amount - self.deduct_from_pretax_401ks(amount)
-        self.taxable_income += withdrawn
+        # Pre-tax 401k distributions are ordinary income but are NOT FICA wages.
+        self.income.add(IncomeType.PRETAX_DISTRIBUTION, withdrawn)
         self.receive_cash(withdrawn)
         return withdrawn
 
@@ -351,7 +365,7 @@ class Person(LifeModelAgent):
             self._retirement_age_event_logged = True
 
     def post_step(self):
-        self.taxable_income = 0
+        self.income.clear()
 
 
 class Spending(LifeModelAgent):

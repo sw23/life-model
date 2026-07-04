@@ -88,9 +88,10 @@ class Job(LifeModelAgent):
         self.owner.deposit_into_bank_account(gross_income - yearly_401k_contrib)
 
         # Add to taxable income for the person
-        # - Taxes are deducted in the person class
-        # - Social security limits are handled in the SS class
-        self.owner.taxable_income += gross_income - yearly_pretax_contrib
+        # - Income tax is settled by the tax unit in Family.step
+        # - Elective pre-tax 401k deferrals reduce ordinary income but are still FICA wages, so
+        #   the full gross is recorded as the FICA base (fixes the understated-FICA bug).
+        self.owner.income.add_wages(ordinary_amount=gross_income - yearly_pretax_contrib, fica_wages=gross_income)
         if self.owner.social_security is not None:
             self.owner.social_security.add_income_for_year(gross_income)
 

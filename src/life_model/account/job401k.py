@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Optional
 from ..base_classes import RetirementAccount
 from ..limits import federal_retirement_age, required_min_distrib
 from ..model import continous_interest
+from ..tax.income import IncomeType
 
 if TYPE_CHECKING:
     from ..work.job import Job
@@ -128,7 +129,8 @@ class Job401kAccount(RetirementAccount):
         # - Based on the owner's age, force withdraw the required minium
         required_min_dist_amount = self.deduct_pretax(required_min_distrib(self.person.age, self.pretax_balance))
         self.person.deposit_into_bank_account(required_min_dist_amount)
-        self.person.taxable_income += required_min_dist_amount
+        # RMDs are ordinary income, not FICA wages.
+        self.person.income.add(IncomeType.PRETAX_DISTRIBUTION, required_min_dist_amount)
 
         self.stat_required_min_distrib = required_min_dist_amount
         self.stat_401k_balance = self.balance
