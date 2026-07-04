@@ -19,6 +19,7 @@ from ..debt.student_loan import StudentLoan, StudentLoanType
 from ..model import LifeModel
 from ..people.family import Family
 from ..people.person import Person, Spending
+from ..work.job import Job, Salary
 
 
 def _make_person(model, bank_balance=500000):
@@ -112,6 +113,42 @@ class TestDebtServicing(unittest.TestCase):
         start = card.balance
         model.run()
         self.assertGreater(card.balance, start)
+
+
+class TestStudentLoanFeatures(unittest.TestCase):
+    def test_subsidized_deferment_does_not_grow(self):
+        """A subsidized loan in deferment accrues no borrower interest and its balance is unchanged."""
+        model = LifeModel(start_year=2020, end_year=2020)
+        person = _make_person(model)
+        loan = StudentLoan(person, StudentLoanType.FEDERAL_SUBSIDIZED, 20000, 6.0, 10, "State U", in_deferment=True)
+        start = loan.principal
+        paid = loan.service_year()
+        self.assertEqual(paid, 0.0)
+        self.assertEqual(loan.principal, start)
+        self.assertEqual(loan.interest_paid_this_year, 0.0)
+
+    def test_unsubsidized_deferment_capitalizes_interest(self):
+        """An unsubsidized loan in deferment capitalizes the year's interest onto its balance."""
+        model = LifeModel(start_year=2020, end_year=2020)
+        person = _make_person(model)
+        loan = StudentLoan(person, StudentLoanType.FEDERAL_UNSUBSIDIZED, 20000, 6.0, 10, "State U", in_deferment=True)
+        loan.service_year()
+        self.assertAlmostEqual(loan.principal, 20000 + 20000 * 0.06, places=2)
+
+    def test_student_loan_interest_deduction_lowers_taxes(self):
+        """Paying student-loan interest reduces ordinary taxable income, so taxes are lower."""
+
+        def taxes_with_loan(add_loan):
+            model = LifeModel(start_year=2020, end_year=2020)
+            person = _make_person(model)
+            Job(person, "Co", "Dev", Salary(model=model, base=120000))
+            if add_loan:
+                # High-rate, large balance so interest paid exceeds the $2,500 cap.
+                StudentLoan(person, StudentLoanType.FEDERAL_UNSUBSIDIZED, 80000, 8.0, 20, "State U")
+            model.run()
+            return person.stat_taxes_paid
+
+        self.assertLess(taxes_with_loan(True), taxes_with_loan(False))
 
 
 if __name__ == "__main__":

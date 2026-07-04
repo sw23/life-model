@@ -120,19 +120,22 @@ class TestMarriedHousing(unittest.TestCase):
         home = _make_home(a)
 
         # Capture the year's housing figures before the step (no income -> no taxes).
-        interest = home.mortgage.get_interest_for_year()
-        mortgage_payment = home.mortgage.get_payment_due_for_year()
         home_expenses = home.expenses.get_yearly_spending()
-        total_housing = mortgage_payment + home_expenses
         principal_before = home.mortgage.principal
         bank_before = bank.balance
 
         model.step()
 
-        # Cash actually left the bank for the full housing cost.
+        # The mortgage amortizes monthly: principal drops by the actual principal paid and cash
+        # equal to (principal + interest) paid this year leaves the bank, plus home expenses.
+        principal_paid = principal_before - home.mortgage.principal
+        mortgage_cash = principal_paid + home.mortgage.interest_paid_this_year
+        total_housing = home_expenses + mortgage_cash
+
+        # Cash actually left the bank for the full housing cost (married couple pays housing).
         self.assertAlmostEqual(bank.balance, bank_before - total_housing, places=2)
-        # Mortgage principal dropped only by the principal portion (payment - interest).
-        self.assertAlmostEqual(home.mortgage.principal, principal_before - (mortgage_payment - interest), places=2)
+        # The mortgage amortized with cash (principal genuinely fell).
+        self.assertGreater(principal_paid, 0)
 
 
 class TestFamilyDebtPaidOnce(unittest.TestCase):

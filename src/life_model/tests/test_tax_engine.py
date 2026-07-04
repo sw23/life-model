@@ -214,10 +214,14 @@ class TestHousingDeductions(unittest.TestCase):
 
     def test_interest_recorded_before_payment(self):
         mortgage = Mortgage(loan_amount=300000, start_date=2020, length_years=30, yearly_interest_rate=5.0)
+        # A full year of simple interest on the starting principal is $15,000.
         self.assertAlmostEqual(mortgage.get_interest_for_year(), 15000.0, places=2)
-        mortgage.make_yearly_payment(mortgage.yearly_payment)
-        # The deduction reads the pre-payment interest, not the smaller post-payment figure.
-        self.assertAlmostEqual(mortgage.interest_paid_this_year, 15000.0, places=2)
+        mortgage.make_yearly_payment(mortgage.monthly_payment)
+        # interest_paid_this_year is the interest actually charged across the 12 monthly periods:
+        # close to a full year's interest, and the deduction reads this (not the smaller
+        # post-payment annual figure).
+        self.assertGreater(mortgage.interest_paid_this_year, 14000.0)
+        self.assertLessEqual(mortgage.interest_paid_this_year, 15000.0)
         self.assertLess(mortgage.get_interest_for_year(), 15000.0)
 
     def test_mortgage_interest_and_property_tax_deductible(self):

@@ -30,6 +30,7 @@ class StudentLoan(Loan):
         school_name: str,
         principal: Optional[float] = None,
         monthly_payment: Optional[float] = None,
+        in_deferment: bool = False,
     ):
         """Models a student loan for a person
 
@@ -42,11 +43,30 @@ class StudentLoan(Loan):
             school_name: Name of the educational institution
             principal: Current principal balance (defaults to loan_amount)
             monthly_payment: Monthly payment amount (calculated if not provided)
+            in_deferment: Whether the loan is currently in deferment (no scheduled payments).
+                For ``FEDERAL_SUBSIDIZED`` loans the government pays the interest during deferment
+                (the balance does not grow); for other types interest accrues and capitalizes.
         """
         super().__init__(person, loan_amount, yearly_interest_rate, length_years, principal, monthly_payment)
         self.loan_type = loan_type
         self.school_name = school_name
+        self.in_deferment = in_deferment
         self.model.registries.student_loans.register(person, self)
+
+    def service_year(self) -> float:
+        """Service the loan for one year, honoring deferment and the subsidized-interest benefit.
+
+        In deferment no borrower payment is made, so no interest is *paid* (the interest deduction
+        sees nothing). For ``FEDERAL_SUBSIDIZED`` the government covers the interest and the balance
+        is unchanged; for other types the year's interest capitalizes onto the principal.
+        """
+        if self.in_deferment:
+            self.interest_paid_this_year = 0.0
+            if self.loan_type is not StudentLoanType.FEDERAL_SUBSIDIZED:
+                # Unsubsidized interest accrues and capitalizes during deferment.
+                self.principal += self.get_interest_amount("year")
+            return 0.0
+        return super().service_year()
 
     def get_monthly_payment(self) -> float:
         """Calculate monthly payment using standard loan formula"""

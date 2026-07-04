@@ -144,6 +144,12 @@ class StudentLoanRegistry(PersonRegistry["StudentLoan"]):
     pass
 
 
+class MortgageRegistry(PersonRegistry["Mortgage"]):
+    """Registry for managing Mortgage relationships"""
+
+    pass
+
+
 class ModelRegistries:
     """Container for all registries in a model"""
 
@@ -161,6 +167,7 @@ class ModelRegistries:
         self.car_loans = CarLoanRegistry()
         self.credit_cards = CreditCardRegistry()
         self.student_loans = StudentLoanRegistry()
+        self.mortgages = MortgageRegistry()
 
     def clear_all(self, owner: "Person") -> None:
         """Clear all registries for a specific owner"""
@@ -177,3 +184,4 @@ class ModelRegistries:
         self.car_loans.clear(owner)
         self.credit_cards.clear(owner)
         self.student_loans.clear(owner)
+        self.mortgages.clear(owner)

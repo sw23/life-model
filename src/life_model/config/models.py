@@ -156,8 +156,36 @@ class CreditCardConfig(StrictModel):
     default_minimum_payment_floor: float = Field(default=25.0, ge=0)
 
 
+class StudentLoanConfig(StrictModel):
+    # Above-the-line student-loan interest deduction (IRC §221). The MAGI phase-out is not
+    # modeled; this is a flat cap. vintage: 2025, source: IRC §221 (statutory, unindexed cap).
+    interest_deduction_limit: float = Field(default=2500.0, ge=0)
+
+
 class DebtConfig(StrictModel):
     credit_card: CreditCardConfig
+    student_loan: StudentLoanConfig = Field(default_factory=StudentLoanConfig)
+
+
+class Section121ExclusionConfig(StrictModel):
+    single: int = Field(default=250000, ge=0)
+    married_filing_jointly: int = Field(default=500000, ge=0)
+
+
+class HousingConfig(StrictModel):
+    """Housing parameters (PMI, transaction costs, capital-gains exclusion).
+
+    All fields have defaults so existing configs without a ``housing`` section still load.
+    """
+
+    # PMI: charged yearly as a percentage of the loan balance while loan-to-value exceeds the
+    # threshold, then automatically dropped. vintage: 2026, source: typical private-MI rates.
+    pmi_rate: float = Field(default=0.5, ge=0)  # percent of loan balance per year
+    pmi_ltv_threshold: float = Field(default=80.0, ge=0, le=100)  # percent LTV
+    closing_cost_percent: float = Field(default=2.0, ge=0)  # percent of purchase price at buy
+    selling_cost_percent: float = Field(default=6.0, ge=0)  # percent of sale price at sell
+    # vintage: IRC §121 primary-residence capital-gains exclusion (statutory, unindexed).
+    section_121_exclusion: Section121ExclusionConfig = Field(default_factory=Section121ExclusionConfig)
 
 
 class YearlyTaxParameters(StrictModel):
@@ -192,4 +220,5 @@ class FinancialConfigModel(StrictModel):
     accounts: AccountsConfig
     insurance: InsuranceConfig
     debt: DebtConfig
+    housing: HousingConfig = Field(default_factory=HousingConfig)
     tax_years: Dict[int, YearlyTaxParameters]

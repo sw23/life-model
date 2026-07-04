@@ -349,6 +349,20 @@ debt:
     default_interest_rate: 18.0  # percentage
     default_minimum_payment_percent: 2.0  # percentage
     default_minimum_payment_floor: 25.0  # dollars, typical card minimum-payment floor
+  student_loan:
+    # vintage: 2025, source: IRC §221 above-the-line interest deduction (MAGI phase-out ignored)
+    interest_deduction_limit: 2500  # dollars per year
+
+housing:
+  # PMI charged yearly while loan-to-value exceeds the threshold, then auto-dropped.
+  pmi_rate: 0.5  # percent of loan balance per year
+  pmi_ltv_threshold: 80.0  # percent LTV
+  closing_cost_percent: 2.0  # percent of purchase price paid at purchase
+  selling_cost_percent: 6.0  # percent of sale price paid at sale (agent commission, etc.)
+  # vintage: statutory, source: IRC §121 primary-residence capital-gains exclusion (unindexed)
+  section_121_exclusion:
+    single: 250000
+    married_filing_jointly: 500000
 
 # Year-indexed tax parameters (published values, 2022-2026). Accessed via
 # config.tax_year(year). Years outside the table are projected: earliest entry
