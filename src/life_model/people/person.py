@@ -13,12 +13,10 @@ from ..services.tax_calculation_service import TaxCalculationService
 from ..tax.federal import FilingStatus, get_federal_standard_deduction
 from ..tax.tax import TaxesDue, get_income_taxes_due
 from .family import Family
-from .types import GenderAtBirth  # re-exported for backward compatibility
+from .types import GenderAtBirth  # noqa: F401  (re-exported for backward compatibility)
 
 if TYPE_CHECKING:
     from ..insurance.social_security import SocialSecurity
-
-__all__ = ["GenderAtBirth", "Person", "Spending"]
 
 
 class Person(LifeModelAgent):
