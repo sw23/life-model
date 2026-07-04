@@ -77,6 +77,31 @@ class Person(LifeModelAgent):
         return self.model.registries.bank_accounts.get_items(self)
 
     @property
+    def brokerage_accounts(self):
+        """Get all brokerage accounts for this person from the registry"""
+        return self.model.registries.brokerage_accounts.get_items(self)
+
+    @property
+    def hsa_accounts(self):
+        """Get all health savings accounts for this person from the registry"""
+        return self.model.registries.hsa_accounts.get_items(self)
+
+    @property
+    def roth_iras(self):
+        """Get all Roth IRAs for this person from the registry"""
+        return self.model.registries.roth_iras.get_items(self)
+
+    @property
+    def traditional_iras(self):
+        """Get all Traditional IRAs for this person from the registry"""
+        return self.model.registries.traditional_iras.get_items(self)
+
+    @property
+    def pensions(self):
+        """Get all pensions for this person from the registry"""
+        return self.model.registries.pensions.get_items(self)
+
+    @property
     def homes(self):
         """Get all homes for this person from the registry"""
         return self.model.registries.homes.get_items(self)
@@ -165,7 +190,13 @@ class Person(LifeModelAgent):
 
     @property
     def all_retirement_accounts(self) -> List[Job401kAccount]:
-        return [x.retirement_account for x in self.jobs if x.retirement_account is not None]
+        """All 401k accounts owned by this person (registry-backed)."""
+        return self.model.registries.job_401k_accounts.get_items(self)
+
+    @property
+    def all_tax_advantaged_accounts(self):
+        """All tax-advantaged accounts (HSA, Roth IRA, Traditional IRA) owned by this person."""
+        return [*self.hsa_accounts, *self.roth_iras, *self.traditional_iras]
 
     @property
     def is_retired(self) -> bool:
@@ -248,6 +279,17 @@ class Person(LifeModelAgent):
         """
         return self._withdraw_sequence((account.deduct_roth for account in self.all_retirement_accounts), amount)
 
+    def deduct_from_roth_iras(self, amount: float) -> float:
+        """Deducts money from Roth IRAs (contribution basis first, tax-free).
+
+        Args:
+            amount (float): Amount to deduct.
+
+        Returns:
+            float: Amount that could not be deducted.
+        """
+        return self._withdraw_sequence((account.withdraw for account in self.roth_iras), amount)
+
     def withdraw_from_pretax_401ks(self, amount: float) -> float:
         """Withdraws money from pre-tax 401ks into the bank account.
 
@@ -264,6 +306,30 @@ class Person(LifeModelAgent):
         self.income.add(IncomeType.PRETAX_DISTRIBUTION, withdrawn)
         self.receive_cash(withdrawn)
         return withdrawn
+
+    @property
+    def brokerage_balance(self) -> float:
+        return sum(x.balance for x in self.brokerage_accounts)
+
+    def withdraw_from_brokerage(self, amount: float) -> float:
+        """Sells brokerage holdings to raise ``amount`` of cash into the bank account.
+
+        Each sale realizes a proportional long-term capital gain (recorded in the income ledger by
+        the account). Returns the cash proceeds raised.
+
+        Args:
+            amount (float): Cash amount to raise.
+
+        Returns:
+            float: Cash proceeds actually raised.
+        """
+        raised = 0.0
+        for account in self.brokerage_accounts:
+            if amount - raised <= 0:
+                break
+            raised += account.sell(amount - raised)
+        self.receive_cash(raised)
+        return raised
 
     def receive_cash(self, amount: float, source: str = "income"):
         """Receive cash into the person's primary bank account.

@@ -38,6 +38,7 @@ class TraditionalIRA(TaxAdvantagedAccount):
             growth_rate = ira_config.default_growth_rate
         super().__init__(person, balance, growth_rate)
         self._contribution_limit_override = contribution_limit
+        self.model.registries.traditional_iras.register(person, self)
 
     def annual_contribution_limit(self) -> float:
         if self._contribution_limit_override is not None:

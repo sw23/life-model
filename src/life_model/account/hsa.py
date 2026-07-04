@@ -54,6 +54,7 @@ class HealthSavingsAccount(TaxAdvantagedAccount):
         self.hsa_type = hsa_type
         self._contribution_limit_override = contribution_limit
         self.employer_contribution = employer_contribution
+        self.model.registries.hsa_accounts.register(person, self)
 
     def annual_contribution_limit(self) -> float:
         """Self-only or family limit for the year, plus the age-55 catch-up.

@@ -52,6 +52,7 @@ class Job401kAccount(RetirementAccount):
         self.stat_401k_balance = 0
 
         job.retirement_account = self
+        self.model.registries.job_401k_accounts.register(job.owner, self)
 
     def pretax_contrib(self, salary: float):
         return salary * (self.pretax_contrib_percent / 100)

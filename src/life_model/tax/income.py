@@ -30,6 +30,7 @@ class IncomeType(Enum):
     PRETAX_DISTRIBUTION = "pretax_distribution"  # 401k/IRA withdrawals & RMDs: ordinary income, no FICA.
     SS_BENEFIT = "ss_benefit"  # Social Security benefits: taxed under provisional-income rules (future).
     INTEREST = "interest"  # Interest income: ordinary, no FICA.
+    LONG_TERM_CAPITAL_GAINS = "long_term_capital_gains"  # Realized LTCG. Taxed as ordinary until Plan 05 adds rates.
     ORDINARY = "ordinary"  # Generic ordinary income: no FICA.
 
 
