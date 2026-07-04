@@ -4,12 +4,14 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 from typing import Optional
 
-from ..base_classes import Investment
-from ..model import compound_interest
+from ..base_classes import TaxAdvantagedAccount, TaxTreatment
 from ..people.person import Person
 
 
-class TraditionalIRA(Investment):
+class TraditionalIRA(TaxAdvantagedAccount):
+    tax_treatment = TaxTreatment.PRETAX
+    is_rmd_eligible = True
+
     def __init__(
         self,
         person: Person,
@@ -17,75 +19,36 @@ class TraditionalIRA(Investment):
         growth_rate: Optional[float] = None,
         contribution_limit: Optional[float] = None,
     ):
-        """Models a Traditional IRA account for a person
+        """Models a Traditional IRA account for a person.
+
+        Unlike a Roth IRA, contributions are pre-tax (deductible) and *all* withdrawals are ordinary
+        income; the account is subject to required minimum distributions. Contribution/withdraw/
+        growth and the annual-limit reset are inherited from :class:`TaxAdvantagedAccount`; the
+        pre-tax deduction, distribution taxation, and RMDs are applied by the account tax semantics.
 
         Args:
             person: The person to which this IRA belongs
             balance: Current balance in the IRA
             growth_rate: Expected annual growth rate percentage. Uses configured default if None.
-            contribution_limit: Annual contribution limit. Uses configured default if None.
+            contribution_limit: Override for the annual contribution limit. Uses the configured
+                IRA limit when None. Note the IRA limit is shared across all of a person's IRAs.
         """
         ira_config = person.model.config.retirement.ira
         if growth_rate is None:
             growth_rate = ira_config.default_growth_rate
-        if contribution_limit is None:
-            contribution_limit = ira_config.contribution_limit
         super().__init__(person, balance, growth_rate)
-        self.contribution_limit = contribution_limit
-        self.contributions_this_year = 0
+        self._contribution_limit_override = contribution_limit
 
-    def contribute(self, amount: float) -> float:
-        """Make a contribution to the IRA
-
-        Args:
-            amount: Amount to contribute
-
-        Returns:
-            Amount actually contributed (limited by contribution limit)
-        """
-        available_limit = self.contribution_limit - self.contributions_this_year
-        actual_contribution = min(amount, available_limit)
-
-        if actual_contribution > 0:
-            self.balance += actual_contribution
-            self.contributions_this_year += actual_contribution
-
-        return actual_contribution
-
-    def get_balance(self) -> float:
-        """Get current account balance"""
-        return self.balance
-
-    def deposit(self, amount: float) -> bool:
-        """Deposit amount into account. Returns success status"""
-        if amount <= 0:
-            return False
-        contribution = self.contribute(amount)
-        return contribution > 0
-
-    def withdraw(self, amount: float) -> float:
-        """Withdraw amount from account. Returns actual amount withdrawn"""
-        if amount <= 0:
-            return 0.0
-        # Traditional IRA withdrawals may have penalties, but for simplicity
-        # we'll just allow withdrawals up to the balance
-        amount_withdrawn = min(self.balance, amount)
-        self.balance -= amount_withdrawn
-        return amount_withdrawn
-
-    def calculate_growth(self) -> float:
-        """Calculate investment growth for the period"""
-        return compound_interest(self.balance, self.growth_rate, 1, 1)
-
-    def reset_annual_contributions(self):
-        """Reset annual contribution tracking (called at year end)"""
-        self.contributions_this_year = 0
+    def annual_contribution_limit(self) -> float:
+        if self._contribution_limit_override is not None:
+            return self._contribution_limit_override
+        return self.person.model.config.retirement.ira.contribution_limit
 
     def _repr_html_(self):
         desc = "<ul>"
         desc += f"<li>Balance: ${self.balance:,.2f}</li>"
         desc += f"<li>Growth Rate: {self.growth_rate}%</li>"
-        desc += f"<li>Contribution Limit: ${self.contribution_limit:,.2f}</li>"
-        desc += f"<li>Contributions This Year: ${self.contributions_this_year:,.2f}</li>"
+        desc += f"<li>Contribution Limit: ${self.annual_contribution_limit():,.2f}</li>"
+        desc += f"<li>Contributions This Year: ${self.contributions_ytd:,.2f}</li>"
         desc += "</ul>"
         return desc

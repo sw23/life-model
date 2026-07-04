@@ -6,8 +6,8 @@
 from typing import TYPE_CHECKING, Optional
 
 from ..base_classes import RetirementAccount
-from ..limits import federal_retirement_age, required_min_distrib, rmd_start_age
-from ..model import continous_interest
+from ..limits import required_min_distrib, rmd_start_age
+from ..model import compound_interest
 from ..tax.income import IncomeType
 
 if TYPE_CHECKING:
@@ -15,9 +15,7 @@ if TYPE_CHECKING:
 
 
 class Job401kAccount(RetirementAccount):
-    # Grow (and take RMDs) before the job deposits this year's contributions, so contributions
-    # are not counted in this year's growth (matches the documented, slightly-pessimistic model).
-    STEP_PRIORITY = {"pre_step": -10}
+    is_rmd_eligible = True
 
     def __init__(
         self,
@@ -40,11 +38,12 @@ class Job401kAccount(RetirementAccount):
             average_growth (float, optional): Average account growth every year. Defaults to 0.
             company_match_percent (float, optional): Percentage that company matches contributions. Defaults to 0.
         """
-        super().__init__(job.owner, 0)  # Initialize with 0, we'll handle balance ourselves
+        # Balance is derived from pretax + roth; grow via average_growth (annual compounding).
+        super().__init__(job.owner, growth_rate=average_growth)
         self.job: Optional["Job"] = job
         self.pretax_balance = pretax_balance
-        self.pretax_contrib_percent = pretax_contrib_percent
         self.roth_balance = roth_balance
+        self.pretax_contrib_percent = pretax_contrib_percent
         self.roth_contrib_percent = roth_contrib_percent
         self.average_growth = average_growth
         self.company_match_percent = company_match_percent
@@ -69,18 +68,16 @@ class Job401kAccount(RetirementAccount):
 
     @balance.setter
     def balance(self, value):
-        # For Job401k, we don't allow direct balance setting
-        # This setter exists to satisfy the parent class requirements
-        pass
-
-    def get_balance(self) -> float:
-        """Get current account balance"""
-        return self.balance
+        # Balance is derived; never silently discard a write (fixes the silent-discard bug).
+        raise AttributeError(
+            "Job401kAccount.balance is derived from pretax_balance + roth_balance; "
+            "set those directly instead of assigning balance."
+        )
 
     def deposit(self, amount: float) -> bool:
         """Deposit amount into account. Returns success status"""
-        if amount <= 0:
-            return False
+        if amount < 0:
+            raise ValueError("Deposit amount cannot be negative")
         # For 401k, deposits go to pretax by default
         self.pretax_balance += amount
         return True
@@ -109,24 +106,30 @@ class Job401kAccount(RetirementAccount):
         company = self.job.company if self.job is not None else "<None>"
         return f"401k at {company} balance: ${self.balance:,}"
 
-    # Using pre_step() so taxable_income will be set before person's step() is called
-    def pre_step(self):
-        # Note: Contributions are handled by job, after this is called.
-        # This isn't 100% accurate since contributions aren't included in the
-        # growth, which is a little pessimistic but that should be fine.
+    def apply_growth(self):
+        """Grow the pre-tax and roth sub-balances with annual compounding (APY).
 
-        self.pretax_balance += continous_interest(self.pretax_balance, self.average_growth)
-        self.roth_balance += continous_interest(self.roth_balance, self.average_growth)
+        Uses the same annual-compounding growth as every other ``Investment`` so accounts with the
+        same nominal rate grow identically.
+        """
+        pretax_growth = compound_interest(self.pretax_balance, self.growth_rate, 1, 1)
+        roth_growth = compound_interest(self.roth_balance, self.growth_rate, 1, 1)
+        self.pretax_balance += pretax_growth
+        self.roth_balance += roth_growth
+        growth = pretax_growth + roth_growth
+        self.stat_growth_history.append(growth)
+        return growth
 
-        # Balance is automatically calculated by the property
+    def step(self):
+        # Runs in the step phase before tax-unit settlement (Investment priority -10), and after
+        # the job deposits this year's contributions in pre_step, so contributions land before
+        # growth. RetirementAccount.step applies growth and tracks balance/useable history.
+        super().step()
+        self._take_required_min_distribution()
+        self.stat_401k_balance = self.balance
 
-        # Track balance history
-        self.stat_balance_history.append(self.balance)
-        if self.person.age > federal_retirement_age():
-            self.stat_useable_balance = self.balance
-
-        # Required minimum distributions
-        # - Based on the owner's age, force withdraw the required minium
+    def _take_required_min_distribution(self):
+        """Force-withdraw the required minimum distribution (pre-tax, ordinary income, no FICA)."""
         config = self.person.model.config
         birth_year = self.person.model.year - self.person.age
         start_age = rmd_start_age(birth_year, config=config, year=self.person.model.year)
@@ -136,9 +139,7 @@ class Job401kAccount(RetirementAccount):
         self.person.deposit_into_bank_account(required_min_dist_amount)
         # RMDs are ordinary income, not FICA wages.
         self.person.income.add(IncomeType.PRETAX_DISTRIBUTION, required_min_dist_amount)
-
         self.stat_required_min_distrib = required_min_dist_amount
-        self.stat_401k_balance = self.balance
 
     def deduct_pretax(self, amount: float):
         """Deduct from pre-tax balance
@@ -149,7 +150,6 @@ class Job401kAccount(RetirementAccount):
         Returns:
             float: Amount deducted. Will not be less than the account balance.
         """
-        # TODO - Need to figure out where early penalties and limits are applied
         amount_deducted = min(self.pretax_balance, amount)
         self.pretax_balance -= amount_deducted
         return amount_deducted
@@ -163,7 +163,6 @@ class Job401kAccount(RetirementAccount):
         Returns:
             float: Amount deducted. Will not be less than the account balance.
         """
-        # TODO - Need to figure out where early penalties and limits are applied
         amount_deducted = min(self.roth_balance, amount)
         self.roth_balance -= amount_deducted
         return amount_deducted

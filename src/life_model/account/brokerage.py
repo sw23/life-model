@@ -23,27 +23,6 @@ class BrokerageAccount(Investment):
             growth_rate = person.model.config.accounts.brokerage.default_growth_rate
         super().__init__(person, balance, growth_rate)
         self.company = company
-        self.investments = []  # List of individual investments
-
-    def calculate_growth(self) -> float:
-        """Calculate investment growth based on growth rate"""
-        return self.balance * (self.growth_rate / 100)
-
-    def get_balance(self) -> float:
-        return self.balance
-
-    def deposit(self, amount: float) -> bool:
-        if amount < 0:
-            raise ValueError("Deposit amount cannot be negative")
-        self.balance += amount
-        return True
-
-    def withdraw(self, amount: float) -> float:
-        if amount < 0:
-            return 0.0  # Cannot withdraw negative amounts
-        actual_withdrawal = min(amount, self.balance)
-        self.balance -= actual_withdrawal
-        return actual_withdrawal
 
     def _repr_html_(self):
         desc = "<ul>"

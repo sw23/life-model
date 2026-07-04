@@ -34,6 +34,7 @@ retirement:
     base: 20000
     catch_up_age: 50
     catch_up_amount: 5000
+    annual_additions_limit: 60000
   ira:
     contribution_limit: 6000
     default_growth_rate: 7.0
@@ -75,6 +76,8 @@ accounts:
     contribution_limit: 4000
     contribution_limit_family: 8000
     default_employer_contribution: 0
+    catch_up_age: 55
+    catch_up_amount: 1000
   plan_529:
     annual_contribution_limit: 19000
     lifetime_contribution_limit: 500000

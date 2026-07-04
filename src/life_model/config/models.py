@@ -65,6 +65,8 @@ class Job401kContribLimitConfig(StrictModel):
     base: int = Field(ge=0)
     catch_up_age: int = Field(ge=0)
     catch_up_amount: int = Field(ge=0)
+    # 415(c) overall annual-additions limit (employee + employer, per employer plan).
+    annual_additions_limit: int = Field(ge=0)
 
 
 class IRAConfig(StrictModel):
@@ -115,6 +117,8 @@ class BrokerageAccountConfig(StrictModel):
 
 class HSAAccountConfig(StrictModel):
     contribution_limit: int = Field(ge=0)
+    catch_up_age: int = Field(ge=0)
+    catch_up_amount: int = Field(ge=0)
     contribution_limit_family: int = Field(ge=0)
     default_employer_contribution: int = Field(ge=0)
 
