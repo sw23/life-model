@@ -283,6 +283,11 @@ class Mortgage(Loan):
         # mortgage-interest deduction isn't understated by reading the post-payment principal.
         self.interest_paid_this_year = self.get_interest_amount("year")
 
+        # Interest actually charged this year, captured before the payment reduces the principal.
+        # The itemized mortgage-interest deduction reads this so it isn't understated by using the
+        # post-payment principal.
+        self.interest_paid_this_year = self.get_interest_for_year()
+
         self.stat_principal_payment_history = []
         self.stat_interest_payment_history = []
         self.stat_balance_history = []
