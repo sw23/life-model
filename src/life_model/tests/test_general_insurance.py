@@ -118,7 +118,7 @@ class TestGeneralInsurance(unittest.TestCase):
         self.assertEqual(insurance.stat_claims_filed, 1)
         self.assertEqual(insurance.stat_claims_paid_out, 14000)
 
-        # Single-deductible convention (bug 10): the person bears the $15k loss and the insurer
+        # Single-deductible convention: the person bears the $15k loss and the insurer
         # reimburses $14k, so the net cash effect is exactly the $1,000 deductible.
         expected_balance = initial_balance - 1000
         self.assertEqual(self.john.bank_account_balance, expected_balance)
@@ -376,8 +376,8 @@ class TestGeneralInsurance(unittest.TestCase):
         self.assertIn("Claims Filed: 1", html)
 
 
-class TestGeneralInsurancePlan08(unittest.TestCase):
-    """Regression tests for Plan 08 general-insurance fixes."""
+class TestGeneralInsuranceClaims(unittest.TestCase):
+    """Claim settlement (single-deductible) and coverage/premium updates."""
 
     def setUp(self):
         self.model = LifeModel(start_year=2023, end_year=2040)
@@ -388,7 +388,7 @@ class TestGeneralInsurancePlan08(unittest.TestCase):
         BankAccount(owner=self.john, company="Bank", balance=50000)
 
     def test_claim_net_cash_is_single_deductible(self):
-        """A $10k claim with a $1k deductible changes net cash by exactly -$1k (bug 10)."""
+        """A $10k claim with a $1k deductible changes net cash by exactly -$1k."""
         insurance = Insurance(
             person=self.john,
             insurance_type=InsuranceType.AUTO,
@@ -402,7 +402,7 @@ class TestGeneralInsurancePlan08(unittest.TestCase):
         self.assertEqual(self.john.bank_account_balance, initial - 1000)
 
     def test_update_coverage_preserves_accumulated_increases(self):
-        """update_coverage scales the current (compounded) premium, not the base (bug 11)."""
+        """update_coverage scales the current (compounded) premium, not the base."""
         insurance = Insurance(
             person=self.john,
             insurance_type=InsuranceType.HOME,

@@ -147,7 +147,7 @@ class TestLifeInsurance(unittest.TestCase):
 
         # Take a loan
         loan_amount = policy.take_loan(5000)
-        # Bug 6 fix: 90% of cash value is the loan *cap*, not a per-request haircut. A $5,000
+        # 90% of cash value is the loan *cap*, not a per-request haircut. A $5,000
         # request against $10,000 cash value (cap $9,000) is honored in full.
         self.assertEqual(loan_amount, 5000)
         self.assertEqual(policy.outstanding_loan_balance, 5000)
@@ -488,8 +488,8 @@ class TestLifeInsurance(unittest.TestCase):
         self.assertGreater(len(default_policy.age_multipliers), 0)  # Should have default multipliers
 
 
-class TestLifeInsurancePlan08(unittest.TestCase):
-    """Regression tests for Plan 08 life-insurance fixes."""
+class TestLifeInsuranceLoansAndSurrender(unittest.TestCase):
+    """Whole-life loan caps, over-loan lapse, surrender taxation, and death benefits."""
 
     def setUp(self):
         self.model = LifeModel(start_year=2023, end_year=2040)
@@ -510,19 +510,19 @@ class TestLifeInsurancePlan08(unittest.TestCase):
         return LifeInsurance(**params)
 
     def test_loan_request_under_cap_is_fully_honored(self):
-        """A loan request within the 90% cap is not haircut (bug 6)."""
+        """A loan request within the 90% cap is not haircut."""
         policy = self._whole_policy()
         policy.cash_value = 10000
         self.assertEqual(policy.take_loan(5000), 5000)
 
     def test_loan_request_over_cap_is_capped(self):
-        """A loan request above the 90% cap is limited to the cap (bug 6)."""
+        """A loan request above the 90% cap is limited to the cap."""
         policy = self._whole_policy()
         policy.cash_value = 10000
         self.assertEqual(policy.take_loan(9500), 9000)
 
     def test_policy_lapses_when_loan_exceeds_cash_value(self):
-        """The policy lapses and gain is taxed when loan balance exceeds cash value (bug 7)."""
+        """The policy lapses and gain is taxed when loan balance exceeds cash value."""
         policy = self._whole_policy(loan_interest_rate=50.0)  # high rate to force loan > cash value
         policy.cash_value = 10000
         policy.total_premiums_paid = 1000
@@ -535,7 +535,7 @@ class TestLifeInsurancePlan08(unittest.TestCase):
         self.assertGreater(self.jane.taxable_income, 0)
 
     def test_surrender_gain_is_taxed(self):
-        """Dropping a whole-life policy taxes the surrender gain over basis (bug 9)."""
+        """Dropping a whole-life policy taxes the surrender gain over basis."""
         policy = self._whole_policy()
         policy.cash_value = 20000
         policy.total_premiums_paid = 5000
@@ -545,7 +545,7 @@ class TestLifeInsurancePlan08(unittest.TestCase):
         self.assertAlmostEqual(self.jane.taxable_income, 11000, places=2)
 
     def test_death_benefit_net_of_loans_paid_to_spouse(self):
-        """process_death_benefit pays the loan-netted benefit to the spouse (bug 8, for Plan 09)."""
+        """process_death_benefit pays the loan-netted benefit to the spouse."""
         john = Person(
             family=self.family, name="John", age=42, retirement_age=65, spending=Spending(self.model, base=50000)
         )

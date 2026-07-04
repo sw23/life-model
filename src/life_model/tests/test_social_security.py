@@ -218,8 +218,8 @@ class TestSocialSecurity(unittest.TestCase):
         self.assertAlmostEqual(chk_pct * 100, last_avg_wage_index_increase + 100, places=2)
 
 
-class TestSocialSecurityPlan08(unittest.TestCase):
-    """Regression tests for Plan 08 social-security fixes."""
+class TestSocialSecurityBenefitsAndWageBase(unittest.TestCase):
+    """Per-year wage-base capping, benefit ledger routing/taxation, and extrapolation."""
 
     def _person(self, start_year=2020, age=67):
         model = LifeModel(start_year=start_year, end_year=start_year + 10)
@@ -228,7 +228,7 @@ class TestSocialSecurityPlan08(unittest.TestCase):
         return model, person
 
     def test_wage_base_capping_uses_each_years_base(self):
-        """AIME income is capped at each year's own wage base, not a single frozen value (bug 13)."""
+        """AIME income is capped at each year's own wage base, not a single frozen value."""
         _, person = self._person()
         ss = SocialSecurity(person=person, withdrawal_start_age=67)
         ss.add_income_for_year(200000, 2024)
@@ -239,7 +239,7 @@ class TestSocialSecurityPlan08(unittest.TestCase):
         self.assertEqual(by_year[2025], 176100)
 
     def test_benefits_route_through_income_ledger(self):
-        """Benefits deposit as cash and record an SS_BENEFIT ledger entry (item 14)."""
+        """Benefits deposit as cash and record an SS_BENEFIT ledger entry."""
         from ..tax.income import IncomeType
 
         model, person = self._person(start_year=2030, age=67)
@@ -254,14 +254,14 @@ class TestSocialSecurityPlan08(unittest.TestCase):
         self.assertEqual(person.stat_ss_income, yearly_pia)
 
     def test_benefit_taxable_portion_zero_when_no_other_income(self):
-        """A modest benefit with no other income falls below the provisional threshold (item 14)."""
+        """A modest benefit with no other income falls below the provisional threshold."""
         _, person = self._person()
         ss = SocialSecurity(person=person, withdrawal_start_age=67)
         # $20k benefit, provisional = 0.5*20000 = 10000 < 25000 single threshold -> not taxable.
         self.assertEqual(ss._taxable_benefit_portion(20000), 0.0)
 
     def test_benefit_taxable_portion_capped_at_85_percent(self):
-        """With high other income, up to 85% of the benefit is taxable (item 14)."""
+        """With high other income, up to 85% of the benefit is taxable."""
         _, person = self._person()
         ss = SocialSecurity(person=person, withdrawal_start_age=67)
         person.income.add_wages(100000, 100000)
@@ -276,7 +276,7 @@ class TestSocialSecurityPlan08(unittest.TestCase):
         self.assertEqual(ss.get_aime(), 0)
 
     def test_cost_of_living_adj_uses_long_run_beyond_table(self):
-        """COLA beyond the published table uses the configured long-run assumption (item 15)."""
+        """COLA beyond the published table uses the configured long-run assumption."""
         from ..insurance.social_security import get_cost_of_living_adj
 
         last_year = config.financial.social_security.last_cost_of_living_adj_year

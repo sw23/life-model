@@ -131,9 +131,8 @@ social_security:
   last_avg_wage_index_increase: 4.84
   last_cost_of_living_adj_year: 2025
   last_bend_points_year: 2026
-  # Long-run assumptions applied beyond the published tables (Plan 08 item 15). Defaults
-  # preserve prior behavior (reuse the last published COLA; freeze bend points). Tie into
-  # Plan 10 inflation modeling when it lands.
+  # Long-run assumptions applied beyond the published tables. A long-run COLA equal to the last
+  # published value and a 0% bend-point increase keep projected benefits flat past the table.
   long_run_cost_of_living_adj: 2.8  # percentage; matches the last published (2025) COLA
   long_run_bend_point_increase: 0.0  # percentage; 0 == freeze bend points at last published year
 

@@ -88,8 +88,8 @@ class TestAnnuity(unittest.TestCase):
         self.assertIsNotNone(annuity.monthly_payout)
 
 
-class TestAnnuityPlan08(unittest.TestCase):
-    """Regression tests for Plan 08 annuity fixes."""
+class TestAnnuityReserveAndTaxation(unittest.TestCase):
+    """Annuitization reserve conversion, auto-annuitization, and payout taxation."""
 
     def setUp(self):
         self.model = LifeModel(start_year=2023, end_year=2040)
@@ -100,7 +100,7 @@ class TestAnnuityPlan08(unittest.TestCase):
         BankAccount(owner=self.john, company="Bank", balance=100000)
 
     def test_fixed_annuity_auto_annuitizes_at_payout_age(self):
-        """A FIXED annuity must auto-annuitize once payout age is reached (precedence bug 2)."""
+        """A FIXED annuity must auto-annuitize once payout age is reached."""
         annuity = Annuity(
             person=self.john,
             annuity_type=AnnuityType.FIXED,
@@ -129,7 +129,7 @@ class TestAnnuityPlan08(unittest.TestCase):
         self.assertFalse(annuity.is_annuitized)
 
     def test_surrender_after_annuitize_returns_zero(self):
-        """Once annuitized, surrender() must not recover the balance (double-payment bug 1)."""
+        """Once annuitized, surrender() must not recover the balance (no double payment)."""
         annuity = Annuity(
             person=self.john,
             annuity_type=AnnuityType.IMMEDIATE,
@@ -144,7 +144,7 @@ class TestAnnuityPlan08(unittest.TestCase):
         self.assertEqual(self.john.bank_account_balance, bank_before)
 
     def test_annuitized_reserve_drains_and_balance_is_zero(self):
-        """Annuitizing converts the balance to a reserve that drains as payouts are made (D1)."""
+        """Annuitizing converts the balance to a reserve that drains as payouts are made."""
         annuity = Annuity(
             person=self.john,
             annuity_type=AnnuityType.IMMEDIATE,
@@ -174,7 +174,7 @@ class TestAnnuityPlan08(unittest.TestCase):
         self.assertGreater(period_certain, life_only)
 
     def test_annuity_payout_is_taxed_via_exclusion_ratio(self):
-        """Payouts route the gains portion to the income ledger (bug 4)."""
+        """Payouts route the gains portion to the income ledger."""
         annuity = Annuity(
             person=self.john,
             annuity_type=AnnuityType.IMMEDIATE,

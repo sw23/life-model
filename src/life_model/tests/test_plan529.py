@@ -23,7 +23,7 @@ class TestPlan529(unittest.TestCase):
         self.mock_person.model = self.model
         self.mock_person.unique_id = 1
         # ``income`` is a per-instance IncomeLedger on real Persons; provide a stub so the
-        # withdrawal cash/tax routing (Plan 08 bug 18) can record entries against the mock.
+        # withdrawal cash/tax routing can record entries against the mock.
         self.mock_person.income = Mock()
 
         # Create a mock child
@@ -335,8 +335,8 @@ class TestPlan529(unittest.TestCase):
         self.assertIn(self.plan, registered_plans)
 
 
-class TestPlan529Plan08(unittest.TestCase):
-    """Regression tests for Plan 08 529 fixes (pro-rata basis + cash/penalty routing)."""
+class TestPlan529BasisAndWithdrawals(unittest.TestCase):
+    """Pro-rata basis tracking and cash/penalty/tax routing on 529 withdrawals."""
 
     def setUp(self):
         from ..account.bank import BankAccount
@@ -354,7 +354,7 @@ class TestPlan529Plan08(unittest.TestCase):
         self.bank = BankAccount(owner=self.owner, company="Bank", balance=0)
 
     def test_qualified_withdrawal_deposits_cash_and_is_untaxed(self):
-        """Qualified withdrawals deposit cash to the owner and are not taxed (bug 18)."""
+        """Qualified withdrawals deposit cash to the owner and are not taxed."""
         plan = Plan529(owner=self.owner, balance=10000.0)
         plan.total_earnings = 4000.0
         plan.total_contributions = 6000.0
@@ -391,7 +391,7 @@ class TestPlan529Plan08(unittest.TestCase):
         self.assertAlmostEqual(self.owner.bank_account_balance, 59500.0, places=2)
 
     def test_repeated_withdrawals_keep_earnings_ratio_stable(self):
-        """Successive withdrawals must not corrupt the earnings ratio (bug 17)."""
+        """Successive withdrawals must not corrupt the earnings ratio."""
         plan = Plan529(owner=self.owner, balance=10000.0)
         plan.total_contributions = 6000.0
         plan.total_earnings = 4000.0  # 40% earnings ratio

@@ -196,9 +196,9 @@ class Insurance(LifeModelAgent):
             claim.status = ClaimStatus.APPROVED
             claim.settlement_date = self.model.year
 
-            # Single-deductible convention (Plan 08 bug 10): the person incurs the loss (the full
-            # claim amount) and the insurer reimburses it net of the deductible. The net cash
-            # effect on the person is therefore exactly the deductible — charged once, not twice.
+            # Single-deductible convention: the person incurs the loss (the full claim amount)
+            # and the insurer reimburses it net of the deductible. The net cash effect on the
+            # person is therefore exactly the deductible.
             self.person.deduct_from_bank_accounts(claim.amount)
             self.person.receive_cash(claim.payout_amount, source="insurance payout")
             self.stat_deductibles_paid += claim.deductible
@@ -226,7 +226,7 @@ class Insurance(LifeModelAgent):
 
         # Adjust premium based on coverage change. Scale the *current* premium (which may have
         # compounded from step() increases) rather than the base, so accumulated increases are
-        # preserved (Plan 08 bug 11).
+        # preserved.
         coverage_ratio = new_coverage_amount / old_coverage
         self.annual_premium *= coverage_ratio
         self.base_annual_premium *= coverage_ratio

@@ -60,7 +60,7 @@ class LifeInsurance(LifeModelAgent):
             loan_interest_rate = life_config.default_loan_interest_rate
         if max_missed_payments is None:
             max_missed_payments = life_config.default_max_missed_payments
-        # Config-driven policy parameters (Plan 08 item 9).
+        # Config-driven policy parameters.
         self.loan_to_value_ratio = life_config.loan_to_value_ratio
         self.cash_value_premium_fraction_first_year = life_config.cash_value_premium_fraction_first_year
         self.cash_value_premium_fraction_later = life_config.cash_value_premium_fraction_later

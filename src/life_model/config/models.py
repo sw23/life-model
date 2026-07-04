@@ -111,7 +111,7 @@ class SocialSecurityConfig(StrictModel):
     last_avg_wage_index_increase: float
     last_cost_of_living_adj_year: int
     last_bend_points_year: int
-    # Long-run assumptions applied for years beyond the published tables (Plan 08 item 15).
+    # Long-run assumptions applied for years beyond the published tables.
     long_run_cost_of_living_adj: float = Field(ge=0)
     long_run_bend_point_increase: float = Field(ge=0)
 

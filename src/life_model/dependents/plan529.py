@@ -107,7 +107,7 @@ class Plan529(Investment):
 
         Returns the earnings portion of the withdrawal (based on the pre-withdrawal
         composition). Keeping contributions/earnings in sync with the balance prevents the
-        earnings ratio from drifting toward/past 1.0 after successive withdrawals (bug 17).
+        earnings ratio from drifting toward/past 1.0 after successive withdrawals.
         """
         if self.balance <= 0 or withdrawal_amount <= 0:
             return 0.0
@@ -131,12 +131,12 @@ class Plan529(Investment):
 
         actual_withdrawal = min(self.balance, amount)
         if actual_withdrawal > 0:
-            # Reduce basis pro-rata before drawing down the balance (bug 17).
+            # Reduce basis pro-rata before drawing down the balance.
             self._reduce_basis_pro_rata(actual_withdrawal)
             self.balance -= actual_withdrawal
             self.total_withdrawals += actual_withdrawal
             self.qualified_withdrawals += actual_withdrawal
-            # Qualified withdrawals are tax-free; deposit the cash to the owner (bug 18).
+            # Qualified withdrawals are tax-free; deposit the cash to the owner.
             self.person.receive_cash(actual_withdrawal, source="529 qualified withdrawal")
 
         return actual_withdrawal
@@ -146,7 +146,7 @@ class Plan529(Investment):
 
         The earnings portion of the withdrawal is ordinary taxable income and is subject to a
         penalty; the full withdrawal is deposited into the owner's bank account and the penalty
-        is debited from it (bug 18).
+        is debited from it.
 
         Args:
             amount: Amount to withdraw
@@ -172,8 +172,8 @@ class Plan529(Investment):
         self.total_withdrawals += actual_withdrawal
         self.non_qualified_withdrawals += actual_withdrawal
 
-        # Route the cash and taxes (bug 18): full withdrawal to the owner's bank, the earnings
-        # portion is ordinary income, and the penalty is debited from the owner.
+        # Route the cash and taxes: full withdrawal to the owner's bank, the earnings portion is
+        # ordinary income, and the penalty is debited from the owner.
         self.person.receive_cash(actual_withdrawal, source="529 non-qualified withdrawal")
         if earnings_withdrawn > 0:
             self.person.income.add(IncomeType.ORDINARY, earnings_withdrawn)

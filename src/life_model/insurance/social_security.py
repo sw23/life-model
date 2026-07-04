@@ -100,7 +100,7 @@ def get_cost_of_living_adj(year: int) -> float:
         # Years in this range are in the table
         return ss_config.cost_of_living_adj[year]
     else:
-        # Years after this range use the configured long-run assumption (Plan 08 item 15).
+        # Years after this range use the configured long-run assumption.
         return ss_config.long_run_cost_of_living_adj
 
 
@@ -128,7 +128,7 @@ def get_bend_points(year: int) -> Tuple[float, float]:
         return (float(bend_point_data[0]), float(bend_point_data[1]))
     else:
         # Years after this range grow the last published bend points by the configured long-run
-        # increase (Plan 08 item 15). A 0% increase freezes them at the last published year.
+        # increase. A 0% increase freezes them at the last published year.
         bend_point_data = ss_config.bend_points[last_year]
         bp0, bp1 = float(bend_point_data[0]), float(bend_point_data[1])
         rate = ss_config.long_run_bend_point_increase / 100.0
@@ -304,8 +304,8 @@ class SocialSecurity(LifeModelAgent):
             income_obj = Income(year, amount)
             self.income_history.append(income_obj)
 
-        # Cap income at THAT year's Social Security wage base (Plan 08 bug 13), not a single
-        # frozen value applied to every year.
+        # Cap income at THAT year's Social Security wage base, not a single frozen value applied
+        # to every year.
         max_income = self.model.config.tax_year(income_obj.year).ss_wage_base
         if income_obj.amount > max_income:
             income_obj.amount = max_income
@@ -402,10 +402,10 @@ class SocialSecurity(LifeModelAgent):
 
     def pre_step(self):
         # Add social security income to the person's income once benefits have started. Benefits
-        # route through the income ledger as SS_BENEFIT (Plan 08 item 14): the taxable portion
-        # (per the provisional-income rules) enters ordinary taxable income, while the full
-        # benefit is deposited as cash. SocialSecurity runs after jobs in pre_step (default
-        # priority 0 > job priority -10), so wages are already in the ledger.
+        # route through the income ledger as SS_BENEFIT: the taxable portion (per the
+        # provisional-income rules) enters ordinary taxable income, while the full benefit is
+        # deposited as cash. SocialSecurity runs after jobs in pre_step (default priority 0 >
+        # job priority -10), so wages are already in the ledger.
         if self.model.year >= self.withdrawal_start_year:
             yearly_pia = self.get_pia() * 12
             taxable_portion = self._taxable_benefit_portion(yearly_pia)

@@ -145,7 +145,7 @@ def calculate_annuity_factor(
 
             if month < guaranteed_months:
                 # Guaranteed payment regardless of survival, but survival must still be
-                # decremented so post-guarantee payments are not over-weighted (bug 3).
+                # decremented so post-guarantee payments are not over-weighted.
                 annuity_factor += discount_factor
                 survival_probability *= _monthly_survival(current_age)
             else:
@@ -238,7 +238,7 @@ class Annuity(LifeModelAgent):
         self.remaining_period_certain_payments = 0
 
         # Annuitization converts ``balance`` into a reserve that funds payouts and is no longer
-        # a withdrawable/surrenderable asset (Plan 08 D1).
+        # a withdrawable/surrenderable asset.
         self.annuitized_reserve = 0.0
         self.exclusion_ratio = 0.0
 
