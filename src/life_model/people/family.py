@@ -5,7 +5,7 @@
 
 from ..model import LifeModel, LifeModelAgent
 from ..tax.federal import FilingStatus, get_federal_standard_deduction
-from ..tax.tax import TaxesDue, get_income_taxes_due
+from ..tax.tax import TaxesDue, compute_taxes
 from .tax_unit import TaxUnit
 
 
@@ -90,20 +90,20 @@ class Family(LifeModelAgent):
     def get_income_taxes_due(self, additional_income: float = 0) -> TaxesDue:
         """Get income taxes due for the year.
 
-        Args:
-            additional_income (float, optional): Additional income to include in calculation. Defaults to 0.
+        FICA is computed per member on their own wages; ``additional_income`` is ordinary income
+        but not FICA wages.
 
-        Raises:
-            NotImplementedError: Unsupported filing status.
+        Args:
+            additional_income (float, optional): Additional ordinary income to include. Defaults to 0.
 
         Returns:
-            float: Federal taxes due.
+            TaxesDue: Taxes due, split by type.
         """
-        income_amount = self.combined_taxable_income + additional_income
-        if self.filing_status == FilingStatus.MARRIED_FILING_JOINTLY:
-            return get_income_taxes_due(income_amount, self.federal_deductions, self.filing_status, self.model.config)
-        else:
-            raise NotImplementedError(f"Unsupported filing status: {self.filing_status}")
+        ordinary_income = self.combined_taxable_income + additional_income
+        wage_incomes = [member.fica_wages for member in self.members]
+        return compute_taxes(
+            ordinary_income, self.federal_deductions, self.filing_status, wage_incomes, self.model.config
+        )
 
     def step(self):
         # Family performs no tax math. It groups its members into filing units and lets each

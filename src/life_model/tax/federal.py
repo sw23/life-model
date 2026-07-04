@@ -33,7 +33,13 @@ def get_federal_tax_brackets(filing_status: FilingStatus, config: "Optional[Fina
 
 
 def federal_income_tax(income: float, filing_status: FilingStatus, config: "Optional[FinancialConfig]" = None) -> float:
-    """Calculates federal income tax due
+    """Calculates federal income tax due.
+
+    Brackets are treated as half-open marginal segments ``[prev_upper, upper)`` where ``upper``
+    is each row's second column (the last row uses ``inf``). Using the upper bound as the segment
+    boundary — rather than the row's own ``start`` (which is ``prev_upper + 1``) — closes the $1
+    gaps the old ``[start, end]`` rows left between brackets. The result is not rounded (Plan 04
+    D3); callers round the final total tax bill once.
 
     Args:
         income (float): Taxable income.
@@ -43,14 +49,16 @@ def federal_income_tax(income: float, filing_status: FilingStatus, config: "Opti
     Returns:
         total_tax: Amount of tax due based on the taxable income.
     """
-    bracket = get_federal_tax_brackets(filing_status, config)
-    total_tax = 0
-    for start, end, percent in bracket:
-        amount_in_bracket = min(max(income - start, 0), end - start)
-        if amount_in_bracket == 0:
+    brackets = get_federal_tax_brackets(filing_status, config)
+    total_tax = 0.0
+    prev_upper = 0.0
+    for _start, upper, percent in brackets:
+        if income <= prev_upper:
             break
+        amount_in_bracket = min(income, upper) - prev_upper
         total_tax += amount_in_bracket * (percent / 100)
-    return round(total_tax)
+        prev_upper = upper
+    return total_tax
 
 
 def max_tax_rate(filing_status: FilingStatus, config: "Optional[FinancialConfig]" = None) -> float:

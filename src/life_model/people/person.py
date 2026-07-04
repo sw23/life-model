@@ -11,7 +11,8 @@ from ..model import Event, LifeModel, LifeModelAgent
 from ..services.payment_service import PaymentService
 from ..services.tax_calculation_service import TaxCalculationService
 from ..tax.federal import FilingStatus, get_federal_standard_deduction
-from ..tax.tax import TaxesDue, get_income_taxes_due
+from ..tax.income import IncomeLedger, IncomeType
+from ..tax.tax import TaxesDue, compute_taxes
 from .family import Family
 from .types import GenderAtBirth  # noqa: F401  (re-exported for backward compatibility)
 
@@ -40,7 +41,9 @@ class Person(LifeModelAgent):
         self.retirement_age = retirement_age
         self.spending = spending
         self.debt = 0
-        self.taxable_income: float = 0
+        # Per-person income ledger: separates FICA wages from ordinary taxable income so that
+        # payroll tax and income tax each see the correct base (see tax/income.py).
+        self.income = IncomeLedger()
         self.spouse = None
         self.filing_status = FilingStatus.SINGLE
         self.social_security: Optional[SocialSecurity] = None
@@ -122,20 +125,34 @@ class Person(LifeModelAgent):
 
     @property
     def total_itemized_deductions(self) -> float:
-        """Calculate total itemized deductions
+        """Calculate total itemized deductions.
 
         Currently includes:
         - Charitable contributions
-        - Mortgage interest (if applicable)
+        - Mortgage interest (capped to the first $750k of acquisition debt, TCJA)
+        - State and local taxes (property tax here), capped at the SALT limit
 
-        TODO: Add other itemized deductions (state taxes, medical expenses, etc.)
+        TODO: Add other itemized deductions (state income tax in SALT, medical expenses, etc.)
         """
         itemized = self.charitable_deductions
 
-        # Add mortgage interest deductions
+        federal = self.model.config.tax.federal
+        salt_paid = 0.0
         for home in self.homes:
-            if hasattr(home, "mortgage") and home.mortgage:
-                itemized += home.mortgage.get_interest_for_year()
+            mortgage = getattr(home, "mortgage", None)
+            if mortgage:
+                # Deduct the interest actually paid this year (pre-payment principal), limited to
+                # the share attributable to the first $750k of acquisition debt.
+                interest = mortgage.interest_paid_this_year
+                acquisition_debt = mortgage.loan_amount
+                debt_limit = federal.mortgage_interest_debt_limit
+                if acquisition_debt > debt_limit:
+                    interest *= debt_limit / acquisition_debt
+                itemized += interest
+            salt_paid += home.property_tax_for_year
+
+        # SALT deduction (property tax) is capped.
+        itemized += min(salt_paid, federal.salt_deduction_cap)
 
         return itemized
 
@@ -171,6 +188,16 @@ class Person(LifeModelAgent):
     @property
     def bank_account_balance(self) -> float:
         return sum(x.balance for x in self.bank_accounts)
+
+    @property
+    def taxable_income(self) -> float:
+        """Ordinary taxable income accumulated this year (income tax base)."""
+        return self.income.ordinary_taxable
+
+    @property
+    def fica_wages(self) -> float:
+        """Earned income subject to FICA this year (payroll tax base)."""
+        return self.income.fica_wages
 
     @staticmethod
     def _withdraw_sequence(withdrawers, amount: float) -> float:
@@ -233,7 +260,8 @@ class Person(LifeModelAgent):
             float: Amount actually withdrawn (may be less than requested if funds are short).
         """
         withdrawn = amount - self.deduct_from_pretax_401ks(amount)
-        self.taxable_income += withdrawn
+        # Pre-tax 401k distributions are ordinary income but are NOT FICA wages.
+        self.income.add(IncomeType.PRETAX_DISTRIBUTION, withdrawn)
         self.receive_cash(withdrawn)
         return withdrawn
 
@@ -279,23 +307,21 @@ class Person(LifeModelAgent):
         return self.payment_service.pay_bills_with_prioritization(spending_balance)
 
     def get_income_taxes_due(self, additional_income: float = 0) -> TaxesDue:
-        """Gets income taxes due for the year.
+        """Gets income taxes due for the year for this person as a single filer.
+
+        FICA is computed on the person's own wages only; ``additional_income`` (e.g. a prospective
+        pre-tax 401k withdrawal) is ordinary income but not FICA wages.
 
         Args:
-            additional_income (float, optional): Additional income to include, not present in taxable_income.
-
-        Raises:
-            NotImplementedError: Unsupported filing status.
+            additional_income (float, optional): Additional ordinary income not present in the ledger.
 
         Returns:
-            float: Federal taxes due.
+            TaxesDue: Taxes due, split by type.
         """
-
-        income_amount = self.taxable_income + additional_income
-        if self.filing_status == FilingStatus.SINGLE:
-            return get_income_taxes_due(income_amount, self.federal_deductions, self.filing_status, self.model.config)
-        else:
-            raise NotImplementedError(f"Unsupported filing status: {self.filing_status}")
+        ordinary_income = self.taxable_income + additional_income
+        return compute_taxes(
+            ordinary_income, self.federal_deductions, self.filing_status, [self.fica_wages], self.model.config
+        )
 
     def get_married(self, spouse: "Person", link_spouse: bool = True):
         """Get married.
@@ -351,7 +377,7 @@ class Person(LifeModelAgent):
             self._retirement_age_event_logged = True
 
     def post_step(self):
-        self.taxable_income = 0
+        self.income.clear()
 
 
 class Spending(LifeModelAgent):

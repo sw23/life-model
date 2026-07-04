@@ -22,6 +22,10 @@ class DonationType(Enum):
 
 
 class Donation(LifeModelAgent):
+    # Donate in pre_step after income is deposited (jobs run at the default priority 0) but
+    # before the tax unit settles taxes in the step stage, so the deduction is visible this year.
+    STEP_PRIORITY = {"pre_step": 10}
+
     def __init__(
         self,
         person: "Person",
@@ -114,20 +118,21 @@ class Donation(LifeModelAgent):
         return desc
 
     def pre_step(self):
-        """Reset stats before the year begins"""
-        # Reset this year's donation stat
+        """Make this year's donation before taxes are settled.
+
+        Donations run in ``pre_step`` (after income is deposited, priority 10) so that the
+        charitable deduction is visible when the tax unit settles taxes in the ``step`` stage.
+        Previously donations executed in ``post_step`` — after taxes were already computed — so
+        the deduction never reduced taxes.
+        """
+        # Reset this year's donation stat, then make the donation so the deduction is current.
         self.stat_charitable_donations = 0
+        self.make_donation()
 
     def step(self):
-        """Step phase - wait for post_step to make donations"""
+        """No-op: donations are made in pre_step so they are deductible this year."""
         pass
 
     def post_step(self):
-        """Make donation after person pays bills and expenses
-
-        Donations execute in post_step (lowest priority) so essential bills
-        and spending in person.step() are paid first. Only leftover funds
-        are available for charitable giving.
-        Donations are tracked separately from expenses in stat_charitable_donations.
-        """
-        self.make_donation()
+        """No-op: donation cash movement happens in pre_step."""
+        pass

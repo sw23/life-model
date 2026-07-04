@@ -6,8 +6,8 @@
 from typing import TYPE_CHECKING, Dict, List
 
 from ..model import round_money
-from ..tax.federal import FilingStatus, get_federal_standard_deduction, max_tax_rate
-from ..tax.tax import TaxesDue, get_income_taxes_due
+from ..tax.federal import FilingStatus, get_federal_standard_deduction
+from ..tax.tax import TaxesDue, compute_taxes
 
 if TYPE_CHECKING:
     from .family import Family
@@ -84,8 +84,11 @@ class TaxUnit:
         return max(standard_deduction, self.total_itemized_deductions)
 
     def get_income_taxes_due(self, additional_income: float = 0) -> TaxesDue:
-        income_amount = self.taxable_income + additional_income
-        return get_income_taxes_due(income_amount, self.federal_deductions, self.filing_status, self.config)
+        # ``additional_income`` models a prospective pre-tax 401k withdrawal: it is ordinary
+        # income but not FICA wages, so it is not added to the per-member wage bases.
+        ordinary_income = self.taxable_income + additional_income
+        wage_incomes = [m.fica_wages for m in self.members]
+        return compute_taxes(ordinary_income, self.federal_deductions, self.filing_status, wage_incomes, self.config)
 
     def withdraw_from_pretax_401ks(self, amount: float) -> float:
         """Withdraw ``amount`` from members' pre-tax 401ks. Returns the amount not withdrawn."""
@@ -144,21 +147,33 @@ class TaxUnit:
         self._record_stats(taxes, spending_by_member, housing_by_member, interest_by_member)
 
     def _solve_withdrawals_and_taxes(self, bills: float) -> TaxesDue:
-        """Withdraw enough pre-tax 401k to cover bills + taxes when the bank can't, then return
-        the final taxes due after the withdrawal is included in taxable income."""
-        initial_taxes = self.get_income_taxes_due()
-        total_needed = bills + initial_taxes.total
-        base_withdrawal = max(0.0, total_needed - self.bank_account_balance)
-        if base_withdrawal <= 0:
-            return initial_taxes
+        """Withdraw enough pre-tax 401k to cover bills + the taxes the withdrawal itself triggers
+        when the bank can't, then return the final taxes due.
 
-        taxes_after = self.get_income_taxes_due(base_withdrawal)
-        extra_tax = taxes_after.total - initial_taxes.total
-        # Add a buffer based on the max marginal rate so the withdrawal also covers its own tax.
-        tax_buffer = extra_tax * (max_tax_rate(self.filing_status, self.config) / 100)
-        self.withdraw_from_pretax_401ks(base_withdrawal + extra_tax + tax_buffer)
-
+        The gross withdrawal is sized by a fixed-point iteration rather than a max-marginal-rate
+        buffer: ``gross = bills + taxes(gross) - bank_balance``. Because the marginal tax rate is
+        piecewise-constant and below 100%, the map is a contraction and converges quickly. This
+        avoids the old heuristic's systematic over-withdrawal.
+        """
+        gross = self._size_gross_withdrawal(bills)
+        if gross > 0:
+            self.withdraw_from_pretax_401ks(gross)
         return self.get_income_taxes_due()
+
+    def _size_gross_withdrawal(self, bills: float) -> float:
+        """Pure fixed-point solve for the pre-tax 401k withdrawal needed to cover bills + taxes.
+
+        Side-effect-free: computes the gross amount without moving any money.
+        """
+        bank = self.bank_account_balance
+        gross = 0.0
+        for _ in range(100):
+            taxes = self.get_income_taxes_due(gross).total
+            needed = max(0.0, bills + taxes - bank)
+            if abs(needed - gross) < 0.001:
+                return needed
+            gross = needed
+        return gross
 
     def _record_stats(
         self,

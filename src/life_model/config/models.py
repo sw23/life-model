@@ -32,6 +32,10 @@ class TaxBracketsConfig(StrictModel):
 class FederalTaxConfig(StrictModel):
     standard_deduction: StandardDeductionConfig
     tax_brackets: TaxBracketsConfig
+    # Itemized-deduction limits (defaults let existing configs load without these keys).
+    # vintage: 2026, source: IRC §163(h)(3) TCJA acquisition-debt limit; §164(b)(6) SALT cap (OBBBA).
+    mortgage_interest_debt_limit: int = Field(default=750000, ge=0)
+    salt_deduction_cap: int = Field(default=40000, ge=0)
 
 
 class StateTaxConfig(StrictModel):
