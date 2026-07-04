@@ -18,7 +18,7 @@ from ..model import LifeModel
 from ..people.family import Family
 from ..people.person import Person, Spending
 from ..people.tax_unit import TaxUnit
-from ..tax.federal import FilingStatus, federal_standard_deduction
+from ..tax.federal import FilingStatus, get_federal_standard_deduction
 from ..tax.tax import get_income_taxes_due
 from ..work.job import Job, Salary
 
@@ -176,11 +176,17 @@ class TestMixedFilingUnits(unittest.TestCase):
 
         model.step()
 
-        tax_a = get_income_taxes_due(60000, federal_standard_deduction[FilingStatus.SINGLE], FilingStatus.SINGLE).total
+        tax_a = get_income_taxes_due(
+            60000,
+            get_federal_standard_deduction(FilingStatus.SINGLE, model.config),
+            FilingStatus.SINGLE,
+            model.config,
+        ).total
         tax_bc = get_income_taxes_due(
             150000,
-            federal_standard_deduction[FilingStatus.MARRIED_FILING_JOINTLY],
+            get_federal_standard_deduction(FilingStatus.MARRIED_FILING_JOINTLY, model.config),
             FilingStatus.MARRIED_FILING_JOINTLY,
+            model.config,
         ).total
 
         total_taxes = sum(p.stat_taxes_paid for p in (a, b, c))

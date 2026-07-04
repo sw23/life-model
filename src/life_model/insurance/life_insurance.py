@@ -32,9 +32,9 @@ class LifeInsurance(LifeModelAgent):
         monthly_premium: float,
         term_years: Optional[int] = None,
         premium_increase_rate: Union[float, dict, None] = None,
-        cash_value_growth_rate: float = 0.0,
-        loan_interest_rate: float = 6.0,
-        max_missed_payments: int = 3,
+        cash_value_growth_rate: Optional[float] = None,
+        loan_interest_rate: Optional[float] = None,
+        max_missed_payments: Optional[int] = None,
     ):
         """Models life insurance policy for a person
 
@@ -46,12 +46,19 @@ class LifeInsurance(LifeModelAgent):
             term_years: Number of years for term life (None for whole life)
             premium_increase_rate: Either a yearly percentage increase (float) or
                                  age-based multipliers dict (dict), or None for default age-based
-            cash_value_growth_rate: Yearly growth rate for whole life cash value
-            loan_interest_rate: Interest rate for loans against cash value
-            max_missed_payments: Maximum consecutive missed payments before lapse
+            cash_value_growth_rate: Yearly growth rate for whole life cash value. Uses configured default if None.
+            loan_interest_rate: Interest rate for loans against cash value. Uses configured default if None.
+            max_missed_payments: Maximum consecutive missed payments before lapse. Uses configured default if None.
         """
         super().__init__(cast(LifeModel, person.model))
         self.model: "LifeModel" = cast("LifeModel", self.model)  # Type override for better intellisense
+        life_config = self.model.config.insurance.life
+        if cash_value_growth_rate is None:
+            cash_value_growth_rate = life_config.default_cash_value_growth_rate
+        if loan_interest_rate is None:
+            loan_interest_rate = life_config.default_loan_interest_rate
+        if max_missed_payments is None:
+            max_missed_payments = life_config.default_max_missed_payments
         self.person = person
         self.policy_type = policy_type
         self.death_benefit = death_benefit

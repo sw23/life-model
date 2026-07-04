@@ -4,7 +4,7 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 from ..model import LifeModel, LifeModelAgent
-from ..tax.federal import FilingStatus, federal_standard_deduction
+from ..tax.federal import FilingStatus, get_federal_standard_deduction
 from ..tax.tax import TaxesDue, get_income_taxes_due
 from .tax_unit import TaxUnit
 
@@ -23,7 +23,7 @@ class Family(LifeModelAgent):
     @property
     def federal_deductions(self) -> float:
         """Get federal deductions - use greater of standard or itemized"""
-        standard_deduction = federal_standard_deduction[self.filing_status]
+        standard_deduction = get_federal_standard_deduction(self.filing_status, self.model.config)
         itemized_deductions = self.total_itemized_deductions
         return max(standard_deduction, itemized_deductions)
 
@@ -101,7 +101,7 @@ class Family(LifeModelAgent):
         """
         income_amount = self.combined_taxable_income + additional_income
         if self.filing_status == FilingStatus.MARRIED_FILING_JOINTLY:
-            return get_income_taxes_due(income_amount, self.federal_deductions, self.filing_status)
+            return get_income_taxes_due(income_amount, self.federal_deductions, self.filing_status, self.model.config)
         else:
             raise NotImplementedError(f"Unsupported filing status: {self.filing_status}")
 

@@ -13,6 +13,7 @@ insurance and taxes over time. See the project `README on GitHub
    :maxdepth: 2
 
    Installation instructions <install.rst>
+   Configuration <configuration.md>
    API documentation <apidoc.rst>
    License <license.rst>
 

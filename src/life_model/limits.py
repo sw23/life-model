@@ -3,85 +3,41 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-from .config.config_manager import config
+from typing import TYPE_CHECKING, Optional
+
+from .config.config_manager import config as _global_config
+
+if TYPE_CHECKING:
+    from .config.financial_config import FinancialConfig
 
 
-def job_401k_contrib_limit(age: int) -> int:
+def _fin(config: "Optional[FinancialConfig]") -> "FinancialConfig":
+    """Resolve the financial config to use (per-model if given, else global)."""
+    return config if config is not None else _global_config.financial
+
+
+def job_401k_contrib_limit(age: int, config: "Optional[FinancialConfig]" = None) -> int:
     """Get 401k contribution limit based on age"""
-    return config.financial.get_job_401k_contrib_limit(age)
+    return _fin(config).get_job_401k_contrib_limit(age)
 
 
-def federal_retirement_age() -> float:
+def federal_retirement_age(config: "Optional[FinancialConfig]" = None) -> float:
     """Get federal retirement age"""
-    return config.financial.get("retirement.federal_retirement_age", 59.5)
+    return _fin(config).retirement.federal_retirement_age
 
 
-# The table below is taken from the IRS website:
-# https://www.irs.gov/publications/p590b#en_US_2024_publink100090310
-# Appendix B. Uniform Lifetime Table
-# Last accessed: 10/30/25
-rmd_distribution_period = [
-    # Age, Distribution Period
-    [72, 27.4],
-    [73, 26.5],
-    [74, 25.5],
-    [75, 24.6],
-    [76, 23.7],
-    [77, 22.9],
-    [78, 22.0],
-    [79, 21.1],
-    [80, 20.2],
-    [81, 19.4],
-    [82, 18.5],
-    [83, 17.7],
-    [84, 16.8],
-    [85, 16.0],
-    [86, 15.2],
-    [87, 14.4],
-    [88, 13.7],
-    [89, 12.9],
-    [90, 12.2],
-    [91, 11.5],
-    [92, 10.8],
-    [93, 10.1],
-    [94, 9.5],
-    [95, 8.9],
-    [96, 8.4],
-    [97, 7.8],
-    [98, 7.3],
-    [99, 6.8],
-    [100, 6.4],
-    [101, 6.0],
-    [102, 5.6],
-    [103, 5.2],
-    [104, 4.9],
-    [105, 4.6],
-    [106, 4.3],
-    [107, 4.1],
-    [108, 3.9],
-    [109, 3.7],
-    [110, 3.5],
-    [111, 3.4],
-    [112, 3.3],
-    [113, 3.1],
-    [114, 3.0],
-    [115, 2.9],
-    [116, 2.8],
-    [117, 2.7],
-    [118, 2.5],
-    [119, 2.3],
-    [120, 2.0],
-]
+def get_rmd_distribution_periods(config: "Optional[FinancialConfig]" = None) -> list:
+    """Get RMD distribution periods from configuration.
+
+    The Uniform Lifetime Table (IRS Pub. 590-B Appendix B) lives in the config
+    (``retirement.rmd_distribution_periods``); this returns the applicable table.
+    """
+    return _fin(config).retirement.rmd_distribution_periods
 
 
-def get_rmd_distribution_periods() -> list:
-    """Get RMD distribution periods from configuration"""
-    return config.financial.get("retirement.rmd_distribution_periods", rmd_distribution_period)
-
-
-def required_min_distrib(age: int, balance: float) -> float:
+def required_min_distrib(age: int, balance: float, config: "Optional[FinancialConfig]" = None) -> float:
     """Calculate required minimum distribution"""
-    periods = get_rmd_distribution_periods()
+    periods = get_rmd_distribution_periods(config)
     if age < periods[0][0]:
         return 0
     elif age > periods[-1][0]:

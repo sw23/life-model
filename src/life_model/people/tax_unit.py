@@ -6,7 +6,7 @@
 from typing import TYPE_CHECKING, Dict, List
 
 from ..model import round_money
-from ..tax.federal import FilingStatus, federal_standard_deduction, max_tax_rate
+from ..tax.federal import FilingStatus, get_federal_standard_deduction, max_tax_rate
 from ..tax.tax import TaxesDue, get_income_taxes_due
 
 if TYPE_CHECKING:
@@ -37,6 +37,7 @@ class TaxUnit:
             raise ValueError("TaxUnit requires at least one member")
         self.members = members
         self.filing_status = members[0].filing_status
+        self.config = members[0].model.config
 
     @classmethod
     def build_units(cls, family: "Family") -> List["TaxUnit"]:
@@ -79,11 +80,12 @@ class TaxUnit:
     @property
     def federal_deductions(self) -> float:
         """Greater of the standard deduction for the filing status or combined itemized."""
-        return max(federal_standard_deduction[self.filing_status], self.total_itemized_deductions)
+        standard_deduction = get_federal_standard_deduction(self.filing_status, self.config)
+        return max(standard_deduction, self.total_itemized_deductions)
 
     def get_income_taxes_due(self, additional_income: float = 0) -> TaxesDue:
         income_amount = self.taxable_income + additional_income
-        return get_income_taxes_due(income_amount, self.federal_deductions, self.filing_status)
+        return get_income_taxes_due(income_amount, self.federal_deductions, self.filing_status, self.config)
 
     def withdraw_from_pretax_401ks(self, amount: float) -> float:
         """Withdraw ``amount`` from members' pre-tax 401ks. Returns the amount not withdrawn."""
@@ -153,7 +155,7 @@ class TaxUnit:
         taxes_after = self.get_income_taxes_due(base_withdrawal)
         extra_tax = taxes_after.total - initial_taxes.total
         # Add a buffer based on the max marginal rate so the withdrawal also covers its own tax.
-        tax_buffer = extra_tax * (max_tax_rate(self.filing_status) / 100)
+        tax_buffer = extra_tax * (max_tax_rate(self.filing_status, self.config) / 100)
         self.withdraw_from_pretax_401ks(base_withdrawal + extra_tax + tax_buffer)
 
         return self.get_income_taxes_due()

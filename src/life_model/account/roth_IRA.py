@@ -2,21 +2,34 @@
 #
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
+from typing import Optional
+
 from ..base_classes import Investment
 from ..model import compound_interest
 from ..people.person import Person
 
 
 class RothIRA(Investment):
-    def __init__(self, person: Person, balance: float = 0, growth_rate: float = 7.0, contribution_limit: float = 6500):
+    def __init__(
+        self,
+        person: Person,
+        balance: float = 0,
+        growth_rate: Optional[float] = None,
+        contribution_limit: Optional[float] = None,
+    ):
         """Models a Roth IRA account for a person
 
         Args:
             person: The person to which this IRA belongs
             balance: Current balance in the IRA
-            growth_rate: Expected annual growth rate percentage
-            contribution_limit: Annual contribution limit
+            growth_rate: Expected annual growth rate percentage. Uses configured default if None.
+            contribution_limit: Annual contribution limit. Uses configured default if None.
         """
+        ira_config = person.model.config.retirement.ira
+        if growth_rate is None:
+            growth_rate = ira_config.default_growth_rate
+        if contribution_limit is None:
+            contribution_limit = ira_config.contribution_limit
         super().__init__(person, balance, growth_rate)
         self.contribution_limit = contribution_limit
         self.contributions_this_year = 0

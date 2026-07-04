@@ -6,7 +6,6 @@ import html
 from typing import TYPE_CHECKING, Optional
 
 from ..base_classes import Investment
-from ..config.config_manager import config
 from ..model import compound_interest
 
 if TYPE_CHECKING:
@@ -37,22 +36,24 @@ class Plan529(Investment):
             lifetime_contribution_limit: Lifetime contribution limit. Uses configured default if None.
         """
         # Get defaults from config
-        default_growth = config.financial.get("accounts.plan_529.default_growth_rate", 7.0)
+        plan_529_config = owner.model.config.accounts.plan_529
         if growth_rate is None:
-            growth_rate = default_growth
+            growth_rate = plan_529_config.default_growth_rate
 
         super().__init__(owner, balance, growth_rate)
         self.beneficiary = beneficiary
         self.state = state
 
         # Get contribution limits from config or use provided values
-        default_annual = config.financial.get("accounts.plan_529.annual_contribution_limit", 18000)
         self.annual_contribution_limit = (
-            annual_contribution_limit if annual_contribution_limit is not None else default_annual
+            annual_contribution_limit
+            if annual_contribution_limit is not None
+            else plan_529_config.annual_contribution_limit
         )
-        default_lifetime = config.financial.get("accounts.plan_529.lifetime_contribution_limit", 500000)
         self.lifetime_contribution_limit = (
-            lifetime_contribution_limit if lifetime_contribution_limit is not None else default_lifetime
+            lifetime_contribution_limit
+            if lifetime_contribution_limit is not None
+            else plan_529_config.lifetime_contribution_limit
         )
 
         # Track contributions and earnings separately for tax purposes
@@ -145,7 +146,7 @@ class Plan529(Investment):
         earnings_withdrawn = actual_withdrawal * earnings_ratio
 
         # Apply penalty to earnings portion
-        penalty_rate = config.financial.get("accounts.plan_529.qualified_expense_penalty", 10.0) / 100
+        penalty_rate = self.model.config.accounts.plan_529.qualified_expense_penalty / 100
         penalty_amount = earnings_withdrawn * penalty_rate
 
         self.balance -= actual_withdrawal

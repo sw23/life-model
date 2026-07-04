@@ -3,21 +3,24 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 import html
+from typing import Optional
 
 from ..base_classes import Investment
 from ..people.person import Person
 
 
 class BrokerageAccount(Investment):
-    def __init__(self, person: Person, company: str, balance: float = 0, growth_rate: float = 7.0):
+    def __init__(self, person: Person, company: str, balance: float = 0, growth_rate: Optional[float] = None):
         """Models a brokerage/investment account
 
         Args:
             person: The person who owns this account
             company: Brokerage company name
             balance: Current account balance
-            growth_rate: Expected annual growth rate percentage
+            growth_rate: Expected annual growth rate percentage. Uses configured default if None.
         """
+        if growth_rate is None:
+            growth_rate = person.model.config.accounts.brokerage.default_growth_rate
         super().__init__(person, balance, growth_rate)
         self.company = company
         self.investments = []  # List of individual investments

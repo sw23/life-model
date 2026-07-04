@@ -4,96 +4,111 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 # Default financial configuration values for life-model
+#
+# The top-level `tax` section holds the current-year (2026) snapshot used by the
+# single-year tax path. The year-indexed `tax_years` table near the bottom of this
+# file holds published values for 2022-2026 for the year-aware tax API
+# (config.tax_year(year)); see docs/configuration.md for the projection rule.
 
 tax:
+  # vintage: 2026, source: IRS Rev. Proc. 2025-32 (tax year 2026, post-OBBBA)
   federal:
     standard_deduction:
-      single: 13850
-      married_filing_jointly: 27700
+      single: 16100
+      married_filing_jointly: 32200
     tax_brackets:
       single:
-        - [0, 10275, 10]
-        - [10276, 41775, 12]
-        - [41776, 89075, 22]
-        - [89076, 170050, 24]
-        - [170051, 215950, 32]
-        - [215951, 539900, 35]
-        - [539901, .inf, 37]
+        - [0, 12400, 10]
+        - [12401, 50400, 12]
+        - [50401, 105700, 22]
+        - [105701, 201775, 24]
+        - [201776, 256225, 32]
+        - [256226, 640600, 35]
+        - [640601, .inf, 37]
       married_filing_jointly:
-        - [0, 20550, 10]
-        - [20551, 83550, 12]
-        - [83551, 178150, 22]
-        - [178151, 340100, 24]
-        - [340101, 431900, 32]
-        - [431901, 647850, 35]
-        - [647851, .inf, 37]
+        - [0, 24800, 10]
+        - [24801, 100800, 12]
+        - [100801, 211400, 22]
+        - [211401, 403550, 24]
+        - [403551, 512450, 32]
+        - [512451, 768700, 35]
+        - [768701, .inf, 37]
   state:
     tax_rate: 6.0  # percentage
   fica:
+    # vintage: 2026, source: SSA Contribution & Benefit Base (ssa.gov/oact/cola/cbb.html)
     social_security_rate: 6.2  # percentage
-    social_security_max_income: 160200
+    social_security_max_income: 184500
     medicare_rate: 1.45  # percentage
     medicare_additional_rate: 0.9  # percentage
-    medicare_additional_rate_threshold:
+    medicare_additional_rate_threshold:  # statutory, unindexed
       single: 200000
       married_filing_jointly: 250000
 
 retirement:
   federal_retirement_age: 59.5
+  # vintage: 2026, source: IRS Notice 2025-67 (IR-2025-111)
   job_401k_contrib_limit:
-    base: 20500
+    base: 24500
     catch_up_age: 50
-    catch_up_amount: 6500
+    catch_up_amount: 8000
   ira:
-    contribution_limit: 6500
+    contribution_limit: 7500
     default_growth_rate: 7.0  # percentage
+  # vintage: post-2022, source: IRS Pub. 590-B Appendix B, Uniform Lifetime Table
+  # (effective for distribution years beginning 2022). RMD start age is 73
+  # (SECURE 2.0; 75 for those born 1960 or later) and is tracked per year in the
+  # tax_years table below.
   rmd_distribution_periods:
-    - [70, 27.4]
-    - [71, 26.5]
-    - [72, 25.6]
-    - [73, 24.7]
-    - [74, 23.8]
-    - [75, 22.9]
-    - [76, 22]
-    - [77, 21.2]
-    - [78, 20.3]
-    - [79, 19.5]
-    - [80, 18.7]
-    - [81, 17.9]
-    - [82, 17.1]
-    - [83, 16.3]
-    - [84, 15.5]
-    - [85, 14.8]
-    - [86, 14.1]
-    - [87, 13.4]
-    - [88, 12.7]
-    - [89, 12]
-    - [90, 11.4]
-    - [91, 10.8]
-    - [92, 10.2]
-    - [93, 9.6]
-    - [94, 9.1]
-    - [95, 8.6]
-    - [96, 8.1]
-    - [97, 7.6]
-    - [98, 7.1]
-    - [99, 6.7]
-    - [100, 6.3]
-    - [101, 5.9]
-    - [102, 5.5]
+    - [72, 27.4]
+    - [73, 26.5]
+    - [74, 25.5]
+    - [75, 24.6]
+    - [76, 23.7]
+    - [77, 22.9]
+    - [78, 22.0]
+    - [79, 21.1]
+    - [80, 20.2]
+    - [81, 19.4]
+    - [82, 18.5]
+    - [83, 17.7]
+    - [84, 16.8]
+    - [85, 16.0]
+    - [86, 15.2]
+    - [87, 14.4]
+    - [88, 13.7]
+    - [89, 12.9]
+    - [90, 12.2]
+    - [91, 11.5]
+    - [92, 10.8]
+    - [93, 10.1]
+    - [94, 9.5]
+    - [95, 8.9]
+    - [96, 8.4]
+    - [97, 7.8]
+    - [98, 7.3]
+    - [99, 6.8]
+    - [100, 6.4]
+    - [101, 6.0]
+    - [102, 5.6]
     - [103, 5.2]
     - [104, 4.9]
-    - [105, 4.5]
-    - [106, 4.2]
-    - [107, 3.9]
-    - [108, 3.7]
-    - [109, 3.4]
-    - [110, 3.1]
-    - [111, 2.9]
-    - [112, 2.6]
-    - [113, 2.4]
-    - [114, 2.1]
-    - [115, 1.9]
+    - [105, 4.6]
+    - [106, 4.3]
+    - [107, 4.1]
+    - [108, 3.9]
+    - [109, 3.7]
+    - [110, 3.5]
+    - [111, 3.4]
+    - [112, 3.3]
+    - [113, 3.1]
+    - [114, 3.0]
+    - [115, 2.9]
+    - [116, 2.8]
+    - [117, 2.7]
+    - [118, 2.5]
+    - [119, 2.3]
+    - [120, 2.0]
 
 social_security:
   min_eligible_credits: 40
@@ -307,10 +322,12 @@ accounts:
   brokerage:
     default_growth_rate: 7.0  # percentage
   hsa:
-    contribution_limit: 4150
+    # vintage: 2026, source: IRS Rev. Proc. 2025-19
+    contribution_limit: 4400  # self-only
+    contribution_limit_family: 8750
     default_employer_contribution: 0
   plan_529:
-    annual_contribution_limit: 18000  # per beneficiary (2024 gift tax exclusion)
+    annual_contribution_limit: 19000  # per beneficiary (2025/2026 gift tax exclusion)
     lifetime_contribution_limit: 500000  # typical state limit
     default_growth_rate: 7.0  # percentage
     qualified_expense_penalty: 10.0  # percentage penalty on earnings for non-qualified withdrawals
@@ -328,3 +345,163 @@ debt:
   credit_card:
     default_interest_rate: 18.0  # percentage
     default_minimum_payment_percent: 2.0  # percentage
+
+# Year-indexed tax parameters (published values, 2022-2026). Accessed via
+# config.tax_year(year). Years outside the table are projected: earliest entry
+# for prior years, frozen at the latest entry for future years, most-recent
+# published year at-or-before for gaps. Verify against IRS/SSA before extending.
+#   sources: IRS Rev. Proc. 2021-45 (2022), 2022-38 (2023), 2023-34 (2024),
+#            2024-40 (2025), 2025-32 (2026); IRS Notices 2021-61/2022-55/2023-75/
+#            2024-80/2025-67 (401k & IRA limits); IRS Rev. Proc. HSA notices
+#            (2021-25/2022-24/2023-23/2024-25/2025-19); SSA cbb.html (SS wage base).
+tax_years:
+  2022:
+    standard_deduction:
+      single: 12950
+      married_filing_jointly: 25900
+    tax_brackets:
+      single:
+        - [0, 10275, 10]
+        - [10276, 41775, 12]
+        - [41776, 89075, 22]
+        - [89076, 170050, 24]
+        - [170051, 215950, 32]
+        - [215951, 539900, 35]
+        - [539901, .inf, 37]
+      married_filing_jointly:
+        - [0, 20550, 10]
+        - [20551, 83550, 12]
+        - [83551, 178150, 22]
+        - [178151, 340100, 24]
+        - [340101, 431900, 32]
+        - [431901, 647850, 35]
+        - [647851, .inf, 37]
+    ss_wage_base: 147000
+    limit_401k_base: 20500
+    limit_401k_catch_up: 6500
+    limit_ira: 6000
+    limit_ira_catch_up: 1000
+    limit_hsa_self: 3650
+    limit_hsa_family: 7300
+    gift_exclusion: 16000
+    rmd_start_age: 73
+  2023:
+    standard_deduction:
+      single: 13850
+      married_filing_jointly: 27700
+    tax_brackets:
+      single:
+        - [0, 11000, 10]
+        - [11001, 44725, 12]
+        - [44726, 95375, 22]
+        - [95376, 182100, 24]
+        - [182101, 231250, 32]
+        - [231251, 578125, 35]
+        - [578126, .inf, 37]
+      married_filing_jointly:
+        - [0, 22000, 10]
+        - [22001, 89450, 12]
+        - [89451, 190750, 22]
+        - [190751, 364200, 24]
+        - [364201, 462500, 32]
+        - [462501, 693750, 35]
+        - [693751, .inf, 37]
+    ss_wage_base: 160200
+    limit_401k_base: 22500
+    limit_401k_catch_up: 7500
+    limit_ira: 6500
+    limit_ira_catch_up: 1000
+    limit_hsa_self: 3850
+    limit_hsa_family: 7750
+    gift_exclusion: 17000
+    rmd_start_age: 73
+  2024:
+    standard_deduction:
+      single: 14600
+      married_filing_jointly: 29200
+    tax_brackets:
+      single:
+        - [0, 11600, 10]
+        - [11601, 47150, 12]
+        - [47151, 100525, 22]
+        - [100526, 191950, 24]
+        - [191951, 243725, 32]
+        - [243726, 609350, 35]
+        - [609351, .inf, 37]
+      married_filing_jointly:
+        - [0, 23200, 10]
+        - [23201, 94300, 12]
+        - [94301, 201050, 22]
+        - [201051, 383900, 24]
+        - [383901, 487450, 32]
+        - [487451, 731200, 35]
+        - [731201, .inf, 37]
+    ss_wage_base: 168600
+    limit_401k_base: 23000
+    limit_401k_catch_up: 7500
+    limit_ira: 7000
+    limit_ira_catch_up: 1000
+    limit_hsa_self: 4150
+    limit_hsa_family: 8300
+    gift_exclusion: 18000
+    rmd_start_age: 73
+  2025:
+    standard_deduction:
+      single: 15750
+      married_filing_jointly: 31500
+    tax_brackets:
+      single:
+        - [0, 11925, 10]
+        - [11926, 48475, 12]
+        - [48476, 103350, 22]
+        - [103351, 197300, 24]
+        - [197301, 250525, 32]
+        - [250526, 626350, 35]
+        - [626351, .inf, 37]
+      married_filing_jointly:
+        - [0, 23850, 10]
+        - [23851, 96950, 12]
+        - [96951, 206700, 22]
+        - [206701, 394600, 24]
+        - [394601, 501050, 32]
+        - [501051, 751600, 35]
+        - [751601, .inf, 37]
+    ss_wage_base: 176100
+    limit_401k_base: 23500
+    limit_401k_catch_up: 7500
+    limit_ira: 7000
+    limit_ira_catch_up: 1000
+    limit_hsa_self: 4300
+    limit_hsa_family: 8550
+    gift_exclusion: 19000
+    rmd_start_age: 73
+  2026:
+    standard_deduction:
+      single: 16100
+      married_filing_jointly: 32200
+    tax_brackets:
+      single:
+        - [0, 12400, 10]
+        - [12401, 50400, 12]
+        - [50401, 105700, 22]
+        - [105701, 201775, 24]
+        - [201776, 256225, 32]
+        - [256226, 640600, 35]
+        - [640601, .inf, 37]
+      married_filing_jointly:
+        - [0, 24800, 10]
+        - [24801, 100800, 12]
+        - [100801, 211400, 22]
+        - [211401, 403550, 24]
+        - [403551, 512450, 32]
+        - [512451, 768700, 35]
+        - [768701, .inf, 37]
+    ss_wage_base: 184500
+    limit_401k_base: 24500
+    limit_401k_catch_up: 8000
+    limit_ira: 7500
+    limit_ira_catch_up: 1100
+    limit_hsa_self: 4400
+    limit_hsa_family: 8750
+    gift_exclusion: 19000
+    rmd_start_age: 73
