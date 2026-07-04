@@ -44,7 +44,7 @@ from .scenarios import HOUSEHOLD_SCENARIOS, EpisodeSampler
 # Observation layout version. Bumped whenever the feature list, ordering,
 # normalization, or bounds below change, so checkpoints trained against a different layout are
 # rejected instead of silently misread.
-OBS_VERSION = 2
+OBS_VERSION = 3
 
 # Age at which tax-advantaged accounts can be tapped without the early-withdrawal penalty.
 PENALTY_FREE_AGE = 59.5
@@ -549,9 +549,9 @@ class FinancialLifeEnv(gym.Env):
         bracket_headroom, marginal_rate = self._projected_tax_position(projected_ordinary_income)
 
         # Remaining contribution-room fractions for the capped account types.
-        ira_limit = self.traditional_ira.annual_contribution_limit() + self.roth_ira.annual_contribution_limit()
-        ira_room = self.traditional_ira.remaining_contribution_room() + self.roth_ira.remaining_contribution_room()
-        ira_room_fraction = ira_room / max(ira_limit, 1)
+        # Roth and Traditional IRAs share one limit, so either account reports the shared room.
+        ira_limit = self.traditional_ira.annual_contribution_limit()
+        ira_room_fraction = self.traditional_ira.remaining_contribution_room() / max(ira_limit, 1)
         hsa_limit = self.hsa.annual_contribution_limit()
         hsa_room_fraction = self.hsa.remaining_contribution_room() / max(hsa_limit, 1)
 

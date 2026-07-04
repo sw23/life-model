@@ -170,7 +170,7 @@ Legality is decided solely by each action's `can_execute` via `env.get_legal_act
 bucket that maps to $0 is illegal, and a property test enforces that every legal action
 executes successfully.
 
-### Observation space — `Box(34,)` (OBS_VERSION 2)
+### Observation space — `Box(34,)` (OBS_VERSION 3)
 
 Finite, documented bounds; observations are clipped into them. Money features are in **real**
 (inflation-deflated, start-of-episode) dollars normalized by $1M. See `OBS_SPEC` in
@@ -183,7 +183,7 @@ Finite, documented bounds; observations are clipped into them. Money features ar
 | Derived | net worth, savings rate, debt/income, retirement readiness (4% rule), emergency-fund years, income/spending |
 | Tax position | projected taxable income for the upcoming year (wages + RMD), $ headroom to the next federal bracket edge (/$100k), marginal rate |
 | Retirement timing | years to 59.5 (/35), years to RMD start (/50), projected RMD (real $M) |
-| Contribution room | IRA remaining-room fraction, HSA remaining-room fraction |
+| Contribution room | IRA remaining-room fraction (one limit shared by Roth and Traditional), HSA remaining-room fraction; both reset each year |
 | Market (realized, no lookahead) | time progress, last year's inflation, equity return, bond return (each %/100), log cumulative-inflation deflator |
 
 The tax-position features are *projections* for the upcoming year: the income ledger is settled

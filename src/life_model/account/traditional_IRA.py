@@ -10,6 +10,7 @@ from ..people.person import Person
 class TraditionalIRA(TaxAdvantagedAccount):
     tax_treatment = TaxTreatment.PRETAX
     is_rmd_eligible = True
+    limit_group = "ira"  # one IRA limit shared across Roth and Traditional
 
     def __init__(
         self,

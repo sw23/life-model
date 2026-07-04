@@ -312,6 +312,9 @@ class TaxAdvantagedAccount(Investment, ABC):
     tax_treatment: TaxTreatment = TaxTreatment.ROTH
     #: Whether the account participates in required minimum distributions.
     is_rmd_eligible: bool = False
+    #: Accounts of the same owner with the same non-None group share one annual contribution limit
+    #: (e.g. "ira": Roth and Traditional IRAs share the single IRA limit).
+    limit_group: ClassVar[str | None] = None
 
     def __init__(
         self,
@@ -334,8 +337,23 @@ class TaxAdvantagedAccount(Investment, ABC):
         """The contribution limit for the owner this year (year- and age-indexed)."""
 
     def remaining_contribution_room(self) -> float:
-        """Contribution room left this year."""
-        return max(0.0, self.annual_contribution_limit() - self.contributions_ytd)
+        """Contribution room left this year (net of any contributions to sibling accounts that
+        share the same limit, e.g. Roth + Traditional IRA)."""
+        used = self.contributions_ytd + self.sibling_contributions_ytd()
+        return max(0.0, self.annual_contribution_limit() - used)
+
+    def sibling_contributions_ytd(self) -> float:
+        """Contributions made this year to the owner's other accounts in the same ``limit_group``.
+
+        Zero when the account's limit is not shared (``limit_group`` is None).
+        """
+        if self.limit_group is None:
+            return 0.0
+        return sum(
+            account.contributions_ytd
+            for account in self.person.all_tax_advantaged_accounts
+            if account is not self and account.limit_group == self.limit_group
+        )
 
     def contribute(self, amount: float) -> float:
         """Contribute up to the remaining annual limit. Returns the amount actually contributed."""
