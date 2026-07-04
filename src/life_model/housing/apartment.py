@@ -34,5 +34,6 @@ class Apartment(LifeModelAgent):
     def _repr_html_(self):
         return f"{html.escape(self.name)}, monthly rent ${self.monthly_rent:,}"
 
-    def step(self):
+    def post_step(self):
+        # Rent escalator runs after the year's rent has been paid (consume-then-advance).
         self.monthly_rent += self.monthly_rent * (self.yearly_increase / 100)

@@ -62,7 +62,9 @@ class Home(LifeModelAgent):
             + f"monthly mortgage ${self.mortgage.monthly_payment:,}"
         )
 
-    def step(self):
+    def post_step(self):
+        # Appreciate at year end (consume-then-advance): property tax for the year is assessed
+        # on the beginning-of-year value during the step stage.
         self.home_value += self.home_value * (self.value_yearly_increase / 100)
 
 
@@ -110,7 +112,8 @@ class HomeExpenses(LifeModelAgent):
         spending_amount += self.maintenance_amount + self.improvement_amount + self.hoa_amount
         return spending_amount
 
-    def step(self):
+    def post_step(self):
+        # Escalators run after the year's expenses have been paid (consume-then-advance).
         self.maintenance_amount += self.maintenance_amount * (self.maintenance_increase / 100)
         self.improvement_amount += self.improvement_amount * (self.improvement_increase / 100)
         self.hoa_amount += self.hoa_amount * (self.hoa_increase / 100)

@@ -26,6 +26,11 @@ def continous_interest(principal: float, rate: float, elapsed_time_periods: int 
 FMT_MONEY = "${:,.0f}"
 
 
+def round_money(amount: float) -> float:
+    """Round a monetary amount to whole cents to avoid float residue accumulating in balances."""
+    return round(amount, 2)
+
+
 class Stat:
     def __init__(
         self, name: str, title: Optional[str] = None, fmt: Optional[str] = None, aggregator: Optional[Callable] = None
@@ -208,22 +213,37 @@ class LifeModel(mesa.Model):
         return None
 
     def step(self):
-        """Execute one step of the model."""
-        self.simulated_years.append(self.year)
-        self.datacollector.collect(self)
+        """Execute one step of the model for a single simulated year.
 
-        # Execute each stage using AgentSet functionality
+        Canonical yearly sequence (see LifeModelAgent.STEP_PRIORITY for ordering within a stage):
+          * pre_step:  age++, income deposited, account growth, RMDs
+          * step:      tax units settle taxes/spending/withdrawals
+          * post_step: stat resets, escalators (salary/spending/rent increases), taxable_income reset
+
+        The DataCollector row for year Y is collected *after* the stages run (while ``self.year``
+        still equals Y), so the row for year Y contains year-Y flows and end-of-year-Y balances.
+        """
+        self.simulated_years.append(self.year)
+
+        # Execute each stage in a deterministic, priority-ordered sequence per stage
         for stage in self._stages:
-            self.agents.do(stage)
+            for agent in sorted(self.agents, key=lambda a: a.STEP_PRIORITY.get(stage, 0)):
+                getattr(agent, stage)()
+
+        # Collect after the stages so row Year=Y holds year-Y flows and balances
+        self.datacollector.collect(self)
 
         self.year += 1
 
     def get_year_range(self) -> range:
-        """Get the range of years in the model"""
+        """Get the inclusive range of simulated years ``[start_year, end_year]``."""
         return range(self.start_year, self.end_year + 1)
 
     def run(self):
-        """Run the simulation"""
+        """Run the simulation over the inclusive year range ``[start_year, end_year]``.
+
+        The number of simulated years is ``end_year - start_year + 1``.
+        """
         for _ in self.get_year_range():
             self.step()
 
@@ -322,6 +342,14 @@ class LifeModel(mesa.Model):
 
 
 class LifeModelAgent(mesa.Agent):
+    # Per-stage execution priority. Within a stage, agents run in ascending priority order
+    # (lower runs first); ties preserve construction order. This makes the yearly sequence
+    # deterministic and independent of object construction order (see LifeModel.step docstring).
+    #   pre_step:  Person ages first (-20), then account growth/RMDs (-10), then job income (0)
+    #   step:      account growth (-10) before tax-unit settlement (0)
+    #   post_step: stat resets/escalators run at the default priority (0)
+    STEP_PRIORITY: Dict[str, int] = {}
+
     def __init__(self, model: LifeModel):
         """LifeModelAgent
 
@@ -345,7 +373,7 @@ class LifeModelAgent(mesa.Agent):
         pass
 
     def post_step(self):
-        """Post-step phase. Called for all agents after post-step phase."""
+        """Post-step phase. Called for all agents after the step phase."""
         pass
 
 

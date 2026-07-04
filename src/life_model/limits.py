@@ -16,7 +16,7 @@ def _fin(config: "Optional[FinancialConfig]") -> "FinancialConfig":
     return config if config is not None else _global_config.financial
 
 
-def job_401k_contrib_limit(age, config: "Optional[FinancialConfig]" = None) -> int:
+def job_401k_contrib_limit(age: int, config: "Optional[FinancialConfig]" = None) -> int:
     """Get 401k contribution limit based on age"""
     return _fin(config).get_job_401k_contrib_limit(age)
 
@@ -35,7 +35,7 @@ def get_rmd_distribution_periods(config: "Optional[FinancialConfig]" = None) -> 
     return _fin(config).retirement.rmd_distribution_periods
 
 
-def required_min_distrib(age, balance, config: "Optional[FinancialConfig]" = None) -> float:
+def required_min_distrib(age: int, balance: float, config: "Optional[FinancialConfig]" = None) -> float:
     """Calculate required minimum distribution"""
     periods = get_rmd_distribution_periods(config)
     if age < periods[0][0]:

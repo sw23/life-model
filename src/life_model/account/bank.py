@@ -4,6 +4,7 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 import html
+from typing import Optional
 
 from ..base_classes import FinancialAccount
 from ..model import compound_interest
@@ -12,7 +13,7 @@ from ..people.person import Person
 
 class BankAccount(FinancialAccount):
     def __init__(
-        self, owner: Person, company: str, type: str = "Bank", balance: float = 0, interest_rate: float = None
+        self, owner: Person, company: str, type: str = "Bank", balance: float = 0, interest_rate: Optional[float] = None
     ):
         """Class modeling bank accounts
 

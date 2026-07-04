@@ -4,8 +4,9 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 from ..model import LifeModel, LifeModelAgent
-from ..tax.federal import FilingStatus, get_federal_standard_deduction, max_tax_rate
+from ..tax.federal import FilingStatus, get_federal_standard_deduction
 from ..tax.tax import TaxesDue, get_income_taxes_due
+from .tax_unit import TaxUnit
 
 
 class Family(LifeModelAgent):
@@ -45,6 +46,8 @@ class Family(LifeModelAgent):
     @property
     def filing_status(self) -> FilingStatus:
         # TODO - Currently using the first member's filing status for the whole family
+        if not self.members:
+            return FilingStatus.SINGLE
         return self.members[0].filing_status
 
     @property
@@ -64,7 +67,7 @@ class Family(LifeModelAgent):
 
     def withdraw_from_pretax_401ks(self, amount: float) -> float:
         for member in self.members:
-            if amount == 0:
+            if amount <= 0:
                 break
             amount -= member.withdraw_from_pretax_401ks(amount)
         return amount
@@ -79,7 +82,7 @@ class Family(LifeModelAgent):
             float: Balance remaining after paying bills.
         """
         for member in self.members:
-            if spending_balance == 0:
+            if spending_balance <= 0:
                 return 0
             spending_balance = member.pay_bills(spending_balance)
         return spending_balance
@@ -103,46 +106,9 @@ class Family(LifeModelAgent):
             raise NotImplementedError(f"Unsupported filing status: {self.filing_status}")
 
     def step(self):
+        # Family performs no tax math. It groups its members into filing units and lets each
+        # tax unit settle the year (taxes, spending, housing, one-time expenses, and debt).
+        for unit in TaxUnit.build_units(self):
+            unit.settle_year()
 
-        # Pay off spending, taxes, and debts for the year
-        # - People filing MFJ is handled individually here, single is handled in family
-        if self.filing_status == FilingStatus.MARRIED_FILING_JOINTLY:
-            # 1. See what amount needs to come from pre-tax 401k
-            #    - RMDs are handled before this by moving the RMD from 401k to bank account
-            # 2. Withdraw that amount plus max tax rate to cover taxes
-            # 3. Deposit that amount into checking
-            yearly_taxes = self.get_income_taxes_due()
-            spending_plus_pre_401k_taxes = self.combined_spending + yearly_taxes.total
-            amount_from_pretax_401k = max(0, spending_plus_pre_401k_taxes - self.bank_account_balance)
-            yearly_taxes_plus_401k_income = self.get_income_taxes_due(amount_from_pretax_401k)
-            taxes_from_pretax_401k = yearly_taxes_plus_401k_income.total - yearly_taxes.total
-            taxes_from_pretax_401k += taxes_from_pretax_401k * (
-                max_tax_rate(self.filing_status, self.model.config) / 100
-            )
-            self.withdraw_from_pretax_401ks(amount_from_pretax_401k + taxes_from_pretax_401k)
-
-            # Now that 401k withdrawal is complete (if necessary), calculatue taxes
-            if amount_from_pretax_401k:
-                yearly_taxes = self.get_income_taxes_due()
-
-            self.members[0].debt += self.pay_bills(self.combined_spending + yearly_taxes.total)
-            self.members[0].debt = self.pay_bills(self.debt)
-        else:
-            yearly_taxes = TaxesDue()
-
-        # Pay off any debts for other family members
-        # TODO - Probably want to add some rules around this (e.g. parents vs. kids)
-        # TODO - Currently all debts are paid off right away, but this should be modeled better
-        # TODO - Also right now a pre-tax 401k won't be accessed (but roth will)
-        for person_x in self.members:
-            if person_x.debt > 0:
-                person_x.debt = self.pay_bills(person_x.debt)
-
-        self.stat_taxes_paid = yearly_taxes.total
         self.stat_debt = self.debt
-
-        # Additional tax stats
-        self.stat_taxes_paid_federal = yearly_taxes.federal
-        self.stat_taxes_paid_state = yearly_taxes.state
-        self.stat_taxes_paid_ss = yearly_taxes.ss
-        self.stat_taxes_paid_medicare = yearly_taxes.medicare

@@ -3,29 +3,26 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-from enum import Enum
 from typing import TYPE_CHECKING, List, Optional
 
 from ..account.job401k import Job401kAccount
 from ..limits import federal_retirement_age
-from ..model import Event, LifeModel, LifeModelAgent, ModelSetupException
+from ..model import Event, LifeModel, LifeModelAgent
 from ..services.payment_service import PaymentService
 from ..services.tax_calculation_service import TaxCalculationService
 from ..tax.federal import FilingStatus, get_federal_standard_deduction
 from ..tax.tax import TaxesDue, get_income_taxes_due
 from .family import Family
+from .types import GenderAtBirth  # noqa: F401  (re-exported for backward compatibility)
 
 if TYPE_CHECKING:
     from ..insurance.social_security import SocialSecurity
 
 
-class GenderAtBirth(Enum):
-    MALE = "male"
-    FEMALE = "female"
-    OTHER = "other"
-
-
 class Person(LifeModelAgent):
+    # Age first in pre_step so income/RMD calculations see the current-year age.
+    STEP_PRIORITY = {"pre_step": -20}
+
     def __init__(self, family: Family, name: str, age: int, retirement_age: float, spending: "Spending"):
         """Person
 
@@ -47,6 +44,11 @@ class Person(LifeModelAgent):
         self.spouse = None
         self.filing_status = FilingStatus.SINGLE
         self.social_security: Optional[SocialSecurity] = None
+        self.retirement_triggered = False
+        self._retirement_age_event_logged = False
+        # Cash held when the person has no bank account (see receive_cash).
+        self.cash = 0.0
+        self._warned_no_bank_account = False
 
         self.stat_money_spent = 0.0
         self.stat_taxes_paid = 0.0
@@ -170,6 +172,22 @@ class Person(LifeModelAgent):
     def bank_account_balance(self) -> float:
         return sum(x.balance for x in self.bank_accounts)
 
+    @staticmethod
+    def _withdraw_sequence(withdrawers, amount: float) -> float:
+        """Withdraw ``amount`` from a sequence of withdraw callables, in order.
+
+        Each callable takes the remaining amount and returns how much it withdrew.
+
+        Returns:
+            float: The shortfall (amount that could not be withdrawn).
+        """
+        remaining = amount
+        for withdraw in withdrawers:
+            if remaining <= 0:
+                break
+            remaining -= withdraw(remaining)
+        return remaining
+
     def deduct_from_bank_accounts(self, amount: float) -> float:
         """Deducts money from bank accounts.
 
@@ -179,12 +197,7 @@ class Person(LifeModelAgent):
         Returns:
             float: Amount that could not be deducted.
         """
-        spending_balance = amount
-        for bank_account in self.bank_accounts:
-            if spending_balance == 0:
-                break
-            spending_balance -= bank_account.withdraw(spending_balance)
-        return spending_balance
+        return self._withdraw_sequence((account.withdraw for account in self.bank_accounts), amount)
 
     def deduct_from_pretax_401ks(self, amount: float) -> float:
         """Deducts money from pre-tax 401ks.
@@ -195,12 +208,7 @@ class Person(LifeModelAgent):
         Returns:
             float: Amount that could not be deducted.
         """
-        spending_balance = amount
-        for retirement_account in self.all_retirement_accounts:
-            if spending_balance == 0:
-                break
-            spending_balance -= retirement_account.deduct_pretax(spending_balance)
-        return spending_balance
+        return self._withdraw_sequence((account.deduct_pretax for account in self.all_retirement_accounts), amount)
 
     def deduct_from_roth_401ks(self, amount: float) -> float:
         """Deducts money from roth 401ks.
@@ -211,36 +219,53 @@ class Person(LifeModelAgent):
         Returns:
             float: Amount that could not be deducted.
         """
-        spending_balance = amount
-        for retirement_account in self.all_retirement_accounts:
-            if spending_balance == 0:
-                break
-            spending_balance -= retirement_account.deduct_roth(spending_balance)
-        return spending_balance
+        return self._withdraw_sequence((account.deduct_roth for account in self.all_retirement_accounts), amount)
 
     def withdraw_from_pretax_401ks(self, amount: float) -> float:
-        """Withdraws money from pre-tax 401ks.
+        """Withdraws money from pre-tax 401ks into the bank account.
+
+        The amount actually withdrawn is added to taxable income and deposited into the bank.
 
         Args:
             amount (float): Amount to withdraw.
 
         Returns:
-            float: Amount that could not be withdrawn.
+            float: Amount actually withdrawn (may be less than requested if funds are short).
         """
-        amount -= self.deduct_from_pretax_401ks(amount)
-        self.taxable_income += amount
-        self.deposit_into_bank_account(amount)
-        return amount
+        withdrawn = amount - self.deduct_from_pretax_401ks(amount)
+        self.taxable_income += withdrawn
+        self.receive_cash(withdrawn)
+        return withdrawn
+
+    def receive_cash(self, amount: float, source: str = "income"):
+        """Receive cash into the person's primary bank account.
+
+        If the person has no bank account, the cash is held in an untracked ``cash`` bucket and a
+        warning event is logged once, rather than raising mid-simulation.
+
+        Args:
+            amount (float): Amount of cash received.
+            source (str, optional): Description of where the cash came from (for the warning event).
+        """
+        if amount <= 0:
+            return
+        if self.bank_accounts:
+            self.bank_accounts[0].balance += amount
+        else:
+            self.cash += amount
+            if not self._warned_no_bank_account:
+                self.model.event_log.add(
+                    Event(f"{self.name} received ${amount:,.0f} from {source} but has no bank account; holding as cash")
+                )
+                self._warned_no_bank_account = True
 
     def deposit_into_bank_account(self, amount: float):
-        """Deposits money into bank account.
+        """Deposits money into the primary bank account (see receive_cash).
 
         Args:
             amount (float): Amount to deposit.
         """
-        if len(self.bank_accounts) == 0:
-            raise ModelSetupException("No Bank Account. Create a bank account before making deposits.")
-        self.bank_accounts[0].balance += amount
+        self.receive_cash(amount)
 
     def pay_bills(self, spending_balance: float) -> float:
         """Pays bills using payment service for optimal prioritization.
@@ -273,7 +298,7 @@ class Person(LifeModelAgent):
             raise NotImplementedError(f"Unsupported filing status: {self.filing_status}")
 
     def get_married(self, spouse: "Person", link_spouse: bool = True):
-        """Get  married.
+        """Get married.
 
         Args:
             spouse (Person): Spouse to get married to.
@@ -282,6 +307,16 @@ class Person(LifeModelAgent):
         self.spouse = spouse
         self.filing_status = FilingStatus.MARRIED_FILING_JOINTLY
         if link_spouse:
+            # Merge the spouse's family into this person's family so the couple settles as a
+            # single joint tax unit (previously each spouse could sit in a separate family and
+            # each compute a full MFJ tax on half the income).
+            if spouse.family is not self.family:
+                vacated_family = spouse.family
+                for member in list(vacated_family.members):
+                    member.family = self.family
+                    if member not in self.family.members:
+                        self.family.members.append(member)
+                vacated_family.members = []
             spouse.get_married(self, False)
             event_str = f"{self.name} and {spouse.name} got married at age {self.age} and {spouse.age}"
             self.model.event_log.add(Event(event_str))
@@ -301,43 +336,19 @@ class Person(LifeModelAgent):
         self.age += 1
 
     def step(self):
-        discretionary_spending = self.spending.get_yearly_spending()
-        home_spending = sum(x.make_yearly_payment() for x in self.homes)
-        home_interest_paid = sum(x.mortgage.get_interest_for_year() for x in self.homes)
-        apartment_rent = sum(x.yearly_rent for x in self.apartments)
-        all_bills_except_taxes = discretionary_spending + home_spending + apartment_rent
-
-        # Retire from all jobs at retirement age
-        if self.age == self.retirement_age:
+        # Year-end settlement (taxes, spending, housing, one-time expenses, debt) is performed
+        # at the tax-unit level in Family.step. Here the person only handles retirement.
+        #
+        # Retirement uses crossing detection (>=, fired once) so that a non-integer retirement
+        # age still triggers and a person can't draw a full salary while "retired".
+        if not self.retirement_triggered and self.age >= self.retirement_age:
             for job in self.jobs:
                 job.retire()
+            self.retirement_triggered = True
 
-        # Pay off spending, taxes, and debts for the year
-        # - People filing single is handled individually here, MFJ is handled in family
-        if self.filing_status == FilingStatus.SINGLE:
-            # Use tax service to handle complex 401k withdrawal and tax calculations
-            withdrawal_amount, yearly_taxes = self.tax_service.calculate_total_401k_withdrawal(all_bills_except_taxes)
-
-            # Pay bills and handle any remaining debt
-            self.debt += self.pay_bills(all_bills_except_taxes + yearly_taxes.total)
-            self.debt = self.pay_bills(self.debt)
-        else:
-            yearly_taxes = TaxesDue()
-
-        if self.age == int(federal_retirement_age()):
+        if not self._retirement_age_event_logged and self.age >= int(federal_retirement_age()):
             self.model.event_log.add(Event(f"{self.name} reached retirement age (age {federal_retirement_age()})"))
-
-        self.stat_money_spent = discretionary_spending
-        self.stat_taxes_paid = yearly_taxes.total
-        self.stat_bank_balance = self.bank_account_balance
-        self.stat_housing_costs = home_spending + apartment_rent
-        self.stat_interest_paid = home_interest_paid
-
-        # Additional tax stats
-        self.stat_taxes_paid_federal = yearly_taxes.federal
-        self.stat_taxes_paid_state = yearly_taxes.state
-        self.stat_taxes_paid_ss = yearly_taxes.ss
-        self.stat_taxes_paid_medicare = yearly_taxes.medicare
+            self._retirement_age_event_logged = True
 
     def post_step(self):
         self.taxable_income = 0
@@ -373,10 +384,12 @@ class Spending(LifeModelAgent):
         """Adjusts base spending.
 
         Args:
-            percent_increase (float): Percentage increase in spending. 50 = 50%.
+            base_percent (float): Percentage increase in spending. 50 = 50%.
         """
         self.base = self.base * (base_percent / 100)
 
-    def step(self):
+    def post_step(self):
+        # Consume-then-advance: the year's spending is read during the step stage; only after
+        # it has been spent do we clear one-time expenses and apply the yearly increase.
         self.base += self.base * (self.yearly_increase / 100)
         self.one_time_expenses = 0
