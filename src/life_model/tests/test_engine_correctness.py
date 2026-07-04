@@ -70,8 +70,31 @@ class TestDataCollectorTiming(unittest.TestCase):
         self.assertEqual(df.iloc[-1]["Year"], 2022)
 
 
-class TestSpendingTiming(unittest.TestCase):
-    """Bug 3: one-time expenses are spent (not wiped) and the yearly increase applies a year late."""
+class TestRunningFlag(unittest.TestCase):
+    """Interactive drivers stop at end_year: running clears and stepping past end is a no-op."""
+
+    def test_running_clears_at_end_year_and_step_is_noop(self):
+        model = LifeModel(start_year=2020, end_year=2022)
+        family = Family(model)
+        Person(family, "Ann", age=40, retirement_age=70, spending=Spending(model, 0))
+
+        self.assertTrue(model.running)
+
+        # Step through the inclusive range; running stays true until the final year is simulated.
+        model.step()  # 2020
+        self.assertTrue(model.running)
+        model.step()  # 2021
+        self.assertTrue(model.running)
+        model.step()  # 2022 (final year)
+        self.assertFalse(model.running)
+
+        # Stepping past the end is a no-op: no extra year is collected and year doesn't advance.
+        self.assertEqual(model.simulated_years, [2020, 2021, 2022])
+        year_after_end = model.year
+        model.step()
+        self.assertEqual(model.simulated_years, [2020, 2021, 2022])
+        self.assertEqual(model.year, year_after_end)
+        self.assertFalse(model.running)
 
     def test_one_time_expense_spent_and_increase_deferred(self):
         model = LifeModel(start_year=2020, end_year=2022)

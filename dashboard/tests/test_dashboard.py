@@ -4,17 +4,14 @@ Test the dashboard components
 
 This module tests that the dashboard components work correctly
 without needing to run the full Solara server.
+
+The ``dashboard/`` directory is placed on ``sys.path`` by ``conftest.py`` so ``import app``
+resolves no matter where the suite is launched from.
 """
 
-import os
-import sys
-
+import app
 import pytest
-
-# Add the dashboard directory to Python path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "dashboard"))
-
-from app import DashboardLifeModel  # noqa: E402
+from app import PERSON_DEFAULTS, DashboardLifeModel, param_value
 
 
 @pytest.fixture
@@ -135,3 +132,90 @@ def test_parameter_variations(single_person_model, couple_model):
     assert final_balance_single > 0
     assert final_balance_couple > 0
     assert final_balance_couple > final_balance_single
+
+
+def test_module_imports_and_builds_model():
+    """Importing the module builds a runnable model and the SolaraViz page (smoke test)."""
+    assert app.model is not None
+    assert len(app.model.agents) > 0
+    assert app.page is not None
+
+
+def test_disabled_person_yields_single_person_at_import_defaults():
+    """Unchecking a person via the checkbox spec yields a one-person model.
+
+    Regression: the checkbox spec is a dict ({"value": False}); the model must read its inner
+    value rather than treating the truthy dict as "enabled".
+    """
+    model = DashboardLifeModel(
+        start_year=2023,
+        end_year=2025,
+        john_enabled={"label": "Include John", "type": "Checkbox", "value": True},
+        jane_enabled={"label": "Include Jane", "type": "Checkbox", "value": False},
+    )
+    persons = [a for a in model.agents if a.__class__.__name__ == "Person"]
+    assert len(persons) == 1
+
+
+def test_param_spec_and_fallback_defaults_agree():
+    """Each person's control spec default equals the fallback default (single source of truth).
+
+    Regression: previously the checkbox spec and the code default disagreed (e.g. Jane's enabled
+    flag and salary), so import-time and post-slider construction diverged.
+    """
+    for prefix, name in (("john", "John"), ("jane", "Jane")):
+        specs = app._person_param_specs(prefix, name)
+        defaults = PERSON_DEFAULTS[prefix]
+        for field, value in defaults.items():
+            key = f"{prefix}_{field}"
+            if key in specs:
+                assert param_value(specs[key]) == value, f"{key} spec/default mismatch"
+
+
+def test_model_stops_at_end_year():
+    """The running flag clears at end_year so the SolaraViz Play loop halts."""
+    model = DashboardLifeModel(start_year=2023, end_year=2025, jane_enabled=False)
+    assert model.running
+    model.run()
+    assert not model.running
+    # Stepping past the end is a no-op.
+    years_before = list(model.simulated_years)
+    model.step()
+    assert model.simulated_years == years_before
+
+
+def test_scenario_changes_outcomes():
+    """The scenario selection visibly changes results (high_tax vs low_tax bank divergence)."""
+    common = dict(start_year=2023, end_year=2033, john_enabled=True, jane_enabled=False, john_salary=120000)
+
+    high = DashboardLifeModel(scenario="high_tax", **common)
+    low = DashboardLifeModel(scenario="low_tax", **common)
+    high.run()
+    low.run()
+
+    high_balance = high.datacollector.get_model_vars_dataframe()["Bank Balance"].iloc[-1]
+    low_balance = low.datacollector.get_model_vars_dataframe()["Bank Balance"].iloc[-1]
+    assert low_balance > high_balance
+
+
+def test_scenario_default_label_uses_packaged_defaults():
+    """The '(default)' dropdown label maps to scenario=None (packaged defaults)."""
+    model = DashboardLifeModel(start_year=2023, end_year=2024, scenario=app.SCENARIO_DEFAULT_LABEL)
+    assert model is not None
+    assert app._scenario_value(app.SCENARIO_DEFAULT_LABEL) is None
+
+
+def test_start_year_slider_allows_2023():
+    """The Start Year slider minimum permits reproducing documented 2023-based examples."""
+    start_slider = app.model_params["start_year"]
+    assert start_slider.min <= 2023
+
+
+def test_csv_export_matches_dataframe(single_person_model):
+    """The results tab CSV export contains the same rows/columns as the yearly stats."""
+    df = single_person_model.datacollector.get_model_vars_dataframe()
+    csv = df.to_csv(index=False)
+    header = csv.splitlines()[0].split(",")
+    assert list(df.columns) == header
+    # One header line + one line per simulated year.
+    assert len(csv.strip().splitlines()) == len(df) + 1
