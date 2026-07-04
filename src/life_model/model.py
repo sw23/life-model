@@ -11,6 +11,7 @@ import mesa
 import pandas as pd
 from pandas.io.formats.style import Styler
 
+from .config.financial_config import FinancialConfig
 from .registry import ModelRegistries
 
 
@@ -116,17 +117,37 @@ class LifeModel(mesa.Model):
         MoneyStat("stat_death_benefit_paid", "Death Benefits"),  # Death benefits paid out
     ]
 
-    def __init__(self, end_year: Optional[int] = None, start_year: Optional[int] = None, seed: Optional[int] = None):
+    def __init__(
+        self,
+        end_year: Optional[int] = None,
+        start_year: Optional[int] = None,
+        seed: Optional[int] = None,
+        config: Optional[FinancialConfig] = None,
+        scenario: Optional[str] = None,
+    ):
         """LifeModel Helper Class
 
         Args:
             end_year (int, optional): End date of the model. Defaults to None.
             start_year (int, optional): Start date of the model. Defaults to None.
             seed (int, optional): Random seed. Defaults to None.
+            config (FinancialConfig, optional): Per-model financial configuration.
+                Defaults to a fresh copy of the packaged defaults so that separate
+                models can run different scenarios in the same process.
+            scenario (str, optional): Name of a packaged scenario to apply. Defaults to None.
         """
         super().__init__(seed=seed)  # Required in Mesa 3.0
         if start_year is None:
             start_year = date.today().year
+
+        # Resolve per-model financial configuration.
+        if config is None:
+            config = FinancialConfig(scenario=scenario)
+        elif scenario is not None:
+            from .config.scenarios import get_scenario
+
+            config.apply_scenario(scenario, get_scenario(scenario))
+        self.config = config
 
         # Initialize registries
         self.registries = ModelRegistries()

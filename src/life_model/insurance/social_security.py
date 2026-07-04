@@ -43,7 +43,7 @@ from typing import List, Optional, Tuple, Union
 from ..config.config_manager import config
 from ..model import LifeModelAgent
 from ..people.person import Person
-from ..tax.fica import social_security_max_income
+from ..tax.fica import get_social_security_max_income
 
 
 def get_avg_wage_index(year: int) -> float:
@@ -61,16 +61,16 @@ def get_avg_wage_index(year: int) -> float:
     if year < 1951:
         raise ValueError("Average wage index is not available before 1951")
 
-    ss_config = config.financial.get("social_security")
-    last_year = ss_config["last_avg_wage_index_year"]
+    ss_config = config.financial.social_security
+    last_year = ss_config.last_avg_wage_index_year
 
     if year <= last_year:
         # Years in this range are in the table
-        return ss_config["avg_wage_index"][year]
+        return ss_config.avg_wage_index[year]
     else:
         # Years after this range are projected
-        last_index = ss_config["avg_wage_index"][last_year]
-        increase_rate = ss_config["last_avg_wage_index_increase"]
+        last_index = ss_config.avg_wage_index[last_year]
+        increase_rate = ss_config.last_avg_wage_index_increase
 
         for _ in range(last_year, year):
             last_index *= 1 + increase_rate / 100.0
@@ -92,15 +92,15 @@ def get_cost_of_living_adj(year: int) -> float:
     if year < 1975:
         raise ValueError("Cost of living adjustment is not available before 1975")
 
-    ss_config = config.financial.get("social_security")
-    last_year = ss_config["last_cost_of_living_adj_year"]
+    ss_config = config.financial.social_security
+    last_year = ss_config.last_cost_of_living_adj_year
 
     if year <= last_year:
         # Years in this range are in the table
-        return ss_config["cost_of_living_adj"][year]
+        return ss_config.cost_of_living_adj[year]
     else:
         # Years after this range use the last available value
-        return ss_config["cost_of_living_adj"][last_year]
+        return ss_config.cost_of_living_adj[last_year]
 
 
 def get_bend_points(year: int) -> Tuple[float, float]:
@@ -118,17 +118,17 @@ def get_bend_points(year: int) -> Tuple[float, float]:
     if year < 1979:
         raise ValueError("Bend points are not available before 1979")
 
-    ss_config = config.financial.get("social_security")
-    last_year = ss_config["last_bend_points_year"]
+    ss_config = config.financial.social_security
+    last_year = ss_config.last_bend_points_year
 
     if year <= last_year:
         # Years in this range are in the table
-        bend_point_data = ss_config["bend_points"][year]
+        bend_point_data = ss_config.bend_points[year]
         return (float(bend_point_data[0]), float(bend_point_data[1]))
     else:
         # Years after this range use the last available values
         # TODO - Add some way of estimating bend points after last_year
-        bend_point_data = ss_config["bend_points"][last_year]
+        bend_point_data = ss_config.bend_points[last_year]
         return (float(bend_point_data[0]), float(bend_point_data[1]))
 
 
@@ -147,9 +147,9 @@ def get_qc_earnings_for_year(year: int) -> int:
     if year < 1978:
         raise ValueError("QC earnings are not available before 1978")
 
-    ss_config = config.financial.get("social_security")
-    credit_amt_1978 = ss_config["qc_credit_amount_1978"]
-    avg_wage_idx_1976 = ss_config["qc_avg_wage_index_1976"]
+    ss_config = config.financial.social_security
+    credit_amt_1978 = ss_config.qc_credit_amount_1978
+    avg_wage_idx_1976 = ss_config.qc_avg_wage_index_1976
 
     # Calculate previous year's QC amount (rounded to nearest 10 dollars)
     prev_year_amount = credit_amt_1978 * get_avg_wage_index(year - 3) / avg_wage_idx_1976
@@ -166,45 +166,45 @@ def get_qc_earnings_for_year(year: int) -> int:
 def get_credits_for_year(year: int, earnings: float) -> int:
     """Compute the number of credits earned for a given year"""
     qc_earnings = get_qc_earnings_for_year(year)
-    ss_config = config.financial.get("social_security")
-    max_credits = ss_config["max_credits_per_year"]
+    ss_config = config.financial.social_security
+    max_credits = ss_config.max_credits_per_year
     return min(max_credits, int(earnings / qc_earnings))
 
 
 # Property accessors for configuration values
 def get_min_eligible_credits() -> int:
     """Get minimum eligible credits from configuration"""
-    return config.financial.get("social_security.min_eligible_credits")
+    return config.financial.social_security.min_eligible_credits
 
 
 def get_max_credits_per_year() -> int:
     """Get maximum credits per year from configuration"""
-    return config.financial.get("social_security.max_credits_per_year")
+    return config.financial.social_security.max_credits_per_year
 
 
 def get_max_years_of_income() -> int:
     """Get maximum years of income from configuration"""
-    return config.financial.get("social_security.max_years_of_income")
+    return config.financial.social_security.max_years_of_income
 
 
 def get_min_early_retirement_age() -> int:
     """Get minimum early retirement age from configuration"""
-    return config.financial.get("social_security.min_early_retirement_age")
+    return config.financial.social_security.min_early_retirement_age
 
 
 def get_normal_retirement_age() -> int:
     """Get normal retirement age from configuration"""
-    return config.financial.get("social_security.normal_retirement_age")
+    return config.financial.social_security.normal_retirement_age
 
 
 def get_delayed_retirement_credit() -> float:
     """Get delayed retirement credit from configuration"""
-    return config.financial.get("social_security.delayed_retirement_credit")
+    return config.financial.social_security.delayed_retirement_credit
 
 
 def get_max_delayed_retirement_credit_age() -> int:
     """Get maximum delayed retirement credit age from configuration"""
-    return config.financial.get("social_security.max_delayed_retirement_credit_age")
+    return config.financial.social_security.max_delayed_retirement_credit_age
 
 
 class Income:
@@ -299,8 +299,9 @@ class SocialSecurity(LifeModelAgent):
             self.income_history.append(income_obj)
 
         # Cap income at the maximum amount
-        if income_obj.amount > social_security_max_income:
-            income_obj.amount = social_security_max_income
+        max_income = get_social_security_max_income()
+        if income_obj.amount > max_income:
+            income_obj.amount = max_income
 
     @property
     def withdrawal_start_year(self) -> int:

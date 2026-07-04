@@ -4,6 +4,7 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 import html
 from enum import Enum
+from typing import Optional
 
 from ..base_classes import Loan
 from ..people.person import Person
@@ -26,8 +27,8 @@ class CreditCard(Loan):
         card_name: str,
         credit_limit: float,
         current_balance: float = 0,
-        yearly_interest_rate: float = 18.0,
-        minimum_payment_percent: float = 2.0,
+        yearly_interest_rate: Optional[float] = None,
+        minimum_payment_percent: Optional[float] = None,
     ):
         """Models a credit card for a person
 
@@ -39,6 +40,11 @@ class CreditCard(Loan):
             yearly_interest_rate: Annual interest rate percentage
             minimum_payment_percent: Minimum payment as percentage of balance
         """
+        credit_card_config = person.model.config.debt.credit_card
+        if yearly_interest_rate is None:
+            yearly_interest_rate = credit_card_config.default_interest_rate
+        if minimum_payment_percent is None:
+            minimum_payment_percent = credit_card_config.default_minimum_payment_percent
         # Credit cards don't have a fixed term, so we'll use a dummy value and override
         # the monthly_payment calculation to use minimum payment instead
         super().__init__(

@@ -47,7 +47,7 @@ class TaxCalculationService:
         base_tax_increase = taxes_after.total - taxes_before.total
 
         # Add buffer based on max tax rate to ensure sufficient funds for taxes
-        tax_buffer = base_tax_increase * (max_tax_rate(self.person.filing_status) / 100)
+        tax_buffer = base_tax_increase * (max_tax_rate(self.person.filing_status, self.person.model.config) / 100)
 
         return base_tax_increase + tax_buffer
 

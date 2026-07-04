@@ -3,6 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 from enum import Enum
+from typing import Optional
 
 from ..base_classes import FinancialAccount
 from ..people.person import Person
@@ -21,8 +22,8 @@ class HealthSavingsAccount(FinancialAccount):
         person: Person,
         hsa_type: HSAType,
         balance: float = 0,
-        contribution_limit: float = 4150,
-        employer_contribution: float = 0,
+        contribution_limit: Optional[float] = None,
+        employer_contribution: Optional[float] = None,
     ):
         """Models a Health Savings Account (HSA)
 
@@ -30,10 +31,17 @@ class HealthSavingsAccount(FinancialAccount):
             person: The person who owns this HSA
             hsa_type: Type of HSA (Individual or Family)
             balance: Current HSA balance
-            contribution_limit: Annual contribution limit
-            employer_contribution: Annual employer contribution
+            contribution_limit: Annual contribution limit. Uses configured default if None.
+            employer_contribution: Annual employer contribution. Uses configured default if None.
         """
         super().__init__(person, balance)
+        hsa_config = person.model.config.accounts.hsa
+        if contribution_limit is None:
+            contribution_limit = (
+                hsa_config.contribution_limit_family if hsa_type == HSAType.FAMILY else hsa_config.contribution_limit
+            )
+        if employer_contribution is None:
+            employer_contribution = hsa_config.default_employer_contribution
         self.hsa_type = hsa_type
         self.contribution_limit = contribution_limit
         self.employer_contribution = employer_contribution

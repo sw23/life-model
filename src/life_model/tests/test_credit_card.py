@@ -16,6 +16,10 @@ class TestCreditCard(unittest.TestCase):
         # Create a mock person with required attributes
         self.mock_person = Mock(spec=Person)
         self.mock_person.model = Mock()
+        # Provide the credit-card config defaults the constructor now reads.
+        cc_config = self.mock_person.model.config.debt.credit_card
+        cc_config.default_interest_rate = 18.0
+        cc_config.default_minimum_payment_percent = 2.0
 
         # Create a credit card for testing
         self.credit_card = CreditCard(
