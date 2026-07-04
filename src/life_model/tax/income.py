@@ -5,15 +5,17 @@
 
 """Per-person income ledger.
 
-The engine historically tracked a single ``person.taxable_income`` scalar, which conflated two
-distinct concepts: **FICA (payroll) wages**, which are earned income only, and **ordinary
-taxable income**, which also includes pre-tax retirement distributions. That conflation is the
-root cause of several FICA bugs (payroll tax levied on 401k/RMD distributions; the FICA base
-understating pre-tax deferrals). The ledger keeps the two separate so income tax and payroll tax
-each see the right base.
+Tracks a person's income for the current simulated year as a list of typed entries, keeping the
+two tax bases separate:
 
-Income producers append typed entries; nothing writes a raw scalar. The tax computation reads
-``ordinary_taxable`` (income tax base) and ``fica_wages`` (payroll tax base) off the ledger.
+* **Ordinary taxable income** — the income tax base. Includes wages, pre-tax retirement
+  distributions (401k/IRA withdrawals and RMDs), interest, and other ordinary income.
+* **FICA wages** — the payroll tax base. Earned income only; the full gross salary including
+  pre-tax 401k deferrals, but not retirement distributions or other unearned income.
+
+Income producers append typed entries via :meth:`IncomeLedger.add`; nothing writes a raw scalar.
+The tax computation reads ``ordinary_taxable`` (income tax base) and ``fica_wages`` (payroll tax
+base) off the ledger, so income tax and payroll tax each see the correct base.
 """
 
 from dataclasses import dataclass
