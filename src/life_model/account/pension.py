@@ -18,9 +18,13 @@ class Pension(Benefit):
     income with **no FICA** (retirees pay no payroll tax on pension income). A cost-of-living
     adjustment compounds the benefit each year in ``post_step``.
 
+    The annual benefit is either given directly (``benefit_amount``) or accrued from the standard
+    defined-benefit formula ``years_of_service x benefit_multiplier% x final_salary``. Benefits are
+    paid only once the participant is vested (``years_of_service >= vesting_years``).
+
     Simplifications (documented, backlog for later refinement):
-      * ``benefit_amount`` is a flat annual figure; salary-linked formulas
-        (percent x years x final salary) are not modeled.
+      * The accrual formula is evaluated once, at construction, from the supplied service years and
+        final (or final-average) salary; it does not track salary history or keep accruing.
       * Survivor benefits are a flat ``survivor_percent`` of the benefit continued to a surviving
         spouse at the retiree's death (see :meth:`Person.die`); no joint-life actuarial factor.
     """
@@ -30,11 +34,14 @@ class Pension(Benefit):
         person: Person,
         company: str,
         vesting_years: int,
-        benefit_amount: float,
+        benefit_amount: float = 0.0,
         *,
         start_age: float | None = None,
         cola_percent: float = 0.0,
         survivor_percent: float = 0.0,
+        years_of_service: int | None = None,
+        benefit_multiplier: float | None = None,
+        final_salary: float | None = None,
     ):
         """Models a pension plan for a person
 
@@ -42,7 +49,7 @@ class Pension(Benefit):
             person: The person to which this pension belongs
             company: The company providing the pension
             vesting_years: Number of years required for vesting
-            benefit_amount: Flat annual benefit amount
+            benefit_amount: Flat annual benefit amount (ignored when the accrual formula is given)
             start_age: Age at which benefits begin. Defaults to None, meaning benefits start at the
                 person's retirement age (today's eligibility rule).
             cola_percent: Annual cost-of-living adjustment applied to the benefit once in pay
@@ -50,9 +57,22 @@ class Pension(Benefit):
             survivor_percent: Percentage of the benefit continued to a surviving spouse when the
                 retiree dies (e.g. 50.0 for a 50% joint-and-survivor election). Defaults to 0.0
                 (single-life: the benefit terminates at death).
+            years_of_service: Years of credited service. Defaults to ``vesting_years`` (vested).
+            benefit_multiplier: Percent of final salary accrued per year of service (e.g. 1.5).
+            final_salary: Final (or final-average) salary used by the accrual formula.
+
+        Raises:
+            ValueError: If only one of ``benefit_multiplier`` / ``final_salary`` is given.
         """
         super().__init__(person, company)
+        if (benefit_multiplier is None) != (final_salary is None):
+            raise ValueError("benefit_multiplier and final_salary must be given together")
         self.vesting_years = vesting_years
+        self.years_of_service = vesting_years if years_of_service is None else years_of_service
+        if benefit_multiplier is not None and final_salary is not None:
+            benefit_amount = self.years_of_service * (benefit_multiplier / 100) * final_salary
+        self.benefit_multiplier = benefit_multiplier
+        self.final_salary = final_salary
         self.benefit_amount = benefit_amount
         self.start_age = start_age
         self.cola_percent = cola_percent
@@ -62,11 +82,19 @@ class Pension(Benefit):
         # Register so the owner (and estate/death handling) can find this pension.
         self.model.registries.pensions.register(person, self)
 
+    @property
+    def is_vested(self) -> bool:
+        """Whether the participant has met the vesting requirement."""
+        return self.years_of_service >= self.vesting_years
+
     def is_eligible(self) -> bool:
         """Check if the person is currently eligible to receive benefits.
 
-        Eligible once the person reaches ``start_age`` when set, otherwise once retired.
+        Requires vesting. Then eligible once the person reaches ``start_age`` when set, otherwise
+        once retired.
         """
+        if not self.is_vested:
+            return False
         if self.start_age is not None:
             return self.person.age >= self.start_age
         return self.person.is_retired
@@ -97,6 +125,7 @@ class Pension(Benefit):
         desc = "<ul>"
         desc += f"<li>Company: {html.escape(self.company)}</li>"
         desc += f"<li>Vesting Years: {self.vesting_years}</li>"
+        desc += f"<li>Years of Service: {self.years_of_service}</li>"
         desc += f"<li>Benefit Amount: ${self.benefit_amount:,.2f}</li>"
         if self.start_age is not None:
             desc += f"<li>Start Age: {self.start_age}</li>"
