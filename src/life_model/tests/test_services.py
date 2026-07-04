@@ -5,7 +5,7 @@
 
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, call, patch
 
 from ..account.bank import BankAccount
 from ..account.job401k import Job401kAccount
@@ -126,6 +126,33 @@ class TestPaymentService(unittest.TestCase):
 
         self.payment_service = PaymentService(self.person)
 
+    def test_pay_from_brokerage_conserves_money(self):
+        """Regression: brokerage proceeds used to land in the bank AND count as paid (free money)."""
+        from ..account.brokerage import BrokerageAccount
+
+        self.bank.balance = 0
+        self.job401k.roth_balance = 0
+        brokerage = BrokerageAccount(self.person, "Broker", balance=10000, growth_rate=0)
+
+        unpaid = self.payment_service.pay_bills_with_prioritization(4000)
+
+        self.assertEqual(unpaid, 0)
+        self.assertEqual(brokerage.balance, 6000)
+        self.assertEqual(self.bank.balance, 0)
+
+    def test_roth_ira_drawn_after_roth_401k(self):
+        from ..account.roth_IRA import RothIRA
+
+        self.bank.balance = 0
+        self.job401k.roth_balance = 1000
+        roth_ira = RothIRA(self.person, balance=5000, growth_rate=0)
+
+        unpaid = self.payment_service.pay_bills_with_prioritization(3000)
+
+        self.assertEqual(unpaid, 0)
+        self.assertEqual(self.job401k.roth_balance, 0)
+        self.assertEqual(roth_ira.balance, 3000)
+
     def test_pay_bills_sufficient_bank_balance(self):
         """Test payment when bank balance is sufficient"""
         result = self.payment_service.pay_bills_with_prioritization(3000)
@@ -148,18 +175,27 @@ class TestPaymentService(unittest.TestCase):
         self.assertEqual(self.job401k.roth_balance, 0)
 
     def test_payment_prioritization_order(self):
-        """Test that payments follow the correct priority order"""
-        # Mock the methods to track call order
+        """Payments follow bank -> brokerage -> Roth 401k -> Roth IRA, each on the remainder."""
+        manager = Mock()
         with (
             patch.object(self.person, "deduct_from_bank_accounts", return_value=2000) as mock_bank,
+            patch.object(self.person, "withdraw_from_brokerage_accounts", return_value=0) as mock_brokerage,
             patch.object(self.person, "deduct_from_roth_401ks", return_value=0) as mock_roth,
+            patch.object(self.person, "deduct_from_roth_iras", return_value=0) as mock_roth_ira,
         ):
+            manager.attach_mock(mock_bank, "bank")
+            manager.attach_mock(mock_brokerage, "brokerage")
+            manager.attach_mock(mock_roth, "roth_401k")
+            manager.attach_mock(mock_roth_ira, "roth_ira")
+
             self.payment_service.pay_bills_with_prioritization(8000)
 
-            # Bank accounts should be called first
-            mock_bank.assert_called_once_with(8000)
-            # Roth should be called with remaining amount
-            mock_roth.assert_called_once_with(2000)
+        # Bank first; the brokerage step sells into the bank and pays the remainder from it; the
+        # Roth 401k gets what is still unpaid; the Roth IRA is not needed once nothing remains.
+        self.assertEqual(
+            manager.mock_calls,
+            [call.bank(8000), call.brokerage(2000), call.bank(2000), call.roth_401k(2000)],
+        )
 
 
 class TestServiceIntegration(unittest.TestCase):

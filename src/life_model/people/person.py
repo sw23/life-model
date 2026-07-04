@@ -337,7 +337,13 @@ class Person(LifeModelAgent):
 
     @property
     def all_retirement_accounts(self) -> list[Job401kAccount]:
-        return [x.retirement_account for x in self.jobs if x.retirement_account is not None]
+        """All 401k accounts owned by this person (registry-backed)."""
+        return self.model.registries.job_401k_accounts.get_items(self)
+
+    @property
+    def all_tax_advantaged_accounts(self) -> list:
+        """All tax-advantaged accounts (HSA, Roth IRA, Traditional IRA) owned by this person."""
+        return [*self.hsas, *self.roth_iras, *self.traditional_iras]
 
     @property
     def is_retired(self) -> bool:
@@ -425,6 +431,17 @@ class Person(LifeModelAgent):
         """
         return self._withdraw_sequence((account.deduct_roth for account in self.all_retirement_accounts), amount)
 
+    def deduct_from_roth_iras(self, amount: float) -> float:
+        """Deducts money from Roth IRAs (contribution basis is drawn before earnings).
+
+        Args:
+            amount (float): Amount to deduct.
+
+        Returns:
+            float: Amount that could not be deducted.
+        """
+        return self._withdraw_sequence((account.withdraw for account in self.roth_iras), amount)
+
     def withdraw_from_pretax_401ks(self, amount: float) -> float:
         """Withdraws money from pre-tax 401ks into the bank account.
 
@@ -454,38 +471,25 @@ class Person(LifeModelAgent):
     # concern until the core penalty backlog item lands.
     # ------------------------------------------------------------------
 
-    def _owned_accounts_of_type(self, account_cls) -> list:
-        """This person's accounts of ``account_cls``, discovered by scanning the model's agents
-        (IRA/HSA/brokerage accounts reference ``person`` directly and are not registry-backed)."""
-        return [a for a in self.model.agents if isinstance(a, account_cls) and getattr(a, "person", None) is self]
-
     @property
     def traditional_iras(self):
-        """Get all Traditional IRA accounts for this person."""
-        from ..account.traditional_IRA import TraditionalIRA
-
-        return self._owned_accounts_of_type(TraditionalIRA)
+        """Get all Traditional IRA accounts for this person from the registry."""
+        return self.model.registries.traditional_iras.get_items(self)
 
     @property
     def roth_iras(self):
-        """Get all Roth IRA accounts for this person."""
-        from ..account.roth_IRA import RothIRA
-
-        return self._owned_accounts_of_type(RothIRA)
+        """Get all Roth IRA accounts for this person from the registry."""
+        return self.model.registries.roth_iras.get_items(self)
 
     @property
     def hsas(self):
-        """Get all Health Savings Accounts for this person."""
-        from ..account.hsa import HealthSavingsAccount
-
-        return self._owned_accounts_of_type(HealthSavingsAccount)
+        """Get all Health Savings Accounts for this person from the registry."""
+        return self.model.registries.hsa_accounts.get_items(self)
 
     @property
     def brokerage_accounts(self):
-        """Get all brokerage accounts for this person."""
-        from ..account.brokerage import BrokerageAccount
-
-        return self._owned_accounts_of_type(BrokerageAccount)
+        """Get all brokerage accounts for this person from the registry."""
+        return self.model.registries.brokerage_accounts.get_items(self)
 
     def withdraw_from_roth_401ks(self, amount: float) -> float:
         """Withdraws money from Roth 401ks into the bank account.

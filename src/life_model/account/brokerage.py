@@ -75,6 +75,7 @@ class BrokerageAccount(Investment):
         self.lots: list[TaxLot] = []
         if balance > 0:
             self.lots.append(TaxLot(value=balance, cost_basis=balance, acquired_year=self.model.year))
+        self.model.registries.brokerage_accounts.register(person, self)
 
     @property
     def dividend_yield(self) -> float:

@@ -69,6 +69,26 @@ class BankAccountRegistry(PersonRegistry["BankAccount"]):
     """Registry for managing BankAccount relationships"""
 
 
+class BrokerageAccountRegistry(PersonRegistry["BrokerageAccount"]):
+    """Registry for managing BrokerageAccount relationships"""
+
+
+class HSARegistry(PersonRegistry["HealthSavingsAccount"]):
+    """Registry for managing Health Savings Account relationships"""
+
+
+class RothIRARegistry(PersonRegistry["RothIRA"]):
+    """Registry for managing Roth IRA relationships"""
+
+
+class TraditionalIRARegistry(PersonRegistry["TraditionalIRA"]):
+    """Registry for managing Traditional IRA relationships"""
+
+
+class Job401kRegistry(PersonRegistry["Job401kAccount"]):
+    """Registry for managing 401k account relationships"""
+
+
 class JobRegistry(PersonRegistry["Job"]):
     """Registry for managing Job relationships"""
 
@@ -150,6 +170,11 @@ class ModelRegistries:
 
     def __init__(self):
         self.bank_accounts = BankAccountRegistry()
+        self.brokerage_accounts = BrokerageAccountRegistry()
+        self.hsa_accounts = HSARegistry()
+        self.roth_iras = RothIRARegistry()
+        self.traditional_iras = TraditionalIRARegistry()
+        self.job_401k_accounts = Job401kRegistry()
         self.jobs = JobRegistry()
         self.homes = HomeRegistry()
         self.apartments = ApartmentRegistry()
@@ -176,6 +201,11 @@ class ModelRegistries:
     def clear_all(self, owner: "Person") -> None:
         """Clear all registries for a specific owner"""
         self.bank_accounts.clear(owner)
+        self.brokerage_accounts.clear(owner)
+        self.hsa_accounts.clear(owner)
+        self.roth_iras.clear(owner)
+        self.traditional_iras.clear(owner)
+        self.job_401k_accounts.clear(owner)
         self.jobs.clear(owner)
         self.homes.clear(owner)
         self.apartments.clear(owner)
@@ -200,6 +230,11 @@ class ModelRegistries:
         """All registries in the container, for owner-agnostic bulk operations."""
         return [
             self.bank_accounts,
+            self.brokerage_accounts,
+            self.hsa_accounts,
+            self.roth_iras,
+            self.traditional_iras,
+            self.job_401k_accounts,
             self.jobs,
             self.homes,
             self.apartments,
