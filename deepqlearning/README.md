@@ -21,7 +21,7 @@ python train_financial_agent.py --scenario high_earner --episodes 1500
 ### 3. Interactive Tutorial
 For a step-by-step walkthrough, open the Jupyter notebook:
 ```bash
-jupyter notebook RL_Training_Example.ipynb
+jupyter notebook Training_Example.ipynb
 ```
 
 ## 🎯 Training Scenarios
@@ -56,6 +56,12 @@ python train_financial_agent.py --scenario basic --load_model models/financial_d
 python train_financial_agent.py --scenario basic --eval_only --load_model models/financial_dqn_basic.pt
 ```
 
+> **Checkpoint compatibility:** checkpoints are versioned with a `MODEL_VERSION` constant and
+> saved as tensor-only `.pt` files plus a `.history.json` sidecar, so they load under modern
+> PyTorch defaults (`torch.load(..., weights_only=True)`) without any environment-variable
+> workarounds. Checkpoints produced before the reward/action-space redesign carry an older
+> version and are not comparable; loading one prints a warning.
+
 ### Generate Training Plots
 ```bash
 # Display training progress plots
@@ -68,9 +74,23 @@ python train_financial_agent.py --scenario basic --plot_results --save_plots plo
 ## 🎮 How It Works
 
 1. **State Observation** - Agent sees financial situation (account balances, debt, income, age, etc.)
-2. **Action Selection** - Chooses from 20+ financial actions (transfers, withdrawals, lifestyle changes)
-3. **Reward Feedback** - Gets rewarded for good financial outcomes, penalized for poor decisions
+2. **Action Selection** - Chooses from 16 implemented financial actions (see below)
+3. **Reward Feedback** - Gets rewarded for growing net worth, penalized for poor decisions and bankruptcy
 4. **Learning** - Updates its strategy based on experience
+
+### Actions
+
+Every action below is fully implemented and reachable — the environment creates the accounts each
+acts on, and legality is decided solely by each action's `can_execute` (a property test enforces
+that any legal action executes successfully):
+
+- **Contributions/transfers** from the bank account into the 401k (pre-tax / Roth), Traditional
+  IRA, Roth IRA, brokerage, and HSA (capped accounts respect their annual contribution limits).
+- **Withdrawals** back to the bank from the 401k (pre-tax / Roth), Traditional IRA, Roth IRA,
+  brokerage, and HSA (a 10% early-withdrawal penalty applies to tax-advantaged accounts before
+  age 59.5).
+- **Lifestyle**: increase spending, decrease spending, retire early.
+- **No action**.
 
 ## 🔧 Customizing Training
 
@@ -88,7 +108,7 @@ Modify the reward calculation in `environment.py` to emphasize different objecti
 - Risk tolerance levels
 
 ### Add New Actions
-Extend the action space in `actions.py` to include:
-- New account types
-- Investment strategies
-- Life decisions (career changes, education, etc.)
+Extend the action space in `actions.py` to include new account types or life decisions. Add the
+`ActionType`, implement its `can_execute`/`execute`, and make sure the environment creates any
+account it needs so the action is actually reachable (the property test will flag actions that
+are declared legal but fail to execute).

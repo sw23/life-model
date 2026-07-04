@@ -15,13 +15,22 @@ to maximize long-term financial well-being.
 import argparse
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Optional
 
-import matplotlib.pyplot as plt
-import numpy as np
-from agent import FinancialDQNAgent, FinancialDQNTrainer
-from environment import FinancialLifeEnv, FinancialLifeEnvGenerator
+import matplotlib
+
+# Use a non-interactive backend when there is no display so training never blocks in headless
+# runs (CI, servers). Interactive backends are kept when a display is available.
+if not os.environ.get("DISPLAY") and not sys.platform.startswith("darwin"):
+    matplotlib.use("Agg")
+
+import matplotlib.pyplot as plt  # noqa: E402
+import numpy as np  # noqa: E402
+from agent import FinancialDQNAgent, FinancialDQNTrainer, rollout  # noqa: E402
+from baselines import evaluate_all_baselines  # noqa: E402
+from environment import FinancialLifeEnv, FinancialLifeEnvGenerator  # noqa: E402
 
 # set base path to be the root of this file
 BASE_PATH = Path(__file__).resolve().parent
@@ -89,8 +98,15 @@ def create_agent_config(scenario: str = "basic") -> dict:
         return base_config
 
 
-def plot_training_results(trainer: FinancialDQNTrainer, save_path: Optional[str] = None):
-    """Plot training results"""
+def plot_training_results(trainer: FinancialDQNTrainer, save_path: Optional[str] = None, show: bool = False):
+    """Plot training results.
+
+    Args:
+        trainer: The trainer whose metrics to plot.
+        save_path: If given, the figure is written here.
+        show: Whether to display the figure interactively. Ignored on the non-interactive Agg
+            backend so headless runs never block.
+    """
 
     fig, axes = plt.subplots(2, 2, figsize=(15, 10))
     fig.suptitle("Financial DQN Training Results", fontsize=16)
@@ -134,7 +150,9 @@ def plot_training_results(trainer: FinancialDQNTrainer, save_path: Optional[str]
         plt.savefig(save_path, dpi=300, bbox_inches="tight")
         print(f"Training plots saved to {save_path}")
 
-    plt.show()
+    if show and matplotlib.get_backend().lower() != "agg":
+        plt.show()
+    plt.close(fig)
 
 
 def evaluate_trained_agent(agent: FinancialDQNAgent, env: FinancialLifeEnv, num_episodes: int = 10):
@@ -145,51 +163,21 @@ def evaluate_trained_agent(agent: FinancialDQNAgent, env: FinancialLifeEnv, num_
     episode_results = []
 
     for episode in range(num_episodes):
-        state = env.reset()
-        total_reward = 0
-        steps = 0
-        episode_info = []
-
-        while steps < env.max_steps:
-            legal_actions = env.get_legal_actions()
-            action_type = agent.select_action(state, legal_actions, training=False)
-
-            action = {
-                "action_type": action_type,
-                "amount_percentage": np.array([0.1]),  # Conservative 10%
-            }
-
-            state, reward, done, info = env.step(action)
-            total_reward += reward
-            steps += 1
-
-            episode_info.append(
-                {
-                    "age": info["age"],
-                    "net_worth": info["net_worth"],
-                    "bank_balance": info["bank_balance"],
-                    "action_type": info["action_type"],
-                    "action_amount": info["action_amount"],
-                }
-            )
-
-            if done:
-                break
-
-        final_info = episode_info[-1] if episode_info else {}
+        result = rollout(env, agent, training=False, seed=2_000_000 + episode, collect_trajectory=True)
+        final_info = result.trajectory[-1] if result.trajectory else {}
         episode_results.append(
             {
                 "episode": episode,
-                "total_reward": total_reward,
+                "total_reward": result.total_reward,
                 "final_net_worth": final_info.get("net_worth", 0),
                 "final_age": final_info.get("age", 0),
-                "steps": steps,
-                "trajectory": episode_info,
+                "steps": result.steps,
+                "trajectory": result.trajectory,
             }
         )
 
         print(
-            f"Episode {episode + 1:2d}: Reward={total_reward:8.2f}, "
+            f"Episode {episode + 1:2d}: Reward={result.total_reward:8.2f}, "
             f"Final Net Worth=${final_info.get('net_worth', 0):,.0f}, "
             f"Final Age={final_info.get('age', 0)}"
         )
@@ -203,6 +191,15 @@ def evaluate_trained_agent(agent: FinancialDQNAgent, env: FinancialLifeEnv, num_
     print(f"Average Reward: {avg_reward:.2f}")
     print(f"Average Final Net Worth: ${avg_net_worth:,.0f}")
     print(f"Average Final Age: {avg_final_age:.1f}")
+
+    # Compare against scripted baselines on the same seeds (an agent that can't beat "do nothing"
+    # is a red flag for the environment or training).
+    seeds = [2_000_000 + i for i in range(num_episodes)]
+    baseline_scores = evaluate_all_baselines(env, seeds)
+    print("\nBaseline comparison (same seeds):")
+    print(f"  Agent:           {avg_reward:8.2f}")
+    for name, score in baseline_scores.items():
+        print(f"  {name:16s} {score:8.2f}")
 
     return episode_results
 
@@ -292,7 +289,7 @@ def main():
     # Plot results
     if args.plot_results or args.save_plots:
         plot_path = args.save_plots or os.path.join(BASE_PATH, "plots", f"training_results_{args.scenario}.png")
-        plot_training_results(trainer, plot_path)
+        plot_training_results(trainer, plot_path, show=args.plot_results)
 
     print("Training and evaluation completed!")
 

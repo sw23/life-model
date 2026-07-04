@@ -7,10 +7,24 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import gymnasium as gym
 import numpy as np
-from actions import ActionExecutor, ActionResult, ActionSpace, ActionType
+from actions import (
+    _WITHDRAW_SOURCES,
+    TRANSFER_ACTIONS,
+    WITHDRAWAL_ACTIONS,
+    ActionExecutor,
+    ActionResult,
+    ActionType,
+    owned_accounts,
+)
 from gymnasium import spaces
 
 from life_model.account.bank import BankAccount
+from life_model.account.brokerage import BrokerageAccount
+from life_model.account.hsa import HealthSavingsAccount, HSAType
+from life_model.account.job401k import Job401kAccount
+from life_model.account.roth_IRA import RothIRA
+from life_model.account.traditional_IRA import TraditionalIRA
+from life_model.base_classes import FinancialAccount
 from life_model.model import LifeModel
 from life_model.people.family import Family
 from life_model.people.mortality import get_chance_of_mortality, get_random_mortality
@@ -19,14 +33,21 @@ from life_model.work.job import Job, Salary
 
 
 class FinancialLifeEnv(gym.Env):
-    """
-    OpenAI Gym environment for financial life simulation.
+    """Gymnasium environment for financial life simulation.
 
-    This environment allows an RL agent to make financial decisions for a person
-    over their lifetime, with the goal of optimizing financial outcomes.
+    An RL agent makes one financial decision per simulated year over a person's lifetime, with
+    the goal of optimizing long-term financial outcomes. The environment follows the modern
+    Gymnasium API: ``reset(seed=..., options=...) -> (obs, info)`` and
+    ``step(action) -> (obs, reward, terminated, truncated, info)``.
     """
 
-    def __init__(self, config: Optional[Dict] = None):
+    metadata = {"render_modes": ["human"]}
+
+    # Below this net worth the episode ends and the bankruptcy penalty applies (single threshold
+    # so the penalty and the termination condition can never disagree).
+    BANKRUPTCY_THRESHOLD = -100000
+
+    def __init__(self, config: Optional[Dict] = None, render_mode: Optional[str] = None):
         super().__init__()
 
         # Default configuration
@@ -40,10 +61,10 @@ class FinancialLifeEnv(gym.Env):
             "initial_bank_balance": 10000,
             "initial_spending": 30000,
             "max_action_amount": 50000,  # Max amount for transfer/withdrawal actions
+            "account_growth": 6.0,  # Average annual growth for the created 401k (percent)
             "reward_weights": {
                 "net_worth": 1.0,
                 "spending_satisfaction": 0.3,
-                "early_retirement_bonus": 2.0,
                 "bankruptcy_penalty": -10.0,
                 "death_with_money_bonus": 1.0,
                 "unexpected_death_penalty": -5.0,  # Penalty for dying unexpectedly early
@@ -53,16 +74,13 @@ class FinancialLifeEnv(gym.Env):
         if config:
             self.config.update(config)
 
+        self.render_mode = render_mode
+
         # Calculate max steps before reset
         self.max_steps = self.config["person_max_age"] - self.config["person_start_age"]
         self.current_step = 0
 
-        # Initialize the simulation
-        self.reset()
-
-        # Define action space
-        # We'll use a discrete action space with different action types
-        # and a continuous parameter for amounts/percentages
+        # Define action space: a discrete action type plus a continuous amount fraction.
         self.action_space = spaces.Dict(
             {
                 "action_type": spaces.Discrete(len(ActionType)),
@@ -70,9 +88,11 @@ class FinancialLifeEnv(gym.Env):
             }
         )
 
-        # Define observation space
-        # This includes financial state, personal state, and market conditions
+        # Define observation space (financial + personal + market state).
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(self._get_state_size(),), dtype=np.float32)
+
+        # Initialize the simulation
+        self.reset()
 
     def _get_state_size(self) -> int:
         """Calculate the size of the state vector"""
@@ -90,11 +110,21 @@ class FinancialLifeEnv(gym.Env):
 
         return person_state_size + financial_state_size + derived_metrics_size + market_state_size
 
-    def reset(self) -> np.ndarray:
-        """Reset the environment to initial state"""
+    def reset(self, *, seed: Optional[int] = None, options: Optional[Dict] = None) -> Tuple[np.ndarray, Dict[str, Any]]:
+        """Reset the environment to its initial state.
 
-        # Create new model instance
-        self.model = LifeModel(start_year=self.config["start_year"])
+        Args:
+            seed: Seeds both the Gymnasium RNG and the underlying :class:`LifeModel` so that a
+                given seed reproduces an identical episode.
+            options: Unused; accepted for Gymnasium API compatibility.
+
+        Returns:
+            A ``(observation, info)`` tuple per the Gymnasium API.
+        """
+        super().reset(seed=seed)
+
+        # Create new model instance, seeded for reproducibility.
+        self.model = LifeModel(start_year=self.config["start_year"], seed=seed)
         self.family = Family(self.model)
 
         # Create person
@@ -138,8 +168,14 @@ class FinancialLifeEnv(gym.Env):
             ),
         )
 
-        # Initialize action space and executor
-        self.action_space_obj = ActionSpace(self.person)
+        # Create the accounts the agent can act on so every action type is reachable.
+        self.job401k = Job401kAccount(job=self.job, average_growth=self.config["account_growth"])
+        self.brokerage = BrokerageAccount(person=self.person, company="Brokerage")
+        self.traditional_ira = TraditionalIRA(person=self.person)
+        self.roth_ira = RothIRA(person=self.person)
+        self.hsa = HealthSavingsAccount(person=self.person, hsa_type=HSAType.INDIVIDUAL)
+
+        # Action executor
         self.action_executor = ActionExecutor(self.model)
 
         # Reset step counter
@@ -150,25 +186,24 @@ class FinancialLifeEnv(gym.Env):
 
         # Track initial state
         self.initial_net_worth = self._calculate_net_worth()
-        self.total_lifetime_spending = 0
-        self.years_retired_early = 0
+        self.previous_net_worth = self.initial_net_worth
+        self.total_lifetime_spending = 0.0
 
-        return self._get_observation()
+        return self._get_observation(), self._get_info(None)
 
-    def step(self, action: Dict[str, Any]) -> Tuple[np.ndarray, float, bool, Dict]:
-        """
-        Execute one step in the environment.
+    def step(self, action: Dict[str, Any]) -> Tuple[np.ndarray, float, bool, bool, Dict]:
+        """Execute one step (one simulated year) in the environment.
 
         Args:
-            action: Dictionary with 'action_type' (int) and 'amount_percentage' (float)
+            action: Dictionary with 'action_type' (int) and 'amount_percentage' (float).
 
         Returns:
-            observation, reward, done, info
+            ``(observation, reward, terminated, truncated, info)`` per the Gymnasium API.
         """
 
         # Parse action
-        action_type_idx = action["action_type"]
-        amount_percentage = action["amount_percentage"][0]
+        action_type_idx = int(action["action_type"])
+        amount_percentage = float(np.asarray(action["amount_percentage"]).reshape(-1)[0])
 
         # Convert action index to ActionType
         action_type = list(ActionType)[action_type_idx]
@@ -188,55 +223,67 @@ class FinancialLifeEnv(gym.Env):
         self.model.step()
         self.current_step += 1
 
-        # Check for mortality
+        # Check for mortality (seeded through the model RNG for reproducibility)
         if not self.died_from_natural_causes:
-            self.died_from_natural_causes = get_random_mortality(self.person.age, self.person_gender)
+            self.died_from_natural_causes = get_random_mortality(
+                self.person.age, self.person_gender, rng=self.model.random
+            )
 
         # Calculate reward
         reward = self._calculate_reward(action_result)
 
-        # Check if episode is done
-        done = self._is_done()
+        # Terminal (task-ending) vs. truncation (time-limit) conditions
+        terminated = self._is_terminated()
+        truncated = self.current_step >= self.max_steps and not terminated
 
-        # Gather info
-        info = {
+        info = self._get_info(action_result, action_type=action_type, action_amount=action_amount)
+
+        return self._get_observation(), reward, terminated, truncated, info
+
+    def _get_info(
+        self,
+        action_result: Optional[ActionResult],
+        action_type: Optional[ActionType] = None,
+        action_amount: float = 0.0,
+    ) -> Dict[str, Any]:
+        """Build the info dict returned by reset/step."""
+        return {
             "action_result": action_result,
             "net_worth": self._calculate_net_worth(),
             "age": self.person.age,
-            "is_retired": self.person.age >= self.person.retirement_age,
+            "is_retired": self.person.is_retired,
             "bank_balance": self.person.bank_account_balance,
             "annual_spending": self.person.spending.get_yearly_spending(),
-            "action_type": action_type.value,
+            "action_type": action_type.value if action_type is not None else None,
             "action_amount": action_amount,
             "died_from_natural_causes": self.died_from_natural_causes,
             "mortality_probability": get_chance_of_mortality(self.person.age, self.person_gender),
         }
 
-        return self._get_observation(), reward, done, info
-
     def _calculate_action_amount(self, action_type: ActionType, percentage: float) -> float:
-        """Calculate the actual dollar amount for an action based on percentage"""
+        """Calculate the actual dollar amount for a transfer/withdrawal action."""
+        max_amount = self.config["max_action_amount"]
 
-        if action_type in [
-            ActionType.TRANSFER_BANK_TO_401K_PRETAX,
-            ActionType.TRANSFER_BANK_TO_401K_ROTH,
-            ActionType.TRANSFER_BANK_TO_BROKERAGE,
-        ]:
-            # Percentage of bank balance
-            return min(self.person.bank_account_balance * percentage, self.config["max_action_amount"])
+        if action_type in TRANSFER_ACTIONS:
+            # Fraction of the bank balance available to move.
+            return min(self.person.bank_account_balance * percentage, max_amount)
 
-        elif action_type in [ActionType.WITHDRAW_401K_PRETAX, ActionType.WITHDRAW_401K_ROTH]:
-            # Percentage of retirement balance
-            retirement_balance = sum(acc.balance for acc in self.person.all_retirement_accounts)
-            return min(retirement_balance * percentage, self.config["max_action_amount"])
+        if action_type in WITHDRAWAL_ACTIONS:
+            # Fraction of the source account's balance.
+            source = owned_accounts(self.person, _WITHDRAW_SOURCES[action_type])
+            balance = source[0].balance if source else 0.0
+            return min(balance * percentage, max_amount)
 
-        elif action_type in [ActionType.PAY_EXTRA_MORTGAGE]:
-            # Percentage of bank balance for extra payments
-            return min(self.person.bank_account_balance * percentage, self.config["max_action_amount"])
+        # Spending / retire / no-op actions don't use a dollar amount.
+        return 0.0
 
-        else:
-            # For other actions, use a base amount
-            return min(percentage * self.config["max_action_amount"], self.config["max_action_amount"])
+    def _owned_accounts(self) -> List[FinancialAccount]:
+        """All balance-holding accounts owned by the person."""
+        return [
+            a
+            for a in self.model.agents
+            if isinstance(a, FinancialAccount) and getattr(a, "person", None) is self.person
+        ]
 
     def _get_observation(self) -> np.ndarray:
         """Get current state observation"""
@@ -246,7 +293,7 @@ class FinancialLifeEnv(gym.Env):
         person_state = [
             self.person.age / 100.0,  # Normalized age
             max(0, self.person.retirement_age - self.person.age) / 50.0,  # Years to retirement
-            1.0 if self.person.age >= self.person.retirement_age else 0.0,  # Is retired
+            1.0 if self.person.is_retired else 0.0,  # Is retired
             mortality_prob,  # Current year mortality probability
         ]
 
@@ -300,24 +347,26 @@ class FinancialLifeEnv(gym.Env):
         return observation
 
     def _calculate_net_worth(self) -> float:
-        """Calculate person's net worth"""
-        assets = (
-            self.person.bank_account_balance
-            + sum(acc.balance for acc in self.person.all_retirement_accounts)
-            + sum(home.value for home in self.person.homes)
-        )
+        """Calculate person's net worth across all owned accounts and property."""
+        assets = sum(acc.balance for acc in self._owned_accounts())
+        assets += sum(home.home_value for home in self.person.homes)
         liabilities = self.person.debt + sum(home.mortgage.principal for home in self.person.homes if home.mortgage)
         return assets - liabilities
 
     def _calculate_reward(self, action_result: ActionResult) -> float:
-        """Calculate reward for current step"""
+        """Calculate reward for the current step.
+
+        The reward is a change-in-net-worth base plus a spending-utility term, with terminal
+        wealth and mortality adjustments. There is no pre-retirement "bonus" term (it was farmable
+        by simply cutting spending), so the agent is rewarded for genuinely growing wealth.
+        """
 
         reward = 0.0
         weights = self.config["reward_weights"]
 
-        # Net worth growth reward
+        # Net worth growth reward (change since last step)
         current_net_worth = self._calculate_net_worth()
-        net_worth_growth = current_net_worth - getattr(self, "previous_net_worth", self.initial_net_worth)
+        net_worth_growth = current_net_worth - self.previous_net_worth
         self.previous_net_worth = current_net_worth
         reward += weights["net_worth"] * (net_worth_growth / 100000.0)  # Normalized by $100k
 
@@ -327,28 +376,21 @@ class FinancialLifeEnv(gym.Env):
         spending_satisfaction = np.log(max(annual_spending, 1000)) / 10.0
         reward += weights["spending_satisfaction"] * spending_satisfaction
 
-        # Early retirement bonus - can retire with 4% rule
-        if self.person.age < self.person.retirement_age and current_net_worth > annual_spending * 25:
-            self.years_retired_early += 1
-            reward += weights["early_retirement_bonus"]
-
-        # Bankruptcy penalty
-        if current_net_worth < -10000:
+        # Bankruptcy penalty (same threshold as termination, so they never disagree)
+        if current_net_worth < self.BANKRUPTCY_THRESHOLD:
             reward += weights["bankruptcy_penalty"]
 
-        # Death with money bonus
+        # Death with money bonus (terminal wealth)
         if (self.current_step >= self.max_steps - 1 or self.died_from_natural_causes) and current_net_worth > 0:
             reward += weights["death_with_money_bonus"] * (current_net_worth / 1000000.0)
 
         # Unexpected death penalty - penalize dying much earlier than expected lifespan
         if self.died_from_natural_causes:
-            # Calculate expected remaining years based on life tables
             expected_years_remaining = 0
             for future_age in range(self.person.age, min(self.config["person_max_age"], 100)):
                 survival_prob = 1.0 - get_chance_of_mortality(future_age, self.person_gender)
                 expected_years_remaining += survival_prob
 
-            # If dying significantly earlier than expected, apply penalty
             if expected_years_remaining > 20:  # More than 20 years expected remaining
                 penalty_factor = min(expected_years_remaining / 20.0, 2.0)  # Cap at 2x penalty
                 reward += weights["unexpected_death_penalty"] * penalty_factor
@@ -360,20 +402,23 @@ class FinancialLifeEnv(gym.Env):
         # Fee penalty
         reward -= action_result.fees_paid / 10000.0  # Penalty for fees
 
-        return reward
+        return float(reward)
 
-    def _is_done(self) -> bool:
-        """Check if episode is finished"""
+    def _is_terminated(self) -> bool:
+        """Whether the episode reached a terminal (task-ending) state.
+
+        Terminal = the person died, reached the maximum modeled age, or went bankrupt. Reaching
+        the episode's step budget is reported as truncation, not termination.
+        """
         return (
-            self.current_step >= self.max_steps
-            or self.person.age >= self.config["person_max_age"]
-            or self._calculate_net_worth() < -100000  # Bankruptcy threshold
+            self.person.age >= self.config["person_max_age"]
+            or self._calculate_net_worth() < self.BANKRUPTCY_THRESHOLD
             or self.died_from_natural_causes
-        )  # Natural mortality
+        )
 
-    def render(self, mode="human") -> Optional[str]:
-        """Render the environment"""
-        if mode == "human":
+    def render(self) -> Optional[str]:
+        """Render the environment for the configured ``render_mode``."""
+        if self.render_mode == "human":
             net_worth = self._calculate_net_worth()
             mortality_prob = get_chance_of_mortality(self.person.age, self.person_gender)
             status = "DECEASED" if self.died_from_natural_causes else "ALIVE"
@@ -388,17 +433,20 @@ class FinancialLifeEnv(gym.Env):
         return None
 
     def get_legal_actions(self) -> List[int]:
-        """Get list of legal action indices for current state"""
+        """Get list of legal action indices for the current state.
+
+        Legality is decided solely by ``Action.can_execute`` (via the executor), so the mask can
+        never disagree with what ``execute`` will do.
+        """
         legal_actions = []
-
         for i, action_type in enumerate(ActionType):
-            if self.action_executor.can_execute_action(self.person, action_type, amount=1000.0):
+            if action_type == ActionType.NO_ACTION:
                 legal_actions.append(i)
-
-        # NO_ACTION is always legal
-        if list(ActionType).index(ActionType.NO_ACTION) not in legal_actions:
-            legal_actions.append(list(ActionType).index(ActionType.NO_ACTION))
-
+                continue
+            # Probe with the amount the environment would actually use this step.
+            amount = self._calculate_action_amount(action_type, 0.1)
+            if self.action_executor.can_execute_action(self.person, action_type, amount=amount, percentage_change=0.05):
+                legal_actions.append(i)
         return legal_actions
 
 
