@@ -118,5 +118,31 @@ class TestFicaPerPerson(unittest.TestCase):
         self.assertAlmostEqual(total_ss, 150000 * 0.062, places=2)
 
 
+class TestWithdrawalSizing(unittest.TestCase):
+    """Item 9 / D3: pre-tax withdrawals are sized by a fixed-point solve, not a max-rate buffer."""
+
+    def test_fifty_k_net_need_no_over_withdrawal(self):
+        # A retiree needs $50k of spending funded entirely from a pre-tax 401k, with an empty
+        # bank account. The solver must withdraw just enough to cover the $50k plus the tax the
+        # withdrawal triggers — leaving no meaningful buffer behind.
+        model = LifeModel(start_year=2020, end_year=2020, config=_fixture_config())
+        family = Family(model)
+        person = Person(family, "Retiree", age=65, retirement_age=60, spending=Spending(model, base=50000))
+        BankAccount(person, "Bank", balance=0, interest_rate=0)
+        job = Job(person, "Old Co", "Retiree", Salary(model=model, base=0))
+        Job401kAccount(job=job, pretax_balance=1000000, average_growth=0)
+
+        model.step()
+
+        # The $50k spending was fully covered from the 401k and created no debt.
+        self.assertEqual(person.stat_money_spent, 50000)
+        self.assertEqual(person.debt, 0)
+        # No max-rate over-buffer: at most ~$1 of excess is left in the bank after settlement.
+        self.assertLessEqual(person.bank_account_balance, 1.0)
+        # The bank actually received at least the $50k net need (before it was spent).
+        withdrawn = 1000000 - job.retirement_account.pretax_balance
+        self.assertGreaterEqual(withdrawn, 50000 - 1.0)
+
+
 if __name__ == "__main__":
     unittest.main()
