@@ -49,9 +49,8 @@ pytest src/life_model/tests/ -m "not notebooks" --cov
 - Line length is **120**. Formatting and linting are handled by
   [ruff](https://docs.astral.sh/ruff/); run `ruff format` and `ruff check --fix`
   (or just `pre-commit run --all-files`) before pushing.
-- Notebook outputs are stripped by `nbstripout` on commit, except
-  `ExampleSimulation.ipynb`, which intentionally commits its executed outputs as
-  a reviewable baseline.
+- Notebook outputs are stripped by `nbstripout` on commit, so committed
+  notebooks (including `ExampleSimulation.ipynb`) carry no cell outputs.
 
 ## Making changes
 

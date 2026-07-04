@@ -22,6 +22,3 @@ repos:
     hooks:
       - id: nbstripout
         files: \.ipynb$
-        # ExampleSimulation.ipynb intentionally commits its executed outputs as a
-        # reviewable baseline, so it is exempt from stripping.
-        exclude: ^ExampleSimulation\.ipynb$
