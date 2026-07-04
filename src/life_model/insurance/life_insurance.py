@@ -7,6 +7,7 @@ from typing import Optional, Union, cast
 
 from ..model import Event, LifeModel, LifeModelAgent, compound_interest
 from ..people.person import Person
+from ..tax.income import IncomeType
 
 
 class LifeInsuranceType(Enum):
@@ -59,6 +60,12 @@ class LifeInsurance(LifeModelAgent):
             loan_interest_rate = life_config.default_loan_interest_rate
         if max_missed_payments is None:
             max_missed_payments = life_config.default_max_missed_payments
+        # Config-driven policy parameters (Plan 08 item 9).
+        self.loan_to_value_ratio = life_config.loan_to_value_ratio
+        self.cash_value_premium_fraction_first_year = life_config.cash_value_premium_fraction_first_year
+        self.cash_value_premium_fraction_later = life_config.cash_value_premium_fraction_later
+        self.surrender_percentage_early = life_config.surrender_percentages.early
+        self.surrender_percentage_standard = life_config.surrender_percentages.standard
         self.person = person
         self.policy_type = policy_type
         self.death_benefit = death_benefit
@@ -167,8 +174,13 @@ class LifeInsurance(LifeModelAgent):
 
             # For whole life, part of premium goes to cash value
             if self.policy_type == LifeInsuranceType.WHOLE:
-                # Typically 50-80% of premium goes to cash value after first year
-                cash_value_contribution = yearly_cost * 0.6 if self.policy_years_active > 0 else yearly_cost * 0.3
+                # A configured fraction of premium funds cash value (lower in the first year).
+                fraction = (
+                    self.cash_value_premium_fraction_later
+                    if self.policy_years_active > 0
+                    else self.cash_value_premium_fraction_first_year
+                )
+                cash_value_contribution = yearly_cost * fraction
                 self.cash_value += cash_value_contribution
 
             return True
@@ -213,12 +225,18 @@ class LifeInsurance(LifeModelAgent):
 
         # For whole life policies, person gets the cash surrender value
         if self.policy_type == LifeInsuranceType.WHOLE and self.cash_value > 0:
-            # Surrender value is typically 70-90% of cash value after first few years
-            surrender_percentage = 0.8 if self.policy_years_active >= 3 else 0.5
+            # Surrender value is a configured fraction of cash value (lower for young policies).
+            surrender_percentage = (
+                self.surrender_percentage_standard if self.policy_years_active >= 3 else self.surrender_percentage_early
+            )
             surrender_value = self.available_cash_value * surrender_percentage
 
             if surrender_value > 0:
                 self.person.deposit_into_bank_account(surrender_value)
+                # Gains over the premiums paid (basis) are taxable ordinary income.
+                taxable_gain = max(0.0, surrender_value - self.total_premiums_paid)
+                if taxable_gain > 0:
+                    self.person.income.add(IncomeType.ORDINARY, taxable_gain)
                 self.model.event_log.add(
                     Event(f"{self.person.name} surrendered life insurance policy for ${surrender_value:,.0f}")
                 )
@@ -231,10 +249,11 @@ class LifeInsurance(LifeModelAgent):
         if self.policy_type != LifeInsuranceType.WHOLE or not self.is_active:
             return 0.0
 
-        # Calculate what portion of requested amount can actually be borrowed
-        # Typically can borrow 90% of the requested amount up to the available cash value
-        potential_loan = min(loan_amount, self.available_cash_value)
-        actual_loan = potential_loan * 0.9  # 90% loan-to-value ratio
+        # Calculate what portion of requested amount can actually be borrowed. The loan is
+        # capped at a configured fraction of available cash value (the cap is not a per-request
+        # haircut): a request within the cap is fully honored.
+        loan_cap = self.available_cash_value * self.loan_to_value_ratio
+        actual_loan = min(loan_amount, loan_cap)
 
         if actual_loan > 0:
             self.outstanding_loan_balance += actual_loan
@@ -323,6 +342,24 @@ class LifeInsurance(LifeModelAgent):
         if self.outstanding_loan_balance > 0:
             loan_interest = self.outstanding_loan_balance * (self.loan_interest_rate / 100)
             self.outstanding_loan_balance += loan_interest
+
+            # A policy lapses once the loan balance exceeds the cash value securing it. The loan
+            # amount over the premiums paid (basis) becomes taxable ordinary income.
+            if self.outstanding_loan_balance > self.cash_value:
+                taxable_gain = max(0.0, self.outstanding_loan_balance - self.total_premiums_paid)
+                if taxable_gain > 0:
+                    self.person.income.add(IncomeType.ORDINARY, taxable_gain)
+                self.model.event_log.add(
+                    Event(
+                        f"{self.person.name}'s life insurance lapsed: loan balance "
+                        f"${self.outstanding_loan_balance:,.0f} exceeded cash value ${self.cash_value:,.0f}"
+                    )
+                )
+                self.lapse_policy()
+                self.stat_cash_value = self.cash_value
+                self.stat_loan_balance = self.outstanding_loan_balance
+                self.stat_policy_active = 0
+                return
 
         # Update stats
         self.stat_cash_value = self.cash_value

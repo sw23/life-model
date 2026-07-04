@@ -146,6 +146,8 @@ class LifeInsuranceConfig(StrictModel):
     # Fraction of the yearly premium that funds cash value for whole-life policies.
     cash_value_premium_fraction_first_year: float = Field(ge=0, le=1)
     cash_value_premium_fraction_later: float = Field(ge=0, le=1)
+    # Maximum fraction of available cash value that can be borrowed against.
+    loan_to_value_ratio: float = Field(ge=0, le=1)
 
 
 class AnnuityConfig(StrictModel):
