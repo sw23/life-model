@@ -110,8 +110,11 @@ def _person_param_specs(prefix: str, name: str) -> Dict[str, Any]:
         f"{prefix}_bonus": Slider(f"{name}'s Annual Bonus (%)", d["bonus"], 0, 50, 1),
         f"{prefix}_spending": Slider(f"{name}'s Annual Spending ($)", d["spending"], 5000, 50000, 1000),
         f"{prefix}_bank_balance": Slider(f"{name}'s Initial Bank Balance ($)", d["bank_balance"], 0, 100000, 5000),
-        f"{prefix}_retirement_enabled": {"label": f"{name} has a 401k", "type": "Checkbox",
-                                         "value": d["retirement_enabled"]},
+        f"{prefix}_retirement_enabled": {
+            "label": f"{name} has a 401k",
+            "type": "Checkbox",
+            "value": d["retirement_enabled"],
+        },
         f"{prefix}_retirement_balance": Slider(f"{name}'s 401k Balance ($)", d["retirement_balance"], 0, 500000, 5000),
         f"{prefix}_retirement_contrib": Slider(f"{name}'s 401k Contribution (%)", d["retirement_contrib"], 0, 50, 1),
         f"{prefix}_company_match": Slider(f"{name}'s 401k Company Match (%)", d["company_match"], 0, 20, 1),

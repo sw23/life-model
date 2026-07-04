@@ -9,10 +9,9 @@ The ``dashboard/`` directory is placed on ``sys.path`` by ``conftest.py`` so ``i
 resolves no matter where the suite is launched from.
 """
 
-import pytest
-
 import app
-from app import DashboardLifeModel, PERSON_DEFAULTS, param_value
+import pytest
+from app import PERSON_DEFAULTS, DashboardLifeModel, param_value
 
 
 @pytest.fixture
