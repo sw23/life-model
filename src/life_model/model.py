@@ -229,7 +229,17 @@ class LifeModel(mesa.Model):
 
         The DataCollector row for year Y is collected *after* the stages run (while ``self.year``
         still equals Y), so the row for year Y contains year-Y flows and end-of-year-Y balances.
+
+        Once the final year has been simulated ``self.running`` is cleared and further calls are
+        no-ops. This lets interactive drivers (SolaraViz's Play loop, which runs while
+        ``self.running``) stop at ``end_year``; the notebook ``run()`` path calls step() exactly
+        once per year in the range and never reaches the no-op branch.
         """
+        # Don't step past the configured final year.
+        if self.year > self.end_year:
+            self.running = False
+            return
+
         self.simulated_years.append(self.year)
 
         # Execute each stage in a deterministic, priority-ordered sequence per stage
@@ -241,6 +251,7 @@ class LifeModel(mesa.Model):
         self.datacollector.collect(self)
 
         self.year += 1
+        self.running = self.year <= self.end_year
 
     def get_year_range(self) -> range:
         """Get the inclusive range of simulated years ``[start_year, end_year]``."""

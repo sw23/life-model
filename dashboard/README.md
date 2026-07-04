@@ -1,27 +1,29 @@
 # Life Model Financial Simulation Dashboard
 
-This dashboard provides an interactive interface for running financial simulations using the Mesa framework and Solara visualization. It is based on the `ExampleSimulation.ipynb` notebook and allows users to model personal finances of a family over time.
+This dashboard provides an interactive interface for running financial simulations using the Mesa framework and Solara visualization. It is based on the `ExampleSimulation.ipynb` notebook and allows users to model the personal finances of a family over time.
 
 ## Features
 
-- **Interactive Parameter Controls**: Configure family members, ages, salaries, retirement ages, and spending patterns
-- **Real-time Simulation**: Run financial simulations and see results immediately
-- **Multiple Visualizations**:
-  - Financial Overview: Income, bank balance, 401k balance, debt, and spending over time
-  - Bank Balance Tracking: Monitor liquid assets over time
-  - Retirement Savings: 401k balance growth and contribution tracking
-  - Tax and Income Analysis: Compare income vs. various tax obligations
+- **Interactive Parameter Controls**: Configure family members, ages, salaries, bonuses, retirement ages, spending, 401k plans, and an optional mortgaged home
+- **Economic Scenarios**: Apply a predefined economic scenario (e.g. `high_tax`, `recession`, `boom`) that adjusts taxes, inflation, and market returns
+- **Real-time Simulation**: Run financial simulations and see results update immediately; playback automatically stops at the configured end year
+- **Multiple Visualizations** (matplotlib charts rendered via Mesa's `make_plot_component`):
+  - Financial Overview: income, bank balance, 401k balance, debt, and spending over time
+  - Bank Balance Tracking: liquid assets over time
+  - Retirement Savings: 401k balance, contributions, and employer match
+  - Tax and Income Analysis: income vs. taxes
+- **Results Tab**: view the full yearly-stats table and download it as CSV
 
 ## Installation
 
 Install the life_model package and dashboard dependencies:
+
 ```bash
 pip install -e . -r dashboard/requirements-dash.txt
 ```
 
 ## Running the Dashboard
 
-Run the following command to start the dashboard:
 ```bash
 solara run dashboard/app.py
 ```
@@ -31,103 +33,87 @@ Then open your browser to http://localhost:8765
 ## Dashboard Parameters
 
 ### Model Configuration
-- **Start Year**: Beginning year for the simulation
-- **End Year**: Ending year for the simulation
+- **Economic Scenario**: choose `(default)` for the packaged defaults or one of the predefined scenarios
+- **Start Year** / **End Year**: inclusive simulation range
+- **Annual Salary Increase (%)** / **Annual Spending Increase (%)**: yearly growth rates
+- **Bank Interest Rate (%)**: interest applied to bank balances
 
-### Family Members
-- **Include John/Jane**: Toggle to enable/disable family members
-- **Age**: Current age of each person
-- **Retirement Age**: Planned retirement age
-- **Annual Salary**: Current salary
-- **Annual Spending**: Base spending amount
-- **Initial Bank Balance**: Starting bank account balance
+### Family Members (John and Jane)
+- **Include John/Jane**: toggle to enable/disable each person
+- **Age** / **Retirement Age**
+- **Salary ($)** / **Annual Bonus (%)**
+- **Annual Spending ($)**
+- **Initial Bank Balance ($)**
+- **Has a 401k**: toggle the retirement account
+- **401k Balance ($)** / **401k Contribution (%)** / **401k Company Match (%)**
 
-### Economic Factors
-- **Annual Spending Increase**: Yearly increase in spending percentage
-- **Annual Salary Increase**: Yearly salary growth percentage
+### Home (optional)
+- **Include a Home**: adds a mortgaged home owned by the first enabled person (20% down payment assumed)
+- **Home Price ($)** / **Mortgage Rate (%)** / **Mortgage Term (years)**
 
 ## How It Works
 
-1. **Model Creation**: The dashboard creates a `LifeModel` instance based on your parameters
-2. **Family Setup**: Creates family members with their associated jobs, bank accounts, and spending patterns
-3. **Simulation**: Runs the financial simulation year by year, tracking various metrics
-4. **Visualization**: Displays results in interactive charts using Altair/Vega-Lite
+1. **Model Creation**: `DashboardLifeModel` (a `LifeModel` subclass) is built from the parameter controls.
+2. **Family Setup**: `_add_person` creates each enabled person with a bank account, job, and optional 401k; `_add_home` optionally attaches a mortgaged home. All person defaults live in a single `PERSON_DEFAULTS` dict that also powers the control specs.
+3. **Simulation**: the model runs year by year; the DataCollector records yearly stats.
+4. **Visualization**: results are shown in interactive matplotlib charts and a results table.
 
-## Visualization Details
+## Data Export
 
-### Financial Overview Chart
-Shows the progression of key financial metrics over time:
-- Income (blue line)
-- Bank Balance (orange line)
-- 401k Balance (green line)
-- Debt (red line)
-- Spending (purple line)
-
-### Bank Balance Chart
-Simple bar chart showing bank account balance progression over the simulation years.
-
-### Retirement Savings Chart
-Two-part visualization:
-- Area chart showing 401k balance growth over time
-- Stacked bar chart showing annual contributions (personal + employer match)
-
-### Taxes and Income Chart
-Line chart comparing:
-- Total income (blue line)
-- Total taxes paid (red line)
+Open the **Results** tab to view the yearly-stats DataFrame and click **Download results as CSV** to export it. The CSV matches `model.datacollector.get_model_vars_dataframe()`.
 
 ## Example Use Cases
 
-1. **Retirement Planning**: Set different retirement ages and see how it affects savings
-2. **Salary Comparison**: Compare different salary scenarios and their long-term impact
-3. **Spending Analysis**: Understand how spending patterns affect long-term wealth
-4. **Family Planning**: Compare single vs. dual-income scenarios
+1. **Retirement Planning**: adjust retirement ages and 401k contributions and see the effect on savings
+2. **Scenario Analysis**: compare `high_tax` vs `low_tax`, or `recession` vs `boom`
+3. **Housing Impact**: enable a home and compare outcomes with and without a mortgage
+4. **Family Planning**: compare single vs. dual-income scenarios
 
 ## Technical Details
 
 The dashboard is built using:
-- **Mesa**: Agent-based modeling framework for the financial simulation
-- **Solara**: Reactive web framework for the dashboard interface
-- **life_model**: Custom financial simulation package
+- **Mesa**: agent-based modeling framework for the financial simulation
+- **Solara**: reactive web framework for the dashboard interface
+- **life_model**: the financial simulation package
 
-The simulation models each family member as an agent with:
-- Income from jobs
-- Spending patterns
-- Bank accounts with interest
-- Tax obligations
-- Retirement savings (401k)
+Each family member is modeled as an agent with income from a job, spending patterns, a bank account with interest, tax obligations, and optional retirement savings (401k).
 
 ## Files
 
-- `app.py`: Main dashboard implementation
-- `test_dashboard.py`: Test script to verify dashboard functionality
+- `app.py`: dashboard implementation (`DashboardLifeModel`, parameter specs, components, and the `SolaraViz` page)
+- `tests/test_dashboard.py`: tests that verify the dashboard model and parameter handling
+- `tests/conftest.py`: puts the `dashboard/` directory on `sys.path` for the tests
+
+## Running the Tests
+
+```bash
+pytest dashboard/tests/
+```
 
 ## Customization
 
 To add new parameters or visualizations:
 
-1. **Add Parameters**: Update the `model_params` dictionary in `dashboard.py`
-2. **Modify Model**: Update the `DashboardLifeModel` class to use new parameters
-3. **Create Charts**: Add new plotting functions following the pattern of existing ones
-4. **Update Dashboard**: Add your new chart functions to the `components` list in `create_dashboard()`
+1. **Add Parameters**: add an entry to `SHARED_DEFAULTS`/`PERSON_DEFAULTS` and the corresponding control to `model_params` in `app.py`.
+2. **Use Them in the Model**: read the value in `_add_person`, `_add_home`, or `DashboardLifeModel.__init__`.
+3. **Create Charts**: add a `make_plot_component(...)` following the existing patterns.
+4. **Update the Dashboard**: add your new component to the `components` list passed to `SolaraViz`.
 
 ## Troubleshooting
 
 **Dashboard won't start:**
-- Ensure all dependencies are installed
-- Check that life_model package is installed with `pip install -e . -r dashboard/requirements-dash.txt`
+- Ensure dependencies are installed: `pip install -e . -r dashboard/requirements-dash.txt`
 
 **Charts not displaying:**
-- Verify the simulation is running by checking console output
-- Test components individually with `python src/life_model/tests/test_dashboard.py`
+- Verify the simulation is running by pressing **Play** or **Step**
+- Check the console output for errors
 
 **Performance issues:**
-- Reduce the simulation time range (end_year - start_year)
-- Simplify parameter ranges to reduce computation
+- Reduce the simulation range (End Year − Start Year)
 
 ## Support
 
 For issues or questions:
-1. Check the test output: `python src/life_model/tests/test_dashboard.py`
+1. Run the tests: `pytest dashboard/tests/`
 2. Review the console output when running the dashboard
 3. Refer to the original `ExampleSimulation.ipynb` for simulation logic
