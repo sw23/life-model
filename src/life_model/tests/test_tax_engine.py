@@ -255,21 +255,15 @@ class TestRmdStartAge(unittest.TestCase):
 
     def test_distribution_at_start_age(self):
         # $240,000 / 24.0 (age-73 period) = $10,000.
-        self.assertAlmostEqual(
-            required_min_distrib(73, 240000, config=self.config, start_age=73), 10000.0, places=2
-        )
+        self.assertAlmostEqual(required_min_distrib(73, 240000, config=self.config, start_age=73), 10000.0, places=2)
 
     def test_fractional_age_does_not_raise(self):
         # A non-integer age must clamp to int(age) instead of failing an exact-match lookup.
-        self.assertAlmostEqual(
-            required_min_distrib(73.5, 240000, config=self.config, start_age=73), 10000.0, places=2
-        )
+        self.assertAlmostEqual(required_min_distrib(73.5, 240000, config=self.config, start_age=73), 10000.0, places=2)
 
     def test_age_beyond_table_clamps_to_last_row(self):
         # $220,000 / 22.0 (last, age-75 period) = $10,000.
-        self.assertAlmostEqual(
-            required_min_distrib(130, 220000, config=self.config, start_age=73), 10000.0, places=2
-        )
+        self.assertAlmostEqual(required_min_distrib(130, 220000, config=self.config, start_age=73), 10000.0, places=2)
 
     def test_secure_20_start_age(self):
         # Born 1960 or later start at 75; earlier cohorts use the year-indexed base (fixture: 72).
