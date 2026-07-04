@@ -63,5 +63,60 @@ class TestBracketMath(unittest.TestCase):
         self.assertAlmostEqual(tax, 13000.0, places=6)
 
 
+class TestFicaPerPerson(unittest.TestCase):
+    """Bugs 1-3: FICA is a per-person payroll tax on wages only."""
+
+    def test_retiree_401k_distribution_pays_no_fica(self):
+        # Bug 1: a retiree living on 401k distributions has no wages, so owes zero FICA.
+        model = LifeModel(start_year=2020, end_year=2020, config=_fixture_config())
+        family = Family(model)
+        person = Person(family, "Retired R", age=65, retirement_age=60, spending=Spending(model, base=30000))
+        BankAccount(person, "Bank", balance=0, interest_rate=0)
+        job = Job(person, "Old Co", "Retiree", Salary(model=model, base=0))
+        Job401kAccount(job=job, pretax_balance=500000, average_growth=0)
+
+        model.step()
+
+        # The distribution funded the year's spending as ordinary income, but no payroll tax.
+        self.assertGreater(person.stat_taxes_paid_federal, 0)
+        self.assertEqual(person.stat_taxes_paid_ss, 0)
+        self.assertEqual(person.stat_taxes_paid_medicare, 0)
+
+    def test_worker_pretax_deferral_still_pays_fica_on_full_gross(self):
+        # Bug 2: pre-tax 401k deferrals reduce income tax but are still FICA wages.
+        model = LifeModel(start_year=2020, end_year=2020, config=_fixture_config())
+        family = Family(model)
+        person = Person(family, "Saver S", age=40, retirement_age=70, spending=Spending(model, base=0))
+        BankAccount(person, "Bank", balance=0, interest_rate=0)
+        job = Job(person, "Co", "Dev", Salary(model=model, base=100000))
+        # Defer 20% ($20k) pre-tax.
+        Job401kAccount(job=job, pretax_contrib_percent=20, average_growth=0)
+
+        model.step()
+
+        # FICA base is the full $100k gross (SS at 6.2%), not the $80k after deferral.
+        self.assertAlmostEqual(person.stat_taxes_paid_ss, 100000 * 0.062, places=2)
+        self.assertAlmostEqual(person.stat_taxes_paid_medicare, 100000 * 0.0145, places=2)
+
+    def test_two_earner_mfj_each_under_cap_pays_ss_on_both_salaries(self):
+        # Bug 3: the Social Security wage cap is per person, not on combined MFJ wages.
+        # Fixture wage base is $110k; two earners at $70k and $80k are both under it.
+        model = LifeModel(start_year=2020, end_year=2020, config=_fixture_config())
+        family = Family(model)
+        b = Person(family, "Spouse B", age=40, retirement_age=70, spending=Spending(model, base=0))
+        c = Person(family, "Spouse C", age=40, retirement_age=70, spending=Spending(model, base=0))
+        b.get_married(c)
+        for p in (b, c):
+            BankAccount(p, "Bank", balance=100000, interest_rate=0)
+        Job(b, "Co", "Dev", Salary(model=model, base=70000))
+        Job(c, "Co", "Dev", Salary(model=model, base=80000))
+
+        model.step()
+
+        # Combined SS = 6.2% of both full salaries (neither capped): 150000 * 0.062.
+        total_ss = sum(p.stat_taxes_paid_ss for p in (b, c))
+        self.assertAlmostEqual(total_ss, 150000 * 0.062, places=2)
+
+
 if __name__ == "__main__":
     unittest.main()

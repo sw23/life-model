@@ -12,7 +12,7 @@ from ..services.payment_service import PaymentService
 from ..services.tax_calculation_service import TaxCalculationService
 from ..tax.federal import FilingStatus, get_federal_standard_deduction
 from ..tax.income import IncomeLedger, IncomeType
-from ..tax.tax import TaxesDue, get_income_taxes_due
+from ..tax.tax import TaxesDue, compute_taxes
 from .family import Family
 from .types import GenderAtBirth  # noqa: F401  (re-exported for backward compatibility)
 
@@ -293,23 +293,21 @@ class Person(LifeModelAgent):
         return self.payment_service.pay_bills_with_prioritization(spending_balance)
 
     def get_income_taxes_due(self, additional_income: float = 0) -> TaxesDue:
-        """Gets income taxes due for the year.
+        """Gets income taxes due for the year for this person as a single filer.
+
+        FICA is computed on the person's own wages only; ``additional_income`` (e.g. a prospective
+        pre-tax 401k withdrawal) is ordinary income but not FICA wages.
 
         Args:
-            additional_income (float, optional): Additional income to include, not present in taxable_income.
-
-        Raises:
-            NotImplementedError: Unsupported filing status.
+            additional_income (float, optional): Additional ordinary income not present in the ledger.
 
         Returns:
-            float: Federal taxes due.
+            TaxesDue: Taxes due, split by type.
         """
-
-        income_amount = self.taxable_income + additional_income
-        if self.filing_status == FilingStatus.SINGLE:
-            return get_income_taxes_due(income_amount, self.federal_deductions, self.filing_status, self.model.config)
-        else:
-            raise NotImplementedError(f"Unsupported filing status: {self.filing_status}")
+        ordinary_income = self.taxable_income + additional_income
+        return compute_taxes(
+            ordinary_income, self.federal_deductions, self.filing_status, [self.fica_wages], self.model.config
+        )
 
     def get_married(self, spouse: "Person", link_spouse: bool = True):
         """Get married.

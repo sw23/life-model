@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Dict, List
 
 from ..model import round_money
 from ..tax.federal import FilingStatus, get_federal_standard_deduction, max_tax_rate
-from ..tax.tax import TaxesDue, get_income_taxes_due
+from ..tax.tax import TaxesDue, compute_taxes
 
 if TYPE_CHECKING:
     from .family import Family
@@ -84,8 +84,11 @@ class TaxUnit:
         return max(standard_deduction, self.total_itemized_deductions)
 
     def get_income_taxes_due(self, additional_income: float = 0) -> TaxesDue:
-        income_amount = self.taxable_income + additional_income
-        return get_income_taxes_due(income_amount, self.federal_deductions, self.filing_status, self.config)
+        # ``additional_income`` models a prospective pre-tax 401k withdrawal: it is ordinary
+        # income but not FICA wages, so it is not added to the per-member wage bases.
+        ordinary_income = self.taxable_income + additional_income
+        wage_incomes = [m.fica_wages for m in self.members]
+        return compute_taxes(ordinary_income, self.federal_deductions, self.filing_status, wage_incomes, self.config)
 
     def withdraw_from_pretax_401ks(self, amount: float) -> float:
         """Withdraw ``amount`` from members' pre-tax 401ks. Returns the amount not withdrawn."""
