@@ -125,20 +125,34 @@ class Person(LifeModelAgent):
 
     @property
     def total_itemized_deductions(self) -> float:
-        """Calculate total itemized deductions
+        """Calculate total itemized deductions.
 
         Currently includes:
         - Charitable contributions
-        - Mortgage interest (if applicable)
+        - Mortgage interest (capped to the first $750k of acquisition debt, TCJA)
+        - State and local taxes (property tax here), capped at the SALT limit
 
-        TODO: Add other itemized deductions (state taxes, medical expenses, etc.)
+        TODO: Add other itemized deductions (state income tax in SALT, medical expenses, etc.)
         """
         itemized = self.charitable_deductions
 
-        # Add mortgage interest deductions
+        federal = self.model.config.tax.federal
+        salt_paid = 0.0
         for home in self.homes:
-            if hasattr(home, "mortgage") and home.mortgage:
-                itemized += home.mortgage.get_interest_for_year()
+            mortgage = getattr(home, "mortgage", None)
+            if mortgage:
+                # Deduct the interest actually paid this year (pre-payment principal), limited to
+                # the share attributable to the first $750k of acquisition debt.
+                interest = mortgage.interest_paid_this_year
+                acquisition_debt = mortgage.loan_amount
+                debt_limit = federal.mortgage_interest_debt_limit
+                if acquisition_debt > debt_limit:
+                    interest *= debt_limit / acquisition_debt
+                itemized += interest
+            salt_paid += home.property_tax_for_year
+
+        # SALT deduction (property tax) is capped.
+        itemized += min(salt_paid, federal.salt_deduction_cap)
 
         return itemized
 

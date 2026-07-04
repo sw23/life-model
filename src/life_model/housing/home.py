@@ -49,6 +49,11 @@ class Home(LifeModelAgent):
     def yearly_expenses_due(self) -> float:
         return self.expenses.get_yearly_spending() + self.mortgage.get_payment_due_for_year()
 
+    @property
+    def property_tax_for_year(self) -> float:
+        """Property tax assessed for the year on the current home value (deductible as SALT)."""
+        return self.home_value * (self.expenses.property_tax_percent / 100)
+
     def make_yearly_payment(self, yearly_payment: Optional[float] = None, extra_to_principal: float = 0):
         if yearly_payment is None:
             yearly_payment = self.yearly_expenses_due
@@ -151,6 +156,11 @@ class Mortgage:
         self.monthly_payment = monthly_payment or self.get_monthly_payment()
         self.yearly_payment = self.monthly_payment * 12
 
+        # Interest actually charged this year, captured before the payment reduces the principal.
+        # The itemized mortgage-interest deduction reads this so it isn't understated by using the
+        # post-payment principal.
+        self.interest_paid_this_year = self.get_interest_for_year()
+
         self.stat_principal_payment_history = []
         self.stat_interest_payment_history = []
         self.stat_principal_balance_history = []
@@ -169,6 +179,7 @@ class Mortgage:
 
     def make_yearly_payment(self, yearly_payment: float, extra_to_principal: float = 0):
         interest_amount = self.get_interest_for_year()
+        self.interest_paid_this_year = interest_amount
         principal_amount = (yearly_payment - interest_amount) + extra_to_principal
         self.principal -= principal_amount
 

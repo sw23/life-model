@@ -33,6 +33,9 @@ tax:
         - [403551, 512450, 32]
         - [512451, 768700, 35]
         - [768701, .inf, 37]
+    # vintage: 2026, source: IRC §163(h)(3) (TCJA acquisition-debt limit); §164(b)(6) SALT cap (OBBBA)
+    mortgage_interest_debt_limit: 750000
+    salt_deduction_cap: 40000
   state:
     tax_rate: 6.0  # percentage
   fica:

@@ -18,6 +18,7 @@ from ..account.job401k import Job401kAccount
 from ..charity.daf import DonorAdvisedFund
 from ..charity.donation import Donation
 from ..config.financial_config import FinancialConfig
+from ..housing.home import Home, HomeExpenses, Mortgage
 from ..model import LifeModel
 from ..people.family import Family
 from ..people.person import Person, Spending
@@ -181,6 +182,64 @@ class TestDeductionTiming(unittest.TestCase):
 
         daf.contribute(10000)
         self.assertEqual(daf.stat_contributions_this_year, 10000)
+
+
+def _add_home(person, loan_amount=300000, rate=5.0, property_tax_percent=1.0, purchase_price=400000):
+    mortgage = Mortgage(loan_amount=loan_amount, start_date=2020, length_years=30, yearly_interest_rate=rate)
+    expenses = HomeExpenses(
+        model=person.model,
+        property_tax_percent=property_tax_percent,
+        home_insurance_percent=0.0,
+        maintenance_amount=0,
+        maintenance_increase=0.0,
+        improvement_amount=0,
+        improvement_increase=0.0,
+        hoa_amount=0,
+        hoa_increase=0.0,
+    )
+    return Home(
+        person=person,
+        name="House",
+        purchase_price=purchase_price,
+        value_yearly_increase=0.0,
+        down_payment=100000,
+        mortgage=mortgage,
+        expenses=expenses,
+    )
+
+
+class TestHousingDeductions(unittest.TestCase):
+    """Bug 7: mortgage interest uses pre-payment interest with a $750k cap; property tax is SALT."""
+
+    def test_interest_recorded_before_payment(self):
+        mortgage = Mortgage(loan_amount=300000, start_date=2020, length_years=30, yearly_interest_rate=5.0)
+        self.assertAlmostEqual(mortgage.get_interest_for_year(), 15000.0, places=2)
+        mortgage.make_yearly_payment(mortgage.yearly_payment)
+        # The deduction reads the pre-payment interest, not the smaller post-payment figure.
+        self.assertAlmostEqual(mortgage.interest_paid_this_year, 15000.0, places=2)
+        self.assertLess(mortgage.get_interest_for_year(), 15000.0)
+
+    def test_mortgage_interest_and_property_tax_deductible(self):
+        model = LifeModel(start_year=2020, end_year=2020, config=_fixture_config())
+        family = Family(model)
+        person = Person(family, "Owner", age=40, retirement_age=70, spending=Spending(model, base=0))
+        home = _add_home(person, loan_amount=300000, rate=5.0, property_tax_percent=1.0)
+
+        # Full pre-payment interest ($15k, loan under the $750k cap) plus property tax
+        # (home value $400k * 1% = $4k, under the SALT cap) are itemized.
+        expected = 15000.0 + 4000.0
+        self.assertAlmostEqual(person.total_itemized_deductions, expected, places=2)
+        self.assertAlmostEqual(home.property_tax_for_year, 4000.0, places=2)
+
+    def test_acquisition_debt_cap_limits_interest(self):
+        model = LifeModel(start_year=2020, end_year=2020, config=_fixture_config())
+        family = Family(model)
+        person = Person(family, "Jumbo", age=40, retirement_age=70, spending=Spending(model, base=0))
+        # $1.5M loan: only the interest on the first $750k of acquisition debt is deductible (half).
+        _add_home(person, loan_amount=1500000, rate=5.0, property_tax_percent=0.0, purchase_price=1600000)
+
+        full_interest = 1500000 * 0.05
+        self.assertAlmostEqual(person.total_itemized_deductions, full_interest * (750000 / 1500000), places=2)
 
 
 if __name__ == "__main__":
