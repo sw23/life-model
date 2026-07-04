@@ -173,7 +173,7 @@ class TestActionEffects(unittest.TestCase):
 
     def test_transfer_to_capped_account_is_limited_to_room(self):
         env = self._fresh_env()
-        room = env.traditional_ira.contribution_limit
+        room = env.traditional_ira.remaining_contribution_room()
         result = env.action_executor.execute_action(
             env.person, ActionType.TRANSFER_BANK_TO_IRA_TRADITIONAL, amount=room + 100000.0
         )

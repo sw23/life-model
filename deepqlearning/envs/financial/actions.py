@@ -20,7 +20,7 @@ from life_model.account.hsa import HealthSavingsAccount
 from life_model.account.job401k import Job401kAccount
 from life_model.account.roth_IRA import RothIRA
 from life_model.account.traditional_IRA import TraditionalIRA
-from life_model.base_classes import FinancialAccount
+from life_model.base_classes import FinancialAccount, TaxAdvantagedAccount
 from life_model.model import LifeModel
 from life_model.people.person import Person
 
@@ -196,10 +196,8 @@ def _first_account(person: Person, account_cls: type[FinancialAccount]) -> Finan
 
 def _remaining_contribution_room(account: FinancialAccount) -> float:
     """Remaining annual contribution room for capped accounts (IRA/HSA); ``inf`` if uncapped."""
-    if isinstance(account, (TraditionalIRA, RothIRA)):
-        return max(0.0, account.contribution_limit - account.contributions_this_year)
-    if isinstance(account, HealthSavingsAccount):
-        return max(0.0, account.contribution_limit - account.annual_contributions)
+    if isinstance(account, TaxAdvantagedAccount):
+        return account.remaining_contribution_room()
     return float("inf")
 
 
@@ -267,6 +265,10 @@ class TransferAction(FinancialAction):
             target.pretax_balance += amount
         elif self.action_type == ActionType.TRANSFER_BANK_TO_401K_ROTH:
             target.roth_balance += amount
+        elif isinstance(target, TaxAdvantagedAccount):
+            # A contribution (counts against the annual limit and carries its tax treatment),
+            # not a plain deposit.
+            target.contribute(amount)
         else:
             target.deposit(amount)
 

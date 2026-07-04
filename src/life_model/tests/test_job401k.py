@@ -40,10 +40,13 @@ class TestJob401k(unittest.TestCase):
         self.assertEqual(account.pretax_balance, 2000)
         self.assertEqual(account.roth_balance, 0)
 
-    def test_deposit_non_positive_rejected(self):
+    def test_deposit_validation_is_uniform(self):
+        """Same rule as every account: zero is a successful no-op, negative raises (Plan 06 item 14)."""
         account = self._account()
-        self.assertFalse(account.deposit(0))
-        self.assertFalse(account.deposit(-100))
+        self.assertTrue(account.deposit(0))
+        self.assertEqual(account.balance, 0)
+        with self.assertRaises(ValueError):
+            account.deposit(-100)
 
     def test_withdraw_drains_pretax_before_roth(self):
         account = self._account(pretax_balance=1000, roth_balance=1000)
@@ -63,13 +66,20 @@ class TestJob401k(unittest.TestCase):
         self.assertEqual(account.withdraw(-5), 0.0)
         self.assertEqual(account.pretax_balance, 1000)
 
-    def test_growth_applied_in_pre_step(self):
+    def test_growth_applied_in_step_with_annual_compounding(self):
+        """Growth runs in step (after this year's contributions) at an APY, like every Investment."""
         account = self._account(pretax_balance=10000, roth_balance=10000, average_growth=10)
-        account.pre_step()
-        # Continuous 10% growth on each balance.
-        self.assertGreater(account.pretax_balance, 10000)
-        self.assertGreater(account.roth_balance, 10000)
-        self.assertAlmostEqual(account.pretax_balance, account.roth_balance, places=6)
+        account.pre_step()  # RMD only; the owner is far below RMD age.
+        self.assertEqual(account.pretax_balance, 10000)
+        account.step()
+        self.assertAlmostEqual(account.pretax_balance, 11000, places=6)
+        self.assertAlmostEqual(account.roth_balance, 11000, places=6)
+
+    def test_balance_assignment_raises(self):
+        """The derived balance must never silently discard a write (Plan 06 item 8)."""
+        account = self._account(pretax_balance=100)
+        with self.assertRaises(AttributeError):
+            account.balance = 5
 
 
 if __name__ == "__main__":

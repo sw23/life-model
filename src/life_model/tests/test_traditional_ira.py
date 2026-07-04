@@ -33,11 +33,15 @@ class TestTraditionalIRA(unittest.TestCase):
         self.assertEqual(ira.contribute(5000), 1000)
         self.assertEqual(ira.balance, 6000)
 
-    def test_deposit_reports_success(self):
+    def test_deposit_is_a_plain_credit(self):
+        """deposit() credits without using contribution room (rollovers); validation is uniform."""
         ira = self._ira(contribution_limit=6000)
         self.assertTrue(ira.deposit(1000))
-        self.assertFalse(ira.deposit(0))
-        self.assertFalse(ira.deposit(-100))
+        self.assertEqual(ira.balance, 1000)
+        self.assertEqual(ira.remaining_contribution_room(), 6000)
+        self.assertTrue(ira.deposit(0))
+        with self.assertRaises(ValueError):
+            ira.deposit(-100)
 
     def test_withdraw_capped_at_balance(self):
         ira = self._ira(contribution_limit=6000, balance=3000)
@@ -60,7 +64,7 @@ class TestTraditionalIRA(unittest.TestCase):
         ira = self._ira(contribution_limit=6000)
         ira.contribute(6000)
         ira.reset_annual_contributions()
-        self.assertEqual(ira.contributions_this_year, 0)
+        self.assertEqual(ira.contributions_ytd, 0)
         self.assertEqual(ira.contribute(1000), 1000)
 
 

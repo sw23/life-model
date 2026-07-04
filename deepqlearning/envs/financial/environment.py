@@ -549,12 +549,11 @@ class FinancialLifeEnv(gym.Env):
         bracket_headroom, marginal_rate = self._projected_tax_position(projected_ordinary_income)
 
         # Remaining contribution-room fractions for the capped account types.
-        ira_limit = self.traditional_ira.contribution_limit + self.roth_ira.contribution_limit
-        ira_used = self.traditional_ira.contributions_this_year + self.roth_ira.contributions_this_year
-        ira_room_fraction = max(0.0, ira_limit - ira_used) / max(ira_limit, 1)
-        hsa_room_fraction = max(0.0, self.hsa.contribution_limit - self.hsa.annual_contributions) / max(
-            self.hsa.contribution_limit, 1
-        )
+        ira_limit = self.traditional_ira.annual_contribution_limit() + self.roth_ira.annual_contribution_limit()
+        ira_room = self.traditional_ira.remaining_contribution_room() + self.roth_ira.remaining_contribution_room()
+        ira_room_fraction = ira_room / max(ira_limit, 1)
+        hsa_limit = self.hsa.annual_contribution_limit()
+        hsa_room_fraction = self.hsa.remaining_contribution_room() / max(hsa_limit, 1)
 
         inflation, equity_return, bond_return = self._observed_market_rates()
 

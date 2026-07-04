@@ -70,7 +70,6 @@ class BrokerageAccount(Investment):
         """
         super().__init__(person, balance, growth_rate)
         self.company = company
-        self.investments: list = []  # List of individual investments
         self._dividend_yield_override = dividend_yield
         # Basis is tracked per lot; an opening balance is treated as freshly purchased at cost.
         self.lots: list[TaxLot] = []
@@ -97,13 +96,6 @@ class BrokerageAccount(Investment):
     def unrealized_gain(self) -> float:
         """Gain that would be realized if the whole account were sold today."""
         return self.balance - self.cost_basis
-
-    def calculate_growth(self) -> float:
-        """Calculate investment growth based on growth rate"""
-        return self.balance * (self.growth_rate / 100)
-
-    def get_balance(self) -> float:
-        return self.balance
 
     def apply_growth(self):
         """Grow the account, splitting the return into untaxed appreciation and taxable dividends.
