@@ -1,9 +1,14 @@
-# Economic boom scenario - Higher interest rates and growth
-accounts:
-  bank:
-    default_interest_rate: 3.0  # Higher interest rates
-  brokerage:
-    default_growth_rate: 12.0  # Higher growth expectations
-retirement:
-  ira:
-    default_growth_rate: 10.0  # Higher retirement growth
+# Economic boom scenario - a multi-year run of elevated equity returns and cash yields.
+# PATH mode overrides individual calendar years; unlisted years fall back to the fixed
+# economy constants. The window below is illustrative (near-term).
+economy:
+  mode: path
+  paths:
+    equity_return:
+      2027: 14.0
+      2028: 16.0
+      2029: 12.0
+    cash_yield:
+      2027: 3.0
+      2028: 3.0
+      2029: 3.0

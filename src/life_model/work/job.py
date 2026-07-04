@@ -106,18 +106,30 @@ class Job(LifeModelAgent):
 
 
 class Salary(LifeModelAgent):
-    def __init__(self, model: LifeModel, base: float, yearly_increase: float = 0, yearly_bonus: float = 0):
+    def __init__(self, model: LifeModel, base: float, yearly_increase: Optional[float] = 0, yearly_bonus: float = 0):
         """Salary
 
         Args:
             base (float): Base salary.
-            yearly_increase (float): Yearly percentage increase.
+            yearly_increase (float, optional): Yearly percentage increase. Pass None to grow with the
+                economy's wage growth each year. Defaults to 0 (no increase).
             yearly_bonus (float): Yearly percentage bonus.
         """
         super().__init__(model)
         self.base = base
-        self.yearly_increase = yearly_increase
+        self._yearly_increase_override = yearly_increase
         self.yearly_bonus = yearly_bonus
+
+    @property
+    def yearly_increase(self) -> float:
+        """Yearly percentage increase: the explicit override if set, else the economy's wage growth."""
+        if self._yearly_increase_override is not None:
+            return self._yearly_increase_override
+        return self.model.economy.wage_growth(self.model.year)
+
+    @yearly_increase.setter
+    def yearly_increase(self, value: Optional[float]) -> None:
+        self._yearly_increase_override = value
 
     @property
     def bonus(self) -> float:

@@ -85,7 +85,7 @@ class FinancialLifeEnv(gym.Env):
         # Ratios and derived metrics: savings_rate, debt_to_income, net_worth, etc.
         derived_metrics_size = 8
 
-        # Market/economic state: year, economic_cycle_phase
+        # Market/economic state: year, equity_return
         market_state_size = 2
 
         return person_state_size + financial_state_size + derived_metrics_size + market_state_size
@@ -291,7 +291,7 @@ class FinancialLifeEnv(gym.Env):
         # Market/economic state
         market_state = [
             (self.model.year - self.config["start_year"]) / self.max_steps,  # Time progress
-            np.sin(2 * np.pi * (self.model.year - self.config["start_year"]) / 10) * 0.1,  # Economic cycle
+            self.model.economy.equity_return(self.model.year) / 100.0,  # Real equity return for the year
         ]
 
         # Combine all states

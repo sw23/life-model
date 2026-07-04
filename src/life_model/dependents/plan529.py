@@ -32,14 +32,13 @@ class Plan529(Investment):
             beneficiary: The child beneficiary of this plan (optional)
             balance: Current balance in the plan
             state: The state sponsoring the plan
-            growth_rate: Expected annual growth rate percentage. Uses configured default if None.
+            growth_rate: Expected annual growth rate percentage. Defers to the economy's equity
+                return when None.
             annual_contribution_limit: Annual contribution limit. Uses configured default if None.
             lifetime_contribution_limit: Lifetime contribution limit. Uses configured default if None.
         """
         # Get defaults from config
         plan_529_config = owner.model.config.accounts.plan_529
-        if growth_rate is None:
-            growth_rate = plan_529_config.default_growth_rate
 
         super().__init__(owner, balance, growth_rate)
         self.beneficiary = beneficiary

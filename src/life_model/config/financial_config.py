@@ -14,6 +14,7 @@ from .base_config import ScenarioConfig
 from .models import (
     AccountsConfig,
     DebtConfig,
+    EconomyConfig,
     FinancialConfigModel,
     HousingConfig,
     InsuranceConfig,
@@ -102,7 +103,11 @@ class FinancialConfig(ScenarioConfig):
     def housing(self) -> HousingConfig:
         return self._model.housing
 
-    def tax_year(self, year: int) -> YearlyTaxParameters:
+    @property
+    def economy(self) -> EconomyConfig:
+        return self._model.economy
+
+    def tax_year(self, year: int, inflation_factor: float = 1.0) -> YearlyTaxParameters:
         """Get the tax parameters applicable to a given calendar year.
 
         Years present in the table return their published values. Years outside
@@ -111,6 +116,13 @@ class FinancialConfig(ScenarioConfig):
         year are frozen at the latest entry, and gaps within the range use the most
         recent published year at or before the requested year. The returned object
         has ``year`` stamped with the requested year.
+
+        For years beyond the last published year, pass ``inflation_factor`` (the cumulative
+        price growth from the last published year to ``year``, e.g. ``1.34`` for +34%) to
+        index the dollar-denominated parameters — bracket thresholds, standard deduction,
+        and contribution limits — instead of freezing them. Values are rounded with IRS-style
+        conventions (see :meth:`_project_tax_params`). The default ``1.0`` reproduces the
+        frozen-at-latest behavior.
         """
         table = self._model.tax_years
         published_years = sorted(table)
@@ -126,7 +138,47 @@ class FinancialConfig(ScenarioConfig):
         else:
             chosen = max(y for y in published_years if y <= year)
 
-        return table[chosen].model_copy(update={"year": year})
+        params = table[chosen].model_copy(update={"year": year})
+        if year > published_years[-1] and inflation_factor and inflation_factor != 1.0:
+            params = self._project_tax_params(params, inflation_factor)
+        return params
+
+    @staticmethod
+    def _project_tax_params(params: YearlyTaxParameters, factor: float) -> "YearlyTaxParameters":
+        """Index dollar-denominated tax parameters by ``factor`` with IRS-style rounding.
+
+        Bracket rates and the RMD start age are structural and left unchanged; only dollar
+        thresholds and limits are scaled. Rounding bases follow published IRS/SSA conventions
+        (standard deduction & HSA to the nearest $50, brackets to the nearest $50, retirement
+        limits to the nearest $500, the IRA catch-up and gift exclusion to the nearest $1,000,
+        and the Social Security wage base to the nearest $300).
+        """
+
+        def round_to(value: float, base: int) -> int:
+            return int(round(value / base) * base)
+
+        def scale_bracket(bracket):
+            low, high, rate = bracket
+            low = 0 if low == 0 else round_to(low * factor, 50)
+            high = high if high == float("inf") else round_to(high * factor, 50)
+            return [low, high, rate]
+
+        data = params.model_dump()
+        sd = data["standard_deduction"]
+        sd["single"] = round_to(sd["single"] * factor, 50)
+        sd["married_filing_jointly"] = round_to(sd["married_filing_jointly"] * factor, 50)
+        for status in ("single", "married_filing_jointly"):
+            data["tax_brackets"][status] = [scale_bracket(b) for b in data["tax_brackets"][status]]
+        data["ss_wage_base"] = round_to(data["ss_wage_base"] * factor, 300)
+        data["limit_401k_base"] = round_to(data["limit_401k_base"] * factor, 500)
+        data["limit_401k_catch_up"] = round_to(data["limit_401k_catch_up"] * factor, 500)
+        data["limit_ira"] = round_to(data["limit_ira"] * factor, 500)
+        data["limit_ira_catch_up"] = round_to(data["limit_ira_catch_up"] * factor, 1000)
+        data["limit_hsa_self"] = round_to(data["limit_hsa_self"] * factor, 50)
+        data["limit_hsa_family"] = round_to(data["limit_hsa_family"] * factor, 50)
+        data["gift_exclusion"] = round_to(data["gift_exclusion"] * factor, 1000)
+        # rmd_start_age is a structural (age) parameter, not a dollar amount — leave it.
+        return YearlyTaxParameters(**data)
 
     # ------------------------------------------------------------------
     # Convenience methods (typed, read from the model)

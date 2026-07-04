@@ -164,6 +164,13 @@ class LifeModel(mesa.Model):
         self.event_log = EventLog(self)
         self.simulated_years = []
         self._stages = ["pre_step", "step", "post_step"]
+
+        # The economy provides the year's rates (inflation, returns, wage growth) to every other
+        # agent. It is created first and steps first so its rates are cached before any consumer
+        # reads them.
+        from .economy import EconomyModel
+
+        self.economy = EconomyModel(self)
         self.datacollector = mesa.DataCollector(
             model_reporters={
                 **{"Year": "year"},
@@ -239,6 +246,22 @@ class LifeModel(mesa.Model):
         """Get the inclusive range of simulated years ``[start_year, end_year]``."""
         return range(self.start_year, self.end_year + 1)
 
+    def tax_params_for_year(self, year: int):
+        """Tax parameters for ``year``, inflation-projected past the published table.
+
+        For years beyond the last published tax year, the dollar-denominated parameters are
+        indexed by the economy's realized cumulative inflation from the last published year to
+        ``year`` (so a 50-year simulation doesn't apply frozen present-day brackets in 2050).
+        Years within the published table are returned unchanged.
+        """
+        published_years = self.config.model.tax_years
+        last_published = max(published_years) if published_years else year
+        factor = 1.0
+        if year > last_published:
+            for y in range(last_published, year):
+                factor *= 1 + self.economy.inflation(y) / 100
+        return self.config.tax_year(year, inflation_factor=factor)
+
     def run(self):
         """Run the simulation over the inclusive year range ``[start_year, end_year]``.
 
@@ -267,6 +290,7 @@ class LifeModel(mesa.Model):
         extra_columns: Optional[List[str]] = None,
         aggregate: Optional[Dict[str, Callable]] = None,
         column_formats: Optional[Dict[str, str]] = None,
+        real_dollars: bool = False,
     ) -> Styler:
         """Get a DataFrame of the yearly stats
 
@@ -275,6 +299,9 @@ class LifeModel(mesa.Model):
             extra_columns (List[str], optional): Optional list of extra columns to include. Defaults to None.
             aggregate (Dict[str, Callable], optional): Dictionary of aggregators to use. Defaults to None.
             column_formats (Dict[str, str], optional): Dictionary of column formats to use. Defaults to None.
+            real_dollars (bool, optional): When True, every money column is deflated by the economy's
+                cumulative inflation so values are expressed in start-year dollars. Defaults to False
+                (nominal dollars).
 
         Returns:
             pd.DataFrame: DataFrame of the yearly stats
@@ -295,6 +322,8 @@ class LifeModel(mesa.Model):
         df = self.datacollector.get_model_vars_dataframe()
         # Only keep certain columns in the data frame
         df = df[columns]
+        if real_dollars:
+            df = self._to_real_dollars(df)
         if aggregate is not None:
             # Aggregate the data if desired
             aggregators = {**{"Year": "max"}, **aggregate, **{x.title: x.aggregator.__name__ for x in stats}}
@@ -305,6 +334,25 @@ class LifeModel(mesa.Model):
         if column_formats is not None:
             formats.update(column_formats)
         return df.style.format(precision=0, na_rep="MISSING", formatter=formats).hide()
+
+    def _to_real_dollars(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Deflate every money column of ``df`` into start-year dollars.
+
+        Each row's money values are divided by the economy's cumulative inflation for that row's
+        year (taken from the ``Year`` column when present, otherwise inferred from the simulated
+        year range). Non-money columns (e.g. ``Year``) are left untouched.
+        """
+        df = df.copy()
+        money_titles = {s.title for s in (self.STATS + self.EXTRA_STATS) if isinstance(s, MoneyStat)}
+        if "Year" in df.columns:
+            years = [int(y) for y in df["Year"].tolist()]
+        else:
+            years = list(self.get_year_range())[: len(df)]
+        deflators = [self.economy.cumulative_inflation(y) for y in years]
+        for col in df.columns:
+            if col in money_titles:
+                df[col] = [value / deflators[i] for i, value in enumerate(df[col].tolist())]
+        return df
 
     def format_dataframe(self, df: pd.DataFrame, extra_formats: Optional[Dict[str, str]] = None) -> Styler:
         """Format a dataframe

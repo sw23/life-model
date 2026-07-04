@@ -16,8 +16,8 @@ class TestBrokerage(unittest.TestCase):
         # Create a mock person with required attributes
         self.mock_person = Mock(spec=Person)
         self.mock_person.model = Mock()
-        # Provide the brokerage config default the constructor now reads.
-        self.mock_person.model.config.accounts.brokerage.default_growth_rate = 7.0
+        # A brokerage with no explicit growth_rate now defers to the economy's equity return.
+        self.mock_person.model.economy.rate.return_value = 7.0
 
         # Create a brokerage account for testing
         self.brokerage = BrokerageAccount(
