@@ -44,6 +44,13 @@ class RothIRA(TaxAdvantagedAccount):
             return self._contribution_limit_override
         return self.person.model.config.retirement.ira.contribution_limit
 
+    def sibling_contributions_ytd(self) -> float:
+        # The IRA limit is shared across all of the person's IRAs; count contributions to every
+        # IRA except this one.
+        return sum(
+            a.contributions_ytd for a in (*self.person.roth_iras, *self.person.traditional_iras) if a is not self
+        )
+
     def _repr_html_(self):
         desc = "<ul>"
         desc += f"<li>Balance: ${self.balance:,.2f}</li>"

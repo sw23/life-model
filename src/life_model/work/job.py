@@ -6,7 +6,7 @@
 import html
 from typing import TYPE_CHECKING, Optional
 
-from ..limits import job_401k_contrib_limit
+from ..limits import job_401k_annual_additions_limit
 from ..model import Event, LifeModel, LifeModelAgent
 from ..people.person import Person
 
@@ -44,7 +44,6 @@ class Job(LifeModelAgent):
 
     # Using pre_step() so taxable_income will be set before person's step() is called
     def pre_step(self):
-
         # If retired, don't do anything
         if self.retired:
             self.stat_gross_income = 0
@@ -52,36 +51,35 @@ class Job(LifeModelAgent):
             self.stat_retirement_match = 0
             return
 
-        remaining_401k_contrib = min(self.salary.base, job_401k_contrib_limit(self.owner.age))
-        # Deduct pre-tax contribution from income
-        if self.retirement_account is not None:
-            yearly_pretax_contrib = min(
-                remaining_401k_contrib, self.retirement_account.pretax_contrib(self.salary.base)
-            )
-            remaining_401k_contrib -= yearly_pretax_contrib
-        else:
-            yearly_pretax_contrib = 0
+        salary = self.salary.base
+        yearly_pretax_contrib = 0.0
+        yearly_roth_contrib = 0.0
+        company_match = 0.0
 
-        # Deduct roth contribution from income
         if self.retirement_account is not None:
-            yearly_roth_contrib = min(remaining_401k_contrib, self.retirement_account.roth_contrib(self.salary.base))
-            remaining_401k_contrib -= yearly_roth_contrib
-        else:
-            yearly_roth_contrib = 0
+            account = self.retirement_account
+            # Elective deferrals share one 402(g) limit across all of the person's jobs, so two
+            # jobs can no longer each defer the full limit.
+            room = self.owner.remaining_401k_elective_room()
+            yearly_pretax_contrib = min(account.pretax_contrib(salary), room)
+            room -= yearly_pretax_contrib
+            yearly_roth_contrib = min(account.roth_contrib(salary), room)
+            elective = yearly_pretax_contrib + yearly_roth_contrib
+            self.owner.record_401k_elective_deferral(elective)
 
-        # Note: Contributions are handled here, after 401k growth is calculated
-        # This isn't 100% accurate since contributions aren't included in the
-        # growth, which is a little pessimistic but that should be fine
-        if self.retirement_account is not None:
-            self.retirement_account.pretax_balance += yearly_pretax_contrib
-            self.retirement_account.roth_balance += yearly_roth_contrib
-            yearly_401k_contrib = yearly_pretax_contrib + yearly_roth_contrib
-            company_match = self.retirement_account.company_match(yearly_401k_contrib)
-            self.retirement_account.pretax_balance += company_match
-        else:
-            yearly_401k_contrib = 0
-            company_match = 0
+            # Employer match: the configured percentage of the deferral, capped both by
+            # match_percent x salary and by the 415(c) overall annual-additions limit (employee +
+            # employer money per plan) so the match can't run away.
+            salary_cap = (account.company_match_percent / 100) * salary
+            company_match = min(account.company_match(elective), salary_cap)
+            additions_limit = job_401k_annual_additions_limit(self.owner.model.config)
+            company_match = max(0.0, min(company_match, additions_limit - elective))
 
+            account.pretax_balance += yearly_pretax_contrib
+            account.roth_balance += yearly_roth_contrib
+            account.pretax_balance += company_match
+
+        yearly_401k_contrib = yearly_pretax_contrib + yearly_roth_contrib
         gross_income = self.salary.base + self.salary.bonus
 
         # Deposit take-home pay into bank account

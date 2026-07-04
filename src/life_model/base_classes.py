@@ -185,8 +185,18 @@ class TaxAdvantagedAccount(Investment, ABC):
         pass
 
     def remaining_contribution_room(self) -> float:
-        """Contribution room left this year."""
-        return max(0.0, self.annual_contribution_limit() - self.contributions_ytd)
+        """Contribution room left this year (net of any contributions to sibling accounts that
+        share the same limit, e.g. Roth + Traditional IRA)."""
+        used = self.contributions_ytd + self.sibling_contributions_ytd()
+        return max(0.0, self.annual_contribution_limit() - used)
+
+    def sibling_contributions_ytd(self) -> float:
+        """Contributions made this year to other accounts that share this account's limit.
+
+        Defaults to 0 (the limit is not shared). IRAs override this to share the single IRA limit
+        across the person's Roth and Traditional IRAs.
+        """
+        return 0.0
 
     def contribute(self, amount: float) -> float:
         """Contribute up to the remaining annual limit. Returns the amount actually contributed."""

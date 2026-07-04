@@ -52,6 +52,10 @@ class Person(LifeModelAgent):
         # Cash held when the person has no bank account (see receive_cash).
         self.cash = 0.0
         self._warned_no_bank_account = False
+        # Elective 401k deferrals (pre-tax + Roth employee contributions) made this year, aggregated
+        # across all of the person's jobs so two jobs can't each use the full 402(g) limit. Reset in
+        # post_step.
+        self._elective_deferrals_ytd = 0.0
 
         self.stat_money_spent = 0.0
         self.stat_taxes_paid = 0.0
@@ -197,6 +201,25 @@ class Person(LifeModelAgent):
     def all_tax_advantaged_accounts(self):
         """All tax-advantaged accounts (HSA, Roth IRA, Traditional IRA) owned by this person."""
         return [*self.hsa_accounts, *self.roth_iras, *self.traditional_iras]
+
+    def remaining_401k_elective_room(self) -> float:
+        """Remaining 402(g) elective-deferral room this year, aggregated across all jobs."""
+        from ..limits import job_401k_contrib_limit
+
+        limit = job_401k_contrib_limit(self.age, self.model.config)
+        return max(0.0, limit - self._elective_deferrals_ytd)
+
+    def record_401k_elective_deferral(self, amount: float) -> None:
+        """Record an elective 401k deferral against this year's aggregated 402(g) room."""
+        self._elective_deferrals_ytd += amount
+
+    @property
+    def ira_contributions_ytd(self) -> float:
+        """Total contributions made to all of this person's IRAs (Roth + Traditional) this year.
+
+        Used to enforce the single IRA contribution limit shared across account types.
+        """
+        return sum(a.contributions_ytd for a in (*self.roth_iras, *self.traditional_iras))
 
     @property
     def is_retired(self) -> bool:
@@ -444,6 +467,7 @@ class Person(LifeModelAgent):
 
     def post_step(self):
         self.income.clear()
+        self._elective_deferrals_ytd = 0.0
 
 
 class Spending(LifeModelAgent):
