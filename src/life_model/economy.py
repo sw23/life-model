@@ -117,8 +117,7 @@ class EconomyModel(LifeModelAgent):
             "bond_return": s.bond_mean + s.bond_vol * bond_z,
             # A yield can't go negative; floor it at zero.
             "cash_yield": max(0.0, cash),
-            "home_appreciation": s.home_appreciation_mean
-            + s.home_appreciation_vol * self.model.random.gauss(0, 1),
+            "home_appreciation": s.home_appreciation_mean + s.home_appreciation_vol * self.model.random.gauss(0, 1),
         }
 
     def _correlated_normals(self, eq_bond: float, eq_inf: float, bond_inf: float) -> List[float]:
