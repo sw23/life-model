@@ -9,6 +9,11 @@ from .types import GenderAtBirth
 
 # Actuarial mortality table for the US population
 # https://www.ssa.gov/oact/STATS/table4c6.html
+#
+# vintage: SSA Period Life Table, 2020 (Actuarial Study; reflects COVID-era mortality). This is a
+# static period table with no mortality-improvement projection applied — future mortality is
+# modeled at present-day rates, which is slightly pessimistic at older ages. Refresh from the
+# latest published SSA period life table when updating.
 
 # Probabilities of death for each age from 0 to 119
 # [Age, Male Probability, Female % Probability]
@@ -147,6 +152,24 @@ def get_chance_of_mortality(age: int, gender: GenderAtBirth) -> float:
     return entry[gender_idx]
 
 
-def get_random_mortality(age: int, gender: GenderAtBirth) -> bool:
-    """Get a random chance of mortality for a given age and gender"""
-    return random.random() <= get_chance_of_mortality(age, gender)
+def get_blended_chance_of_mortality(age: int) -> float:
+    """Chance of mortality averaged across the male and female tables.
+
+    Used when a person's gender is unspecified (or ``OTHER``) so mortality does not silently
+    default to a single table.
+    """
+    return (get_chance_of_mortality(age, GenderAtBirth.MALE) + get_chance_of_mortality(age, GenderAtBirth.FEMALE)) / 2
+
+
+def get_random_mortality(age: int, gender: GenderAtBirth, rng=None) -> bool:
+    """Get a random chance of mortality for a given age and gender.
+
+    Args:
+        age: Person's age.
+        gender: Person's gender at birth.
+        rng: Random source with a ``random()`` method (e.g. ``mesa.Model.random``). When provided,
+            draws are reproducible under a seeded model. Falls back to the module-level ``random``
+            when omitted (back-compat).
+    """
+    draw = rng.random() if rng is not None else random.random()
+    return draw <= get_chance_of_mortality(age, gender)

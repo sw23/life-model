@@ -15,7 +15,8 @@ from ..tax.federal import FilingStatus, get_federal_standard_deduction
 from ..tax.income import IncomeLedger, IncomeType
 from ..tax.tax import TaxesDue, compute_taxes
 from .family import Family
-from .types import GenderAtBirth  # noqa: F401  (re-exported for backward compatibility)
+from .mortality import get_blended_chance_of_mortality, get_chance_of_mortality
+from .types import GenderAtBirth, MortalityMode  # noqa: F401  (re-exported for backward compatibility)
 
 if TYPE_CHECKING:
     from ..insurance.social_security import SocialSecurity
@@ -25,7 +26,18 @@ class Person(LifeModelAgent):
     # Age first in pre_step so income/RMD calculations see the current-year age.
     STEP_PRIORITY = {"pre_step": -20}
 
-    def __init__(self, family: Family, name: str, age: int, retirement_age: float, spending: "Spending"):
+    def __init__(
+        self,
+        family: Family,
+        name: str,
+        age: int,
+        retirement_age: float,
+        spending: "Spending",
+        *,
+        gender: GenderAtBirth = GenderAtBirth.OTHER,
+        mortality_mode: MortalityMode = MortalityMode.IMMORTAL,
+        death_age: Optional[int] = None,
+    ):
         """Person
 
         Args:
@@ -34,6 +46,11 @@ class Person(LifeModelAgent):
             age (int): Person's age.
             retirement_age (float): Person's retirement age.
             spending (Spending): Person's spending habits.
+            gender (GenderAtBirth, optional): Gender at birth, used for the mortality table. Defaults
+                to ``OTHER``, which draws against a male/female blended rate.
+            mortality_mode (MortalityMode, optional): How death is determined each year. Defaults to
+                ``IMMORTAL`` (the person never dies) so existing simulations stay deterministic.
+            death_age (int, optional): Age of death when ``mortality_mode`` is ``FIXED_AGE``.
         """
         super().__init__(family.model)
         self.family = family
@@ -41,6 +58,15 @@ class Person(LifeModelAgent):
         self.age = age
         self.retirement_age = retirement_age
         self.spending = spending
+        self.gender = gender
+        self.mortality_mode = mortality_mode
+        self.death_age = death_age
+        self.is_deceased = False
+        # Optional explicit estate beneficiary (a Person). When unset, the estate passes to the
+        # surviving spouse, then to the first surviving family member.
+        self.estate_beneficiary: Optional["Person"] = None
+        # Year this person was widowed (used to switch filing status to SINGLE the following year).
+        self._widowed_year: Optional[int] = None
         self.debt = 0
         # Per-person income ledger: separates FICA wages from ordinary taxable income so that
         # payroll tax and income tax each see the correct base (see tax/income.py).
@@ -395,7 +421,31 @@ class Person(LifeModelAgent):
         return self.model.year + (age - self.age)
 
     def pre_step(self):
+        if self.is_deceased:
+            return
         self.age += 1
+        # A surviving spouse files jointly for the year of the death, then switches to single the
+        # following year (qualifying-widow treatment is a documented simplification, not modeled).
+        if self._widowed_year is not None and self.model.year > self._widowed_year:
+            self.filing_status = FilingStatus.SINGLE
+            self._widowed_year = None
+        self._check_mortality()
+
+    def _check_mortality(self):
+        """Determine whether the person dies this year and, if so, orchestrate the death."""
+        if self.mortality_mode == MortalityMode.IMMORTAL:
+            return
+        if self.mortality_mode == MortalityMode.FIXED_AGE:
+            if self.death_age is not None and self.age >= self.death_age:
+                self.die()
+        elif self.mortality_mode == MortalityMode.STOCHASTIC:
+            if self.gender == GenderAtBirth.OTHER:
+                chance = get_blended_chance_of_mortality(self.age)
+            else:
+                chance = get_chance_of_mortality(self.age, self.gender)
+            # Draw against the model RNG so seeded runs are reproducible.
+            if self.model.random.random() <= chance:
+                self.die()
 
     def step(self):
         # Year-end settlement (taxes, spending, housing, one-time expenses, debt) is performed
@@ -411,6 +461,183 @@ class Person(LifeModelAgent):
         if not self._retirement_age_event_logged and self.age >= int(federal_retirement_age()):
             self.model.event_log.add(Event(f"{self.name} reached retirement age (age {federal_retirement_age()})"))
             self._retirement_age_event_logged = True
+
+    def die(self):
+        """Orchestrate the person's death for the current year.
+
+        Executes, in order: stop earned income, pay out life-insurance death benefits, settle
+        annuities by payout type, transfer the estate to the inheritor (spouse first), apply
+        survivor adjustments, and remove the deceased (and their emptied accounts) from the
+        simulation so nothing of theirs steps again.
+
+        Simplifications (documented, backlog for later refinement):
+          * Non-spouse inherited pre-tax accounts are distributed as a lump sum taxed to the
+            beneficiary in the death year (no 10-year rule).
+          * A widowed spouse files jointly in the death year and single thereafter (no
+            qualifying-widow years).
+          * Life-only pensions and life-only annuities simply stop; no state estate taxes.
+        """
+        if self.is_deceased:
+            return
+        self.is_deceased = True
+        self.model.event_log.add(Event(f"{self.name} died at age {self.age}"))
+
+        # 1. Earned income stops immediately (jobs retire).
+        for job in list(self.jobs):
+            job.retire()
+
+        # Determine who inherits before moving any money.
+        spouse = self.spouse if (self.spouse is not None and not self.spouse.is_deceased) else None
+        inheritor = spouse if spouse is not None else self._find_beneficiary()
+
+        # 2. Life-insurance death benefits pay out to the beneficiary; policies then close.
+        for policy in list(self.life_insurance_policies):
+            policy.process_death_benefit()
+            policy.is_active = False
+
+        # 3. Settle annuities: life-only stops; period-certain (with payments left) and
+        #    joint-and-survivor continue to the inheritor.
+        self._settle_annuities_on_death(inheritor)
+
+        # 4/5. Transfer the estate and adjust the survivor.
+        if inheritor is not None:
+            self._transfer_estate(inheritor, is_spouse=inheritor is spouse)
+        else:
+            self.model.event_log.add(Event(f"{self.name}'s estate had no beneficiary; assets dissolved"))
+        if spouse is not None:
+            self._apply_survivor_adjustments(spouse)
+
+        # 6. Remove the deceased (and any now-empty owned agents) from the simulation.
+        self._remove_from_simulation()
+
+    def _find_beneficiary(self) -> Optional["Person"]:
+        """Non-spouse beneficiary: an explicit designation, else the first surviving family member."""
+        if self.estate_beneficiary is not None and not self.estate_beneficiary.is_deceased:
+            return self.estate_beneficiary
+        for member in self.family.members:
+            if member is not self and not member.is_deceased:
+                return member
+        return None
+
+    def _settle_annuities_on_death(self, inheritor: Optional["Person"]):
+        from ..insurance.annuity import AnnuityPayoutType
+
+        for annuity in list(self.model.registries.annuities.get_items(self)):
+            continues = annuity.payout_type == AnnuityPayoutType.JOINT_AND_SURVIVOR or (
+                annuity.payout_type == AnnuityPayoutType.LIFE_WITH_PERIOD_CERTAIN
+                and getattr(annuity, "remaining_period_certain_payments", 0) > 0
+            )
+            if not (continues and inheritor is not None):
+                # Life-only, or no beneficiary to continue payments: the annuity stops.
+                annuity.is_active = False
+
+    def _owned_financial_agents(self) -> List["LifeModelAgent"]:
+        """All balance-holding accounts (bank, brokerage, IRAs, HSA, 401k) owned by this person."""
+        from ..base_classes import FinancialAccount
+
+        return [a for a in self.model.agents if isinstance(a, FinancialAccount) and getattr(a, "person", None) is self]
+
+    def _transfer_estate(self, inheritor: "Person", is_spouse: bool):
+        """Move the estate to ``inheritor``.
+
+        A surviving spouse inherits everything via the unlimited marital deduction (no estate tax)
+        and rolls pre-tax accounts over tax-free. A non-spouse beneficiary receives pre-tax
+        accounts as a taxable lump sum, and the estate above the exemption is subject to estate tax.
+        """
+        gross_estate = self._gross_estate_value()
+
+        if not is_spouse:
+            self._liquidate_pretax_to(inheritor)
+
+        self._reassign_owned_agents(inheritor)
+
+        if not is_spouse:
+            self._apply_estate_tax(inheritor, gross_estate)
+
+        self.model.event_log.add(Event(f"{self.name}'s estate transferred to {inheritor.name}"))
+
+    def _gross_estate_value(self) -> float:
+        """Approximate transferable estate value (account balances plus home equity)."""
+        total = sum(getattr(a, "balance", 0.0) for a in self._owned_financial_agents())
+        for home in self.homes:
+            equity = home.home_value - (home.mortgage.principal if home.mortgage is not None else 0.0)
+            total += max(0.0, equity)
+        return total
+
+    def _liquidate_pretax_to(self, inheritor: "Person"):
+        """Distribute pre-tax account balances as a taxable lump sum to a non-spouse beneficiary."""
+        from ..account.job401k import Job401kAccount
+        from ..account.traditional_IRA import TraditionalIRA
+
+        total_pretax = 0.0
+        for acct in self._owned_financial_agents():
+            if isinstance(acct, Job401kAccount):
+                total_pretax += acct.pretax_balance
+                acct.pretax_balance = 0.0
+            elif isinstance(acct, TraditionalIRA):
+                total_pretax += acct.balance
+                acct.balance = 0.0
+        if total_pretax > 0:
+            inheritor.income.add(IncomeType.PRETAX_DISTRIBUTION, total_pretax)
+            inheritor.receive_cash(total_pretax, source=f"inherited retirement from {self.name}")
+
+    def _reassign_owned_agents(self, inheritor: "Person"):
+        """Reassign ownership of every owned agent (accounts, homes, jobs, insurance, debts) to
+        ``inheritor`` so they keep participating in the simulation under the new owner."""
+        # Non-registry financial accounts (brokerage, IRAs, HSA, 401k) reference ``person`` directly.
+        for acct in self._owned_financial_agents():
+            acct.person = inheritor
+        # Registry-backed items: move the registry entry and update the owner reference.
+        for reg in self.model.registries.iter_registries():
+            for item in list(reg.get_items(self)):
+                if hasattr(item, "person"):
+                    item.person = inheritor
+                if hasattr(item, "owner"):
+                    item.owner = inheritor
+        self.model.registries.transfer_owner(self, inheritor)
+
+    def _apply_estate_tax(self, inheritor: "Person", gross_estate: float):
+        federal = self.model.config.tax.federal
+        exemption = getattr(federal, "estate_tax_exemption", 15000000)
+        rate = getattr(federal, "estate_tax_rate", 40.0)
+        taxable = max(0.0, gross_estate - exemption)
+        estate_tax = taxable * (rate / 100)
+        if estate_tax > 0:
+            inheritor.pay_bills(estate_tax)
+            self.model.event_log.add(Event(f"Estate tax of ${estate_tax:,.0f} paid on {self.name}'s estate"))
+
+    def _apply_survivor_adjustments(self, spouse: "Person"):
+        """Update the surviving spouse: unlink marriage, schedule the filing-status change, and
+        approximate the Social Security survivor benefit."""
+        spouse.spouse = None
+        spouse._widowed_year = self.model.year
+        # Social Security survivor approximation: the survivor receives at least the deceased's
+        # benefit (max of own vs. deceased's), applied as a monthly floor once benefits start.
+        if self.social_security is not None and spouse.social_security is not None:
+            deceased_monthly = self.social_security.get_pia()
+            spouse.social_security.survivor_pia_floor = max(
+                getattr(spouse.social_security, "survivor_pia_floor", 0.0), deceased_monthly
+            )
+
+    def _remove_from_simulation(self):
+        """Remove the deceased and any now-empty owned agents from the model, and zero the
+        deceased's statistics so aggregate reporting no longer counts them."""
+        # Any financial accounts still owned by the deceased were emptied (non-spouse pre-tax) or
+        # never transferred; remove them so they stop stepping.
+        for acct in self._owned_financial_agents():
+            acct.remove()
+        # Pensions and other benefits are life-only in v1: they stop at death.
+        from ..base_classes import Benefit
+
+        for benefit in [a for a in self.model.agents if isinstance(a, Benefit) and getattr(a, "person", None) is self]:
+            benefit.remove()
+        # Drop the deceased from their family so no tax unit is built for them.
+        if self in self.family.members:
+            self.family.members.remove(self)
+        # Zero the deceased's own statistics so the model's per-agent sums exclude them.
+        for stat in (*LifeModel.STATS, *LifeModel.EXTRA_STATS):
+            setattr(self, stat.name, 0)
+        self.remove()
 
     def post_step(self):
         self.income.clear()

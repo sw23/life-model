@@ -185,3 +185,33 @@ class ModelRegistries:
         self.credit_cards.clear(owner)
         self.student_loans.clear(owner)
         self.mortgages.clear(owner)
+
+    def iter_registries(self) -> List[Registry]:
+        """All registries in the container, for owner-agnostic bulk operations."""
+        return [
+            self.bank_accounts,
+            self.jobs,
+            self.homes,
+            self.apartments,
+            self.life_insurance_policies,
+            self.general_insurance_policies,
+            self.annuities,
+            self.plan_529s,
+            self.donations,
+            self.donor_advised_funds,
+            self.car_loans,
+            self.credit_cards,
+            self.student_loans,
+            self.mortgages,
+        ]
+
+    def transfer_owner(self, old_owner: "Person", new_owner: "Person") -> None:
+        """Move every registered item from ``old_owner`` to ``new_owner``.
+
+        Only the registry bookkeeping is updated here; callers are responsible for updating each
+        item's own owner reference (``item.person`` / ``item.owner``).
+        """
+        for reg in self.iter_registries():
+            for item in list(reg.get_items(old_owner)):
+                reg.unregister(old_owner, item)
+                reg.register(new_owner, item)

@@ -36,6 +36,9 @@ tax:
     # vintage: 2026, source: IRC §163(h)(3) (TCJA acquisition-debt limit); §164(b)(6) SALT cap (OBBBA)
     mortgage_interest_debt_limit: 750000
     salt_deduction_cap: 40000
+    # vintage: 2026, source: IRC §2010 unified credit (post-OBBBA ~$15M); §2001(c) top estate-tax rate 40%
+    estate_tax_exemption: 15000000
+    estate_tax_rate: 40.0  # percentage
   state:
     tax_rate: 6.0  # percentage
   fica:

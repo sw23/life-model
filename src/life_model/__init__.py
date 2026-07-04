@@ -10,7 +10,7 @@ from importlib.metadata import PackageNotFoundError, version
 from .account.bank import BankAccount
 from .model import LifeModel, LifeModelAgent
 from .people.family import Family
-from .people.person import GenderAtBirth, Person, Spending
+from .people.person import GenderAtBirth, MortalityMode, Person, Spending
 from .tax.federal import FilingStatus
 from .work.job import Job, Salary
 
@@ -26,6 +26,7 @@ __all__ = [
     "Family",
     "Spending",
     "GenderAtBirth",
+    "MortalityMode",
     "Job",
     "Salary",
     "BankAccount",

@@ -278,6 +278,10 @@ class SocialSecurity(LifeModelAgent):
         if self.withdrawal_start_age < get_min_early_retirement_age():
             raise ValueError("Withdrawal start age cannot be before early retirement age")
 
+        # Monthly PIA floor granted as a Social Security survivor benefit when a spouse dies: the
+        # survivor's benefit is raised to at least the deceased's benefit (approximation).
+        self.survivor_pia_floor = 0.0
+
         # Register social security
         self.person.social_security = self
 
@@ -407,7 +411,8 @@ class SocialSecurity(LifeModelAgent):
         # deposited as cash. SocialSecurity runs after jobs in pre_step (default priority 0 >
         # job priority -10), so wages are already in the ledger.
         if self.model.year >= self.withdrawal_start_year:
-            yearly_pia = self.get_pia() * 12
+            # Apply any survivor-benefit floor (max of own vs. deceased spouse's benefit).
+            yearly_pia = max(self.get_pia(), self.survivor_pia_floor) * 12
             taxable_portion = self._taxable_benefit_portion(yearly_pia)
             self.person.income.add(IncomeType.SS_BENEFIT, taxable_portion)
             self.person.receive_cash(yearly_pia, source="social security")
