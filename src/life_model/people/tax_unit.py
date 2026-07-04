@@ -88,7 +88,11 @@ class TaxUnit:
         # income but not FICA wages, so it is not added to the per-member wage bases.
         ordinary_income = self.taxable_income + additional_income
         wage_incomes = [m.fica_wages for m in self.members]
-        return compute_taxes(ordinary_income, self.federal_deductions, self.filing_status, wage_incomes, self.config)
+        taxes = compute_taxes(ordinary_income, self.federal_deductions, self.filing_status, wage_incomes, self.config)
+        # Early-withdrawal / non-qualified-distribution penalties recorded on members' ledgers are
+        # additional federal tax.
+        taxes.federal += sum(m.income.penalties for m in self.members)
+        return taxes
 
     def withdraw_from_pretax_401ks(self, amount: float) -> float:
         """Withdraw ``amount`` from members' pre-tax 401ks. Returns the amount not withdrawn."""
@@ -200,13 +204,21 @@ class TaxUnit:
                 take = min(remaining, account.pretax_balance)
                 taxable += take
                 remaining -= take
+        for member in self.members:
+            for account in member.traditional_iras:
+                if remaining <= 0:
+                    break
+                take = min(remaining, account.balance)
+                taxable += take
+                remaining -= take
         return taxable
 
     def _raise_investment_cash(self, cash: float) -> float:
         """Raise ``cash`` into the members' bank accounts, taxing each source as it is drained.
 
-        Brokerage holdings are sold first (only the gain is taxed), then pre-tax 401k balances are
-        withdrawn (fully taxable). Returns any shortfall that could not be raised.
+        Brokerage holdings are sold first (only the gain is taxed), then pre-tax 401k balances and
+        Traditional IRAs are withdrawn (fully taxable). Returns any shortfall that could not be
+        raised.
         """
         remaining = cash
         for member in self.members:
@@ -215,6 +227,11 @@ class TaxUnit:
             remaining -= member.withdraw_from_brokerage(remaining)
         if remaining > 0:
             remaining = self.withdraw_from_pretax_401ks(remaining)
+        if remaining > 0:
+            for member in self.members:
+                if remaining <= 0:
+                    break
+                remaining -= member.withdraw_from_traditional_iras(remaining)
         return remaining
 
     def _record_stats(

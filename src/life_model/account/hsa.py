@@ -77,11 +77,19 @@ class HealthSavingsAccount(TaxAdvantagedAccount):
         return self.withdraw(amount)
 
     def withdraw_non_medical(self, amount: float) -> float:
-        """Withdraw for non-medical expenses (taxable + 20% penalty under 65).
+        """Withdraw for non-medical expenses.
 
-        Tax/penalty ledger reporting is added with the account tax semantics.
+        The distribution is ordinary income; if the owner is under 65 it also incurs a 20% penalty.
+        Both are reported to the owner's income ledger.
         """
-        return self.withdraw(amount)
+        from ..tax.income import IncomeType
+
+        withdrawn = self.withdraw(amount)
+        if withdrawn > 0:
+            self.person.income.add(IncomeType.PRETAX_DISTRIBUTION, withdrawn)
+            if self.person.age < 65:
+                self.person.income.add_penalty(0.20 * withdrawn)
+        return withdrawn
 
     def _repr_html_(self):
         limit = self.annual_contribution_limit()

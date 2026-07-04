@@ -5,7 +5,9 @@
 from typing import Optional
 
 from ..base_classes import TaxAdvantagedAccount, TaxTreatment
+from ..limits import federal_retirement_age
 from ..people.person import Person
+from ..tax.income import IncomeType
 
 
 class RothIRA(TaxAdvantagedAccount):
@@ -50,6 +52,20 @@ class RothIRA(TaxAdvantagedAccount):
         return sum(
             a.contributions_ytd for a in (*self.person.roth_iras, *self.person.traditional_iras) if a is not self
         )
+
+    def withdraw(self, amount: float) -> float:
+        """Withdraw contribution basis first (tax-free); non-qualified earnings are taxed + penalized.
+
+        Withdrawing earnings before the federal retirement age realizes ordinary income plus a 10%
+        early-withdrawal penalty. Qualified (on/after retirement age) withdrawals are tax-free.
+        """
+        basis_before = self.contribution_basis
+        withdrawn = super().withdraw(amount)
+        earnings_withdrawn = withdrawn - (basis_before - self.contribution_basis)
+        if earnings_withdrawn > 0 and self.person.age < federal_retirement_age():
+            self.person.income.add(IncomeType.PRETAX_DISTRIBUTION, earnings_withdrawn)
+            self.person.income.add_penalty(0.10 * earnings_withdrawn)
+        return withdrawn
 
     def _repr_html_(self):
         desc = "<ul>"

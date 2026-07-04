@@ -316,7 +316,8 @@ class Person(LifeModelAgent):
     def withdraw_from_pretax_401ks(self, amount: float) -> float:
         """Withdraws money from pre-tax 401ks into the bank account.
 
-        The amount actually withdrawn is added to taxable income and deposited into the bank.
+        The amount actually withdrawn is added to taxable income and deposited into the bank. A 10%
+        early-withdrawal penalty is charged if the person is below the federal retirement age.
 
         Args:
             amount (float): Amount to withdraw.
@@ -327,8 +328,34 @@ class Person(LifeModelAgent):
         withdrawn = amount - self.deduct_from_pretax_401ks(amount)
         # Pre-tax 401k distributions are ordinary income but are NOT FICA wages.
         self.income.add(IncomeType.PRETAX_DISTRIBUTION, withdrawn)
+        self._charge_early_withdrawal_penalty(withdrawn)
         self.receive_cash(withdrawn)
         return withdrawn
+
+    def withdraw_from_traditional_iras(self, amount: float) -> float:
+        """Withdraws money from Traditional IRAs into the bank account.
+
+        Traditional IRA distributions are ordinary income (not FICA wages) and incur a 10% early-
+        withdrawal penalty below the federal retirement age.
+
+        Args:
+            amount (float): Amount to withdraw.
+
+        Returns:
+            float: Amount actually withdrawn.
+        """
+        remaining = self._withdraw_sequence((account.withdraw for account in self.traditional_iras), amount)
+        withdrawn = amount - remaining
+        self.income.add(IncomeType.PRETAX_DISTRIBUTION, withdrawn)
+        self._charge_early_withdrawal_penalty(withdrawn)
+        self.receive_cash(withdrawn)
+        return withdrawn
+
+    def _charge_early_withdrawal_penalty(self, amount: float) -> None:
+        """Charge the 10% early-withdrawal penalty on a pre-tax distribution taken before the
+        federal retirement age."""
+        if amount > 0 and self.age < federal_retirement_age():
+            self.income.add_penalty(0.10 * amount)
 
     @property
     def brokerage_balance(self) -> float:

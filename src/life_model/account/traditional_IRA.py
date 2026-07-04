@@ -5,7 +5,9 @@
 from typing import Optional
 
 from ..base_classes import TaxAdvantagedAccount, TaxTreatment
+from ..limits import required_min_distrib, rmd_start_age
 from ..people.person import Person
+from ..tax.income import IncomeType
 
 
 class TraditionalIRA(TaxAdvantagedAccount):
@@ -38,7 +40,16 @@ class TraditionalIRA(TaxAdvantagedAccount):
             growth_rate = ira_config.default_growth_rate
         super().__init__(person, balance, growth_rate)
         self._contribution_limit_override = contribution_limit
+        self.stat_required_min_distrib = 0
         self.model.registries.traditional_iras.register(person, self)
+
+    def contribute(self, amount: float) -> float:
+        """Contribute pre-tax dollars, recording an above-the-line deduction for the amount."""
+        actual = super().contribute(amount)
+        if actual > 0:
+            # Pre-tax (deductible) contribution reduces ordinary taxable income.
+            self.person.income.add_deduction(actual)
+        return actual
 
     def annual_contribution_limit(self) -> float:
         if self._contribution_limit_override is not None:
@@ -51,6 +62,19 @@ class TraditionalIRA(TaxAdvantagedAccount):
         return sum(
             a.contributions_ytd for a in (*self.person.roth_iras, *self.person.traditional_iras) if a is not self
         )
+
+    def step(self):
+        """Grow, then take any required minimum distribution (ordinary income, no FICA)."""
+        super().step()
+        config = self.person.model.config
+        birth_year = self.person.model.year - self.person.age
+        start_age = rmd_start_age(birth_year, config=config, year=self.person.model.year)
+        rmd = required_min_distrib(self.person.age, self.balance, config=config, start_age=start_age)
+        rmd = self.withdraw(rmd)
+        if rmd > 0:
+            self.person.deposit_into_bank_account(rmd)
+            self.person.income.add(IncomeType.PRETAX_DISTRIBUTION, rmd)
+        self.stat_required_min_distrib = rmd
 
     def _repr_html_(self):
         desc = "<ul>"
