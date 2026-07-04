@@ -57,8 +57,8 @@ class Insurance(LifeModelAgent):
         deductible: float = 0,
         coverage_start_age: Optional[int] = None,
         coverage_end_age: Optional[int] = None,
-        premium_increase_rate: float = 3.0,
-        max_claims_per_year: int = 3,
+        premium_increase_rate: Optional[float] = None,
+        max_claims_per_year: Optional[int] = None,
     ):
         """Models insurance coverage for a person
 
@@ -71,11 +71,16 @@ class Insurance(LifeModelAgent):
             deductible: Insurance deductible amount
             coverage_start_age: Age when coverage starts (None for immediate)
             coverage_end_age: Age when coverage ends (None for lifetime)
-            premium_increase_rate: Annual premium increase percentage
-            max_claims_per_year: Maximum claims allowed per year
+            premium_increase_rate: Annual premium increase percentage. Configured default if None.
+            max_claims_per_year: Maximum claims allowed per year. Configured default if None.
         """
         super().__init__(cast(LifeModel, person.model))
         self.model: "LifeModel" = cast("LifeModel", self.model)
+        general_config = self.model.config.insurance.general
+        if premium_increase_rate is None:
+            premium_increase_rate = general_config.default_premium_increase_rate
+        if max_claims_per_year is None:
+            max_claims_per_year = general_config.default_max_claims_per_year
         self.person = person
         self.insurance_type = insurance_type
         self.company = company
@@ -191,15 +196,12 @@ class Insurance(LifeModelAgent):
             claim.status = ClaimStatus.APPROVED
             claim.settlement_date = self.model.year
 
-            # Pay out to person's bank account
-            if self.person.bank_accounts:
-                self.person.bank_accounts[0].deposit(claim.payout_amount)
-
-            # Person pays deductible
-            deductible_paid = self.person.deduct_from_bank_accounts(claim.deductible)
-            actual_deductible = claim.deductible - deductible_paid
-            self.stat_deductibles_paid += actual_deductible
-
+            # Single-deductible convention (Plan 08 bug 10): the person incurs the loss (the full
+            # claim amount) and the insurer reimburses it net of the deductible. The net cash
+            # effect on the person is therefore exactly the deductible — charged once, not twice.
+            self.person.deduct_from_bank_accounts(claim.amount)
+            self.person.receive_cash(claim.payout_amount, source="insurance payout")
+            self.stat_deductibles_paid += claim.deductible
             self.stat_claims_paid_out += claim.payout_amount
 
             self.model.event_log.add(Event(f"{self.person.name} received ${claim.payout_amount:,.0f} insurance payout"))
@@ -222,9 +224,12 @@ class Insurance(LifeModelAgent):
         if new_deductible is not None:
             self.deductible = new_deductible
 
-        # Adjust premium based on coverage change (simplified)
+        # Adjust premium based on coverage change. Scale the *current* premium (which may have
+        # compounded from step() increases) rather than the base, so accumulated increases are
+        # preserved (Plan 08 bug 11).
         coverage_ratio = new_coverage_amount / old_coverage
-        self.annual_premium = self.base_annual_premium * coverage_ratio
+        self.annual_premium *= coverage_ratio
+        self.base_annual_premium *= coverage_ratio
 
         self.model.event_log.add(
             Event(f"{self.person.name} updated {self.insurance_type.value} coverage to ${new_coverage_amount:,.0f}")
