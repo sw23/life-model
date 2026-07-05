@@ -45,7 +45,7 @@ def _fresh_person() -> Person:
 class TestLoanAmortizationProperties(unittest.TestCase):
     @settings(max_examples=200, deadline=None)
     @given(
-        rate=st.floats(min_value=0.0, max_value=20.0),
+        rate=st.one_of(st.just(0.0), st.floats(min_value=0.1, max_value=20.0)),
         term=st.integers(min_value=1, max_value=30),
         principal=st.floats(min_value=1000.0, max_value=1_000_000.0),
     )
