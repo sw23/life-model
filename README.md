@@ -20,7 +20,7 @@ Check out the example simulation notebook:
 - [Google Colab (interactive)](https://colab.research.google.com/github/sw23/life-model/blob/main/ExampleSimulation.ipynb)
 - [GitHub](https://github.com/sw23/life-model/blob/main/ExampleSimulation.ipynb)
 
-![Training Statistics](img/stats.png)
+![Training Statistics](https://raw.githubusercontent.com/sw23/life-model/main/img/stats.png)
 
 ### Installation
 ```bash
@@ -35,7 +35,7 @@ solara run dashboard/app.py
 ```
 Then open your browser to http://localhost:8765
 
-![Dashboard Overview](img/dashboard.png)
+![Dashboard Overview](https://raw.githubusercontent.com/sw23/life-model/main/img/dashboard.png)
 
 ### Deep Reinforcement Learning
 Train AI agents to make optimal financial decisions:
