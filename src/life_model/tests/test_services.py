@@ -72,6 +72,20 @@ class TestTaxCalculationService(unittest.TestCase):
         result = self.tax_service.calculate_taxes_on_401k_withdrawal(0)
         self.assertEqual(result, 0.0)
 
+    def test_total_401k_withdrawal_not_needed_when_bank_covers_expenses(self):
+        """When the bank balance covers expenses, no 401k withdrawal is made."""
+        total_withdrawal, _ = self.tax_service.calculate_total_401k_withdrawal(5000)
+        self.assertEqual(total_withdrawal, 0.0)
+        self.assertEqual(self.job401k.pretax_balance, 50000)
+
+    def test_total_401k_withdrawal_covers_expenses_plus_taxes(self):
+        """A shortfall drives a pre-tax withdrawal sized to cover expenses and the tax on it."""
+        total_withdrawal, final_taxes = self.tax_service.calculate_total_401k_withdrawal(30000)
+        # Bank held $10k, so at least the $20k shortfall (plus tax) is withdrawn from pre-tax.
+        self.assertGreaterEqual(total_withdrawal, 20000)
+        self.assertLess(self.job401k.pretax_balance, 50000)
+        self.assertGreaterEqual(final_taxes.total, 0.0)
+
 
 class TestPaymentService(unittest.TestCase):
     def setUp(self):
