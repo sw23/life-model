@@ -94,6 +94,38 @@ class TestTenYearInheritance(unittest.TestCase):
         # far lower than the single lump-sum year.
         self.assertLess(max(ty_taxes), max(ls_taxes))
 
+    def test_401k_pretax_balance_follows_ten_year_rule(self):
+        from ..account.job401k import Job401kAccount
+        from ..work.job import Job, Salary
+
+        cfg = FinancialConfig()
+        cfg.model.economy.equity_return = 0
+        model = LifeModel(start_year=2026, end_year=2038, config=cfg)
+        family = Family(model)
+        parent = Person(
+            family,
+            "Parent",
+            age=79,
+            retirement_age=50,
+            spending=Spending(model, 0),
+            mortality_mode=MortalityMode.FIXED_AGE,
+            death_age=80,
+        )
+        child = Person(family, "Kid", age=40, retirement_age=100, spending=Spending(model, 0))
+        BankAccount(child, "C", balance=0, interest_rate=0)
+        job = Job(owner=parent, company="Co", role="Eng", salary=Salary(model=model, base=0))
+        Job401kAccount(job=job, pretax_balance=500000, average_growth=0)
+        model.run()
+
+        self.assertTrue(parent.is_deceased)
+        # The 401k's remaining pre-tax balance spreads over the ten years after death — no
+        # death-year lump sum — and the inherited account removes itself when done.
+        df = model.datacollector.get_model_vars_dataframe()
+        taxes = dict(zip(df["Year"], df["Taxes"]))
+        taxed_years = [y for y, t in taxes.items() if t > 0]
+        self.assertEqual(taxed_years, list(range(2027, 2037)))
+        self.assertFalse(any(isinstance(a, InheritedPretaxAccount) for a in model.agents))
+
     def test_lump_sum_distributes_entirely_in_death_year(self):
         model, parent, child = _parent_child_model(end_year=2027, mode="lump_sum")
         model.run()

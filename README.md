@@ -59,8 +59,8 @@ This package supports a comprehensive range of financial modeling components:
 - [x] **HSA** - Health Savings Accounts
 - [x] **529 Plans** - Education savings accounts
 - [x] **Brokerage Accounts** - Taxable investment accounts
-- [ ] **Pensions** - Defined benefit retirement plans
-- [ ] **Trust Accounts** - Revocable and irrevocable trusts for estate planning
+- [x] **Pensions** - Defined benefit retirement plans with COLA and survivor elections
+- [x] **Trust Accounts** - Revocable and irrevocable trusts for estate planning
 
 ### Insurance & Protection
 - [x] **Life Insurance** - Term and whole life policies with loans
@@ -96,7 +96,7 @@ This package supports a comprehensive range of financial modeling components:
 ### Giving & Legacy
 - [x] **Charitable Giving** - Tax-deductible donations with itemized deduction support
 - [x] **Donor Advised Funds** - Charitable investment accounts with growth, fees, and distributions
-- [~] **Estate Planning** - Mortality-driven death, spousal/beneficiary estate transfer, and estate tax (trusts and the 10-year inherited-account rule are not yet modeled)
+- [x] **Estate Planning** - Mortality-driven death, spousal/beneficiary estate transfer, per-account beneficiary designations, estate tax, revocable/irrevocable trusts, and the SECURE Act 10-year inherited-account rule (trust income is untaxed until distributed — no compressed trust brackets; annuity two-life survivor factor still backlog)
 - [ ] **End of Life Care** - Long-term care facilities and medical expenses
 - [ ] **Funeral and Final Expenses** - End-of-life costs and pre-planning
 
