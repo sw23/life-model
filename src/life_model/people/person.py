@@ -19,6 +19,7 @@ from .mortality import get_blended_chance_of_mortality, get_chance_of_mortality
 from .types import GenderAtBirth, MortalityMode  # noqa: F401  (re-exported for backward compatibility)
 
 if TYPE_CHECKING:
+    from ..dependents.child import Child
     from ..insurance.social_security import SocialSecurity
 
 
@@ -123,6 +124,11 @@ class Person(LifeModelAgent):
     def plan_529s(self):
         """Get all 529 plans for this person from the registry"""
         return self.model.registries.plan_529s.get_items(self)
+
+    @property
+    def children(self):
+        """Get all child dependents for this person from the registry"""
+        return self.model.registries.children.get_items(self)
 
     @property
     def donations(self):
@@ -408,6 +414,24 @@ class Person(LifeModelAgent):
             spouse.get_married(self, False)
             event_str = f"{self.name} and {spouse.name} got married at age {self.age} and {spouse.age}"
             self.model.event_log.add(Event(event_str))
+
+    def add_child(self, name: str, birth_year: Optional[int] = None) -> "Child":
+        """Add a child dependent to this person.
+
+        Scheduled births are just ``LifeEvent(year, "Birth of X", person.add_child, "X")``.
+
+        Args:
+            name (str): The child's name.
+            birth_year (int, optional): Year the child was born. Defaults to the current model year.
+
+        Returns:
+            Child: The newly created child (registered on this person).
+        """
+        from ..dependents.child import Child
+
+        if birth_year is None:
+            birth_year = self.model.year
+        return Child(self, name, birth_year)
 
     def get_year_at_age(self, age: int) -> int:
         """Gets the year at a given age.

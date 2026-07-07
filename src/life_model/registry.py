@@ -150,6 +150,12 @@ class MortgageRegistry(PersonRegistry["Mortgage"]):
     pass
 
 
+class ChildRegistry(PersonRegistry["Child"]):
+    """Registry for managing Child (dependent) relationships"""
+
+    pass
+
+
 class ModelRegistries:
     """Container for all registries in a model"""
 
@@ -168,6 +174,7 @@ class ModelRegistries:
         self.credit_cards = CreditCardRegistry()
         self.student_loans = StudentLoanRegistry()
         self.mortgages = MortgageRegistry()
+        self.children = ChildRegistry()
 
     def clear_all(self, owner: "Person") -> None:
         """Clear all registries for a specific owner"""
@@ -185,6 +192,7 @@ class ModelRegistries:
         self.credit_cards.clear(owner)
         self.student_loans.clear(owner)
         self.mortgages.clear(owner)
+        self.children.clear(owner)
 
     def iter_registries(self) -> List[Registry]:
         """All registries in the container, for owner-agnostic bulk operations."""
@@ -203,6 +211,7 @@ class ModelRegistries:
             self.credit_cards,
             self.student_loans,
             self.mortgages,
+            self.children,
         ]
 
     def transfer_owner(self, old_owner: "Person", new_owner: "Person") -> None:
