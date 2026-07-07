@@ -160,6 +160,15 @@ class TaxUnit:
         # Size and perform any pre-tax 401k withdrawal, then get the final taxes owed.
         taxes = self._solve_withdrawals_and_taxes(bills)
 
+        # Record this year's AGI on every member (Plan 15 D4). Each member records the AGI of the
+        # return they filed — the unit's full AGI, not a per-member split — because Medicare/IRMAA
+        # later compares the return's MAGI against filing-status thresholds with a two-year
+        # lookback. Recorded after withdrawal solving so 401k distributions are included.
+        agi = max(self.taxable_income - self.federal_deductions, 0.0)
+        year = self.members[0].model.year
+        for member in self.members:
+            member.agi_history[year] = agi
+
         # Pay everything from the combined accounts exactly once; a shortfall becomes new debt.
         shortfall = round_money(self.pay_bills(bills + taxes.total))
         self.members[0].debt += shortfall

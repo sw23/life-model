@@ -12,5 +12,6 @@ settlement (withdrawal sizing, ``stat_money_spent``) rather than bypassing it.
 """
 
 from .medical_costs import MedicalCosts
+from .medicare import Medicare
 
-__all__ = ["MedicalCosts"]
+__all__ = ["MedicalCosts", "Medicare"]
