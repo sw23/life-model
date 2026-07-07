@@ -65,6 +65,9 @@ class Person(LifeModelAgent):
         # Optional explicit estate beneficiary (a Person). When unset, the estate passes to the
         # surviving spouse, then to the first surviving family member.
         self.estate_beneficiary: Optional["Person"] = None
+        # Unified estate-tax exemption consumed during life by taxable gifts (e.g. irrevocable
+        # trust funding above the annual gift exclusion). Reduces the exemption at death.
+        self.estate_exemption_used = 0.0
         # Year this person was widowed (used to switch filing status to SINGLE the following year).
         self._widowed_year: Optional[int] = None
         self.debt = 0
@@ -521,6 +524,12 @@ class Person(LifeModelAgent):
             self._transfer_estate(inheritor, is_spouse=inheritor is spouse)
         else:
             self.model.event_log.add(Event(f"{self.name}'s estate had no beneficiary; assets dissolved"))
+
+        # 5b. Trusts settle outside the will: a revocable trust pays out directly to its own
+        #     beneficiaries (its balance was already counted in the gross estate above); an
+        #     irrevocable trust survives with its own registry entry and keeps growing.
+        self._settle_trusts_on_death()
+
         if spouse is not None:
             self._apply_survivor_adjustments(spouse)
 
@@ -650,11 +659,19 @@ class Person(LifeModelAgent):
             self.model.event_log.add(Event(f"{self.name}'s designated account transferred to {beneficiary.name}"))
 
     def _gross_estate_value(self) -> float:
-        """Approximate transferable estate value (account balances plus home equity)."""
+        """Approximate transferable estate value (account balances plus home equity).
+
+        Revocable-trust balances are included (the grantor keeps control, so they remain in the
+        gross estate); irrevocable-trust balances are excluded — that exclusion is the modelable
+        estate-planning lever (see :class:`~life_model.estate.trust.Trust`).
+        """
+        from ..estate.trust import TrustType
+
         total = sum(getattr(a, "balance", 0.0) for a in self._owned_financial_agents())
         for home in self.homes:
             equity = home.home_value - (home.mortgage.principal if home.mortgage is not None else 0.0)
             total += max(0.0, equity)
+        total += sum(t.balance for t in self.trusts if t.trust_type == TrustType.REVOCABLE)
         return total
 
     def _liquidate_pretax_to(self, inheritor: "Person"):
@@ -708,9 +725,21 @@ class Person(LifeModelAgent):
                     item.owner = inheritor
         self.model.registries.transfer_owner(self, inheritor)
 
+    def _settle_trusts_on_death(self):
+        """Settle this person's trusts at death: revocable trusts pay out to their beneficiaries
+        (outside ``_find_beneficiary``); irrevocable trusts survive untouched."""
+        from ..estate.trust import TrustType
+
+        for trust in list(self.trusts):
+            if trust.trust_type == TrustType.REVOCABLE:
+                trust.pay_out_at_grantor_death()
+
     def _apply_estate_tax(self, inheritor: "Person", gross_estate: float):
         federal = self.model.config.tax.federal
         exemption = getattr(federal, "estate_tax_exemption", 15000000)
+        # Lifetime taxable gifts (e.g. irrevocable trust funding above the annual exclusion)
+        # consume the unified exemption.
+        exemption = max(0.0, exemption - self.estate_exemption_used)
         rate = getattr(federal, "estate_tax_rate", 40.0)
         taxable = max(0.0, gross_estate - exemption)
         estate_tax = taxable * (rate / 100)
