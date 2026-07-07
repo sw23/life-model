@@ -135,6 +135,16 @@ class Person(LifeModelAgent):
         return self.model.registries.donor_advised_funds.get_items(self)
 
     @property
+    def pensions(self):
+        """Get all pensions for this person from the registry"""
+        return self.model.registries.pensions.get_items(self)
+
+    @property
+    def trusts(self):
+        """Get all trusts for which this person is the grantor, from the registry"""
+        return self.model.registries.trusts.get_items(self)
+
+    @property
     def car_loans(self):
         """Get all car loans for this person from the registry"""
         return self.model.registries.car_loans.get_items(self)
