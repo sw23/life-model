@@ -125,26 +125,27 @@ class Insurance(LifeModelAgent):
         return self.model.year - self.policy_start_year
 
     def pay_premium(self) -> bool:
-        """Attempt to pay the annual premium"""
+        """Charge the annual premium through the tax unit's bill path (Plan 15 D3).
+
+        Previously this debited the bank directly in ``pre_step``, which bypassed the tax unit's
+        year-end settlement — premiums were invisible to withdrawal sizing and to
+        ``stat_money_spent``, so a cash-poor retiree would never size a 401k withdrawal to cover
+        them. The premium is now added to the person's spending (``spending.add_expense``) so it
+        settles through :meth:`TaxUnit.settle_year` alongside every other bill and participates in
+        withdrawal sizing.
+
+        Solvency is resolved at settlement: a unit-wide shortfall becomes debt (as with any other
+        bill). The policy no longer lapses on a single missed payment here — an always-paid-if-
+        solvent simplification of the prior lapse-on-shortfall behavior (documented).
+
+        Returns True when the premium was charged (coverage active), else False.
+        """
         if not self.is_coverage_active:
             return False
 
-        # Try to pay from bank accounts
-        remaining_balance = self.person.deduct_from_bank_accounts(self.annual_premium)
-        amount_paid = self.annual_premium - remaining_balance
-
-        if amount_paid >= self.annual_premium:
-            self.stat_premiums_paid += self.annual_premium
-            return True
-        else:
-            # Partial payment - policy might lapse
-            if amount_paid > 0:
-                self.stat_premiums_paid += amount_paid
-            self.is_active = False
-            self.model.event_log.add(
-                Event(f"{self.person.name}'s {self.insurance_type.value} insurance lapsed due to non-payment")
-            )
-            return False
+        self.person.spending.add_expense(self.annual_premium)
+        self.stat_premiums_paid += self.annual_premium
+        return True
 
     def file_claim(self, claim_amount: float, description: str) -> Optional[InsuranceClaim]:
         """File an insurance claim"""

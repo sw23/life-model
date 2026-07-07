@@ -60,7 +60,7 @@ class TestGeneralInsurance(unittest.TestCase):
         self.assertEqual(insurance.base_annual_premium, 2000)
 
     def test_premium_payment_success(self):
-        """Test successful premium payment"""
+        """Premium is charged into the bill path, not debited from the bank directly (Plan 15 D3)."""
         insurance = Insurance(
             person=self.john,
             insurance_type=InsuranceType.AUTO,
@@ -75,11 +75,14 @@ class TestGeneralInsurance(unittest.TestCase):
 
         self.assertTrue(result)
         self.assertEqual(insurance.stat_premiums_paid, 1500)
-        self.assertEqual(self.john.bank_account_balance, initial_balance - 1500)
+        # Plan 15 D3: the premium is queued as spending for the tax unit to settle, not deducted
+        # from the bank here. The bank balance is unchanged until settlement.
+        self.assertEqual(self.john.bank_account_balance, initial_balance)
+        self.assertEqual(self.john.spending.one_time_expenses, 1500)
         self.assertTrue(insurance.is_active)
 
     def test_premium_payment_insufficient_funds(self):
-        """Test premium payment with insufficient funds"""
+        """Plan 15 D3: premiums no longer lapse on a single missed payment; the shortfall settles as debt."""
         insurance = Insurance(
             person=self.john,
             insurance_type=InsuranceType.AUTO,
@@ -91,9 +94,13 @@ class TestGeneralInsurance(unittest.TestCase):
 
         result = insurance.pay_premium()
 
-        self.assertFalse(result)
-        self.assertFalse(insurance.is_active)  # Policy should lapse
-        self.assertEqual(self.john.bank_account_balance, 0)  # All money used
+        # Coverage is active, so the premium is charged (always-paid-if-solvent). It is queued as
+        # spending; the tax unit resolves any shortfall as debt at settlement rather than lapsing
+        # the policy here.
+        self.assertTrue(result)
+        self.assertTrue(insurance.is_active)
+        self.assertEqual(self.john.bank_account_balance, 50000)  # untouched until settlement
+        self.assertEqual(self.john.spending.one_time_expenses, 60000)
 
     def test_file_claim_success(self):
         """Test filing a successful insurance claim"""
@@ -300,7 +307,7 @@ class TestGeneralInsurance(unittest.TestCase):
         self.assertAlmostEqual(insurance.annual_premium, expected_premium, places=2)
 
     def test_pre_step_premium_payment(self):
-        """Test that premiums are paid in pre_step"""
+        """pre_step queues the premium as spending for settlement (Plan 15 D3)."""
         insurance = Insurance(
             person=self.john,
             insurance_type=InsuranceType.AUTO,
@@ -313,8 +320,10 @@ class TestGeneralInsurance(unittest.TestCase):
         initial_balance = self.john.bank_account_balance
         insurance.pre_step()
 
-        # Premium should have been paid
-        self.assertEqual(self.john.bank_account_balance, initial_balance - 1200)
+        # Plan 15 D3: the premium is added to spending in pre_step (settled later by the tax unit),
+        # so the bank is unchanged here.
+        self.assertEqual(self.john.bank_account_balance, initial_balance)
+        self.assertEqual(self.john.spending.one_time_expenses, 1200)
         self.assertEqual(insurance.stat_premiums_paid, 1200)
 
     def test_health_insurance(self):
@@ -441,6 +450,52 @@ class TestGeneralInsuranceClaims(unittest.TestCase):
             coverage_amount=100000,
         )
         self.assertEqual(insurance.premium_increase_rate, 7.5)
+
+
+class TestPremiumSettlementRouting(unittest.TestCase):
+    """Plan 15 D3: general-insurance premiums settle through the tax unit's bill path."""
+
+    def test_premium_appears_in_money_spent(self):
+        """After a simulated year, the premium is part of stat_money_spent (not a silent bank debit)."""
+        model = LifeModel(start_year=2023, end_year=2023)
+        family = Family(model)
+        john = Person(family=family, name="John", age=40, retirement_age=65, spending=Spending(model, base=10000))
+        BankAccount(owner=john, company="Bank", balance=100000)
+        Insurance(
+            person=john,
+            insurance_type=InsuranceType.AUTO,
+            company="Acme",
+            annual_premium=1500,
+            coverage_amount=100000,
+            deductible=500,
+        )
+        model.step()
+        # base spending 10000 + 1500 premium settle as this year's money spent.
+        self.assertEqual(john.stat_money_spent, 11500)
+
+    def test_premium_triggers_401k_withdrawal_when_bank_short(self):
+        """A cash-poor person sizes a pre-tax 401k withdrawal to cover the premium (Plan 15 D3)."""
+        from ..account.job401k import Job401kAccount
+        from ..work.job import Job, Salary
+
+        model = LifeModel(start_year=2023, end_year=2023)
+        family = Family(model)
+        john = Person(family=family, name="John", age=70, retirement_age=65, spending=Spending(model, base=0))
+        BankAccount(owner=john, company="Bank", balance=0)
+        job = Job(owner=john, company="MegaCorp", role="Retiree", salary=Salary(model, base=0))
+        Job401kAccount(job=job, pretax_balance=200000, roth_balance=0)
+        Insurance(
+            person=john,
+            insurance_type=InsuranceType.AUTO,
+            company="Acme",
+            annual_premium=1500,
+            coverage_amount=100000,
+            deductible=500,
+        )
+        model.step()
+        # The premium (and its tax) was funded by a pre-tax 401k withdrawal, not left as debt.
+        self.assertLess(john.all_retirement_accounts[0].pretax_balance, 200000)
+        self.assertEqual(john.debt, 0)
 
 
 if __name__ == "__main__":
