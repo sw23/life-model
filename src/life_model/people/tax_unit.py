@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Dict, List
 from ..model import round_money
 from ..tax.federal import FilingStatus, get_federal_standard_deduction
 from ..tax.income import IncomeType
+from ..tax.state import state_income_tax_for_unit
 from ..tax.tax import TaxesDue, compute_taxes
 
 if TYPE_CHECKING:
@@ -39,6 +40,8 @@ class TaxUnit:
         self.members = members
         self.filing_status = members[0].filing_status
         self.config = members[0].model.config
+        # A tax unit files in a single state — the head's (Plan 17 D2). No part-year/multi-state.
+        self.state = members[0].state
 
     @classmethod
     def build_units(cls, family: "Family") -> List["TaxUnit"]:
@@ -84,12 +87,53 @@ class TaxUnit:
         standard_deduction = get_federal_standard_deduction(self.filing_status, self.config)
         return max(standard_deduction, self.total_itemized_deductions)
 
+    def _state_income_totals(self, additional_income: float) -> "Dict[IncomeType, float]":
+        """Combined ordinary-taxable amount per income type across members.
+
+        ``additional_income`` (a prospective pre-tax 401k withdrawal) is ordinary income taxed as a
+        pre-tax distribution, so states that exempt retirement income exempt it too.
+        """
+        totals: Dict[IncomeType, float] = {income_type: 0.0 for income_type in IncomeType}
+        for member in self.members:
+            for income_type, amount in member.income.totals_by_type().items():
+                totals[income_type] += amount
+        totals[IncomeType.PRETAX_DISTRIBUTION] += additional_income
+        return totals
+
+    def state_income_tax_due(self, additional_income: float = 0) -> float:
+        """State income tax for the unit, resolving the head's state pack (Plan 17).
+
+        Computed against the property-only AGI base so it does not depend on itself being folded
+        into SALT (D4 no-circularity). ``DEFAULT`` residents get the legacy flat number exactly.
+        """
+        ordinary_income = self.taxable_income + additional_income
+        legacy_agi = max(ordinary_income - self.federal_deductions, 0)
+        return state_income_tax_for_unit(
+            self._state_income_totals(additional_income), self.filing_status, self.state, legacy_agi, self.config
+        )
+
+    def federal_deductions_with_state_tax(self, state_tax: float) -> float:
+        """Federal deductions with the unit's state income tax folded into the head's SALT bucket.
+
+        Attributing the whole unit's state tax to the head (mirrors ``_record_stats``' head
+        convention) keeps the per-member SALT cap behavior unchanged when ``state_tax`` is 0.
+        """
+        standard_deduction = get_federal_standard_deduction(self.filing_status, self.config)
+        itemized = 0.0
+        for index, member in enumerate(self.members):
+            itemized += member.itemized_deductions(state_tax if index == 0 else 0.0)
+        return max(standard_deduction, itemized)
+
     def get_income_taxes_due(self, additional_income: float = 0) -> TaxesDue:
         # ``additional_income`` models a prospective pre-tax 401k withdrawal: it is ordinary
         # income but not FICA wages, so it is not added to the per-member wage bases.
         ordinary_income = self.taxable_income + additional_income
         wage_incomes = [m.fica_wages for m in self.members]
-        return compute_taxes(ordinary_income, self.federal_deductions, self.filing_status, wage_incomes, self.config)
+        state_tax = self.state_income_tax_due(additional_income)
+        deductions = self.federal_deductions_with_state_tax(state_tax)
+        return compute_taxes(
+            ordinary_income, deductions, self.filing_status, wage_incomes, self.config, state_tax=state_tax
+        )
 
     def withdraw_from_pretax_401ks(self, amount: float) -> float:
         """Withdraw ``amount`` from members' pre-tax 401ks. Returns the amount not withdrawn."""

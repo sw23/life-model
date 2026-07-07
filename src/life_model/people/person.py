@@ -13,6 +13,7 @@ from ..services.payment_service import PaymentService
 from ..services.tax_calculation_service import TaxCalculationService
 from ..tax.federal import FilingStatus, get_federal_standard_deduction
 from ..tax.income import IncomeLedger, IncomeType
+from ..tax.state import state_income_tax_for_unit
 from ..tax.tax import TaxesDue, compute_taxes
 from .family import Family
 from .mortality import get_blended_chance_of_mortality, get_chance_of_mortality
@@ -37,6 +38,7 @@ class Person(LifeModelAgent):
         gender: GenderAtBirth = GenderAtBirth.OTHER,
         mortality_mode: MortalityMode = MortalityMode.IMMORTAL,
         death_age: Optional[int] = None,
+        state: Optional[str] = None,
     ):
         """Person
 
@@ -51,6 +53,9 @@ class Person(LifeModelAgent):
             mortality_mode (MortalityMode, optional): How death is determined each year. Defaults to
                 ``IMMORTAL`` (the person never dies) so existing simulations stay deterministic.
             death_age (int, optional): Age of death when ``mortality_mode`` is ``FIXED_AGE``.
+            state (str, optional): Two-letter state of residence for state income tax. Defaults to
+                ``None``, which falls back to ``config.tax.state.default_state`` (Plan 17 D2). A
+                single state applies to the whole tax unit (no part-year/multi-state).
         """
         super().__init__(family.model)
         self.family = family
@@ -58,6 +63,7 @@ class Person(LifeModelAgent):
         self.age = age
         self.retirement_age = retirement_age
         self.spending = spending
+        self.state = state
         self.gender = gender
         self.mortality_mode = mortality_mode
         self.death_age = death_age
@@ -185,21 +191,22 @@ class Person(LifeModelAgent):
 
         return donation_deductions + daf_contribution_deductions
 
-    @property
-    def total_itemized_deductions(self) -> float:
+    def itemized_deductions(self, state_income_tax_paid: float = 0.0) -> float:
         """Calculate total itemized deductions.
 
-        Currently includes:
+        Includes:
         - Charitable contributions
         - Mortgage interest (capped to the first $750k of acquisition debt, TCJA)
-        - State and local taxes (property tax here), capped at the SALT limit
+        - State and local taxes: property tax plus ``state_income_tax_paid``, capped at the SALT
+          limit (Plan 17 D4). ``state_income_tax_paid`` defaults to 0 so the property-only result
+          is unchanged for every caller that does not thread state income tax.
 
-        TODO: Add other itemized deductions (state income tax in SALT, medical expenses, etc.)
+        TODO: Add other itemized deductions (medical expenses, etc.)
         """
         itemized = self.charitable_deductions
 
         federal = self.model.config.tax.federal
-        salt_paid = 0.0
+        salt_paid = state_income_tax_paid
         for home in self.homes:
             mortgage = getattr(home, "mortgage", None)
             if mortgage:
@@ -213,14 +220,24 @@ class Person(LifeModelAgent):
                 itemized += interest
             salt_paid += home.property_tax_for_year
 
-        # SALT deduction (property tax) is capped.
+        # SALT deduction (property tax + state income tax) is capped.
         itemized += min(salt_paid, federal.salt_deduction_cap)
 
         return itemized
 
     @property
+    def total_itemized_deductions(self) -> float:
+        """Itemized deductions excluding state income tax (property-only SALT)."""
+        return self.itemized_deductions()
+
+    def federal_deductions_with_state_tax(self, state_income_tax_paid: float) -> float:
+        """Greater of the standard deduction or itemized deductions including state income tax in SALT."""
+        standard_deduction = get_federal_standard_deduction(self.filing_status, self.model.config)
+        return max(standard_deduction, self.itemized_deductions(state_income_tax_paid))
+
+    @property
     def federal_deductions(self) -> float:
-        """Get federal deductions - use greater of standard or itemized"""
+        """Get federal deductions - use greater of standard or itemized (property-only SALT)"""
         standard_deduction = get_federal_standard_deduction(self.filing_status, self.model.config)
         itemized_deductions = self.total_itemized_deductions
         return max(standard_deduction, itemized_deductions)
@@ -381,8 +398,17 @@ class Person(LifeModelAgent):
             TaxesDue: Taxes due, split by type.
         """
         ordinary_income = self.taxable_income + additional_income
+        # State income tax from the state pack. Computed against the property-only AGI base so it
+        # does not depend on itself being in SALT; then folded into SALT for the federal base (D4).
+        totals = self.income.totals_by_type()
+        totals[IncomeType.PRETAX_DISTRIBUTION] = totals.get(IncomeType.PRETAX_DISTRIBUTION, 0.0) + additional_income
+        legacy_agi = max(ordinary_income - self.federal_deductions, 0)
+        state_tax = state_income_tax_for_unit(
+            totals, self.filing_status, self.state, legacy_agi, self.model.config
+        )
+        deductions = self.federal_deductions_with_state_tax(state_tax)
         return compute_taxes(
-            ordinary_income, self.federal_deductions, self.filing_status, [self.fica_wages], self.model.config
+            ordinary_income, deductions, self.filing_status, [self.fica_wages], self.model.config, state_tax=state_tax
         )
 
     def get_married(self, spouse: "Person", link_spouse: bool = True):

@@ -20,7 +20,7 @@ base) off the ledger, so income tax and payroll tax each see the correct base.
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import List
+from typing import Dict, List
 
 
 class IncomeType(Enum):
@@ -79,3 +79,15 @@ class IncomeLedger:
     def fica_wages(self) -> float:
         """Total FICA-subject wages (payroll tax base)."""
         return sum(e.fica_wages for e in self.entries)
+
+    def totals_by_type(self) -> "Dict[IncomeType, float]":
+        """Ordinary-taxable amount contributed by each income type.
+
+        Every :class:`IncomeType` is present in the result (0.0 when absent) so callers can index
+        any type unconditionally. Used by the state tax base to subtract categories a state exempts
+        (pre-tax distributions, Social Security) from ordinary income.
+        """
+        totals: Dict[IncomeType, float] = {income_type: 0.0 for income_type in IncomeType}
+        for entry in self.entries:
+            totals[entry.income_type] += entry.amount
+        return totals
