@@ -166,8 +166,9 @@ class TestChildCollege529(unittest.TestCase):
         plan.change_beneficiary(other)
         model.step()
         self.assertEqual(plan.balance, 50000)  # untouched (beneficiary is the sibling, not in college)
-        # Full college tuition (20000) plus the sibling's school cost (5000) fall to cash.
-        self.assertEqual(parent.bank_account_balance, 75000)
+        # Full college tuition (20000) plus the sibling's school cost (5000) fall to cash, offset
+        # by the sibling's refundable Child Tax Credit (fixture: 1500 with zero federal liability).
+        self.assertEqual(parent.bank_account_balance, 76500)
 
 
 class TestChildSurvivesParentDeath(unittest.TestCase):
