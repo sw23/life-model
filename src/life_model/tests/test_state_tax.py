@@ -275,6 +275,76 @@ class TestScenarioComparisons(unittest.TestCase):
         self.assertAlmostEqual(ca_taxes.medicare, tx_taxes.medicare, places=6)
 
 
+class TestShippedPacks(unittest.TestCase):
+    """Task 5: the packaged financial_defaults.yaml ships valid, sane starter packs.
+
+    Only structural/sign assertions here (no pinned dollar values) so the annual
+    refresh-financial-data pass doesn't break these tests.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.config = FinancialConfig()  # packaged defaults
+
+    def _totals(self, **kwargs):
+        totals = {t: 0.0 for t in IncomeType}
+        for name, value in kwargs.items():
+            totals[IncomeType[name]] = value
+        return totals
+
+    def test_all_starter_packs_present(self):
+        expected = {"DEFAULT", "CA", "NY", "TX", "FL", "WA", "PA", "IL", "MA"}
+        self.assertTrue(expected.issubset(set(self.config.tax.state.packs)))
+        self.assertEqual(self.config.tax.state.default_state, "DEFAULT")
+        self.assertEqual(self.config.tax.state.packs["DEFAULT"].flat_rate, self.config.tax.state.tax_rate)
+
+    def test_no_income_tax_states(self):
+        for state in ("TX", "FL", "WA"):
+            tax = state_income_tax_for_unit(
+                self._totals(WAGES=200000), FilingStatus.SINGLE, state, legacy_agi_base=200000, config=self.config
+            )
+            self.assertEqual(tax, 0.0, f"{state} should levy no income tax")
+
+    def test_pa_retiree_zero_but_default_taxed(self):
+        # Acceptance: a PA retiree with only 401k distributions and SS pays $0 PA tax; the same
+        # person under DEFAULT pays the flat rate on the AGI base.
+        totals = self._totals(PRETAX_DISTRIBUTION=50000, SS_BENEFIT=15000)
+        pa = state_income_tax_for_unit(totals, FilingStatus.SINGLE, "PA", legacy_agi_base=65000, config=self.config)
+        self.assertEqual(pa, 0.0)
+        default = state_income_tax_for_unit(totals, FilingStatus.SINGLE, None, legacy_agi_base=65000,
+                                            config=self.config)
+        self.assertAlmostEqual(default, 65000 * self.config.tax.state.tax_rate / 100, places=6)
+
+    def test_il_exempts_retirement_but_taxes_wages(self):
+        wages_tax = state_income_tax_for_unit(
+            self._totals(WAGES=60000), FilingStatus.SINGLE, "IL", legacy_agi_base=60000, config=self.config
+        )
+        retiree_tax = state_income_tax_for_unit(
+            self._totals(PRETAX_DISTRIBUTION=60000), FilingStatus.SINGLE, "IL",
+            legacy_agi_base=60000, config=self.config
+        )
+        self.assertGreater(wages_tax, 0.0)
+        self.assertEqual(retiree_tax, 0.0)
+
+    def test_ca_progressive_and_ma_surtax(self):
+        ca_low = state_income_tax_for_unit(self._totals(WAGES=50000), FilingStatus.SINGLE, "CA", 0, self.config)
+        ca_high = state_income_tax_for_unit(self._totals(WAGES=500000), FilingStatus.SINGLE, "CA", 0, self.config)
+        # Progressive: 10x the income must be more than 10x the tax.
+        self.assertGreater(ca_high, 10 * ca_low)
+        # MA surtax: the marginal rate above the threshold exceeds the flat 5%. Add the MA
+        # standard deduction to the wages so the state base sits exactly at the threshold.
+        ma_pack = self.config.tax.state.packs["MA"]
+        threshold = ma_pack.brackets["single"][0][1]
+        deduction = ma_pack.standard_deduction.single
+        below = state_income_tax_for_unit(
+            self._totals(WAGES=threshold + deduction), FilingStatus.SINGLE, "MA", 0, self.config
+        )
+        above = state_income_tax_for_unit(
+            self._totals(WAGES=threshold + deduction + 100000), FilingStatus.SINGLE, "MA", 0, self.config
+        )
+        self.assertAlmostEqual(above - below, 100000 * 0.09, delta=1.0)
+
+
 class TestPersonState(unittest.TestCase):
     """Task 2/D2: Person.state is keyword-only and defaults to None (config default)."""
 

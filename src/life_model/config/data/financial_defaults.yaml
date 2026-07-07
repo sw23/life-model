@@ -40,7 +40,130 @@ tax:
     estate_tax_exemption: 15000000
     estate_tax_rate: 40.0  # percentage
   state:
+    # Legacy flat rate. Kept as the authoritative source for the DEFAULT pack (the back-compat
+    # shim synthesizes packs.DEFAULT from it), so pre-pack configs and scenarios that override
+    # tax.state.tax_rate keep working and produce identical numbers.
     tax_rate: 6.0  # percentage
+    # Residents with no explicit Person(state=...) fall back to this pack. DEFAULT preserves the
+    # pre-Plan-17 behavior (flat tax_rate on the federal AGI base).
+    default_state: DEFAULT
+    # Per-state tax packs (Plan 17 D5). Each pack has exactly one of flat_rate or brackets
+    # ([lower, upper, rate] rows per filing status; missing statuses fall back to single), an
+    # optional state standard deduction (default 0), and the two base flags:
+    #   retirement_income_taxable — pre-tax 401k/IRA distributions and RMDs (default true)
+    #   ss_taxable — the federally taxable portion of Social Security benefits (default false;
+    #                most states exempt SS entirely)
+    # Local/city income taxes (e.g. NYC), state EITCs, and state-specific credits are out of
+    # scope. Refresh these packs annually against each state DOR (see refresh-financial-data).
+    packs:
+      # vintage: 2025, source: CA FTB 2025 Form 540 Tax Rate Schedules (X/Y) and 2025 standard
+      # deduction; top bracket folds in the 1% Mental Health Services Tax (R&TC §17043) on
+      # taxable income over $1M. — TODO(verify): FTB PDF unreachable; thresholds cross-checked
+      # against secondary sources only, and the §17043 $1M MHST threshold (not doubled for MFJ)
+      # should be confirmed against the FTB schedule.
+      CA:
+        brackets:
+          single:
+            - [0, 10756, 1.0]
+            - [10757, 25499, 2.0]
+            - [25500, 40245, 4.0]
+            - [40246, 55866, 6.0]
+            - [55867, 70612, 8.0]
+            - [70613, 360659, 9.3]
+            - [360660, 432787, 10.3]
+            - [432788, 721314, 11.3]
+            - [721315, 1000000, 12.3]
+            - [1000001, .inf, 13.3]  # 12.3% + 1% MHST over $1M
+          married_filing_jointly:
+            - [0, 21512, 1.0]
+            - [21513, 50998, 2.0]
+            - [50999, 80490, 4.0]
+            - [80491, 111732, 6.0]
+            - [111733, 141224, 8.0]
+            - [141225, 721318, 9.3]
+            - [721319, 865574, 10.3]
+            - [865575, 1000000, 11.3]
+            - [1000001, 1442628, 12.3]   # 11.3% + 1% MHST over $1M
+            - [1442629, .inf, 13.3]      # 12.3% + 1% MHST
+        standard_deduction:
+          single: 5706
+          married_filing_jointly: 11412
+        # CA taxes retirement distributions in full and exempts Social Security.
+        retirement_income_taxable: true
+        ss_taxable: false
+      # vintage: 2025, source: NY DTF Form IT-201 instructions, 2025 tax rate schedules and
+      # standard deduction. — TODO(verify): thresholds cross-checked against secondary sources;
+      # NY's supplemental "tax benefit recapture" above $107,650 NYAGI and the $20k
+      # private-pension/IRA exclusion for 59.5+ are not modeled.
+      NY:
+        brackets:
+          single:
+            - [0, 8500, 4.0]
+            - [8501, 11700, 4.5]
+            - [11701, 13900, 5.25]
+            - [13901, 80650, 5.5]
+            - [80651, 215400, 6.0]
+            - [215401, 1077550, 6.85]
+            - [1077551, 5000000, 9.65]
+            - [5000001, 25000000, 10.3]
+            - [25000001, .inf, 10.9]
+          married_filing_jointly:
+            - [0, 17150, 4.0]
+            - [17151, 23600, 4.5]
+            - [23601, 27900, 5.25]
+            - [27901, 161550, 5.5]
+            - [161551, 323200, 6.0]
+            - [323201, 2155350, 6.85]
+            - [2155351, 5000000, 9.65]
+            - [5000001, 25000000, 10.3]
+            - [25000001, .inf, 10.9]
+        standard_deduction:
+          single: 8000
+          married_filing_jointly: 16050
+        retirement_income_taxable: true  # simplification: NY's $20k retirement exclusion not modeled
+        ss_taxable: false
+      # vintage: 2025, source: TX — no state individual income tax (Tex. Const. art. VIII §24-a).
+      TX:
+        flat_rate: 0.0
+      # vintage: 2025, source: FL — no state individual income tax (Fla. Const. art. VII §5).
+      FL:
+        flat_rate: 0.0
+      # vintage: 2025, source: WA — no state individual income tax on wages/retirement income.
+      # Simplification: WA's 7% capital-gains excise (RCW 82.87) is not modeled.
+      WA:
+        flat_rate: 0.0
+      # vintage: 2025, source: PA DOR — flat personal income tax 3.07% (72 P.S. §7302);
+      # retirement-plan distributions after retirement and Social Security are not taxable
+      # compensation (61 Pa. Code §101.6). No standard deduction.
+      PA:
+        flat_rate: 3.07
+        retirement_income_taxable: false
+        ss_taxable: false
+      # vintage: 2025, source: IL DOR 2025 IL-1040 instructions — flat 4.95% (35 ILCS 5/201);
+      # federally taxed retirement income and Social Security are subtracted (IL-1040 Line 5).
+      # The exemption allowance ($2,850 single / $5,700 MFJ, 2025) is modeled as a standard
+      # deduction; its AGI phase-out over $250k/$500k is not modeled.
+      IL:
+        flat_rate: 4.95
+        retirement_income_taxable: false
+        ss_taxable: false
+        standard_deduction:
+          single: 2850
+          married_filing_jointly: 5700
+      # vintage: 2025, source: MA DOR (mass.gov "Massachusetts 4% Surtax on Taxable Income") —
+      # flat 5% plus 4% surtax on taxable income over $1,083,150 (2025, inflation-indexed),
+      # modeled as two brackets. The personal exemption ($4,400 single / $8,800 MFJ) is modeled
+      # as a standard deduction. The surtax threshold does not double for joint filers.
+      MA:
+        brackets:
+          single:
+            - [0, 1083150, 5.0]
+            - [1083151, .inf, 9.0]  # 5% + 4% surtax
+        standard_deduction:
+          single: 4400
+          married_filing_jointly: 8800
+        retirement_income_taxable: true
+        ss_taxable: false
   fica:
     # vintage: 2026, source: SSA Contribution & Benefit Base (ssa.gov/oact/cola/cbb.html)
     social_security_rate: 6.2  # percentage
