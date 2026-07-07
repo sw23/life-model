@@ -587,11 +587,20 @@ class Person(LifeModelAgent):
     def _transfer_estate(self, inheritor: "Person", is_spouse: bool):
         """Move the estate to ``inheritor``.
 
-        A surviving spouse inherits everything via the unlimited marital deduction (no estate tax)
-        and rolls pre-tax accounts over tax-free. A non-spouse beneficiary receives pre-tax
-        accounts as a taxable lump sum, and the estate above the exemption is subject to estate tax.
+        Accounts with a designated (surviving) ``beneficiary`` are routed to that beneficiary
+        first — designation beats the will, as with real retirement accounts. The residual estate
+        then goes to ``inheritor``: a surviving spouse inherits via the unlimited marital deduction
+        (no estate tax) and rolls pre-tax accounts over tax-free; a non-spouse inheritor receives
+        pre-tax accounts per ``estate.inherited_pretax_mode``, and the estate above the exemption
+        is subject to estate tax.
+
+        Documented simplification: the estate tax is computed over the *whole* gross estate and
+        charged to the residual inheritor — designation changes who receives each account, not the
+        tax base, and there is no per-beneficiary apportionment of the tax.
         """
         gross_estate = self._gross_estate_value()
+
+        self._transfer_designated_accounts()
 
         if not is_spouse:
             self._liquidate_pretax_to(inheritor)
@@ -602,6 +611,43 @@ class Person(LifeModelAgent):
             self._apply_estate_tax(inheritor, gross_estate)
 
         self.model.event_log.add(Event(f"{self.name}'s estate transferred to {inheritor.name}"))
+
+    def _transfer_designated_accounts(self):
+        """Route each account with a designated surviving beneficiary directly to that person.
+
+        A designated pre-tax balance passing to someone other than the surviving spouse is
+        distributed under ``estate.inherited_pretax_mode`` (10-year spread or lump sum), exactly
+        like the residual path; a spouse designee gets the tax-free rollover. A predeceased
+        beneficiary is skipped, so the account falls through to the residual-estate path.
+        """
+        from ..account.job401k import Job401kAccount
+        from ..account.traditional_IRA import TraditionalIRA
+
+        spouse = self.spouse if (self.spouse is not None and not self.spouse.is_deceased) else None
+        for acct in self._owned_financial_agents():
+            beneficiary = getattr(acct, "beneficiary", None)
+            if beneficiary is None or beneficiary.is_deceased or beneficiary is self:
+                continue
+            if beneficiary is not spouse:
+                # Non-spouse designee: the pre-tax portion is a taxable inheritance.
+                pretax = 0.0
+                if isinstance(acct, Job401kAccount):
+                    pretax = acct.pretax_balance
+                    acct.pretax_balance = 0.0
+                elif isinstance(acct, TraditionalIRA):
+                    pretax = acct.balance
+                    acct.balance = 0.0
+                if pretax > 0:
+                    self._distribute_inherited_pretax(pretax, beneficiary)
+            acct.person = beneficiary
+            if hasattr(acct, "owner"):
+                acct.owner = beneficiary
+            # Registry-backed accounts (bank accounts) also move their registry entry so the
+            # designee's account properties see them and the residual transfer doesn't re-route them.
+            for reg in self.model.registries.iter_registries():
+                if reg.unregister(self, acct):
+                    reg.register(beneficiary, acct)
+            self.model.event_log.add(Event(f"{self.name}'s designated account transferred to {beneficiary.name}"))
 
     def _gross_estate_value(self) -> float:
         """Approximate transferable estate value (account balances plus home equity)."""
@@ -631,17 +677,21 @@ class Person(LifeModelAgent):
             elif isinstance(acct, TraditionalIRA):
                 total_pretax += acct.balance
                 acct.balance = 0.0
-        if total_pretax <= 0:
-            return
+        self._distribute_inherited_pretax(total_pretax, inheritor)
 
+    def _distribute_inherited_pretax(self, amount: float, beneficiary: "Person"):
+        """Pass ``amount`` of inherited pre-tax money to a non-spouse ``beneficiary`` per the
+        configured ``estate.inherited_pretax_mode`` (see ``_liquidate_pretax_to``)."""
+        if amount <= 0:
+            return
         mode = self.model.config.estate.inherited_pretax_mode
         if mode == "lump_sum":
-            inheritor.income.add(IncomeType.PRETAX_DISTRIBUTION, total_pretax)
-            inheritor.receive_cash(total_pretax, source=f"inherited retirement from {self.name}")
+            beneficiary.income.add(IncomeType.PRETAX_DISTRIBUTION, amount)
+            beneficiary.receive_cash(amount, source=f"inherited retirement from {self.name}")
         else:  # "ten_year"
             from ..account.inherited import InheritedPretaxAccount
 
-            InheritedPretaxAccount(inheritor, balance=total_pretax, decedent_name=self.name)
+            InheritedPretaxAccount(beneficiary, balance=amount, decedent_name=self.name)
 
     def _reassign_owned_agents(self, inheritor: "Person"):
         """Reassign ownership of every owned agent (accounts, homes, jobs, insurance, debts) to

@@ -36,6 +36,8 @@ class LifeInsurance(LifeModelAgent):
         cash_value_growth_rate: Optional[float] = None,
         loan_interest_rate: Optional[float] = None,
         max_missed_payments: Optional[int] = None,
+        *,
+        beneficiary: Optional[Person] = None,
     ):
         """Models life insurance policy for a person
 
@@ -50,6 +52,9 @@ class LifeInsurance(LifeModelAgent):
             cash_value_growth_rate: Yearly growth rate for whole life cash value. Uses configured default if None.
             loan_interest_rate: Interest rate for loans against cash value. Uses configured default if None.
             max_missed_payments: Maximum consecutive missed payments before lapse. Uses configured default if None.
+            beneficiary: Optional designated beneficiary for the death benefit. When set (and
+                surviving), the benefit is paid to this person; otherwise it defaults to the
+                surviving spouse, then the first family member with a bank account.
         """
         super().__init__(cast(LifeModel, person.model))
         self.model: "LifeModel" = cast("LifeModel", self.model)  # Type override for better intellisense
@@ -68,6 +73,7 @@ class LifeInsurance(LifeModelAgent):
         self.surrender_percentage_standard = life_config.surrender_percentages.standard
         self.person = person
         self.policy_type = policy_type
+        self.beneficiary = beneficiary
         self.death_benefit = death_benefit
         self.monthly_premium = monthly_premium
         self.base_monthly_premium = monthly_premium
@@ -281,8 +287,12 @@ class LifeInsurance(LifeModelAgent):
 
         benefit_amount = self.net_death_benefit
         if benefit_amount > 0:
-            # For simplicity, add to spouse's bank account if married, otherwise to family
-            if self.person.spouse and hasattr(self.person.spouse, "deposit_into_bank_account"):
+            # A designated (surviving) beneficiary takes precedence; otherwise pay the surviving
+            # spouse, then the first family member with a bank account.
+            if self.beneficiary is not None and not self.beneficiary.is_deceased:
+                self.beneficiary.deposit_into_bank_account(benefit_amount)
+                recipient = self.beneficiary.name
+            elif self.person.spouse and hasattr(self.person.spouse, "deposit_into_bank_account"):
                 self.person.spouse.deposit_into_bank_account(benefit_amount)
                 recipient = self.person.spouse.name
             else:

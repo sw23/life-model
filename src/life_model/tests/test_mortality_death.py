@@ -250,6 +250,104 @@ class TestEstateTransferNonSpouse(unittest.TestCase):
         self.assertLess(child.bank_account_balance, 101000)
 
 
+class TestPerAccountBeneficiary(unittest.TestCase):
+    """Plan 16 D4: per-account beneficiary designation honored in _transfer_estate."""
+
+    def _family_with_designated_ira(self, *, designate_child=True, child_dies_first=False):
+        from ..config.financial_config import FinancialConfig
+
+        cfg = FinancialConfig()
+        # Use the legacy lump-sum path so the designated routing is visible in a single year.
+        cfg.model.estate.inherited_pretax_mode = "lump_sum"
+        model = LifeModel(start_year=2026, end_year=2027, config=cfg)
+        family = Family(model)
+        breadwinner = Person(
+            family,
+            "Bread",
+            age=75,
+            retirement_age=50,
+            spending=Spending(model, 0),
+            mortality_mode=MortalityMode.FIXED_AGE,
+            death_age=76,
+        )
+        spouse = Person(family, "Spouse", age=74, retirement_age=50, spending=Spending(model, 0))
+        breadwinner.get_married(spouse)
+        child = Person(family, "Kid", age=40, retirement_age=100, spending=Spending(model, 0))
+        BankAccount(breadwinner, "B1", balance=50000, interest_rate=0)
+        BankAccount(spouse, "B2", balance=0, interest_rate=0)
+        BankAccount(child, "C", balance=0, interest_rate=0)
+        ira = TraditionalIRA(person=breadwinner, balance=100000, growth_rate=0)
+        if designate_child:
+            ira.beneficiary = child
+        if child_dies_first:
+            child.is_deceased = True
+        return model, breadwinner, spouse, child, ira
+
+    def test_designated_ira_routed_to_child_residual_to_spouse(self):
+        model, breadwinner, spouse, child, ira = self._family_with_designated_ira()
+        model.run()
+
+        self.assertTrue(breadwinner.is_deceased)
+        # The IRA went to the designated child as a taxable pre-tax inheritance (lump-sum mode):
+        # child got the $100k minus the income tax settled at year end.
+        self.assertGreater(child.bank_account_balance, 0)
+        self.assertLessEqual(child.bank_account_balance, 100000)
+        # The residual estate (the $50k bank account) went to the surviving spouse, not the child.
+        self.assertAlmostEqual(spouse.bank_account_balance, 50000, delta=1.0)
+
+    def test_spouse_designee_gets_tax_free_rollover(self):
+        model, breadwinner, spouse, child, ira = self._family_with_designated_ira()
+        ira.beneficiary = spouse
+        model.run()
+
+        # Spouse designee: no taxable distribution, the account itself rolls over intact.
+        self.assertIs(ira.person, spouse)
+        self.assertEqual(ira.balance, 100000)
+        df = model.datacollector.get_model_vars_dataframe()
+        self.assertEqual(sum(df["Taxes"]), 0)
+
+    def test_predeceased_beneficiary_falls_back_to_residual_path(self):
+        model, breadwinner, spouse, child, ira = self._family_with_designated_ira(child_dies_first=True)
+        model.run()
+
+        # The designation is void (child predeceased); the pre-tax balance follows the residual
+        # path to the spouse: tax-free spousal rollover of the account.
+        self.assertIs(ira.person, spouse)
+        self.assertEqual(ira.balance, 100000)
+        self.assertEqual(child.bank_account_balance, 0)
+
+    def test_life_insurance_designated_beneficiary_paid(self):
+        model = LifeModel(start_year=2026, end_year=2027)
+        family = Family(model)
+        breadwinner = Person(
+            family,
+            "Bread",
+            age=75,
+            retirement_age=50,
+            spending=Spending(model, 0),
+            mortality_mode=MortalityMode.FIXED_AGE,
+            death_age=76,
+        )
+        spouse = Person(family, "Spouse", age=74, retirement_age=50, spending=Spending(model, 0))
+        breadwinner.get_married(spouse)
+        child = Person(family, "Kid", age=40, retirement_age=100, spending=Spending(model, 0))
+        BankAccount(spouse, "B2", balance=0, interest_rate=0)
+        BankAccount(child, "C", balance=0, interest_rate=0)
+        LifeInsurance(
+            person=breadwinner,
+            policy_type=LifeInsuranceType.TERM,
+            death_benefit=250000,
+            monthly_premium=0,
+            term_years=30,
+            beneficiary=child,
+        )
+        model.run()
+
+        # The death benefit goes to the designated child even though a spouse survives.
+        self.assertAlmostEqual(child.bank_account_balance, 250000, delta=1.0)
+        self.assertAlmostEqual(spouse.bank_account_balance, 0, delta=1.0)
+
+
 class TestPensionSurvivorAtDeath(unittest.TestCase):
     def _couple(self, *, survivor_percent, death_age=76):
         model = LifeModel(start_year=2026, end_year=2030)
