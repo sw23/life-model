@@ -546,6 +546,11 @@ class Person(LifeModelAgent):
         #    joint-and-survivor continue to the inheritor.
         self._settle_annuities_on_death(inheritor)
 
+        # 3b. End-of-life costs (Plan 15 D7): funeral plus a final-year medical spike reduce the
+        #     estate *before* it is valued, transferred, and estate-taxed. Opt-in: charged only
+        #     when the person has healthcare agents, so other simulations are unchanged.
+        self._charge_end_of_life_costs()
+
         # 4/5. Transfer the estate and adjust the survivor.
         if inheritor is not None:
             self._transfer_estate(inheritor, is_spouse=inheritor is spouse)
@@ -577,6 +582,39 @@ class Person(LifeModelAgent):
             if not (continues and inheritor is not None):
                 # Life-only, or no beneficiary to continue payments: the annuity stops.
                 annuity.is_active = False
+
+    def _charge_end_of_life_costs(self):
+        """Charge funeral and final-year medical costs against the estate (Plan 15 D7).
+
+        Charged only when the person opted into the healthcare subsystem (has any healthcare
+        agent), so simulations without healthcare agents keep today's death flow byte-identical.
+        The funeral cost is CPI-indexed from the start year; the final-year medical spike is the
+        configured multiplier times the person's current-year medical cost. Costs are paid from
+        the deceased's bank accounts before the estate is valued/transferred; any unpayable
+        remainder is forgiven (the estate cannot go negative).
+
+        The deceased's healthcare agents are then retired so they are not reassigned to the
+        inheritor (medical costs are personal, not inheritable).
+        """
+        healthcare_agents = [*self.medical_costs, *self.medicare, *self.long_term_care]
+        if not healthcare_agents:
+            return
+
+        healthcare = self.model.config.healthcare
+        cost = healthcare.funeral_cost * self.model.economy.cumulative_inflation(self.model.year)
+        for medical in self.medical_costs:
+            cost += healthcare.final_year_medical_multiplier * medical.annual_cost()
+        unpaid = self.deduct_from_bank_accounts(cost)
+        self.model.event_log.add(
+            Event(f"{self.name}'s estate paid ${cost - unpaid:,.0f} in end-of-life costs (funeral + final medical)")
+        )
+
+        # Retire the healthcare agents with their owner.
+        for agent in healthcare_agents:
+            agent.remove()
+        self.model.registries.medical_costs.clear(self)
+        self.model.registries.medicare.clear(self)
+        self.model.registries.long_term_care.clear(self)
 
     def _owned_financial_agents(self) -> List["LifeModelAgent"]:
         """All balance-holding accounts (bank, brokerage, IRAs, HSA, 401k) owned by this person."""
