@@ -485,7 +485,8 @@ class Person(LifeModelAgent):
             beneficiary in the death year (no 10-year rule).
           * A widowed spouse files jointly in the death year and single thereafter (no
             qualifying-widow years).
-          * Life-only pensions and life-only annuities simply stop; no state estate taxes.
+          * Pensions with a survivor election continue a reduced stream to a surviving spouse;
+            single-life pensions and life-only annuities simply stop; no state estate taxes.
         """
         if self.is_deceased:
             return
@@ -508,6 +509,12 @@ class Person(LifeModelAgent):
         # 3. Settle annuities: life-only stops; period-certain (with payments left) and
         #    joint-and-survivor continue to the inheritor.
         self._settle_annuities_on_death(inheritor)
+
+        # 3b. Settle pensions: a survivor election continues a reduced stream to a surviving
+        #     spouse; otherwise the pension terminates. Done BEFORE the estate transfer (so the
+        #     generic registry reassignment doesn't move pensions) and before the Benefit sweep in
+        #     _remove_from_simulation (which would otherwise delete the survivor's continued stream).
+        self._settle_pensions_on_death(spouse)
 
         # 4/5. Transfer the estate and adjust the survivor.
         if inheritor is not None:
@@ -540,6 +547,36 @@ class Person(LifeModelAgent):
             if not (continues and inheritor is not None):
                 # Life-only, or no beneficiary to continue payments: the annuity stops.
                 annuity.is_active = False
+
+    def _settle_pensions_on_death(self, spouse: Optional["Person"]):
+        """Continue survivor pensions to a surviving spouse; terminate the rest.
+
+        A pension with ``survivor_percent > 0`` and a surviving spouse transfers to that spouse at
+        ``benefit x survivor_percent/100`` (a real single-life-vs-survivor modeling lever). Without
+        a survivor election or a surviving spouse the pension terminates, as it does today.
+
+        This runs before the estate transfer, so terminated pensions are removed from the registry
+        (the generic reassignment won't touch them) and the survivor's pension is already re-owned
+        by the spouse (the Benefit sweep in ``_remove_from_simulation`` won't delete it).
+        """
+        pensions = self.model.registries.pensions
+        for pension in list(self.pensions):
+            if spouse is not None and getattr(pension, "survivor_percent", 0) > 0:
+                pension.benefit_amount *= pension.survivor_percent / 100.0
+                # The continued stream is single-life on the survivor (no further survivor split).
+                pension.survivor_percent = 0.0
+                pensions.unregister(self, pension)
+                pensions.register(spouse, pension)
+                pension.person = spouse
+                self.model.event_log.add(
+                    Event(
+                        f"{spouse.name} continues {pension.company} pension at "
+                        f"${pension.benefit_amount:,.0f}/yr after {self.name}'s death"
+                    )
+                )
+            else:
+                pensions.unregister(self, pension)
+                pension.remove()
 
     def _owned_financial_agents(self) -> List["LifeModelAgent"]:
         """All balance-holding accounts (bank, brokerage, IRAs, HSA, 401k) owned by this person."""

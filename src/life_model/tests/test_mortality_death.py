@@ -8,6 +8,7 @@
 import unittest
 
 from ..account.bank import BankAccount
+from ..account.pension import Pension
 from ..account.traditional_IRA import TraditionalIRA
 from ..housing.home import Home, HomeExpenses, Mortgage
 from ..insurance.life_insurance import LifeInsurance, LifeInsuranceType
@@ -244,6 +245,87 @@ class TestEstateTransferNonSpouse(unittest.TestCase):
         taxes = dict(zip(df["Year"], df["Taxes"]))
         self.assertGreater(taxes[2026], 0)
         self.assertLess(child.bank_account_balance, 101000)
+
+
+class TestPensionSurvivorAtDeath(unittest.TestCase):
+    def _couple(self, *, survivor_percent, death_age=76):
+        model = LifeModel(start_year=2026, end_year=2030)
+        family = Family(model)
+        breadwinner = Person(
+            family,
+            "Bread",
+            age=74,
+            retirement_age=50,
+            spending=Spending(model, 0),
+            mortality_mode=MortalityMode.FIXED_AGE,
+            death_age=death_age,
+        )
+        spouse = Person(family, "Spouse", age=74, retirement_age=50, spending=Spending(model, 0))
+        breadwinner.get_married(spouse)
+        BankAccount(spouse, "B2", balance=0, interest_rate=0)
+        Pension(breadwinner, "MegaCorp", vesting_years=5, benefit_amount=40000, survivor_percent=survivor_percent)
+        return model, breadwinner, spouse
+
+    def test_survivor_pension_continues_at_reduced_amount(self):
+        model, breadwinner, spouse = self._couple(survivor_percent=50)
+        model.run()
+
+        self.assertTrue(breadwinner.is_deceased)
+        # The pension survived (moved to the spouse) at half the benefit.
+        self.assertEqual(len(spouse.pensions), 1)
+        self.assertEqual(len(breadwinner.pensions), 0)
+        self.assertEqual(spouse.pensions[0].benefit_amount, 20000)
+        # The spouse receives the reduced stream in years after the death.
+        df = model.datacollector.get_model_vars_dataframe()
+        pension_income = dict(zip(df["Year"], df["Pension Income"]))
+        # Breadwinner dies at start of 2027 (age 76). 2026 full benefit, 2027+ reduced to survivor.
+        self.assertEqual(pension_income[2026], 40000)
+        self.assertEqual(pension_income[2027], 20000)
+        self.assertEqual(pension_income[2030], 20000)
+
+    def test_single_life_pension_terminates(self):
+        model, breadwinner, spouse = self._couple(survivor_percent=0)
+        model.run()
+
+        self.assertTrue(breadwinner.is_deceased)
+        # No survivor election: the pension terminates and is not inherited.
+        self.assertEqual(len(spouse.pensions), 0)
+        self.assertEqual(len(breadwinner.pensions), 0)
+        df = model.datacollector.get_model_vars_dataframe()
+        pension_income = dict(zip(df["Year"], df["Pension Income"]))
+        self.assertEqual(pension_income[2026], 40000)  # full benefit the year before death
+        self.assertEqual(pension_income[2027], 0)  # terminates at death (2027, age 76)
+        self.assertEqual(pension_income[2030], 0)
+
+    def test_survivor_transfer_runs_before_benefit_sweep(self):
+        # Regression pin (plan Risks): the survivor transfer must happen before
+        # _remove_from_simulation's Benefit sweep, or the continued stream would be deleted.
+        model, breadwinner, spouse = self._couple(survivor_percent=50)
+        model.run()
+        # The pension agent still exists in the model (not swept) and is owned by the spouse.
+        surviving = spouse.pensions[0]
+        self.assertIn(surviving, model.agents)
+        self.assertIs(surviving.person, spouse)
+
+    def test_no_spouse_survivor_pension_still_terminates(self):
+        # Survivor election but no surviving spouse: pension terminates (to the non-spouse heir it
+        # does not continue).
+        model = LifeModel(start_year=2026, end_year=2028)
+        family = Family(model)
+        parent = Person(
+            family,
+            "Parent",
+            age=74,
+            retirement_age=50,
+            spending=Spending(model, 0),
+            mortality_mode=MortalityMode.FIXED_AGE,
+            death_age=75,
+        )
+        child = Person(family, "Kid", age=40, retirement_age=100, spending=Spending(model, 0))
+        BankAccount(child, "C", balance=0, interest_rate=0)
+        Pension(parent, "MegaCorp", vesting_years=5, benefit_amount=40000, survivor_percent=50)
+        model.run()
+        self.assertEqual(len(child.pensions), 0)
 
 
 class TestDeathConservation(unittest.TestCase):
