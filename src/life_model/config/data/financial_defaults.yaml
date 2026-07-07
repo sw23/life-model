@@ -395,6 +395,33 @@ housing:
     single: 250000
     married_filing_jointly: 500000
 
+# Children and dependents: age-banded cost of raising a child and the child-related
+# tax credits. Costs are nominal (start-year dollars) and grown by cumulative inflation
+# in Child.pre_step so a child born later costs later-year dollars.
+dependents:
+  # Age-banded annual cost of a child. Representative national estimates.
+  # vintage: 2024, source: Child Care Aware of America (childcare ~0-5); USDA/Brookings
+  #   child-rearing cost estimates (school age 6-17); College Board Trends in College
+  #   Pricing (college) -- placeholders, TODO(verify) against a primary cost survey.
+  childcare_annual_cost: 12000    # ages 0 through college_start_age-13 (roughly 0-5)
+  school_age_annual_cost: 8000    # school-age band (roughly 6-17)
+  college_annual_cost: 28000      # per college year; drawn from a 529 first when available
+  college_start_age: 18
+  college_years: 4
+  adult_age: 18                   # costs stop at this age (except the college band)
+  # Child Tax Credit (IRC §24 as amended by the One Big Beautiful Bill Act).
+  # vintage: 2026, source: IRC §24(h)(2)/(5) (OBBBA), Rev. Proc. 2025-32.
+  ctc_per_child: 2200
+  ctc_refundable_max: 1700
+  ctc_qualifying_age_max: 17
+  # Phase-out thresholds are statutory and not inflation-indexed.
+  # vintage: statutory, source: IRC §24(h)(3).
+  ctc_phaseout_start:
+    single: 200000
+    married_filing_jointly: 400000
+    head_of_household: 200000
+  ctc_phaseout_rate: 5.0          # percent of modified AGI over threshold ($50 per $1,000)
+
 # Economy-wide rates driving account returns, wage growth, and inflation. A single
 # EconomyModel per simulation reads this section and answers per-year rate queries.
 # The defaults reproduce the pre-economy per-account constants, so `mode: fixed` leaves

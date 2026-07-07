@@ -14,6 +14,7 @@ from .base_config import ScenarioConfig
 from .models import (
     AccountsConfig,
     DebtConfig,
+    DependentsConfig,
     EconomyConfig,
     FinancialConfigModel,
     HousingConfig,
@@ -106,6 +107,10 @@ class FinancialConfig(ScenarioConfig):
     @property
     def economy(self) -> EconomyConfig:
         return self._model.economy
+
+    @property
+    def dependents(self) -> DependentsConfig:
+        return self._model.dependents
 
     def tax_year(self, year: int, inflation_factor: float = 1.0) -> YearlyTaxParameters:
         """Get the tax parameters applicable to a given calendar year.
