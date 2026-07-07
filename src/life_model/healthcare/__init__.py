@@ -11,7 +11,8 @@ flows through ``person.spending.add_expense`` so it participates in the tax unit
 settlement (withdrawal sizing, ``stat_money_spent``) rather than bypassing it.
 """
 
+from .long_term_care import LongTermCare
 from .medical_costs import MedicalCosts
 from .medicare import Medicare
 
-__all__ = ["MedicalCosts", "Medicare"]
+__all__ = ["MedicalCosts", "Medicare", "LongTermCare"]

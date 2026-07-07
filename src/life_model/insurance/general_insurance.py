@@ -21,6 +21,7 @@ class InsuranceType(Enum):
     RENTERS = "Renters"
     FLOOD = "Flood"
     EARTHQUAKE = "Earthquake"
+    LONG_TERM_CARE = "Long Term Care"
 
 
 class ClaimStatus(Enum):
@@ -147,8 +148,19 @@ class Insurance(LifeModelAgent):
         self.stat_premiums_paid += self.annual_premium
         return True
 
-    def file_claim(self, claim_amount: float, description: str) -> Optional[InsuranceClaim]:
-        """File an insurance claim"""
+    def file_claim(
+        self, claim_amount: float, description: str, *, charge_loss: bool = True
+    ) -> Optional[InsuranceClaim]:
+        """File an insurance claim.
+
+        Args:
+            claim_amount: The size of the covered loss being claimed.
+            description: Description of the claim.
+            charge_loss: When True (default) the person incurs the loss from their bank at claim
+                time (single-deductible convention). Pass False when the loss has already been
+                charged elsewhere (e.g. LTC care costs routed through the bill path, Plan 15 D5)
+                so only the payout is credited.
+        """
         if not self.is_coverage_active:
             return None
 
@@ -173,15 +185,15 @@ class Insurance(LifeModelAgent):
         self.stat_claims_filed += 1
 
         # Process claim automatically (simplified)
-        self.process_claim(claim)
+        self.process_claim(claim, charge_loss=charge_loss)
 
         self.model.event_log.add(
             Event(f"{self.person.name} filed {self.insurance_type.value} claim for ${claim_amount:,.0f}")
         )
         return claim
 
-    def process_claim(self, claim: InsuranceClaim) -> bool:
-        """Process an insurance claim"""
+    def process_claim(self, claim: InsuranceClaim, *, charge_loss: bool = True) -> bool:
+        """Process an insurance claim (see :meth:`file_claim` for ``charge_loss``)."""
         if claim.status != ClaimStatus.PENDING:
             return False
 
@@ -199,8 +211,10 @@ class Insurance(LifeModelAgent):
 
             # Single-deductible convention: the person incurs the loss (the full claim amount)
             # and the insurer reimburses it net of the deductible. The net cash effect on the
-            # person is therefore exactly the deductible.
-            self.person.deduct_from_bank_accounts(claim.amount)
+            # person is therefore exactly the deductible. When the loss was already charged
+            # through another path (charge_loss=False), only the payout is credited.
+            if charge_loss:
+                self.person.deduct_from_bank_accounts(claim.amount)
             self.person.receive_cash(claim.payout_amount, source="insurance payout")
             self.stat_deductibles_paid += claim.deductible
             self.stat_claims_paid_out += claim.payout_amount
