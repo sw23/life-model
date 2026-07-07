@@ -16,6 +16,7 @@ from .models import (
     DebtConfig,
     EconomyConfig,
     FinancialConfigModel,
+    HealthcareConfig,
     HousingConfig,
     InsuranceConfig,
     RetirementConfig,
@@ -106,6 +107,10 @@ class FinancialConfig(ScenarioConfig):
     @property
     def economy(self) -> EconomyConfig:
         return self._model.economy
+
+    @property
+    def healthcare(self) -> HealthcareConfig:
+        return self._model.healthcare
 
     def tax_year(self, year: int, inflation_factor: float = 1.0) -> YearlyTaxParameters:
         """Get the tax parameters applicable to a given calendar year.

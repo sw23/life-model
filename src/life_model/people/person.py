@@ -72,6 +72,9 @@ class Person(LifeModelAgent):
         # payroll tax and income tax each see the correct base (see tax/income.py).
         self.income = IncomeLedger()
         self.spouse = None
+        # Per-year record of this member's share of the tax unit's AGI, stamped during
+        # ``TaxUnit.settle_year``. Medicare/IRMAA reads this with a two-year lookback (Plan 15 D4).
+        self.agi_history: dict[int, float] = {}
         self.filing_status = FilingStatus.SINGLE
         self.social_security: Optional[SocialSecurity] = None
         self.retirement_triggered = False
@@ -148,6 +151,21 @@ class Person(LifeModelAgent):
     def student_loans(self):
         """Get all student loans for this person from the registry"""
         return self.model.registries.student_loans.get_items(self)
+
+    @property
+    def medical_costs(self):
+        """Get the MedicalCosts agent(s) for this person from the registry (Plan 15)."""
+        return self.model.registries.medical_costs.get_items(self)
+
+    @property
+    def medicare(self):
+        """Get the Medicare agent(s) for this person from the registry (Plan 15)."""
+        return self.model.registries.medicare.get_items(self)
+
+    @property
+    def long_term_care(self):
+        """Get the LongTermCare agent(s) for this person from the registry (Plan 15)."""
+        return self.model.registries.long_term_care.get_items(self)
 
     @property
     def all_debts(self):

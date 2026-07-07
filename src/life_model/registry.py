@@ -150,6 +150,24 @@ class MortgageRegistry(PersonRegistry["Mortgage"]):
     pass
 
 
+class MedicalCostsRegistry(PersonRegistry["MedicalCosts"]):
+    """Registry for managing per-person MedicalCosts agents"""
+
+    pass
+
+
+class MedicareRegistry(PersonRegistry["Medicare"]):
+    """Registry for managing per-person Medicare agents"""
+
+    pass
+
+
+class LongTermCareRegistry(PersonRegistry["LongTermCare"]):
+    """Registry for managing per-person LongTermCare agents"""
+
+    pass
+
+
 class ModelRegistries:
     """Container for all registries in a model"""
 
@@ -168,6 +186,9 @@ class ModelRegistries:
         self.credit_cards = CreditCardRegistry()
         self.student_loans = StudentLoanRegistry()
         self.mortgages = MortgageRegistry()
+        self.medical_costs = MedicalCostsRegistry()
+        self.medicare = MedicareRegistry()
+        self.long_term_care = LongTermCareRegistry()
 
     def clear_all(self, owner: "Person") -> None:
         """Clear all registries for a specific owner"""
@@ -185,6 +206,9 @@ class ModelRegistries:
         self.credit_cards.clear(owner)
         self.student_loans.clear(owner)
         self.mortgages.clear(owner)
+        self.medical_costs.clear(owner)
+        self.medicare.clear(owner)
+        self.long_term_care.clear(owner)
 
     def iter_registries(self) -> List[Registry]:
         """All registries in the container, for owner-agnostic bulk operations."""
@@ -203,6 +227,9 @@ class ModelRegistries:
             self.credit_cards,
             self.student_loans,
             self.mortgages,
+            self.medical_costs,
+            self.medicare,
+            self.long_term_care,
         ]
 
     def transfer_owner(self, old_owner: "Person", new_owner: "Person") -> None:
