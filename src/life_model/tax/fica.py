@@ -40,9 +40,14 @@ def get_medicare_additional_rate(config: "Optional[FinancialConfig]" = None) -> 
 def get_medicare_additional_rate_threshold(
     filing_status: FilingStatus, config: "Optional[FinancialConfig]" = None
 ) -> float:
-    """Get the configured medicare additional rate threshold for filing status"""
+    """Get the configured medicare additional rate threshold for filing status.
+
+    HEAD_OF_HOUSEHOLD statutorily shares the single threshold (IRC §3101(b)(2)).
+    """
     threshold = _fin(config).tax.fica.medicare_additional_rate_threshold
-    return threshold.single if filing_status == FilingStatus.SINGLE else threshold.married_filing_jointly
+    if filing_status == FilingStatus.MARRIED_FILING_JOINTLY:
+        return threshold.married_filing_jointly
+    return threshold.single
 
 
 # https://www.ssa.gov/oact/cola/cbb.html

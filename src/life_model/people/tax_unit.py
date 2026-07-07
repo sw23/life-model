@@ -46,7 +46,10 @@ class TaxUnit:
         """Group a family's members into filing units.
 
         A married-filing-jointly member and their spouse (when both are in the family) form one
-        joint unit; every other member is its own single unit.
+        joint unit; every other member is its own single unit. An unmarried member with at least
+        one dependent child files HEAD_OF_HOUSEHOLD (the unit's status only — the person's own
+        ``filing_status`` is untouched); when the config carries no head_of_household data the
+        deduction/brackets fall back to single, so this is a strict superset of old behavior.
         """
         units: List["TaxUnit"] = []
         seen = set()
@@ -63,9 +66,18 @@ class TaxUnit:
                 seen.add(member.unique_id)
                 seen.add(spouse.unique_id)
             else:
-                units.append(cls([member]))
+                unit = cls([member])
+                if member.filing_status == FilingStatus.SINGLE and cls._has_dependent_child(member):
+                    unit.filing_status = FilingStatus.HEAD_OF_HOUSEHOLD
+                units.append(unit)
                 seen.add(member.unique_id)
         return units
+
+    @staticmethod
+    def _has_dependent_child(member: "Person") -> bool:
+        """Whether ``member`` has a dependent child this year (born, and under ``adult_age``)."""
+        adult_age = member.model.config.dependents.adult_age
+        return any(0 <= child.age < adult_age for child in member.children)
 
     @property
     def taxable_income(self) -> float:

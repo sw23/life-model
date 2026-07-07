@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-from typing import Dict, List, Literal, Union
+from typing import Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -22,11 +22,16 @@ class StrictModel(BaseModel):
 class StandardDeductionConfig(StrictModel):
     single: int = Field(ge=0)
     married_filing_jointly: int = Field(ge=0)
+    # Optional: HEAD_OF_HOUSEHOLD falls back to `single` when absent, so existing scenarios and
+    # the frozen test fixture load unchanged.
+    head_of_household: Optional[int] = Field(default=None, ge=0)
 
 
 class TaxBracketsConfig(StrictModel):
     single: List[List[Union[int, float]]]
     married_filing_jointly: List[List[Union[int, float]]]
+    # Optional: HEAD_OF_HOUSEHOLD falls back to `single` when absent.
+    head_of_household: Optional[List[List[Union[int, float]]]] = None
 
 
 class FederalTaxConfig(StrictModel):
