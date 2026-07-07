@@ -204,6 +204,33 @@ class Person(LifeModelAgent):
         return donation_deductions + daf_contribution_deductions
 
     @property
+    def unreimbursed_medical_expenses(self) -> float:
+        """This year's unreimbursed medical spend from the healthcare agents (Plan 15 D6).
+
+        Sums the ``stat_medical_costs`` stamped in ``pre_step`` by the person's opt-in healthcare
+        agents: age-curve costs (MedicalCosts), Medicare premiums (deductible per IRS Pub. 502),
+        and net-of-insurance long-term-care costs. LTC insurance *premiums* are not included in v1
+        (their age-capped deductibility is a documented simplification/backlog).
+        """
+        agents = [*self.medical_costs, *self.medicare, *self.long_term_care]
+        return sum(agent.stat_medical_costs for agent in agents)
+
+    @property
+    def medical_expense_deduction(self) -> float:
+        """Itemizable unreimbursed medical: the excess over the AGI floor (IRC §213(a)).
+
+        The floor uses ordinary income *before* deductions: this model computes AGI as
+        ``ordinary - deductions`` (tax.py), so using post-deduction income here would be circular.
+        For a joint unit the floor is applied per member on their own income (approximation).
+        """
+        medical = self.unreimbursed_medical_expenses
+        if medical <= 0:
+            return 0.0
+        floor_pct = self.model.config.healthcare.medical_deduction_agi_floor
+        floor = self.income.ordinary_taxable * floor_pct / 100
+        return max(0.0, medical - floor)
+
+    @property
     def total_itemized_deductions(self) -> float:
         """Calculate total itemized deductions.
 
@@ -211,10 +238,12 @@ class Person(LifeModelAgent):
         - Charitable contributions
         - Mortgage interest (capped to the first $750k of acquisition debt, TCJA)
         - State and local taxes (property tax here), capped at the SALT limit
+        - Unreimbursed medical expenses above the 7.5%-of-income floor (Plan 15 D6)
 
-        TODO: Add other itemized deductions (state income tax in SALT, medical expenses, etc.)
+        TODO: Add other itemized deductions (state income tax in SALT, etc.)
         """
         itemized = self.charitable_deductions
+        itemized += self.medical_expense_deduction
 
         federal = self.model.config.tax.federal
         salt_paid = 0.0
