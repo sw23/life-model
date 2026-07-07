@@ -120,6 +120,7 @@ class LifeModel(mesa.Model):
         MoneyStat("stat_premium_payments", "Life Ins Premiums"),  # Life insurance premiums paid in a year
         MoneyStat("stat_cash_value", "Life Ins Cash Value"),  # Life insurance cash value
         MoneyStat("stat_death_benefit_paid", "Death Benefits"),  # Death benefits paid out
+        MoneyStat("stat_medical_costs", "Medical Costs"),  # Healthcare/Medicare/LTC costs paid in a year (Plan 15)
     ]
 
     def __init__(

@@ -11,4 +11,6 @@ flows through ``person.spending.add_expense`` so it participates in the tax unit
 settlement (withdrawal sizing, ``stat_money_spent``) rather than bypassing it.
 """
 
-__all__: list[str] = []
+from .medical_costs import MedicalCosts
+
+__all__ = ["MedicalCosts"]
