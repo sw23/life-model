@@ -395,6 +395,14 @@ housing:
     single: 250000
     married_filing_jointly: 500000
 
+# Estate settlement. inherited_pretax_mode controls how a non-spouse beneficiary receives an
+# inherited pre-tax retirement balance: "ten_year" applies the SECURE Act 10-year rule (the
+# balance keeps growing and pays out an even slice each year over ten years), while "lump_sum"
+# distributes and taxes the whole balance in the death year (the pre-Plan-16 simplification).
+# vintage: 2020, source: SECURE Act §401 (10-year rule for non-eligible designated beneficiaries)
+estate:
+  inherited_pretax_mode: ten_year  # ten_year | lump_sum
+
 # Economy-wide rates driving account returns, wage growth, and inflation. A single
 # EconomyModel per simulation reads this section and answers per-year rate queries.
 # The defaults reproduce the pre-economy per-account constants, so `mode: fixed` leaves

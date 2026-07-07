@@ -481,8 +481,8 @@ class Person(LifeModelAgent):
         simulation so nothing of theirs steps again.
 
         Simplifications (documented, backlog for later refinement):
-          * Non-spouse inherited pre-tax accounts are distributed as a lump sum taxed to the
-            beneficiary in the death year (no 10-year rule).
+          * Non-spouse inherited pre-tax accounts follow ``estate.inherited_pretax_mode``: the
+            SECURE Act 10-year even spread (default) or the legacy death-year lump sum.
           * A widowed spouse files jointly in the death year and single thereafter (no
             qualifying-widow years).
           * Pensions with a survivor election continue a reduced stream to a surviving spouse;
@@ -612,7 +612,14 @@ class Person(LifeModelAgent):
         return total
 
     def _liquidate_pretax_to(self, inheritor: "Person"):
-        """Distribute pre-tax account balances as a taxable lump sum to a non-spouse beneficiary."""
+        """Pass the decedent's pre-tax balances to a non-spouse beneficiary.
+
+        Under ``estate.inherited_pretax_mode == "ten_year"`` (default) the balance moves into an
+        :class:`~life_model.account.inherited.InheritedPretaxAccount` that spreads the distribution
+        (and its tax) over ten years per the SECURE Act. Under ``"lump_sum"`` the whole balance is
+        distributed and taxed to the beneficiary in the death year (the Plan 09 simplification,
+        retained for comparability).
+        """
         from ..account.job401k import Job401kAccount
         from ..account.traditional_IRA import TraditionalIRA
 
@@ -624,9 +631,17 @@ class Person(LifeModelAgent):
             elif isinstance(acct, TraditionalIRA):
                 total_pretax += acct.balance
                 acct.balance = 0.0
-        if total_pretax > 0:
+        if total_pretax <= 0:
+            return
+
+        mode = self.model.config.estate.inherited_pretax_mode
+        if mode == "lump_sum":
             inheritor.income.add(IncomeType.PRETAX_DISTRIBUTION, total_pretax)
             inheritor.receive_cash(total_pretax, source=f"inherited retirement from {self.name}")
+        else:  # "ten_year"
+            from ..account.inherited import InheritedPretaxAccount
+
+            InheritedPretaxAccount(inheritor, balance=total_pretax, decedent_name=self.name)
 
     def _reassign_owned_agents(self, inheritor: "Person"):
         """Reassign ownership of every owned agent (accounts, homes, jobs, insurance, debts) to

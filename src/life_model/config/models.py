@@ -221,6 +221,22 @@ class Section121ExclusionConfig(StrictModel):
     married_filing_jointly: int = Field(default=500000, ge=0)
 
 
+class EstateConfig(StrictModel):
+    """Estate-settlement parameters.
+
+    ``inherited_pretax_mode`` controls how a non-spouse beneficiary receives inherited pre-tax
+    retirement balances:
+
+    * ``"ten_year"`` (default) — the SECURE Act 10-year rule: the balance moves into an
+      :class:`~life_model.account.inherited.InheritedPretaxAccount` that keeps growing and pays out
+      an even slice each year over ten years, spreading (and deferring) the beneficiary's tax.
+    * ``"lump_sum"`` — the Plan 09 simplification: the whole pre-tax balance is distributed to the
+      beneficiary and taxed in the death year. Retained for comparability with pre-Plan-16 frames.
+    """
+
+    inherited_pretax_mode: Literal["ten_year", "lump_sum"] = "ten_year"
+
+
 class HousingConfig(StrictModel):
     """Housing parameters (PMI, transaction costs, capital-gains exclusion).
 
@@ -320,5 +336,6 @@ class FinancialConfigModel(StrictModel):
     insurance: InsuranceConfig
     debt: DebtConfig
     housing: HousingConfig = Field(default_factory=HousingConfig)
+    estate: EstateConfig = Field(default_factory=EstateConfig)
     economy: EconomyConfig = Field(default_factory=EconomyConfig)
     tax_years: Dict[int, YearlyTaxParameters]

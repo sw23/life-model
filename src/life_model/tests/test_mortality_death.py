@@ -222,7 +222,10 @@ class TestEstateTransferNonSpouse(unittest.TestCase):
         self.assertAlmostEqual(child.bank_account_balance, 51000, delta=1.0)
 
     def test_nonspouse_pretax_inheritance_is_taxed(self):
+        # Pins the Plan 09 lump-sum simplification under the explicit "lump_sum" mode (Plan 16 D3
+        # makes "ten_year" the default; this mode must reproduce the pre-plan behavior exactly).
         model = LifeModel(start_year=2026, end_year=2027)
+        model.config.model.estate.inherited_pretax_mode = "lump_sum"
         family = Family(model)
         parent = Person(
             family,
