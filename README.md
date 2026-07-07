@@ -77,7 +77,7 @@ This package supports a comprehensive range of financial modeling components:
 
 ### Tax System
 - [x] **Federal Taxes** - Complete income tax calculations with brackets
-- [ ] **State Taxes** - Configurable state tax rates (basic flat rate only)
+- [x] **State Taxes** - Per-state tax packs (progressive brackets or flat rate, retirement/Social Security exemptions, SALT integration) with per-person residency
 - [x] **FICA Taxes** - Social Security and Medicare taxes
 - [x] **Required Minimum Distributions (RMDs)** - Retirement account distributions
 
