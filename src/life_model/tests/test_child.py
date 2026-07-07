@@ -6,8 +6,10 @@
 import unittest
 from pathlib import Path
 
+from ..account.bank import BankAccount
 from ..config.financial_config import FinancialConfig
 from ..dependents.child import Child
+from ..dependents.plan529 import Plan529
 from ..model import LifeModel
 from ..people.family import Family
 from ..people.person import MortalityMode, Person, Spending
@@ -123,6 +125,49 @@ class TestChildCosts(unittest.TestCase):
         second = child.stat_dependent_costs
         self.assertEqual(first, 5000)
         self.assertAlmostEqual(second, 5000 * 1.03, places=2)
+
+
+class TestChildCollege529(unittest.TestCase):
+    """College-band costs draw self-beneficiary 529 plans first (tax-free), shortfall from cash.
+
+    Fixture: college_annual_cost 20000, college_start_age 18, college_years 4."""
+
+    def _college_child_model(self, plan_balance):
+        model = LifeModel(start_year=2026, end_year=2026, config=_fixture_config())
+        parent = Person(Family(model), "Parent", age=50, retirement_age=70, spending=Spending(model, base=0))
+        BankAccount(parent, "Bank", balance=100000, interest_rate=0)
+        child = Child(parent, "Kid", birth_year=2008)  # age 18 -> college band
+        plan = Plan529(owner=parent, beneficiary=child, balance=plan_balance, growth_rate=0)
+        return model, parent, child, plan
+
+    def test_funded_529_covers_tuition_tax_free(self):
+        model, parent, child, plan = self._college_child_model(plan_balance=50000)
+        model.step()
+        # The 529 drew the full 20000 tuition tax-free; balance drops by exactly the tuition.
+        self.assertEqual(plan.balance, 30000)
+        self.assertEqual(child.stat_dependent_costs, 20000)
+        # Qualified withdrawals are not ordinary income.
+        self.assertEqual(parent.taxable_income, 0)
+        # Bank: +20000 from the 529, -20000 tuition = net unchanged.
+        self.assertEqual(parent.bank_account_balance, 100000)
+
+    def test_underfunded_529_shortfall_paid_from_cash(self):
+        model, parent, child, plan = self._college_child_model(plan_balance=5000)
+        model.step()
+        self.assertEqual(plan.balance, 0)  # 529 fully drained
+        self.assertEqual(child.stat_dependent_costs, 20000)
+        # Bank: +5000 from the 529, -20000 tuition = out-of-pocket shortfall of 15000.
+        self.assertEqual(parent.bank_account_balance, 85000)
+
+    def test_529_for_other_child_not_drawn(self):
+        model, parent, child, plan = self._college_child_model(plan_balance=50000)
+        # A 529 whose beneficiary is a different child must not fund this child's college.
+        other = Child(parent, "Sibling", birth_year=2020)  # age 6 -> school band (5000)
+        plan.change_beneficiary(other)
+        model.step()
+        self.assertEqual(plan.balance, 50000)  # untouched (beneficiary is the sibling, not in college)
+        # Full college tuition (20000) plus the sibling's school cost (5000) fall to cash.
+        self.assertEqual(parent.bank_account_balance, 75000)
 
 
 class TestChildSurvivesParentDeath(unittest.TestCase):
