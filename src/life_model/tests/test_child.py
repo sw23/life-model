@@ -4,11 +4,19 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 import unittest
+from pathlib import Path
 
+from ..config.financial_config import FinancialConfig
 from ..dependents.child import Child
 from ..model import LifeModel
 from ..people.family import Family
 from ..people.person import MortalityMode, Person, Spending
+
+TEST_CONFIG = str(Path(__file__).parent / "fixtures" / "test_config.yaml")
+
+
+def _fixture_config() -> FinancialConfig:
+    return FinancialConfig(config_file=TEST_CONFIG)
 
 
 class TestChild(unittest.TestCase):
@@ -68,6 +76,53 @@ class TestChildGrowUp(unittest.TestCase):
         self.assertEqual(adult.age, 18)
         self.assertIs(adult.family, parent.family)
         self.assertNotIn(child, parent.children)
+
+
+class TestChildCosts(unittest.TestCase):
+    """Age-banded child costs flow through Spending.add_expense (fixture: childcare 10k,
+    school 5k, college 20k; inflation 0 in the fixture economy default)."""
+
+    def _model(self):
+        # Fixed economy with zero inflation so nominal == charged cost.
+        model = LifeModel(start_year=2026, end_year=2027, config=_fixture_config())
+        return model
+
+    def test_childcare_band_cost_charged_in_year_one(self):
+        model = self._model()
+        parent = Person(Family(model), "Parent", age=30, retirement_age=70, spending=Spending(model, base=0))
+        child = Child(parent, "Kid", birth_year=2026)  # age 0 -> childcare band
+        model.step()  # year 2026
+        # Childcare band cost (10000) charged to the parent's spending as a one-time expense.
+        self.assertEqual(child.stat_dependent_costs, 10000)
+        self.assertEqual(parent.stat_money_spent, 10000)
+
+    def test_school_band_cost(self):
+        model = self._model()
+        parent = Person(Family(model), "Parent", age=40, retirement_age=70, spending=Spending(model, base=0))
+        child = Child(parent, "Kid", birth_year=2016)  # age 10 -> school band
+        model.step()
+        self.assertEqual(child.stat_dependent_costs, 5000)
+
+    def test_adult_child_incurs_no_cost(self):
+        model = self._model()
+        parent = Person(Family(model), "Parent", age=50, retirement_age=70, spending=Spending(model, base=0))
+        child = Child(parent, "Adult", birth_year=2000)  # age 26 -> past college band
+        model.step()
+        self.assertEqual(child.stat_dependent_costs, 0)
+
+    def test_costs_inflate_over_time(self):
+        # Fixed 3% inflation: a school-age cost grows by cumulative inflation each year.
+        cfg = _fixture_config()
+        cfg.apply_scenario("_infl", {"economy": {"mode": "fixed", "inflation": 3.0}})
+        model = LifeModel(start_year=2026, end_year=2030, config=cfg)
+        parent = Person(Family(model), "Parent", age=40, retirement_age=70, spending=Spending(model, base=0))
+        child = Child(parent, "Kid", birth_year=2016)  # school band throughout
+        model.step()  # 2026: cumulative inflation factor 1.0
+        first = child.stat_dependent_costs
+        model.step()  # 2027: factor 1.03
+        second = child.stat_dependent_costs
+        self.assertEqual(first, 5000)
+        self.assertAlmostEqual(second, 5000 * 1.03, places=2)
 
 
 class TestChildSurvivesParentDeath(unittest.TestCase):
