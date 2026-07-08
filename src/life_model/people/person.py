@@ -526,9 +526,10 @@ class Person(LifeModelAgent):
             self.model.event_log.add(Event(f"{self.name}'s estate had no beneficiary; assets dissolved"))
 
         # 5b. Trusts settle outside the will: a revocable trust pays out directly to its own
-        #     beneficiaries (its balance was already counted in the gross estate above); an
-        #     irrevocable trust survives with its own registry entry and keeps growing.
-        self._settle_trusts_on_death()
+        #     beneficiaries (its balance was already counted in the gross estate above), escheating
+        #     to the residual inheritor if no beneficiary survives; an irrevocable trust survives
+        #     with its own registry entry and keeps growing.
+        self._settle_trusts_on_death(inheritor)
 
         if spouse is not None:
             self._apply_survivor_adjustments(spouse)
@@ -574,6 +575,10 @@ class Person(LifeModelAgent):
                 pension.benefit_amount *= pension.survivor_percent / 100.0
                 # The continued stream is single-life on the survivor (no further survivor split).
                 pension.survivor_percent = 0.0
+                # The survivor annuity is in pay immediately: eligibility must not re-evaluate
+                # against the survivor's own retirement status (a working 50-year-old widow still
+                # receives the joint-and-survivor benefit from the year of death).
+                pension.start_age = spouse.age
                 pensions.unregister(self, pension)
                 pensions.register(spouse, pension)
                 pension.person = spouse
@@ -603,11 +608,15 @@ class Person(LifeModelAgent):
         pre-tax accounts per ``estate.inherited_pretax_mode``, and the estate above the exemption
         is subject to estate tax.
 
-        Documented simplification: the estate tax is computed over the *whole* gross estate and
-        charged to the residual inheritor — designation changes who receives each account, not the
-        tax base, and there is no per-beneficiary apportionment of the tax.
+        Estate tax: the unlimited marital deduction shelters only the portion actually passing to
+        the surviving spouse (the residual when the spouse is the residual inheritor, plus any
+        spousal-designated accounts and the spouse's share of revocable-trust payouts). Everything
+        passing to non-spouse recipients — designated or residual — is in the taxable base.
+        Documented simplification: the tax is *charged* to the residual inheritor (no
+        per-beneficiary apportionment of who pays), even when a designation created the liability.
         """
         gross_estate = self._gross_estate_value()
+        taxable_base = max(0.0, gross_estate - self._marital_share(is_spouse))
 
         self._transfer_designated_accounts()
 
@@ -616,10 +625,48 @@ class Person(LifeModelAgent):
 
         self._reassign_owned_agents(inheritor)
 
-        if not is_spouse:
-            self._apply_estate_tax(inheritor, gross_estate)
+        self._apply_estate_tax(inheritor, taxable_base)
 
         self.model.event_log.add(Event(f"{self.name}'s estate transferred to {inheritor.name}"))
+
+    def _marital_share(self, is_spouse: bool) -> float:
+        """Value of the estate passing to the surviving spouse (sheltered by the unlimited
+        marital deduction).
+
+        Counts spousal-designated account balances, the spouse's share of revocable-trust payouts,
+        and — when the spouse is the residual inheritor — the residual estate (everything not
+        designated away and not passing through a trust to other beneficiaries). A revocable trust
+        with no surviving beneficiaries escheats to the residual estate and is counted there.
+        """
+        from ..estate.trust import TrustType
+
+        spouse = self.spouse if (self.spouse is not None and not self.spouse.is_deceased) else None
+        if spouse is None:
+            return 0.0
+
+        share = 0.0
+        passing_outside_residual = 0.0
+        for acct in self._owned_financial_agents():
+            beneficiary = getattr(acct, "beneficiary", None)
+            if beneficiary is None or beneficiary.is_deceased or beneficiary is self:
+                continue
+            balance = getattr(acct, "balance", 0.0)
+            passing_outside_residual += balance
+            if beneficiary is spouse:
+                share += balance
+        for trust in self.trusts:
+            if trust.trust_type != TrustType.REVOCABLE:
+                continue
+            survivors = [b for b in trust.beneficiaries if not b.is_deceased]
+            if survivors:
+                passing_outside_residual += trust.balance
+                if spouse in survivors:
+                    share += trust.balance / len(survivors)
+            # else: the corpus escheats to the residual estate (counted in the residual below).
+        if is_spouse:
+            residual = self._gross_estate_value() - passing_outside_residual
+            share += max(0.0, residual)
+        return share
 
     def _transfer_designated_accounts(self):
         """Route each account with a designated surviving beneficiary directly to that person.
@@ -725,23 +772,29 @@ class Person(LifeModelAgent):
                     item.owner = inheritor
         self.model.registries.transfer_owner(self, inheritor)
 
-    def _settle_trusts_on_death(self):
+    def _settle_trusts_on_death(self, inheritor: Optional["Person"]):
         """Settle this person's trusts at death: revocable trusts pay out to their beneficiaries
-        (outside ``_find_beneficiary``); irrevocable trusts survive untouched."""
+        (outside ``_find_beneficiary``), escheating to the residual ``inheritor`` when no trust
+        beneficiary survives; irrevocable trusts survive untouched."""
         from ..estate.trust import TrustType
 
         for trust in list(self.trusts):
             if trust.trust_type == TrustType.REVOCABLE:
-                trust.pay_out_at_grantor_death()
+                trust.pay_out_at_grantor_death(residual_inheritor=inheritor)
 
-    def _apply_estate_tax(self, inheritor: "Person", gross_estate: float):
+    def _apply_estate_tax(self, inheritor: "Person", taxable_base: float):
+        """Apply estate tax on ``taxable_base`` (the gross estate net of the marital share).
+
+        The tax is charged to the residual inheritor (documented simplification: no
+        per-beneficiary apportionment of who pays).
+        """
         federal = self.model.config.tax.federal
         exemption = getattr(federal, "estate_tax_exemption", 15000000)
         # Lifetime taxable gifts (e.g. irrevocable trust funding above the annual exclusion)
         # consume the unified exemption.
         exemption = max(0.0, exemption - self.estate_exemption_used)
         rate = getattr(federal, "estate_tax_rate", 40.0)
-        taxable = max(0.0, gross_estate - exemption)
+        taxable = max(0.0, taxable_base - exemption)
         estate_tax = taxable * (rate / 100)
         if estate_tax > 0:
             inheritor.pay_bills(estate_tax)

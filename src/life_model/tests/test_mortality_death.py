@@ -316,6 +316,69 @@ class TestPerAccountBeneficiary(unittest.TestCase):
         self.assertEqual(ira.balance, 100000)
         self.assertEqual(child.bank_account_balance, 0)
 
+    def test_nonspouse_designation_stays_in_estate_tax_base(self):
+        # Regression: the marital deduction shelters only what actually passes to the spouse.
+        # $2M IRA designated to a child + $1M residual bank to the spouse, $1M exemption:
+        # taxable base = $3M - $1M marital share = $2M; tax = ($2M - $1M) x 40% = $400k,
+        # charged to the residual inheritor (the spouse) -> spouse nets $600k.
+        from ..config.financial_config import FinancialConfig
+
+        cfg = FinancialConfig()
+        cfg.model.tax.federal.estate_tax_exemption = 1000000
+        cfg.model.economy.equity_return = 0
+        model = LifeModel(start_year=2026, end_year=2026, config=cfg)
+        family = Family(model)
+        breadwinner = Person(
+            family,
+            "Bread",
+            age=75,
+            retirement_age=50,
+            spending=Spending(model, 0),
+            mortality_mode=MortalityMode.FIXED_AGE,
+            death_age=76,
+        )
+        spouse = Person(family, "Spouse", age=74, retirement_age=50, spending=Spending(model, 0))
+        breadwinner.get_married(spouse)
+        child = Person(family, "Kid", age=40, retirement_age=100, spending=Spending(model, 0))
+        BankAccount(breadwinner, "B1", balance=1000000, interest_rate=0)
+        BankAccount(spouse, "B2", balance=0, interest_rate=0)
+        BankAccount(child, "C", balance=0, interest_rate=0)
+        ira = TraditionalIRA(person=breadwinner, balance=2000000, growth_rate=0)
+        ira.beneficiary = child
+        model.run()
+
+        self.assertTrue(breadwinner.is_deceased)
+        events = " | ".join(e.message for e in model.event_log.list)
+        self.assertIn("Estate tax of $400,000", events)
+        self.assertAlmostEqual(spouse.bank_account_balance, 600000, delta=1.0)
+
+    def test_spousal_residual_alone_still_untaxed(self):
+        # Control for the above: everything to the spouse -> fully sheltered, no estate tax.
+        from ..config.financial_config import FinancialConfig
+
+        cfg = FinancialConfig()
+        cfg.model.tax.federal.estate_tax_exemption = 1000000
+        model = LifeModel(start_year=2026, end_year=2026, config=cfg)
+        family = Family(model)
+        breadwinner = Person(
+            family,
+            "Bread",
+            age=75,
+            retirement_age=50,
+            spending=Spending(model, 0),
+            mortality_mode=MortalityMode.FIXED_AGE,
+            death_age=76,
+        )
+        spouse = Person(family, "Spouse", age=74, retirement_age=50, spending=Spending(model, 0))
+        breadwinner.get_married(spouse)
+        BankAccount(breadwinner, "B1", balance=3000000, interest_rate=0)
+        BankAccount(spouse, "B2", balance=0, interest_rate=0)
+        model.run()
+
+        events = " | ".join(e.message for e in model.event_log.list)
+        self.assertNotIn("Estate tax", events)
+        self.assertAlmostEqual(spouse.bank_account_balance, 3000000, delta=1.0)
+
     def test_life_insurance_designated_beneficiary_paid(self):
         model = LifeModel(start_year=2026, end_year=2027)
         family = Family(model)
@@ -407,6 +470,38 @@ class TestPensionSurvivorAtDeath(unittest.TestCase):
         surviving = spouse.pensions[0]
         self.assertIn(surviving, model.agents)
         self.assertIs(surviving.person, spouse)
+
+    def test_nonretired_survivor_receives_benefit_immediately(self):
+        # Regression: the survivor annuity is in pay immediately — eligibility must not
+        # re-evaluate against the survivor's own retirement status. A 50-year-old working widow
+        # of a retired pensioner receives the survivor benefit from the year of death.
+        model = LifeModel(start_year=2026, end_year=2030)
+        family = Family(model)
+        retiree = Person(
+            family,
+            "Retiree",
+            age=70,
+            retirement_age=65,
+            spending=Spending(model, 0),
+            mortality_mode=MortalityMode.FIXED_AGE,
+            death_age=72,
+        )
+        widow = Person(family, "Widow", age=49, retirement_age=65, spending=Spending(model, 0))
+        retiree.get_married(widow)
+        BankAccount(widow, "WB", balance=0, interest_rate=0)
+        Pension(retiree, "MegaCorp", vesting_years=5, benefit_amount=40000, survivor_percent=50)
+        model.run()
+
+        self.assertTrue(retiree.is_deceased)
+        self.assertFalse(widow.is_retired)  # still working, far from retirement age
+        df = model.datacollector.get_model_vars_dataframe()
+        pension_income = dict(zip(df["Year"], df["Pension Income"]))
+        # Retiree dies at the start of 2027 (age 72): full benefit in 2026, and the survivor
+        # benefit is paid to the non-retired widow every year from 2027 on — not $0 until she
+        # retires.
+        self.assertEqual(pension_income[2026], 40000)
+        self.assertEqual(pension_income[2027], 20000)
+        self.assertEqual(pension_income[2030], 20000)
 
     def test_no_spouse_survivor_pension_still_terminates(self):
         # Survivor election but no surviving spouse: pension terminates (to the non-spouse heir it
