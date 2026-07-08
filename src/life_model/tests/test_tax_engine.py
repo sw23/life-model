@@ -165,10 +165,13 @@ class TestDeductionTiming(unittest.TestCase):
     def test_recurring_donation_reduces_federal_tax(self):
         # Bug 5: a donation made this year must be deductible this year. Itemizing $30k (vs the
         # $10k fixture standard deduction) lowers taxable income by $20k -> $5k less tax at 25%.
+        # Plan 17 D4: DEFAULT (5%) state income tax now also enters SALT. Only the itemizing
+        # (donation) case includes it: state tax = 5% of the $70k post-charity AGI = $3,500, adding
+        # $3,500 * 25% = $875 of federal savings. Total delta = $5,000 + $875 = $5,875.
         tax_without = self._federal_tax_with_donation(0)
         tax_with = self._federal_tax_with_donation(30000)
         self.assertLess(tax_with, tax_without)
-        self.assertAlmostEqual(tax_without - tax_with, (30000 - 10000) * 0.25, places=2)
+        self.assertAlmostEqual(tax_without - tax_with, 5875.0, places=2)
 
     def test_daf_deposit_creates_no_deduction(self):
         # Bug 6: a bare deposit (no cash leaving the person) is not a deductible contribution.

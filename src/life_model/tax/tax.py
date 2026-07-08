@@ -43,7 +43,9 @@ def compute_taxes(
     filing_status: FilingStatus,
     wage_incomes: "Sequence[float]",
     config: "Optional[FinancialConfig]" = None,
+    *,
     credits: float = 0.0,
+    state_tax: "Optional[float]" = None,
 ) -> TaxesDue:
     """Compute income and payroll taxes for a tax unit.
 
@@ -63,11 +65,18 @@ def compute_taxes(
         config: Per-model config. Defaults to the global config.
         credits: Pre-computed tax credits (e.g. Child Tax Credit) recorded on the result and
             subtracted from ``total``. Defaults to 0 (full back-compat).
+        state_tax: Precomputed state income tax for the unit (Plan 17). When ``None`` the legacy
+            DEFAULT flat rate is applied to the federal AGI base, preserving pre-Plan-17 numbers.
+            Callers that resolve a state pack compute state tax from the state base and pass it here
+            so it can also be folded into the SALT itemized deduction without circularity (D4).
     """
     adjusted_gross_income = max(ordinary_income - deductions, 0)
     tax_federal = federal_income_tax(adjusted_gross_income, filing_status, config)
-    # TODO - Currently using the same deductions for state and federal taxes.
-    tax_state = state_income_tax(adjusted_gross_income, config)
+    if state_tax is None:
+        # Back-compat: legacy DEFAULT flat rate on the federal AGI base.
+        tax_state = state_income_tax(adjusted_gross_income, config)
+    else:
+        tax_state = state_tax
 
     # Social Security and base Medicare are per worker; the Additional Medicare surtax applies to
     # the unit's combined wages over the filing-status threshold.

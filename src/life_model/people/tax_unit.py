@@ -3,12 +3,14 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
+import warnings
 from typing import TYPE_CHECKING, Dict, List
 
 from ..model import round_money
 from ..tax.credits import child_tax_credit
 from ..tax.federal import FilingStatus, get_federal_standard_deduction
 from ..tax.income import IncomeType
+from ..tax.state import state_income_tax_for_unit
 from ..tax.tax import TaxesDue, compute_taxes
 
 if TYPE_CHECKING:
@@ -32,6 +34,13 @@ class TaxUnit:
     ``Family`` is only a container/aggregator built on top of tax units; it no longer performs
     any tax math. This single abstraction is what makes married-couple housing, family debt,
     and mixed-filing-status families settle correctly.
+
+    **Single-state simplification (Plan 17 D2):** the whole unit files in the *head's* state
+    (``members[0].state``), and the head is whichever spouse was constructed first (agent order ==
+    construction order, Plan 04 D2). A CA-head/TX-spouse couple therefore pays CA tax on the full
+    combined income — and swapping the construction order flips that to TX. Part-year and
+    multi-state filing are not modeled; a ``UserWarning`` is emitted (once per head, per run) when
+    unit members declare differing states so the order-dependence is visible rather than silent.
     """
 
     def __init__(self, members: List["Person"]):
@@ -40,6 +49,27 @@ class TaxUnit:
         self.members = members
         self.filing_status = members[0].filing_status
         self.config = members[0].model.config
+        # A tax unit files in a single state — the head's (Plan 17 D2). No part-year/multi-state.
+        self.state = members[0].state
+        self._warn_if_mixed_states()
+
+    def _warn_if_mixed_states(self) -> None:
+        """Warn once (per head, per run) when members declare differing states.
+
+        The unit taxes the whole combined income in the head's state, and which spouse is the
+        head depends on construction order — make that visible instead of silently varying.
+        """
+        head = self.members[0]
+        declared = {m.state for m in self.members if m.state is not None}
+        if len(declared) > 1 and not getattr(head, "_warned_mixed_state_unit", False):
+            head._warned_mixed_state_unit = True
+            warnings.warn(
+                f"TaxUnit members declare different states ({sorted(declared)}); the whole unit is "
+                f"taxed in the head's state '{self.state}'. Which member is the head follows "
+                "construction order — multi-state filing is not modeled.",
+                UserWarning,
+                stacklevel=3,
+            )
 
     @classmethod
     def build_units(cls, family: "Family") -> List["TaxUnit"]:
@@ -108,12 +138,53 @@ class TaxUnit:
         max_age = self.config.dependents.ctc_qualifying_age_max
         return sum(1 for member in self.members for child in member.children if 0 <= child.age <= max_age)
 
+    def _state_income_totals(self, additional_income: float) -> "Dict[IncomeType, float]":
+        """Combined ordinary-taxable amount per income type across members.
+
+        ``additional_income`` (a prospective pre-tax 401k withdrawal) is ordinary income taxed as a
+        pre-tax distribution, so states that exempt retirement income exempt it too.
+        """
+        totals: Dict[IncomeType, float] = {income_type: 0.0 for income_type in IncomeType}
+        for member in self.members:
+            for income_type, amount in member.income.totals_by_type().items():
+                totals[income_type] += amount
+        totals[IncomeType.PRETAX_DISTRIBUTION] += additional_income
+        return totals
+
+    def state_income_tax_due(self, additional_income: float = 0) -> float:
+        """State income tax for the unit, resolving the head's state pack (Plan 17).
+
+        Computed against the property-only AGI base so it does not depend on itself being folded
+        into SALT (D4 no-circularity). ``DEFAULT`` residents get the legacy flat number exactly.
+        """
+        ordinary_income = self.taxable_income + additional_income
+        legacy_agi = max(ordinary_income - self.federal_deductions, 0)
+        return state_income_tax_for_unit(
+            self._state_income_totals(additional_income), self.filing_status, self.state, legacy_agi, self.config
+        )
+
+    def federal_deductions_with_state_tax(self, state_tax: float) -> float:
+        """Federal deductions with the unit's state income tax folded into the head's SALT bucket.
+
+        Attributing the whole unit's state tax to the head (mirrors ``_record_stats``' head
+        convention) keeps the per-member SALT cap behavior unchanged when ``state_tax`` is 0.
+        """
+        standard_deduction = get_federal_standard_deduction(self.filing_status, self.config)
+        itemized = 0.0
+        for index, member in enumerate(self.members):
+            itemized += member.itemized_deductions(state_tax if index == 0 else 0.0)
+        return max(standard_deduction, itemized)
+
     def get_income_taxes_due(self, additional_income: float = 0) -> TaxesDue:
         # ``additional_income`` models a prospective pre-tax 401k withdrawal: it is ordinary
         # income but not FICA wages, so it is not added to the per-member wage bases.
         ordinary_income = self.taxable_income + additional_income
         wage_incomes = [m.fica_wages for m in self.members]
-        taxes = compute_taxes(ordinary_income, self.federal_deductions, self.filing_status, wage_incomes, self.config)
+        state_tax = self.state_income_tax_due(additional_income)
+        deductions = self.federal_deductions_with_state_tax(state_tax)
+        taxes = compute_taxes(
+            ordinary_income, deductions, self.filing_status, wage_incomes, self.config, state_tax=state_tax
+        )
         # Child Tax Credit: computed here (the only place with members, filing status, and AGI in
         # scope) and recorded on the credits stage. Because the withdrawal-sizing fixed point
         # consumes this method, credits automatically shrink sized 401k withdrawals.
