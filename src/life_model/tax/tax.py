@@ -19,9 +19,7 @@ if TYPE_CHECKING:
 
 
 class TaxesDue:
-    def __init__(
-        self, federal: float = 0, state: float = 0, ss: float = 0, medicare: float = 0, credits: float = 0.0
-    ):
+    def __init__(self, federal: float = 0, state: float = 0, ss: float = 0, medicare: float = 0, credits: float = 0.0):
         """Taxes due for the year, split up by type of tax.
 
         ``credits`` holds tax credits (e.g. the Child Tax Credit) that reduce the total. A

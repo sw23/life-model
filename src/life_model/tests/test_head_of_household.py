@@ -145,6 +145,7 @@ class TestHoHSettlement(unittest.TestCase):
           SINGLE: taxable 50000-10000=40000 -> federal 4000;  state 2000
         FICA identical. Settled taxes must reflect the HoH numbers (750 lower).
         """
+
         def run(cfg):
             from ..work.job import Job, Salary
 

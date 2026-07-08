@@ -49,7 +49,7 @@ This package supports a comprehensive range of financial modeling components:
 
 ### Core Components
 - [x] **Family & Person Models** - Multi-person households with individual financial profiles
-- [ ] **Children** - Dependents with education and care costs
+- [x] **Children** - Dependents with education and care costs
 - [x] **Jobs** - Employment with salary progression and benefits
 
 ### Accounts & Investments
