@@ -19,17 +19,22 @@ if TYPE_CHECKING:
 
 
 class TaxesDue:
-    def __init__(self, federal: float = 0, state: float = 0, ss: float = 0, medicare: float = 0):
-        """Taxes due for the year, split up by type of tax."""
+    def __init__(self, federal: float = 0, state: float = 0, ss: float = 0, medicare: float = 0, credits: float = 0.0):
+        """Taxes due for the year, split up by type of tax.
+
+        ``credits`` holds tax credits (e.g. the Child Tax Credit) that reduce the total. A
+        refundable credit may exceed the federal liability, driving ``total`` negative (a refund).
+        """
         self.federal = federal
         self.state = state
         self.ss = ss
         self.medicare = medicare
+        self.credits = credits
 
     @property
     def total(self) -> float:
-        """Total taxes due for the year."""
-        return self.federal + self.state + self.ss + self.medicare
+        """Total taxes due for the year, net of credits (negative means a refund)."""
+        return self.federal + self.state + self.ss + self.medicare - self.credits
 
 
 def compute_taxes(
@@ -38,6 +43,7 @@ def compute_taxes(
     filing_status: FilingStatus,
     wage_incomes: "Sequence[float]",
     config: "Optional[FinancialConfig]" = None,
+    credits: float = 0.0,
 ) -> TaxesDue:
     """Compute income and payroll taxes for a tax unit.
 
@@ -55,6 +61,8 @@ def compute_taxes(
         filing_status: Filing status of the unit.
         wage_incomes: Each member's FICA-subject wages (payroll tax base), one entry per person.
         config: Per-model config. Defaults to the global config.
+        credits: Pre-computed tax credits (e.g. Child Tax Credit) recorded on the result and
+            subtracted from ``total``. Defaults to 0 (full back-compat).
     """
     adjusted_gross_income = max(ordinary_income - deductions, 0)
     tax_federal = federal_income_tax(adjusted_gross_income, filing_status, config)
@@ -71,7 +79,7 @@ def compute_taxes(
     if combined_wages > additional_threshold:
         tax_medicare += (combined_wages - additional_threshold) * get_medicare_additional_rate(config) / 100
 
-    return TaxesDue(tax_federal, tax_state, tax_ss, tax_medicare)
+    return TaxesDue(tax_federal, tax_state, tax_ss, tax_medicare, credits=credits)
 
 
 def get_income_taxes_due(

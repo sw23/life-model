@@ -66,6 +66,7 @@ PERSON_DEFAULTS: Dict[str, Dict[str, Any]] = {
         "retirement_contrib": 6,
         "company_match": 3,
         "retirement_growth": 7.0,
+        "children": 0,
     },
     "jane": {
         "enabled": True,
@@ -83,6 +84,7 @@ PERSON_DEFAULTS: Dict[str, Dict[str, Any]] = {
         "retirement_contrib": 6,
         "company_match": 3,
         "retirement_growth": 7.0,
+        "children": 0,
     },
 }
 
@@ -118,6 +120,7 @@ def _person_param_specs(prefix: str, name: str) -> Dict[str, Any]:
         f"{prefix}_retirement_balance": Slider(f"{name}'s 401k Balance ($)", d["retirement_balance"], 0, 500000, 5000),
         f"{prefix}_retirement_contrib": Slider(f"{name}'s 401k Contribution (%)", d["retirement_contrib"], 0, 50, 1),
         f"{prefix}_company_match": Slider(f"{name}'s 401k Company Match (%)", d["company_match"], 0, 20, 1),
+        f"{prefix}_children": Slider(f"{name}'s Children", d["children"], 0, 5, 1),
     }
 
 
@@ -176,6 +179,11 @@ def _add_person(model: LifeModel, family: Family, prefix: str, kwargs: Dict[str,
             company_match_percent=g("company_match"),
             average_growth=g("retirement_growth"),
         )
+
+    for i in range(int(g("children"))):
+        # Children are born at the start of the simulation; costs and the Child Tax Credit
+        # then flow through the person's spending and tax unit automatically.
+        person.add_child(f"{prefix.capitalize()}'s Child {i + 1}", birth_year=model.start_year)
 
     return person
 

@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-from typing import Dict, List, Literal, Union
+from typing import Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -22,11 +22,16 @@ class StrictModel(BaseModel):
 class StandardDeductionConfig(StrictModel):
     single: int = Field(ge=0)
     married_filing_jointly: int = Field(ge=0)
+    # Optional: HEAD_OF_HOUSEHOLD falls back to `single` when absent, so existing scenarios and
+    # the frozen test fixture load unchanged.
+    head_of_household: Optional[int] = Field(default=None, ge=0)
 
 
 class TaxBracketsConfig(StrictModel):
     single: List[List[Union[int, float]]]
     married_filing_jointly: List[List[Union[int, float]]]
+    # Optional: HEAD_OF_HOUSEHOLD falls back to `single` when absent.
+    head_of_household: Optional[List[List[Union[int, float]]]] = None
 
 
 class FederalTaxConfig(StrictModel):
@@ -237,6 +242,47 @@ class HousingConfig(StrictModel):
     section_121_exclusion: Section121ExclusionConfig = Field(default_factory=Section121ExclusionConfig)
 
 
+class CTCPhaseoutStartConfig(StrictModel):
+    """Modified-AGI thresholds at which the Child Tax Credit begins to phase out, by filing status.
+
+    Statutory and not inflation-indexed (IRC §24(h)(3)). Head of household shares the single
+    threshold.
+    """
+
+    single: int = Field(default=200000, ge=0)
+    married_filing_jointly: int = Field(default=400000, ge=0)
+    head_of_household: int = Field(default=200000, ge=0)
+
+
+class DependentsConfig(StrictModel):
+    """Costs of raising children and the child-related tax credits.
+
+    Every field has a default so existing configs/scenarios without a ``dependents`` section
+    still load. Cost figures are representative national estimates; credit parameters are
+    verified against primary sources (see the YAML vintage comments).
+    """
+
+    # Age-banded annual cost of a child (nominal; grown by cumulative inflation in Child.pre_step).
+    # vintage: 2024, source: Child Care Aware of America (childcare); USDA/Brookings child-rearing
+    # estimates (school age); College Board Trends in College Pricing (college) — representative
+    # placeholders, TODO(verify) against a primary cost survey.
+    childcare_annual_cost: float = Field(default=12000.0, ge=0)
+    school_age_annual_cost: float = Field(default=8000.0, ge=0)
+    college_annual_cost: float = Field(default=28000.0, ge=0)
+    college_start_age: int = Field(default=18, ge=0)
+    college_years: int = Field(default=4, ge=0)
+    adult_age: int = Field(default=18, ge=0)
+
+    # Child Tax Credit (IRC §24 as amended by the One Big Beautiful Bill Act).
+    # vintage: 2026, source: IRC §24(h) (OBBBA); Rev. Proc. 2025-32.
+    ctc_per_child: float = Field(default=2200.0, ge=0)
+    ctc_refundable_max: float = Field(default=1700.0, ge=0)
+    ctc_qualifying_age_max: int = Field(default=17, ge=0)
+    ctc_phaseout_start: CTCPhaseoutStartConfig = Field(default_factory=CTCPhaseoutStartConfig)
+    # Credit reduction as a percentage of modified AGI over the threshold ($50 per $1,000).
+    ctc_phaseout_rate: float = Field(default=5.0, ge=0, le=100)
+
+
 class YearlyTaxParameters(StrictModel):
     """Tax parameters that vary year-over-year.
 
@@ -321,4 +367,5 @@ class FinancialConfigModel(StrictModel):
     debt: DebtConfig
     housing: HousingConfig = Field(default_factory=HousingConfig)
     economy: EconomyConfig = Field(default_factory=EconomyConfig)
+    dependents: DependentsConfig = Field(default_factory=DependentsConfig)
     tax_years: Dict[int, YearlyTaxParameters]

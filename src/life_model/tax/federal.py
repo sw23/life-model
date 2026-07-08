@@ -15,6 +15,9 @@ if TYPE_CHECKING:
 class FilingStatus(Enum):
     SINGLE = 1
     MARRIED_FILING_JOINTLY = 2
+    # Derived by TaxUnit.build_units for an unmarried member with a dependent child. Falls back
+    # to SINGLE deduction/brackets when the config carries no head_of_household data.
+    HEAD_OF_HOUSEHOLD = 3
 
 
 def _fin(config: "Optional[FinancialConfig]") -> "FinancialConfig":

@@ -16,6 +16,7 @@ tax:
     standard_deduction:
       single: 16100
       married_filing_jointly: 32200
+      head_of_household: 24150
     tax_brackets:
       single:
         - [0, 12400, 10]
@@ -33,6 +34,14 @@ tax:
         - [403551, 512450, 32]
         - [512451, 768700, 35]
         - [768701, .inf, 37]
+      head_of_household:
+        - [0, 17700, 10]
+        - [17701, 67450, 12]
+        - [67451, 105700, 22]
+        - [105701, 201775, 24]
+        - [201776, 256200, 32]
+        - [256201, 640600, 35]
+        - [640601, .inf, 37]
     # vintage: 2026, source: IRC §163(h)(3) (TCJA acquisition-debt limit); §164(b)(6) SALT cap (OBBBA)
     mortgage_interest_debt_limit: 750000
     salt_deduction_cap: 40000
@@ -395,6 +404,33 @@ housing:
     single: 250000
     married_filing_jointly: 500000
 
+# Children and dependents: age-banded cost of raising a child and the child-related
+# tax credits. Costs are nominal (start-year dollars) and grown by cumulative inflation
+# in Child.pre_step so a child born later costs later-year dollars.
+dependents:
+  # Age-banded annual cost of a child. Representative national estimates.
+  # vintage: 2024, source: Child Care Aware of America (childcare ~0-5); USDA/Brookings
+  #   child-rearing cost estimates (school age 6-17); College Board Trends in College
+  #   Pricing (college) -- placeholders, TODO(verify) against a primary cost survey.
+  childcare_annual_cost: 12000    # ages 0 through college_start_age-13 (roughly 0-5)
+  school_age_annual_cost: 8000    # school-age band (roughly 6-17)
+  college_annual_cost: 28000      # per college year; drawn from a 529 first when available
+  college_start_age: 18
+  college_years: 4
+  adult_age: 18                   # costs stop at this age (except the college band)
+  # Child Tax Credit (IRC §24 as amended by the One Big Beautiful Bill Act).
+  # vintage: 2026, source: IRC §24(h)(2)/(5) (OBBBA), Rev. Proc. 2025-32.
+  ctc_per_child: 2200
+  ctc_refundable_max: 1700
+  ctc_qualifying_age_max: 17
+  # Phase-out thresholds are statutory and not inflation-indexed.
+  # vintage: statutory, source: IRC §24(h)(3).
+  ctc_phaseout_start:
+    single: 200000
+    married_filing_jointly: 400000
+    head_of_household: 200000
+  ctc_phaseout_rate: 5.0          # percent of modified AGI over threshold ($50 per $1,000)
+
 # Economy-wide rates driving account returns, wage growth, and inflation. A single
 # EconomyModel per simulation reads this section and answers per-year rate queries.
 # The defaults reproduce the pre-economy per-account constants, so `mode: fixed` leaves
@@ -438,6 +474,7 @@ tax_years:
     standard_deduction:
       single: 12950
       married_filing_jointly: 25900
+      head_of_household: 19400
     tax_brackets:
       single:
         - [0, 10275, 10]
@@ -455,6 +492,14 @@ tax_years:
         - [340101, 431900, 32]
         - [431901, 647850, 35]
         - [647851, .inf, 37]
+      head_of_household:
+        - [0, 14650, 10]
+        - [14651, 55900, 12]
+        - [55901, 89050, 22]
+        - [89051, 170050, 24]
+        - [170051, 215950, 32]
+        - [215951, 539900, 35]
+        - [539901, .inf, 37]
     ss_wage_base: 147000
     limit_401k_base: 20500
     limit_401k_catch_up: 6500
@@ -468,6 +513,7 @@ tax_years:
     standard_deduction:
       single: 13850
       married_filing_jointly: 27700
+      head_of_household: 20800
     tax_brackets:
       single:
         - [0, 11000, 10]
@@ -485,6 +531,14 @@ tax_years:
         - [364201, 462500, 32]
         - [462501, 693750, 35]
         - [693751, .inf, 37]
+      head_of_household:
+        - [0, 15700, 10]
+        - [15701, 59850, 12]
+        - [59851, 95350, 22]
+        - [95351, 182100, 24]
+        - [182101, 231250, 32]
+        - [231251, 578100, 35]
+        - [578101, .inf, 37]
     ss_wage_base: 160200
     limit_401k_base: 22500
     limit_401k_catch_up: 7500
@@ -498,6 +552,7 @@ tax_years:
     standard_deduction:
       single: 14600
       married_filing_jointly: 29200
+      head_of_household: 21900
     tax_brackets:
       single:
         - [0, 11600, 10]
@@ -515,6 +570,14 @@ tax_years:
         - [383901, 487450, 32]
         - [487451, 731200, 35]
         - [731201, .inf, 37]
+      head_of_household:
+        - [0, 16550, 10]
+        - [16551, 63100, 12]
+        - [63101, 100500, 22]
+        - [100501, 191950, 24]
+        - [191951, 243700, 32]
+        - [243701, 609350, 35]
+        - [609351, .inf, 37]
     ss_wage_base: 168600
     limit_401k_base: 23000
     limit_401k_catch_up: 7500
@@ -528,6 +591,7 @@ tax_years:
     standard_deduction:
       single: 15750
       married_filing_jointly: 31500
+      head_of_household: 23625
     tax_brackets:
       single:
         - [0, 11925, 10]
@@ -545,6 +609,14 @@ tax_years:
         - [394601, 501050, 32]
         - [501051, 751600, 35]
         - [751601, .inf, 37]
+      head_of_household:
+        - [0, 17000, 10]
+        - [17001, 64850, 12]
+        - [64851, 103350, 22]
+        - [103351, 197300, 24]
+        - [197301, 250500, 32]
+        - [250501, 626350, 35]
+        - [626351, .inf, 37]
     ss_wage_base: 176100
     limit_401k_base: 23500
     limit_401k_catch_up: 7500
@@ -558,6 +630,7 @@ tax_years:
     standard_deduction:
       single: 16100
       married_filing_jointly: 32200
+      head_of_household: 24150
     tax_brackets:
       single:
         - [0, 12400, 10]
@@ -575,6 +648,14 @@ tax_years:
         - [403551, 512450, 32]
         - [512451, 768700, 35]
         - [768701, .inf, 37]
+      head_of_household:
+        - [0, 17700, 10]
+        - [17701, 67450, 12]
+        - [67451, 105700, 22]
+        - [105701, 201775, 24]
+        - [201776, 256200, 32]
+        - [256201, 640600, 35]
+        - [640601, .inf, 37]
     ss_wage_base: 184500
     limit_401k_base: 24500
     limit_401k_catch_up: 8000

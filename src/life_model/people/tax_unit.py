@@ -6,6 +6,7 @@
 from typing import TYPE_CHECKING, Dict, List
 
 from ..model import round_money
+from ..tax.credits import child_tax_credit
 from ..tax.federal import FilingStatus, get_federal_standard_deduction
 from ..tax.income import IncomeType
 from ..tax.tax import TaxesDue, compute_taxes
@@ -45,7 +46,10 @@ class TaxUnit:
         """Group a family's members into filing units.
 
         A married-filing-jointly member and their spouse (when both are in the family) form one
-        joint unit; every other member is its own single unit.
+        joint unit; every other member is its own single unit. An unmarried member with at least
+        one dependent child files HEAD_OF_HOUSEHOLD (the unit's status only — the person's own
+        ``filing_status`` is untouched); when the config carries no head_of_household data the
+        deduction/brackets fall back to single, so this is a strict superset of old behavior.
         """
         units: List["TaxUnit"] = []
         seen = set()
@@ -62,9 +66,18 @@ class TaxUnit:
                 seen.add(member.unique_id)
                 seen.add(spouse.unique_id)
             else:
-                units.append(cls([member]))
+                unit = cls([member])
+                if member.filing_status == FilingStatus.SINGLE and cls._has_dependent_child(member):
+                    unit.filing_status = FilingStatus.HEAD_OF_HOUSEHOLD
+                units.append(unit)
                 seen.add(member.unique_id)
         return units
+
+    @staticmethod
+    def _has_dependent_child(member: "Person") -> bool:
+        """Whether ``member`` has a dependent child this year (born, and under ``adult_age``)."""
+        adult_age = member.model.config.dependents.adult_age
+        return any(0 <= child.age < adult_age for child in member.children)
 
     @property
     def taxable_income(self) -> float:
@@ -84,12 +97,32 @@ class TaxUnit:
         standard_deduction = get_federal_standard_deduction(self.filing_status, self.config)
         return max(standard_deduction, self.total_itemized_deductions)
 
+    @property
+    def num_qualifying_children(self) -> int:
+        """Children of unit members who qualify for the Child Tax Credit this year.
+
+        A child qualifies when their age is between 0 and ``ctc_qualifying_age_max`` (inclusive);
+        unborn children (negative age) and adult children do not. Each child is registered to
+        exactly one (living) member, so no double-counting is possible.
+        """
+        max_age = self.config.dependents.ctc_qualifying_age_max
+        return sum(1 for member in self.members for child in member.children if 0 <= child.age <= max_age)
+
     def get_income_taxes_due(self, additional_income: float = 0) -> TaxesDue:
         # ``additional_income`` models a prospective pre-tax 401k withdrawal: it is ordinary
         # income but not FICA wages, so it is not added to the per-member wage bases.
         ordinary_income = self.taxable_income + additional_income
         wage_incomes = [m.fica_wages for m in self.members]
-        return compute_taxes(ordinary_income, self.federal_deductions, self.filing_status, wage_incomes, self.config)
+        taxes = compute_taxes(ordinary_income, self.federal_deductions, self.filing_status, wage_incomes, self.config)
+        # Child Tax Credit: computed here (the only place with members, filing status, and AGI in
+        # scope) and recorded on the credits stage. Because the withdrawal-sizing fixed point
+        # consumes this method, credits automatically shrink sized 401k withdrawals.
+        num_children = self.num_qualifying_children
+        if num_children > 0:
+            taxes.credits += child_tax_credit(
+                num_children, ordinary_income, taxes.federal, self.filing_status, self.config
+            )
+        return taxes
 
     def withdraw_from_pretax_401ks(self, amount: float) -> float:
         """Withdraw ``amount`` from members' pre-tax 401ks. Returns the amount not withdrawn."""
@@ -161,7 +194,14 @@ class TaxUnit:
         taxes = self._solve_withdrawals_and_taxes(bills)
 
         # Pay everything from the combined accounts exactly once; a shortfall becomes new debt.
-        shortfall = round_money(self.pay_bills(bills + taxes.total))
+        # Refundable credits can make the net due negative (a refund): deposit it instead of
+        # "paying" a negative bill (which would create negative debt).
+        net_due = bills + taxes.total
+        if net_due >= 0:
+            shortfall = round_money(self.pay_bills(net_due))
+        else:
+            self.members[0].receive_cash(-net_due, source="refundable tax credits")
+            shortfall = 0.0
         self.members[0].debt += shortfall
 
         self._record_stats(taxes, spending_by_member, housing_by_member, interest_by_member)
