@@ -219,3 +219,33 @@ def test_csv_export_matches_dataframe(single_person_model):
     assert list(df.columns) == header
     # One header line + one line per simulated year.
     assert len(csv.strip().splitlines()) == len(df) + 1
+
+
+def test_healthcare_toggle_default_off_and_opt_in():
+    """The healthcare toggle defaults off (no healthcare agents); enabling it attaches them."""
+
+    def build(**extra):
+        return DashboardLifeModel(
+            start_year=2023,
+            end_year=2024,
+            john_enabled=True,
+            jane_enabled=False,
+            john_age=64,
+            **extra,
+        )
+
+    # Default off: no healthcare agents anywhere, and the param spec's default is False.
+    assert app.model_params["healthcare_enabled"]["value"] is False
+    model_off = build()
+    assert model_off.registries.medical_costs.get_all_items() == []
+    assert model_off.registries.medicare.get_all_items() == []
+    assert model_off.registries.long_term_care.get_all_items() == []
+
+    # Toggled on: each enabled person gets the three healthcare agents.
+    model_on = build(healthcare_enabled=True)
+    assert len(model_on.registries.medical_costs.get_all_items()) == 1
+    assert len(model_on.registries.medicare.get_all_items()) == 1
+    assert len(model_on.registries.long_term_care.get_all_items()) == 1
+    model_on.run()
+    df = model_on.datacollector.get_model_vars_dataframe()
+    assert (df["Medical Costs"] > 0).all()
