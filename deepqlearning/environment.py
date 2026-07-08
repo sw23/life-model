@@ -25,11 +25,77 @@ from life_model.account.job401k import Job401kAccount
 from life_model.account.roth_IRA import RothIRA
 from life_model.account.traditional_IRA import TraditionalIRA
 from life_model.base_classes import FinancialAccount
+from life_model.config.financial_config import FinancialConfig
+from life_model.config.scenarios import get_scenario
+from life_model.limits import required_min_distrib, rmd_start_age
 from life_model.model import LifeModel
 from life_model.people.family import Family
 from life_model.people.mortality import get_blended_chance_of_mortality, get_chance_of_mortality
 from life_model.people.person import GenderAtBirth, MortalityMode, Person, Spending
 from life_model.work.job import Job, Salary
+
+# Observation layout version (Plan 18 D4). Bumped whenever the feature list, ordering,
+# normalization, or bounds below change, so checkpoints trained against a different layout are
+# rejected instead of silently misread.
+OBS_VERSION = 2
+
+# Age at which tax-advantaged accounts can be tapped without the early-withdrawal penalty.
+PENALTY_FREE_AGE = 59.5
+
+# Observation feature spec: (name, low, high). Values are clipped into [low, high] before being
+# returned, so the declared Box bounds are honest. Unless noted otherwise, money features are in
+# *real* (inflation-deflated, start-of-episode) dollars normalized by $1M and clipped at 10
+# (= $10M real).
+OBS_SPEC = [
+    # --- person ---
+    ("age", 0.0, 1.5),  # age / 100
+    ("years_to_retirement", 0.0, 1.0),  # max(0, retirement_age - age) / 50
+    ("is_retired", 0.0, 1.0),  # 0/1
+    ("mortality_probability", 0.0, 1.0),  # SSA table chance of death at current age
+    ("life_progress", 0.0, 1.5),  # (age - start_age) / max_steps
+    # --- balances (real $M) ---
+    ("bank_balance", 0.0, 10.0),
+    ("pretax_401k", 0.0, 10.0),
+    ("roth_401k", 0.0, 10.0),
+    ("traditional_ira", 0.0, 10.0),
+    ("roth_ira", 0.0, 10.0),
+    ("hsa", 0.0, 10.0),
+    ("brokerage", 0.0, 10.0),
+    ("debt", 0.0, 10.0),  # outstanding_debt_balance: real serviced debts + mortgages (real $M)
+    ("annual_income", 0.0, 10.0),  # wages from non-retired jobs (real $M)
+    ("annual_spending", 0.0, 10.0),  # yearly spending (real $M)
+    # --- derived ratios ---
+    ("net_worth", -10.0, 10.0),  # real $M
+    ("savings_rate", 0.0, 1.0),  # (income - spending) / income
+    ("debt_to_income", 0.0, 10.0),
+    ("retirement_readiness", 0.0, 10.0),  # retirement balances / (25 x spending), 4% rule
+    ("emergency_fund_years", 0.0, 10.0),  # bank balance / spending
+    ("income_to_spending", 0.0, 10.0),
+    # --- tax position (for the upcoming simulated year; the ledger itself is settled and
+    #     cleared inside model.step(), so the decision-relevant quantity is the projection) ---
+    ("projected_taxable_income", 0.0, 10.0),  # projected wages + RMD (real $M)
+    ("bracket_headroom", 0.0, 10.0),  # $ to the next federal bracket edge / $100k (real)
+    ("marginal_rate", 0.0, 1.0),  # marginal federal rate at the projected income
+    # --- retirement timing ---
+    ("years_to_59_5", 0.0, 1.0),  # max(0, 59.5 - age) / 35
+    ("years_to_rmd_start", 0.0, 1.0),  # max(0, rmd_start_age - age) / 50
+    ("projected_rmd", 0.0, 10.0),  # RMD due in the upcoming year (real $M)
+    # --- contribution room ---
+    ("ira_room_fraction", 0.0, 1.0),  # remaining IRA contribution room / limit
+    ("hsa_room_fraction", 0.0, 1.0),  # remaining HSA contribution room / limit
+    # --- market / economy (realized, no lookahead of the upcoming year's draw) ---
+    ("time_progress", 0.0, 1.5),  # (year - start_year) / max_steps
+    ("inflation", -1.0, 1.0),  # last realized year's inflation, percent / 100
+    ("equity_return", -1.0, 1.0),  # last realized year's equity return, percent / 100
+    ("bond_return", -1.0, 1.0),  # last realized year's bond return, percent / 100
+    ("log_deflator", 0.0, 5.0),  # log of cumulative inflation since the episode start
+]
+
+_MONEY_SCALE = 1_000_000.0
+
+# Economy modes the environment accepts (see EconomyModel; "path" is reachable via a named
+# economy_scenario rather than directly).
+_ECONOMY_MODES = ("fixed", "stochastic")
 
 
 class FinancialLifeEnv(gym.Env):
@@ -69,6 +135,12 @@ class FinancialLifeEnv(gym.Env):
             "initial_spending": 30000,
             "max_action_amount": 50000,  # Max amount for transfer/withdrawal actions
             "account_growth": 6.0,  # Average annual growth for the created 401k (percent)
+            # Economy behavior (Plan 18 D3): "stochastic" draws correlated equity/bond/inflation
+            # each year from the model's seeded RNG (training default — the agent sees bad years);
+            # "fixed" reproduces the constant-rate economy for unit tests. A named economy
+            # scenario (config/scenarios, e.g. "recession") overrides where it sets values.
+            "economy_mode": "stochastic",
+            "economy_scenario": None,
             "reward_weights": {
                 "net_worth": 1.0,
                 "spending_satisfaction": 0.3,
@@ -80,6 +152,9 @@ class FinancialLifeEnv(gym.Env):
 
         if config:
             self.config.update(config)
+
+        if self.config["economy_mode"] not in _ECONOMY_MODES:
+            raise ValueError(f"Unknown economy_mode {self.config['economy_mode']!r}; expected one of {_ECONOMY_MODES}")
 
         self.render_mode = render_mode
 
@@ -95,27 +170,20 @@ class FinancialLifeEnv(gym.Env):
             }
         )
 
-        # Define observation space (financial + personal + market state).
-        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(self._get_state_size(),), dtype=np.float32)
+        # Define observation space with the finite, documented per-feature bounds from OBS_SPEC
+        # (observations are clipped to these bounds, so they are honest).
+        self.observation_space = spaces.Box(
+            low=np.array([low for _, low, _ in OBS_SPEC], dtype=np.float32),
+            high=np.array([high for _, _, high in OBS_SPEC], dtype=np.float32),
+            dtype=np.float32,
+        )
 
         # Initialize the simulation
         self.reset()
 
     def _get_state_size(self) -> int:
-        """Calculate the size of the state vector"""
-        # Person state: age, years_to_retirement, is_retired, mortality_probability
-        person_state_size = 4
-
-        # Financial state: bank_balance, 401k_pretax, 401k_roth, debt, annual_income, annual_spending
-        financial_state_size = 6
-
-        # Ratios and derived metrics: savings_rate, debt_to_income, net_worth, etc.
-        derived_metrics_size = 8
-
-        # Market/economic state: year, equity_return
-        market_state_size = 2
-
-        return person_state_size + financial_state_size + derived_metrics_size + market_state_size
+        """Size of the observation vector (see OBS_SPEC for the feature layout)."""
+        return len(OBS_SPEC)
 
     def reset(self, *, seed: Optional[int] = None, options: Optional[Dict] = None) -> Tuple[np.ndarray, Dict[str, Any]]:
         """Reset the environment to its initial state.
@@ -130,9 +198,20 @@ class FinancialLifeEnv(gym.Env):
         """
         super().reset(seed=seed)
 
+        # Economy (Plan 18 D3): stochastic by default so training sees good and bad years; a
+        # named economy scenario (curriculum knob) is applied on top and wins where it sets
+        # values. Draws use the model's seeded RNG, so a given seed reproduces the same economy.
+        financial_config = FinancialConfig()
+        financial_config.model.economy.mode = self.config["economy_mode"]
+        if self.config["economy_scenario"] is not None:
+            scenario_name = self.config["economy_scenario"]
+            financial_config.apply_scenario(scenario_name, get_scenario(scenario_name))
+
         # Create new model instance, seeded for reproducibility. RL rollouts never read the
         # DataCollector frames, so collection is skipped for throughput (Plan 18 D7).
-        self.model = LifeModel(start_year=self.config["start_year"], seed=seed, collect_data=False)
+        self.model = LifeModel(
+            start_year=self.config["start_year"], seed=seed, config=financial_config, collect_data=False
+        )
         self.family = Family(self.model)
 
         # Create person with model-native stochastic mortality (Plan 18 D2): death is decided by
@@ -307,66 +386,136 @@ class FinancialLifeEnv(gym.Env):
             if isinstance(a, FinancialAccount) and getattr(a, "person", None) is self.person
         ]
 
-    def _get_observation(self) -> np.ndarray:
-        """Get current state observation"""
+    def _observed_market_rates(self) -> Tuple[float, float, float]:
+        """(inflation, equity return, bond return), in percent, without lookahead.
 
-        # Person state
-        mortality_prob = self._mortality_probability()
-        person_state = [
-            self.person.age / 100.0,  # Normalized age
-            max(0, self.person.retirement_age - self.person.age) / 50.0,  # Years to retirement
-            1.0 if self.person.is_retired else 0.0,  # Is retired
-            mortality_prob,  # Current year mortality probability
-        ]
+        After at least one simulated year, these are the *realized* rates of the most recently
+        simulated year. Before any year has been simulated there is nothing realized yet, so the
+        configured long-run means are reported instead (never the upcoming year's stochastic
+        draw, which would leak the future to the first decision).
+        """
+        if self.current_step == 0:
+            economy_config = self.model.config.economy
+            if economy_config.mode == "stochastic":
+                s = economy_config.stochastic
+                return s.inflation_mean, s.equity_mean, s.bond_mean
+            return economy_config.inflation, economy_config.equity_return, economy_config.bond_return
+        economy = self.model.economy
+        realized_year = self.model.year - 1
+        return (
+            economy.inflation(realized_year),
+            economy.equity_return(realized_year),
+            economy.bond_return(realized_year),
+        )
 
-        # Financial state (normalized)
-        bank_balance = self.person.bank_account_balance
-        retirement_balance = sum(acc.balance for acc in self.person.all_retirement_accounts)
-        pretax_401k = sum(acc.pretax_balance for acc in self.person.all_retirement_accounts)
-        roth_401k = sum(acc.roth_balance for acc in self.person.all_retirement_accounts)
-        debt = self.person.debt
-        annual_income = sum(job.salary.base for job in self.person.jobs)
-        annual_spending = self.person.spending.get_yearly_spending()
+    def _projected_tax_position(self, projected_ordinary_income: float) -> Tuple[float, float]:
+        """(dollars of headroom to the next federal bracket edge, marginal rate fraction) for the
+        upcoming simulated year, at the projected ordinary income for a single filer."""
+        params = self.model.tax_params_for_year(self.model.year)
+        taxable_base = max(0.0, projected_ordinary_income - params.standard_deduction.single)
+        for _lower, upper, rate in params.tax_brackets.single:
+            if taxable_base < upper:
+                return upper - taxable_base, rate / 100.0
+        # Above the top edge (only possible if the top bracket has a finite upper bound).
+        top_rate = params.tax_brackets.single[-1][2]
+        return float("inf"), top_rate / 100.0
 
-        # Normalize financial values by a reasonable scale (e.g., $1M)
-        scale = 1000000.0
-        financial_state = [
-            bank_balance / scale,
-            pretax_401k / scale,
-            roth_401k / scale,
-            debt / scale,
-            annual_income / scale,
-            annual_spending / scale,
-        ]
+    def _compute_observation_features(self) -> Dict[str, float]:
+        """Raw (unclipped) value of every observation feature, keyed by OBS_SPEC name.
 
-        # Derived metrics
+        Split from :meth:`_get_observation` so tests can check individual features against
+        hand-computed values by name.
+        """
+        person = self.person
+        economy = self.model.economy
+
+        # Cumulative price level over the simulated years so far (1.0 at reset). Money features
+        # are divided by this so the agent sees real (start-of-episode dollar) values and isn't
+        # fooled by nominal growth under inflation.
+        deflator = economy.cumulative_inflation(self.model.year)
+
+        # Balances (nominal, then deflated below).
+        bank_balance = person.bank_account_balance
+        pretax_401k = sum(acc.pretax_balance for acc in person.all_retirement_accounts)
+        roth_401k = sum(acc.roth_balance for acc in person.all_retirement_accounts)
+        traditional_ira = sum(acc.balance for acc in person.traditional_iras)
+        roth_ira = sum(acc.balance for acc in person.roth_iras)
+        hsa = sum(acc.balance for acc in person.hsas)
+        brokerage = sum(acc.balance for acc in person.brokerage_accounts)
+        retirement_balance = pretax_401k + roth_401k + traditional_ira + roth_ira
+        # Real debt (car loans, credit cards, student loans, mortgages) — not the dead
+        # unpaid-bills carryover `person.debt` the old observation read.
+        debt = person.outstanding_debt_balance
+        annual_income = sum(job.salary.base for job in person.jobs if not job.retired)
+        annual_spending = person.spending.get_yearly_spending()
         net_worth = self._calculate_net_worth()
-        savings_rate = max(0, (annual_income - annual_spending) / max(annual_income, 1))
-        debt_to_income = debt / max(annual_income, 1)
-        retirement_readiness = retirement_balance / max(annual_spending * 25, 1)  # 4% rule
-        emergency_fund_months = bank_balance / max(annual_spending / 12, 1)
 
-        derived_metrics = [
-            net_worth / scale,
-            savings_rate,
-            debt_to_income,
-            retirement_readiness,
-            emergency_fund_months / 12.0,  # Normalize to years
-            annual_income / max(annual_spending, 1),  # Income to spending ratio
-            (self.person.age - self.config["person_start_age"]) / self.max_steps,  # Life progress
-            min(max(bank_balance / 50000, 0), 2.0),  # Emergency fund adequacy (0-2 scale)
-        ]
+        # Tax position for the upcoming year. The income ledger is settled and cleared inside
+        # model.step(), so at decision time the honest quantity is the projection: wages the
+        # jobs will deposit plus the RMD the 401k will force. (Documented deviation from "income
+        # so far": intra-year state is never observable at the env's decision boundary.)
+        next_age = person.age + 1
+        birth_year = self.model.year - next_age
+        start_age = rmd_start_age(birth_year, config=self.model.config, year=self.model.year)
+        projected_rmd = required_min_distrib(next_age, pretax_401k, config=self.model.config, start_age=start_age)
+        projected_ordinary_income = annual_income + projected_rmd
+        bracket_headroom, marginal_rate = self._projected_tax_position(projected_ordinary_income)
 
-        # Market/economic state
-        market_state = [
-            (self.model.year - self.config["start_year"]) / self.max_steps,  # Time progress
-            self.model.economy.equity_return(self.model.year) / 100.0,  # Real equity return for the year
-        ]
+        # Remaining contribution-room fractions for the capped account types.
+        ira_limit = self.traditional_ira.contribution_limit + self.roth_ira.contribution_limit
+        ira_used = self.traditional_ira.contributions_this_year + self.roth_ira.contributions_this_year
+        ira_room_fraction = max(0.0, ira_limit - ira_used) / max(ira_limit, 1)
+        hsa_room_fraction = max(0.0, self.hsa.contribution_limit - self.hsa.annual_contributions) / max(
+            self.hsa.contribution_limit, 1
+        )
 
-        # Combine all states
-        observation = np.array(person_state + financial_state + derived_metrics + market_state, dtype=np.float32)
+        inflation, equity_return, bond_return = self._observed_market_rates()
 
-        return observation
+        return {
+            "age": person.age / 100.0,
+            "years_to_retirement": max(0.0, person.retirement_age - person.age) / 50.0,
+            "is_retired": 1.0 if person.is_retired else 0.0,
+            "mortality_probability": self._mortality_probability(),
+            "life_progress": (person.age - self.config["person_start_age"]) / self.max_steps,
+            "bank_balance": bank_balance / deflator / _MONEY_SCALE,
+            "pretax_401k": pretax_401k / deflator / _MONEY_SCALE,
+            "roth_401k": roth_401k / deflator / _MONEY_SCALE,
+            "traditional_ira": traditional_ira / deflator / _MONEY_SCALE,
+            "roth_ira": roth_ira / deflator / _MONEY_SCALE,
+            "hsa": hsa / deflator / _MONEY_SCALE,
+            "brokerage": brokerage / deflator / _MONEY_SCALE,
+            "debt": debt / deflator / _MONEY_SCALE,
+            "annual_income": annual_income / deflator / _MONEY_SCALE,
+            "annual_spending": annual_spending / deflator / _MONEY_SCALE,
+            "net_worth": net_worth / deflator / _MONEY_SCALE,
+            "savings_rate": max(0.0, (annual_income - annual_spending) / max(annual_income, 1)),
+            "debt_to_income": debt / max(annual_income, 1),
+            "retirement_readiness": retirement_balance / max(annual_spending * 25, 1),
+            "emergency_fund_years": bank_balance / max(annual_spending, 1),
+            "income_to_spending": annual_income / max(annual_spending, 1),
+            "projected_taxable_income": projected_ordinary_income / deflator / _MONEY_SCALE,
+            "bracket_headroom": (
+                bracket_headroom / deflator / 100_000.0 if np.isfinite(bracket_headroom) else float("inf")
+            ),
+            "marginal_rate": marginal_rate,
+            "years_to_59_5": max(0.0, PENALTY_FREE_AGE - person.age) / 35.0,
+            "years_to_rmd_start": max(0.0, start_age - person.age) / 50.0,
+            "projected_rmd": projected_rmd / deflator / _MONEY_SCALE,
+            "ira_room_fraction": ira_room_fraction,
+            "hsa_room_fraction": hsa_room_fraction,
+            "time_progress": (self.model.year - self.config["start_year"]) / self.max_steps,
+            "inflation": inflation / 100.0,
+            "equity_return": equity_return / 100.0,
+            "bond_return": bond_return / 100.0,
+            "log_deflator": float(np.log(max(deflator, 1e-9))),
+        }
+
+    def _get_observation(self) -> np.ndarray:
+        """Observation vector v2 (Plan 18 D4): assembled in OBS_SPEC order and clipped into the
+        declared per-feature bounds."""
+        features = self._compute_observation_features()
+        raw = np.array([features[name] for name, _, _ in OBS_SPEC], dtype=np.float32)
+        return np.clip(raw, self.observation_space.low, self.observation_space.high)
 
     def _calculate_net_worth(self) -> float:
         """Calculate person's net worth across all owned accounts and property."""
@@ -442,7 +591,7 @@ class FinancialLifeEnv(gym.Env):
         modeled age, or went bankrupt. Reaching the episode's step budget is reported as
         truncation, not termination.
         """
-        return (
+        return bool(
             self.person.is_deceased
             or self.person.age >= self.config["person_max_age"]
             or self._calculate_net_worth() < self.BANKRUPTCY_THRESHOLD

@@ -15,11 +15,13 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from environment import FinancialLifeEnv
+from environment import OBS_VERSION, FinancialLifeEnv
 
-# Bumped whenever the reward shaping, action space, or checkpoint format changes so that stale
-# checkpoints/curves are flagged as incomparable on load.
-MODEL_VERSION = 2
+# Bumped whenever the reward shaping, observation layout, action space, or checkpoint format
+# changes. Checkpoints carrying a different version now refuse to load (their weights would be
+# silently misaligned with the redesigned observation/action spaces). Version 3 = Plan 18
+# redesign (real tax path, model-native mortality, stochastic economy, observation v2).
+MODEL_VERSION = 3
 
 # Experience tuple for the replay buffer. ``legal_actions`` is the legal mask for ``state`` and
 # ``next_legal_actions`` is the legal mask for ``next_state`` (needed to mask bootstrapped targets).
@@ -329,6 +331,7 @@ class FinancialDQNAgent:
         """
         checkpoint = {
             "model_version": MODEL_VERSION,
+            "obs_version": OBS_VERSION,
             "q_network_state_dict": self.q_network.state_dict(),
             "target_network_state_dict": self.target_network.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
@@ -339,6 +342,7 @@ class FinancialDQNAgent:
 
         history = {
             "model_version": MODEL_VERSION,
+            "obs_version": OBS_VERSION,
             "config": self.config,
             "training_losses": [float(x) for x in self.training_losses],
             "episode_rewards": [float(x) for x in self.episode_rewards],
@@ -349,7 +353,14 @@ class FinancialDQNAgent:
         print(f"Model saved to {filepath}")
 
     def load_model(self, filepath: str):
-        """Load the model saved by :meth:`save_model` (tensor-only ``.pt`` + JSON sidecar)."""
+        """Load the model saved by :meth:`save_model` (tensor-only ``.pt`` + JSON sidecar).
+
+        Raises:
+            ValueError: If the checkpoint's ``model_version`` or ``obs_version`` does not match
+                the current code. The observation layout and action space changed across
+                versions, so an old checkpoint's weights would be silently misaligned — failing
+                loudly here is the guard.
+        """
         if not os.path.exists(filepath):
             print(f"Model file {filepath} not found")
             return
@@ -357,10 +368,13 @@ class FinancialDQNAgent:
         checkpoint = torch.load(filepath, map_location=self.device, weights_only=True)
 
         version = checkpoint.get("model_version")
-        if version != MODEL_VERSION:
-            print(
-                f"WARNING: checkpoint model_version {version} != current {MODEL_VERSION}; "
-                "reward shaping/action space may have changed and metrics are not comparable."
+        obs_version = checkpoint.get("obs_version")
+        if version != MODEL_VERSION or obs_version != OBS_VERSION:
+            raise ValueError(
+                f"Checkpoint {filepath!r} has model_version={version}, obs_version={obs_version}, but this "
+                f"code is model_version={MODEL_VERSION}, obs_version={OBS_VERSION}. The observation layout "
+                "and action space were redesigned (Plan 18), so old checkpoints cannot be loaded — retrain, "
+                "or check out the code version that produced the checkpoint."
             )
 
         self.q_network.load_state_dict(checkpoint["q_network_state_dict"])
