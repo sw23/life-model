@@ -147,9 +147,15 @@ class Trust(LifeModelAgent):
         beneficiary.receive_cash(distributed, source=f"distribution from {self.name}")
         return distributed
 
-    def pay_out_at_grantor_death(self):
+    def pay_out_at_grantor_death(self, residual_inheritor: Optional[Person] = None):
         """Terminate a revocable trust at the grantor's death: split the balance evenly among the
-        surviving beneficiaries (outside the will's beneficiary path) and remove the trust."""
+        surviving beneficiaries (outside the will's beneficiary path) and remove the trust.
+
+        Args:
+            residual_inheritor: Recipient of the corpus when no trust beneficiary survives — the
+                money escheats to the grantor's residual estate rather than vanishing. Only when
+                there is no residual inheritor either are the assets dissolved.
+        """
         survivors = [b for b in self.beneficiaries if not b.is_deceased]
         if survivors and self.balance > 0:
             share = self.balance / len(survivors)
@@ -160,7 +166,17 @@ class Trust(LifeModelAgent):
                 )
             self.balance = 0.0
         elif self.balance > 0:
-            self.model.event_log.add(Event(f"{self.name} had no surviving beneficiaries; assets dissolved"))
+            if residual_inheritor is not None and not residual_inheritor.is_deceased:
+                residual_inheritor.receive_cash(self.balance, source=f"escheat of {self.name}")
+                self.model.event_log.add(
+                    Event(
+                        f"{self.name} had no surviving beneficiaries; "
+                        f"${self.balance:,.0f} escheated to {residual_inheritor.name}"
+                    )
+                )
+                self.balance = 0.0
+            else:
+                self.model.event_log.add(Event(f"{self.name} had no surviving beneficiaries; assets dissolved"))
         self.model.registries.trusts.unregister(self.grantor, self)
         self.remove()
 

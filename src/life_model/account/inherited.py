@@ -59,6 +59,14 @@ class InheritedPretaxAccount(Investment):
         self.balance -= actual
         return actual
 
+    def step(self):
+        """Apply growth (Investment.step), then surface the remaining corpus in the useable-balance
+        stat so the inherited money is visible to balance reporting during the 10-year window.
+        Inherited-account withdrawals carry no early-withdrawal penalty (death exception), so the
+        full balance is genuinely useable."""
+        super().step()
+        self.stat_useable_balance = self.balance
+
     def pre_step(self):
         # Distribute this year's even slice before the step-stage tax settlement so the income
         # lands in the beneficiary's ledger for the current year. Growth is applied later in the

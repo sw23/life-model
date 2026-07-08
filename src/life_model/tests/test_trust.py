@@ -164,6 +164,27 @@ class TestTrustEstateIntegration(unittest.TestCase):
         # The trust is gone (terminated at the grantor's death).
         self.assertNotIn(trust, model.agents)
 
+    def test_revocable_trust_with_predeceased_beneficiaries_escheats_to_residual(self):
+        # Regression (money conservation): when every trust beneficiary predeceases the grantor,
+        # the corpus escheats to the residual inheritor instead of dissolving to nowhere.
+        model = _model(estate_tax_exemption=10000000)
+        family = Family(model)
+        grantor = _person(model, family, age=75, death_age=76)
+        heir = _person(model, family, name="Heir", age=45)
+        dead_kid = _person(model, family, name="Gone", age=50)
+        dead_kid.is_deceased = True
+        BankAccount(grantor, "GB", balance=50000, interest_rate=0)
+        BankAccount(heir, "HB", balance=0, interest_rate=0)
+        trust = Trust(grantor, TrustType.REVOCABLE, [dead_kid], balance=200000)
+        model.run()
+
+        self.assertTrue(grantor.is_deceased)
+        # The heir received both the residual bank ($50k) and the escheated corpus ($200k).
+        self.assertAlmostEqual(heir.bank_account_balance, 250000, delta=1.0)
+        self.assertNotIn(trust, model.agents)
+        events = " | ".join(e.message for e in model.event_log.list)
+        self.assertIn("escheated to Heir", events)
+
     def test_irrevocable_trust_survives_grantor_death(self):
         model, grantor, child, trust = self._dying_grantor_with_trust(TrustType.IRREVOCABLE)
         model.run()

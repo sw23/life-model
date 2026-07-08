@@ -94,6 +94,21 @@ class TestTenYearInheritance(unittest.TestCase):
         # far lower than the single lump-sum year.
         self.assertLess(max(ty_taxes), max(ls_taxes))
 
+    def test_inherited_corpus_visible_in_useable_balance_stat(self):
+        # Reporting: the undistributed inherited corpus is surfaced in "Useable Balance" during
+        # the 10-year window (inherited-account withdrawals carry no early-withdrawal penalty),
+        # not invisible to balance stats for a decade.
+        model, parent, child = _parent_child_model(equity_return=0)
+        model.run()
+        df = model.datacollector.get_model_vars_dataframe()
+        useable = dict(zip(df["Year"], df["Useable Balance"]))
+        bank = dict(zip(df["Year"], df["Bank Balance"]))
+        # "Useable Balance" also counts bank balances; the inherited corpus is the difference.
+        # Death year: full $500k corpus visible. Mid-window: the remaining corpus.
+        self.assertEqual(useable[2026] - bank[2026], 500000)
+        self.assertEqual(useable[2031] - bank[2031], 250000)  # five $50k slices distributed by then
+        self.assertEqual(useable[2037] - bank[2037], 0)  # fully distributed and removed
+
     def test_401k_pretax_balance_follows_ten_year_rule(self):
         from ..account.job401k import Job401kAccount
         from ..work.job import Job, Salary
