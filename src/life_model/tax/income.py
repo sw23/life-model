@@ -29,6 +29,7 @@ class IncomeType(Enum):
     WAGES = "wages"  # Earned income: subject to both income tax and FICA.
     PRETAX_DISTRIBUTION = "pretax_distribution"  # 401k/IRA withdrawals & RMDs: ordinary income, no FICA.
     SS_BENEFIT = "ss_benefit"  # Social Security benefits: taxed under provisional-income rules (future).
+    PENSION = "pension"  # Defined-benefit pension income: ordinary, no FICA (retirees pay no payroll tax).
     INTEREST = "interest"  # Interest income: ordinary, no FICA.
     ORDINARY = "ordinary"  # Generic ordinary income: no FICA.
 

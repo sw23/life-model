@@ -553,6 +553,13 @@ dependents:
     married_filing_jointly: 400000
     head_of_household: 200000
   ctc_phaseout_rate: 5.0          # percent of modified AGI over threshold ($50 per $1,000)
+# Estate settlement. inherited_pretax_mode controls how a non-spouse beneficiary receives an
+# inherited pre-tax retirement balance: "ten_year" applies the SECURE Act 10-year rule (the
+# balance keeps growing and pays out an even slice each year over ten years), while "lump_sum"
+# distributes and taxes the whole balance in the death year (the pre-Plan-16 simplification).
+# vintage: 2020, source: SECURE Act §401 (10-year rule for non-eligible designated beneficiaries)
+estate:
+  inherited_pretax_mode: ten_year  # ten_year | lump_sum
 
 # Economy-wide rates driving account returns, wage growth, and inflation. A single
 # EconomyModel per simulation reads this section and answers per-year rate queries.

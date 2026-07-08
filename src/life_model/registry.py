@@ -152,6 +152,14 @@ class MortgageRegistry(PersonRegistry["Mortgage"]):
 
 class ChildRegistry(PersonRegistry["Child"]):
     """Registry for managing Child (dependent) relationships"""
+class PensionRegistry(PersonRegistry["Pension"]):
+    """Registry for managing Pension (defined-benefit) relationships"""
+
+    pass
+
+
+class TrustRegistry(PersonRegistry["Trust"]):
+    """Registry for managing Trust relationships (keyed by the grantor)"""
 
     pass
 
@@ -175,6 +183,11 @@ class ModelRegistries:
         self.student_loans = StudentLoanRegistry()
         self.mortgages = MortgageRegistry()
         self.children = ChildRegistry()
+        self.pensions = PensionRegistry()
+        # Trusts are keyed by their grantor. They are deliberately kept out of iter_registries so
+        # the generic estate reassignment does not move them; death handling for trusts is explicit
+        # (revocable trusts pay out, irrevocable trusts survive) — see Person.die.
+        self.trusts = TrustRegistry()
 
     def clear_all(self, owner: "Person") -> None:
         """Clear all registries for a specific owner"""
@@ -193,6 +206,8 @@ class ModelRegistries:
         self.student_loans.clear(owner)
         self.mortgages.clear(owner)
         self.children.clear(owner)
+        self.pensions.clear(owner)
+        self.trusts.clear(owner)
 
     def iter_registries(self) -> List[Registry]:
         """All registries in the container, for owner-agnostic bulk operations."""
@@ -212,6 +227,7 @@ class ModelRegistries:
             self.student_loans,
             self.mortgages,
             self.children,
+            self.pensions,
         ]
 
     def transfer_owner(self, old_owner: "Person", new_owner: "Person") -> None:
