@@ -11,6 +11,7 @@ stable across annual data refreshes (they do not depend on the shipped state DOR
 
 import random
 import unittest
+import warnings
 from pathlib import Path
 
 from ..account.bank import BankAccount
@@ -343,6 +344,48 @@ class TestShippedPacks(unittest.TestCase):
             self._totals(WAGES=threshold + deduction + 100000), FilingStatus.SINGLE, "MA", 0, self.config
         )
         self.assertAlmostEqual(above - below, 100000 * 0.09, delta=1.0)
+
+
+class TestMixedStateUnit(unittest.TestCase):
+    """D2 simplification: a mixed-state couple is taxed in the head's state, with a warning."""
+
+    def _couple(self, state_a, state_b):
+        model = LifeModel(config=_config(default_state="DEFAULT", packs={"CA": CA_PACK, "TX": TX_PACK}))
+        family = Family(model)
+        a = Person(family, "A", age=40, retirement_age=65, spending=Spending(model, 0), state=state_a)
+        b = Person(family, "B", age=40, retirement_age=65, spending=Spending(model, 0), state=state_b)
+        a.get_married(b)
+        return family, a
+
+    def test_mixed_states_warn_once_and_use_head_state(self):
+        from ..people.tax_unit import TaxUnit
+
+        family, head = self._couple("CA", "TX")
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            (unit,) = TaxUnit.build_units(family)
+            self.assertEqual(unit.state, "CA")  # head's state taxes the whole unit
+            (rebuilt,) = TaxUnit.build_units(family)  # units are rebuilt yearly: no second warning
+        mixed = [w for w in caught if "different states" in str(w.message)]
+        self.assertEqual(len(mixed), 1)
+        self.assertEqual(rebuilt.state, "CA")
+
+    def test_same_or_undeclared_states_do_not_warn(self):
+        from ..people.tax_unit import TaxUnit
+
+        for states in (("CA", "CA"), ("CA", None), (None, None)):
+            family, _ = self._couple(*states)
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                TaxUnit.build_units(family)
+            mixed = [w for w in caught if "different states" in str(w.message)]
+            self.assertEqual(len(mixed), 0, f"unexpected warning for states={states}")
+
+    def test_family_has_no_tax_method(self):
+        # Family deliberately exposes no get_income_taxes_due: tax math lives in TaxUnit only
+        # (a family-level path would bypass state packs and SALT).
+        family, _ = self._couple("CA", "CA")
+        self.assertFalse(hasattr(family, "get_income_taxes_due"))
 
 
 class TestPersonState(unittest.TestCase):

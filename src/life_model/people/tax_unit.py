@@ -3,6 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
+import warnings
 from typing import TYPE_CHECKING, Dict, List
 
 from ..model import round_money
@@ -32,6 +33,13 @@ class TaxUnit:
     ``Family`` is only a container/aggregator built on top of tax units; it no longer performs
     any tax math. This single abstraction is what makes married-couple housing, family debt,
     and mixed-filing-status families settle correctly.
+
+    **Single-state simplification (Plan 17 D2):** the whole unit files in the *head's* state
+    (``members[0].state``), and the head is whichever spouse was constructed first (agent order ==
+    construction order, Plan 04 D2). A CA-head/TX-spouse couple therefore pays CA tax on the full
+    combined income — and swapping the construction order flips that to TX. Part-year and
+    multi-state filing are not modeled; a ``UserWarning`` is emitted (once per head, per run) when
+    unit members declare differing states so the order-dependence is visible rather than silent.
     """
 
     def __init__(self, members: List["Person"]):
@@ -42,6 +50,25 @@ class TaxUnit:
         self.config = members[0].model.config
         # A tax unit files in a single state — the head's (Plan 17 D2). No part-year/multi-state.
         self.state = members[0].state
+        self._warn_if_mixed_states()
+
+    def _warn_if_mixed_states(self) -> None:
+        """Warn once (per head, per run) when members declare differing states.
+
+        The unit taxes the whole combined income in the head's state, and which spouse is the
+        head depends on construction order — make that visible instead of silently varying.
+        """
+        head = self.members[0]
+        declared = {m.state for m in self.members if m.state is not None}
+        if len(declared) > 1 and not getattr(head, "_warned_mixed_state_unit", False):
+            head._warned_mixed_state_unit = True
+            warnings.warn(
+                f"TaxUnit members declare different states ({sorted(declared)}); the whole unit is "
+                f"taxed in the head's state '{self.state}'. Which member is the head follows "
+                "construction order — multi-state filing is not modeled.",
+                UserWarning,
+                stacklevel=3,
+            )
 
     @classmethod
     def build_units(cls, family: "Family") -> List["TaxUnit"]:
