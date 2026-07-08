@@ -39,6 +39,13 @@ class FinancialLifeEnv(gym.Env):
     the goal of optimizing long-term financial outcomes. The environment follows the modern
     Gymnasium API: ``reset(seed=..., options=...) -> (obs, info)`` and
     ``step(action) -> (obs, reward, terminated, truncated, info)``.
+
+    **Tax semantics (Plan 18 D1):** actions execute through the model's real money path. A
+    taxable withdrawal (pre-tax 401k, traditional IRA) records ordinary income on the person's
+    ledger, and the tax unit settles all taxes once per simulated year inside ``model.step()`` —
+    so the tax on a withdrawal bites at year-end settlement within the same ``step()`` call, not
+    at the instant of withdrawal. That is the simulator's actual semantics, and it is what makes
+    pre-tax and Roth withdrawals genuinely different to the agent.
     """
 
     metadata = {"render_modes": ["human"]}

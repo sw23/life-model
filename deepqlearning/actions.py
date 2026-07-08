@@ -77,8 +77,18 @@ _WITHDRAW_SOURCES = {
     ActionType.WITHDRAW_HSA: HealthSavingsAccount,
 }
 
-# Withdrawals from these account types are taxable ordinary income (pre-tax dollars).
-_TAXABLE_WITHDRAWALS = frozenset({ActionType.WITHDRAW_401K_PRETAX, ActionType.WITHDRAW_IRA_TRADITIONAL})
+# Person-level withdrawal helper for each withdrawal action (Plan 18 D1). Every withdrawal goes
+# through the model's real money path: the helper deposits into the bank and records the correct
+# income-ledger entry (pre-tax 401k / traditional IRA distributions are ordinary income), so the
+# tax unit actually taxes the withdrawal when it settles the year inside ``model.step()``.
+_WITHDRAW_HELPERS = {
+    ActionType.WITHDRAW_401K_PRETAX: Person.withdraw_from_pretax_401ks,
+    ActionType.WITHDRAW_401K_ROTH: Person.withdraw_from_roth_401ks,
+    ActionType.WITHDRAW_IRA_TRADITIONAL: Person.withdraw_from_traditional_iras,
+    ActionType.WITHDRAW_IRA_ROTH: Person.withdraw_from_roth_iras,
+    ActionType.WITHDRAW_BROKERAGE: Person.withdraw_from_brokerage_accounts,
+    ActionType.WITHDRAW_HSA: Person.withdraw_from_hsas,
+}
 
 # Withdrawals from these account types incur a 10% early-withdrawal penalty before age 59.5.
 _PENALIZED_WITHDRAWALS = frozenset(
@@ -126,12 +136,16 @@ def _remaining_contribution_room(account: FinancialAccount) -> float:
 
 @dataclass
 class ActionResult:
-    """Result of executing a financial action"""
+    """Result of executing a financial action.
+
+    There is deliberately no tax field here: taxable withdrawals are recorded on the person's
+    income ledger and settled by the tax unit at year end, so taxes flow through the model's
+    real money path rather than action-local bookkeeping (Plan 18 D1).
+    """
 
     success: bool
     amount_transferred: float = 0.0
     fees_paid: float = 0.0
-    tax_implications: float = 0.0
     message: str = ""
 
 
@@ -191,20 +205,22 @@ class TransferAction(FinancialAction):
 
 
 class WithdrawalAction(FinancialAction):
-    """Withdraw money from a retirement/investment account back into the bank account."""
+    """Withdraw money from a retirement/investment account back into the bank account.
 
-    def _source(self) -> Optional[FinancialAccount]:
-        return _first_account(self.person, _WITHDRAW_SOURCES[self.action_type])
+    Execution goes through the person-level helpers (``_WITHDRAW_HELPERS``), so taxable
+    withdrawals create income-ledger entries and are taxed at year-end settlement inside
+    ``model.step()`` — not instantly. The early-withdrawal penalty stays at the action level
+    (deducted from the bank after the helper's deposit) until the core penalty backlog item
+    lands.
+    """
 
     def _available(self) -> float:
-        source = self._source()
-        if source is None:
-            return 0.0
+        accounts = owned_accounts(self.person, _WITHDRAW_SOURCES[self.action_type])
         if self.action_type == ActionType.WITHDRAW_401K_PRETAX:
-            return source.pretax_balance
+            return sum(a.pretax_balance for a in accounts)
         if self.action_type == ActionType.WITHDRAW_401K_ROTH:
-            return source.roth_balance
-        return source.balance
+            return sum(a.roth_balance for a in accounts)
+        return sum(a.balance for a in accounts)
 
     def can_execute(self) -> bool:
         return self.amount > 0 and self._available() > 0
@@ -215,23 +231,17 @@ class WithdrawalAction(FinancialAction):
         if amount <= 0:
             return ActionResult(success=False, message="Withdrawal cannot be executed")
 
-        source = self._source()
-        if self.action_type == ActionType.WITHDRAW_401K_PRETAX:
-            withdrawn = amount - self.person.deduct_from_pretax_401ks(amount)
-        elif self.action_type == ActionType.WITHDRAW_401K_ROTH:
-            withdrawn = amount - self.person.deduct_from_roth_401ks(amount)
-        else:
-            withdrawn = source.withdraw(amount)
+        # The model's real money path: moves the money into the bank and records any taxable
+        # income on the person's ledger for year-end settlement.
+        withdrawn = _WITHDRAW_HELPERS[self.action_type](self.person, amount)
 
         penalized = self.action_type in _PENALIZED_WITHDRAWALS and self.person.age < EARLY_WITHDRAWAL_AGE
         penalty = withdrawn * EARLY_WITHDRAWAL_PENALTY if penalized else 0.0
-        self.person.deposit_into_bank_account(withdrawn - penalty)
+        if penalty > 0:
+            # The helper deposited the gross amount; pull the penalty back out of the bank.
+            self.person.deduct_from_bank_accounts(penalty)
 
-        tax_implications = withdrawn if self.action_type in _TAXABLE_WITHDRAWALS else 0.0
-
-        return ActionResult(
-            success=True, amount_transferred=withdrawn, fees_paid=penalty, tax_implications=tax_implications
-        )
+        return ActionResult(success=True, amount_transferred=withdrawn, fees_paid=penalty)
 
 
 class SpendingAction(FinancialAction):

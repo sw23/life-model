@@ -127,5 +127,51 @@ class TestActionEffects(unittest.TestCase):
         self.assertFalse(env.action_executor.can_execute_action(env.person, ActionType.RETIRE_EARLY))
 
 
+class TestWithdrawalTaxDifferential(unittest.TestCase):
+    """Plan 18 D1 headline criterion: pre-tax vs Roth withdrawals of the same gross amount must
+    produce measurably different multi-year net worth, because pre-tax withdrawals are taxed at
+    year-end settlement while Roth withdrawals are not."""
+
+    def _run_episode(self, action_type, seed=0, years=5):
+        env = FinancialLifeEnv()
+        env.reset(seed=seed)
+        # Same starting balances on both sides so the ONLY difference is which side is drawn.
+        env.job401k.pretax_balance = 500000.0
+        env.job401k.roth_balance = 500000.0
+        idx = list(ActionType).index(action_type)
+        for _ in range(years):
+            _, _, terminated, truncated, info = env.step(
+                {"action_type": idx, "amount_percentage": np.array([0.04], dtype=np.float32)}
+            )
+            self.assertTrue(info["action_result"].success)
+            if terminated or truncated:
+                break
+        return env._calculate_net_worth()
+
+    def test_pretax_vs_roth_withdrawal_yields_different_net_worth(self):
+        pretax_net_worth = self._run_episode(ActionType.WITHDRAW_401K_PRETAX)
+        roth_net_worth = self._run_episode(ActionType.WITHDRAW_401K_ROTH)
+        # The pre-tax episode paid income tax on every withdrawal; Roth paid none.
+        self.assertGreater(roth_net_worth - pretax_net_worth, 1000.0)
+
+    def test_taxable_withdrawal_creates_ledger_income(self):
+        env = FinancialLifeEnv()
+        env.reset(seed=0)
+        env.job401k.pretax_balance = 100000.0
+        income_before = env.person.taxable_income
+        result = env.action_executor.execute_action(env.person, ActionType.WITHDRAW_401K_PRETAX, amount=10000.0)
+        self.assertTrue(result.success)
+        self.assertAlmostEqual(env.person.taxable_income - income_before, 10000.0)
+
+    def test_roth_withdrawal_creates_no_ledger_income(self):
+        env = FinancialLifeEnv()
+        env.reset(seed=0)
+        env.job401k.roth_balance = 100000.0
+        income_before = env.person.taxable_income
+        result = env.action_executor.execute_action(env.person, ActionType.WITHDRAW_401K_ROTH, amount=10000.0)
+        self.assertTrue(result.success)
+        self.assertAlmostEqual(env.person.taxable_income, income_before)
+
+
 if __name__ == "__main__":
     unittest.main()
