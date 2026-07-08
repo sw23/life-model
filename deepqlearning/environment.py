@@ -27,8 +27,8 @@ from life_model.account.traditional_IRA import TraditionalIRA
 from life_model.base_classes import FinancialAccount
 from life_model.model import LifeModel
 from life_model.people.family import Family
-from life_model.people.mortality import get_chance_of_mortality, get_random_mortality
-from life_model.people.person import GenderAtBirth, Person, Spending
+from life_model.people.mortality import get_blended_chance_of_mortality, get_chance_of_mortality
+from life_model.people.person import GenderAtBirth, MortalityMode, Person, Spending
 from life_model.work.job import Job, Salary
 
 
@@ -135,7 +135,10 @@ class FinancialLifeEnv(gym.Env):
         self.model = LifeModel(start_year=self.config["start_year"], seed=seed, collect_data=False)
         self.family = Family(self.model)
 
-        # Create person
+        # Create person with model-native stochastic mortality (Plan 18 D2): death is decided by
+        # Person._check_mortality against the model's seeded RNG, and dying runs the full death
+        # machinery (life insurance, estate transfer/tax, survivor adjustments) inside the
+        # reward-visible world.
         self.person = Person(
             family=self.family,
             name="RL_Agent",
@@ -146,13 +149,9 @@ class FinancialLifeEnv(gym.Env):
                 base=self.config["initial_spending"],
                 yearly_increase=2,  # 2% inflation
             ),
+            gender=self.config["person_gender"],
+            mortality_mode=MortalityMode.STOCHASTIC,
         )
-
-        # Store gender for mortality calculations
-        self.person_gender = self.config["person_gender"]
-
-        # Track mortality state
-        self.died_from_natural_causes = False
 
         # Create bank account
         self.bank_account = BankAccount(
@@ -196,6 +195,9 @@ class FinancialLifeEnv(gym.Env):
         self.initial_net_worth = self._calculate_net_worth()
         self.previous_net_worth = self.initial_net_worth
         self.total_lifetime_spending = 0.0
+        # Net worth captured just before the person died (the estate value the reward sees);
+        # None while the person is alive.
+        self._estate_value_at_death: Optional[float] = None
 
         return self._get_observation(), self._get_info(None)
 
@@ -227,15 +229,15 @@ class FinancialLifeEnv(gym.Env):
             percentage_change=amount_percentage * 0.2,  # Max 20% spending change
         )
 
-        # Step the simulation forward one year
+        # Step the simulation forward one year. Mortality is model-native (Plan 18 D2): the
+        # person may die inside this call, which runs the full death machinery and removes their
+        # agents from the model. Snapshot the pre-step net worth so the estate value at death is
+        # observable to the reward (post-death net worth reads ~0 once assets dissolve).
+        net_worth_before_step = self._calculate_net_worth()
         self.model.step()
         self.current_step += 1
-
-        # Check for mortality (seeded through the model RNG for reproducibility)
-        if not self.died_from_natural_causes:
-            self.died_from_natural_causes = get_random_mortality(
-                self.person.age, self.person_gender, rng=self.model.random
-            )
+        if self.person.is_deceased and self._estate_value_at_death is None:
+            self._estate_value_at_death = net_worth_before_step
 
         # Calculate reward
         reward = self._calculate_reward(action_result)
@@ -247,6 +249,17 @@ class FinancialLifeEnv(gym.Env):
         info = self._get_info(action_result, action_type=action_type, action_amount=action_amount)
 
         return self._get_observation(), reward, terminated, truncated, info
+
+    @property
+    def died_from_natural_causes(self) -> bool:
+        """Whether the person died in-simulation (model-native stochastic mortality)."""
+        return self.person.is_deceased
+
+    def _mortality_probability(self) -> float:
+        """The person's current-year chance of death from the SSA table (blended for OTHER)."""
+        if self.person.gender == GenderAtBirth.OTHER:
+            return get_blended_chance_of_mortality(self.person.age)
+        return get_chance_of_mortality(self.person.age, self.person.gender)
 
     def _get_info(
         self,
@@ -265,7 +278,8 @@ class FinancialLifeEnv(gym.Env):
             "action_type": action_type.value if action_type is not None else None,
             "action_amount": action_amount,
             "died_from_natural_causes": self.died_from_natural_causes,
-            "mortality_probability": get_chance_of_mortality(self.person.age, self.person_gender),
+            "estate_value_at_death": self._estate_value_at_death,
+            "mortality_probability": self._mortality_probability(),
         }
 
     def _calculate_action_amount(self, action_type: ActionType, percentage: float) -> float:
@@ -297,7 +311,7 @@ class FinancialLifeEnv(gym.Env):
         """Get current state observation"""
 
         # Person state
-        mortality_prob = get_chance_of_mortality(self.person.age, self.person_gender)
+        mortality_prob = self._mortality_probability()
         person_state = [
             self.person.age / 100.0,  # Normalized age
             max(0, self.person.retirement_age - self.person.age) / 50.0,  # Years to retirement
@@ -372,8 +386,14 @@ class FinancialLifeEnv(gym.Env):
         reward = 0.0
         weights = self.config["reward_weights"]
 
-        # Net worth growth reward (change since last step)
-        current_net_worth = self._calculate_net_worth()
+        # Net worth growth reward (change since last step). When the person died this step, use
+        # the estate value at death rather than the post-dissolution ~0 net worth: the estate
+        # passing out of the simulation is not wealth the agent destroyed, and penalizing it
+        # would perversely reward dying poor.
+        if self.died_from_natural_causes and self._estate_value_at_death is not None:
+            current_net_worth = self._estate_value_at_death
+        else:
+            current_net_worth = self._calculate_net_worth()
         net_worth_growth = current_net_worth - self.previous_net_worth
         self.previous_net_worth = current_net_worth
         reward += weights["net_worth"] * (net_worth_growth / 100000.0)  # Normalized by $100k
@@ -388,7 +408,7 @@ class FinancialLifeEnv(gym.Env):
         if current_net_worth < self.BANKRUPTCY_THRESHOLD:
             reward += weights["bankruptcy_penalty"]
 
-        # Death with money bonus (terminal wealth)
+        # Death with money bonus (terminal wealth — the estate value when the person died)
         if (self.current_step >= self.max_steps - 1 or self.died_from_natural_causes) and current_net_worth > 0:
             reward += weights["death_with_money_bonus"] * (current_net_worth / 1000000.0)
 
@@ -396,7 +416,10 @@ class FinancialLifeEnv(gym.Env):
         if self.died_from_natural_causes:
             expected_years_remaining = 0
             for future_age in range(self.person.age, min(self.config["person_max_age"], 100)):
-                survival_prob = 1.0 - get_chance_of_mortality(future_age, self.person_gender)
+                survival_prob = 1.0 - get_chance_of_mortality(
+                    future_age,
+                    self.person.gender if self.person.gender != GenderAtBirth.OTHER else GenderAtBirth.MALE,
+                )
                 expected_years_remaining += survival_prob
 
             if expected_years_remaining > 20:  # More than 20 years expected remaining
@@ -415,20 +438,21 @@ class FinancialLifeEnv(gym.Env):
     def _is_terminated(self) -> bool:
         """Whether the episode reached a terminal (task-ending) state.
 
-        Terminal = the person died, reached the maximum modeled age, or went bankrupt. Reaching
-        the episode's step budget is reported as truncation, not termination.
+        Terminal = the person died in-simulation (model-native mortality), reached the maximum
+        modeled age, or went bankrupt. Reaching the episode's step budget is reported as
+        truncation, not termination.
         """
         return (
-            self.person.age >= self.config["person_max_age"]
+            self.person.is_deceased
+            or self.person.age >= self.config["person_max_age"]
             or self._calculate_net_worth() < self.BANKRUPTCY_THRESHOLD
-            or self.died_from_natural_causes
         )
 
     def render(self) -> Optional[str]:
         """Render the environment for the configured ``render_mode``."""
         if self.render_mode == "human":
             net_worth = self._calculate_net_worth()
-            mortality_prob = get_chance_of_mortality(self.person.age, self.person_gender)
+            mortality_prob = self._mortality_probability()
             status = "DECEASED" if self.died_from_natural_causes else "ALIVE"
             print(
                 f"Year: {self.model.year}, Age: {self.person.age}, Status: {status}, "

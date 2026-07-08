@@ -105,5 +105,51 @@ class TestRewardSemantics(unittest.TestCase):
         self.assertTrue(terminated or truncated)
 
 
+class TestModelNativeMortality(unittest.TestCase):
+    """Plan 18 D2: death is decided by the model (Person mortality machinery), not the env."""
+
+    def test_person_uses_stochastic_mortality(self):
+        from life_model.people.person import MortalityMode
+
+        env = FinancialLifeEnv()
+        env.reset(seed=0)
+        self.assertEqual(env.person.mortality_mode, MortalityMode.STOCHASTIC)
+        self.assertEqual(env.person.gender, env.config["person_gender"])
+
+    def test_death_in_sim_triggers_estate_flow(self):
+        # Start very old so death occurs within a few steps; the death must run the model's
+        # die() machinery, which logs the death and the estate settlement on the event log.
+        env = FinancialLifeEnv({"person_start_age": 105})
+        env.reset(seed=3)
+        terminated = False
+        for _ in range(20):
+            _, _, terminated, truncated, info = env.step(_no_action(env))
+            if terminated or truncated:
+                break
+        self.assertTrue(terminated)
+        self.assertTrue(env.person.is_deceased)
+        self.assertTrue(info["died_from_natural_causes"])
+        messages = [event.message for event in env.model.event_log.list]
+        self.assertTrue(any("died at age" in m for m in messages), messages)
+        self.assertTrue(any("estate" in m.lower() for m in messages), messages)
+        # The estate value at death was captured for the terminal reward.
+        self.assertIsNotNone(info["estate_value_at_death"])
+
+    def test_death_reward_uses_estate_value_not_dissolved_net_worth(self):
+        # Dying with money must not produce a huge negative net-worth-drop reward.
+        env = FinancialLifeEnv({"person_start_age": 105, "initial_bank_balance": 500000})
+        env.reset(seed=3)
+        rewards = []
+        for _ in range(20):
+            _, r, terminated, truncated, _ = env.step(_no_action(env))
+            rewards.append(r)
+            if terminated or truncated:
+                break
+        self.assertTrue(env.person.is_deceased)
+        # The terminal step must not be dominated by an artificial ~-$500k net worth collapse
+        # (which would be a reward of about -5.0 before other terms).
+        self.assertGreater(rewards[-1], -4.0)
+
+
 if __name__ == "__main__":
     unittest.main()
