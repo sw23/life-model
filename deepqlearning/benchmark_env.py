@@ -24,7 +24,6 @@ regressions are measurable.
 import argparse
 import time
 
-import numpy as np
 from environment import FinancialLifeEnv
 
 from life_model.account.bank import BankAccount
@@ -79,8 +78,7 @@ def bench_env(num_episodes: int) -> float:
         env.reset(seed=episode)
         while True:
             legal = env.get_legal_actions()
-            idx = int(env.np_random.choice(legal))
-            action = {"action_type": idx, "amount_percentage": np.array([0.1], dtype=np.float32)}
+            action = int(env.np_random.choice(legal))
             _, _, terminated, truncated, _ = env.step(action)
             steps += 1
             if terminated or truncated:

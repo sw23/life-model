@@ -8,13 +8,14 @@ from typing import Any, Dict, List, Optional, Tuple
 import gymnasium as gym
 import numpy as np
 from actions import (
-    _WITHDRAW_SOURCES,
     TRANSFER_ACTIONS,
     WITHDRAWAL_ACTIONS,
     ActionExecutor,
     ActionResult,
     ActionType,
-    owned_accounts,
+    decode_flat_action,
+    flat_action_count,
+    withdrawal_available,
 )
 from gymnasium import spaces
 
@@ -120,6 +121,10 @@ class FinancialLifeEnv(gym.Env):
     # so the penalty and the termination condition can never disagree).
     BANKRUPTCY_THRESHOLD = -100000
 
+    # Fractional base-spending change applied by the INCREASE/DECREASE_SPENDING singleton
+    # actions (the flat action space carries no amount for them).
+    SPENDING_STEP = 0.05
+
     def __init__(self, config: Optional[Dict] = None, render_mode: Optional[str] = None):
         super().__init__()
 
@@ -162,13 +167,9 @@ class FinancialLifeEnv(gym.Env):
         self.max_steps = self.config["person_max_age"] - self.config["person_start_age"]
         self.current_step = 0
 
-        # Define action space: a discrete action type plus a continuous amount fraction.
-        self.action_space = spaces.Dict(
-            {
-                "action_type": spaces.Discrete(len(ActionType)),
-                "amount_percentage": spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32),
-            }
-        )
+        # Fully discrete flat action space (Plan 18 D5): every amount-bearing action crossed
+        # with the amount buckets, plus the singleton actions. "How much" is part of the policy.
+        self.action_space = spaces.Discrete(flat_action_count())
 
         # Define observation space with the finite, documented per-feature bounds from OBS_SPEC
         # (observations are clipped to these bounds, so they are honest).
@@ -280,32 +281,32 @@ class FinancialLifeEnv(gym.Env):
 
         return self._get_observation(), self._get_info(None)
 
-    def step(self, action: Dict[str, Any]) -> Tuple[np.ndarray, float, bool, bool, Dict]:
+    def step(self, action: int) -> Tuple[np.ndarray, float, bool, bool, Dict]:
         """Execute one step (one simulated year) in the environment.
 
         Args:
-            action: Dictionary with 'action_type' (int) and 'amount_percentage' (float).
+            action: Flat discrete action index (see ``actions.decode_flat_action``): an
+                amount-bearing action type crossed with an amount bucket, or a singleton
+                (spending +/-, retire early, no-op).
 
         Returns:
             ``(observation, reward, terminated, truncated, info)`` per the Gymnasium API.
         """
 
-        # Parse action
-        action_type_idx = int(action["action_type"])
-        amount_percentage = float(np.asarray(action["amount_percentage"]).reshape(-1)[0])
+        # Decode the flat action into its type and amount fraction.
+        flat = decode_flat_action(int(np.asarray(action).item()))
+        action_type = flat.action_type
+        amount_fraction = flat.amount_fraction or 0.0
 
-        # Convert action index to ActionType
-        action_type = list(ActionType)[action_type_idx]
-
-        # Calculate action amount based on percentage and financial state
-        action_amount = self._calculate_action_amount(action_type, amount_percentage)
+        # Calculate action amount based on the bucket fraction and financial state
+        action_amount = self._calculate_action_amount(action_type, amount_fraction)
 
         # Execute the action
         action_result = self.action_executor.execute_action(
             self.person,
             action_type,
             amount=action_amount,
-            percentage_change=amount_percentage * 0.2,  # Max 20% spending change
+            percentage_change=self.SPENDING_STEP,
         )
 
         # Step the simulation forward one year. Mortality is model-native (Plan 18 D2): the
@@ -361,19 +362,20 @@ class FinancialLifeEnv(gym.Env):
             "mortality_probability": self._mortality_probability(),
         }
 
-    def _calculate_action_amount(self, action_type: ActionType, percentage: float) -> float:
-        """Calculate the actual dollar amount for a transfer/withdrawal action."""
+    def _calculate_action_amount(self, action_type: ActionType, fraction: float) -> float:
+        """Dollar amount for a transfer/withdrawal action at an amount-bucket ``fraction``.
+
+        Transfers move a fraction of the bank balance; withdrawals move a fraction of the
+        balance actually available to that action (e.g. only the Roth side of the 401k for a
+        Roth withdrawal). Both are capped at ``max_action_amount`` per year.
+        """
         max_amount = self.config["max_action_amount"]
 
         if action_type in TRANSFER_ACTIONS:
-            # Fraction of the bank balance available to move.
-            return min(self.person.bank_account_balance * percentage, max_amount)
+            return min(self.person.bank_account_balance * fraction, max_amount)
 
         if action_type in WITHDRAWAL_ACTIONS:
-            # Fraction of the source account's balance.
-            source = owned_accounts(self.person, _WITHDRAW_SOURCES[action_type])
-            balance = source[0].balance if source else 0.0
-            return min(balance * percentage, max_amount)
+            return min(withdrawal_available(self.person, action_type) * fraction, max_amount)
 
         # Spending / retire / no-op actions don't use a dollar amount.
         return 0.0
@@ -614,20 +616,23 @@ class FinancialLifeEnv(gym.Env):
         return None
 
     def get_legal_actions(self) -> List[int]:
-        """Get list of legal action indices for the current state.
+        """Get list of legal flat action indices for the current state.
 
         Legality is decided solely by ``Action.can_execute`` (via the executor), so the mask can
-        never disagree with what ``execute`` will do.
+        never disagree with what ``execute`` will do. Each amount bucket is probed with the
+        exact dollar amount it would move this step, so a bucket that maps to $0 is illegal.
         """
         legal_actions = []
-        for i, action_type in enumerate(ActionType):
-            if action_type == ActionType.NO_ACTION:
-                legal_actions.append(i)
+        for index in range(self.action_space.n):
+            flat = decode_flat_action(index)
+            if flat.action_type == ActionType.NO_ACTION:
+                legal_actions.append(index)
                 continue
-            # Probe with the amount the environment would actually use this step.
-            amount = self._calculate_action_amount(action_type, 0.1)
-            if self.action_executor.can_execute_action(self.person, action_type, amount=amount, percentage_change=0.05):
-                legal_actions.append(i)
+            amount = self._calculate_action_amount(flat.action_type, flat.amount_fraction or 0.0)
+            if self.action_executor.can_execute_action(
+                self.person, flat.action_type, amount=amount, percentage_change=self.SPENDING_STEP
+            ):
+                legal_actions.append(index)
         return legal_actions
 
 

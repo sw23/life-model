@@ -13,15 +13,12 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from actions import ActionType  # noqa: E402
+from actions import ActionType, encode_flat_action  # noqa: E402
 from environment import FinancialLifeEnv  # noqa: E402
 
 
 def _no_action(env):
-    return {
-        "action_type": list(ActionType).index(ActionType.NO_ACTION),
-        "amount_percentage": np.array([0.0], dtype=np.float32),
-    }
+    return encode_flat_action(ActionType.NO_ACTION)
 
 
 class TestGymnasiumAPI(unittest.TestCase):
@@ -62,9 +59,7 @@ class TestSeedingDeterminism(unittest.TestCase):
             for _ in range(30):
                 legal = env.get_legal_actions()
                 idx = int(rng.choice(legal))
-                _, r, term, trunc, _ = env.step(
-                    {"action_type": idx, "amount_percentage": np.array([0.1], dtype=np.float32)}
-                )
+                _, r, term, trunc, _ = env.step(idx)
                 rewards.append(r)
                 if term or trunc:
                     break

@@ -413,13 +413,13 @@ def rollout(
     agent: FinancialDQNAgent,
     training: bool = False,
     seed: Optional[int] = None,
-    amount_percentage: float = 0.1,
-    randomize_amount: bool = False,
     collect_trajectory: bool = False,
 ) -> RolloutResult:
     """Run one episode. The single episode loop used by training, evaluation, and analysis.
 
-    When ``training`` is True, experiences are stored and a gradient step is taken each step.
+    The action space is fully discrete (Plan 18 D5): the policy's chosen index carries both the
+    action type and the amount bucket, so there is no separate amount to fill in. When
+    ``training`` is True, experiences are stored and a gradient step is taken each step.
     """
     state, info = env.reset(seed=seed)
     total_reward = 0.0
@@ -430,13 +430,7 @@ def rollout(
 
     while True:
         legal_actions = env.get_legal_actions()
-        action_type = agent.select_action(state, legal_actions, training=training)
-
-        if randomize_amount:
-            pct = float(np.random.uniform(0, 0.3))
-        else:
-            pct = amount_percentage
-        action = {"action_type": action_type, "amount_percentage": np.array([pct], dtype=np.float32)}
+        action = agent.select_action(state, legal_actions, training=training)
 
         next_state, reward, terminated, truncated, info = env.step(action)
         done = terminated or truncated
@@ -444,7 +438,7 @@ def rollout(
 
         if training:
             next_legal_actions = env.get_legal_actions()
-            agent.store_experience(state, action_type, reward, next_state, done, legal_actions, next_legal_actions)
+            agent.store_experience(state, action, reward, next_state, done, legal_actions, next_legal_actions)
             agent.train()
 
         if collect_trajectory:
@@ -503,13 +497,11 @@ class FinancialDQNTrainer:
         num_episodes = self.config["num_episodes"]
         print(f"Starting training for {num_episodes} episodes")
         print(f"Environment: {type(self.env).__name__}")
-        print(f"Action space size: {self.env.action_space['action_type'].n}")
+        print(f"Action space size: {self.env.action_space.n}")
         print(f"State space size: {self.env.observation_space.shape[0]}")
 
         for episode in range(num_episodes):
-            result = rollout(
-                self.env, self.agent, training=True, seed=self._episode_seed(episode), randomize_amount=True
-            )
+            result = rollout(self.env, self.agent, training=True, seed=self._episode_seed(episode))
             self.episode_rewards.append(result.total_reward)
             self.agent.episode_rewards.append(result.total_reward)
 

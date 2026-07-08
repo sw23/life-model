@@ -14,7 +14,7 @@ covered by a property test, which keeps the action mask and the executor from dr
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Optional, Type
+from typing import List, Optional, Tuple, Type
 
 from life_model.account.brokerage import BrokerageAccount
 from life_model.account.hsa import HealthSavingsAccount
@@ -107,6 +107,76 @@ SPENDING_ACTIONS = frozenset({ActionType.INCREASE_SPENDING, ActionType.DECREASE_
 
 EARLY_WITHDRAWAL_AGE = 59.5
 EARLY_WITHDRAWAL_PENALTY = 0.10
+
+# ---------------------------------------------------------------------------
+# Flat (fully discrete) action space (Plan 18 D5).
+#
+# DQN cannot output a continuous amount head, so "how much" is made part of the policy by
+# crossing every amount-bearing action with a small set of amount buckets (fractions of the
+# available balance). Singleton actions (spending +/-, retire, no-op) take no amount. The
+# resulting index space is: [amount-bearing type x bucket, type-major] then [singletons], and
+# ``decode_flat_action``/``encode_flat_action`` are exact inverses (round-trip tested).
+# ---------------------------------------------------------------------------
+
+AMOUNT_BUCKETS: Tuple[float, ...] = (0.10, 0.25, 0.50, 1.00)
+
+# Declaration order of ActionType is preserved in both groups so the layout is stable.
+AMOUNT_BEARING_ACTIONS: Tuple[ActionType, ...] = tuple(
+    a for a in ActionType if a in TRANSFER_ACTIONS or a in WITHDRAWAL_ACTIONS
+)
+SINGLETON_ACTIONS: Tuple[ActionType, ...] = tuple(
+    a for a in ActionType if a not in TRANSFER_ACTIONS and a not in WITHDRAWAL_ACTIONS
+)
+
+
+@dataclass(frozen=True)
+class FlatAction:
+    """A decoded flat action: the action type plus its amount fraction (None for singletons)."""
+
+    action_type: ActionType
+    amount_fraction: Optional[float]
+
+
+def flat_action_count() -> int:
+    """Total number of flat discrete actions (12 x 4 buckets + 4 singletons = 52)."""
+    return len(AMOUNT_BEARING_ACTIONS) * len(AMOUNT_BUCKETS) + len(SINGLETON_ACTIONS)
+
+
+def decode_flat_action(index: int) -> FlatAction:
+    """Decode a flat action index into ``(action_type, amount_fraction)``."""
+    index = int(index)
+    n_amount = len(AMOUNT_BEARING_ACTIONS) * len(AMOUNT_BUCKETS)
+    if not 0 <= index < flat_action_count():
+        raise ValueError(f"Flat action index {index} out of range [0, {flat_action_count()})")
+    if index < n_amount:
+        type_idx, bucket_idx = divmod(index, len(AMOUNT_BUCKETS))
+        return FlatAction(AMOUNT_BEARING_ACTIONS[type_idx], AMOUNT_BUCKETS[bucket_idx])
+    return FlatAction(SINGLETON_ACTIONS[index - n_amount], None)
+
+
+def encode_flat_action(action_type: ActionType, amount_fraction: Optional[float] = None) -> int:
+    """Encode ``(action_type, amount_fraction)`` into its flat action index.
+
+    ``amount_fraction`` must be exactly one of :data:`AMOUNT_BUCKETS` for amount-bearing
+    actions, and ``None`` for singleton actions.
+    """
+    if action_type in SINGLETON_ACTIONS:
+        if amount_fraction is not None:
+            raise ValueError(f"{action_type} takes no amount fraction")
+        return len(AMOUNT_BEARING_ACTIONS) * len(AMOUNT_BUCKETS) + SINGLETON_ACTIONS.index(action_type)
+    if amount_fraction not in AMOUNT_BUCKETS:
+        raise ValueError(f"amount_fraction {amount_fraction!r} is not one of {AMOUNT_BUCKETS}")
+    return AMOUNT_BEARING_ACTIONS.index(action_type) * len(AMOUNT_BUCKETS) + AMOUNT_BUCKETS.index(amount_fraction)
+
+
+def withdrawal_available(person: Person, action_type: ActionType) -> float:
+    """Balance available to the given withdrawal action across the person's accounts."""
+    accounts = owned_accounts(person, _WITHDRAW_SOURCES[action_type])
+    if action_type == ActionType.WITHDRAW_401K_PRETAX:
+        return sum(a.pretax_balance for a in accounts)
+    if action_type == ActionType.WITHDRAW_401K_ROTH:
+        return sum(a.roth_balance for a in accounts)
+    return sum(a.balance for a in accounts)
 
 
 def owned_accounts(person: Person, account_cls: Type[FinancialAccount]) -> List[FinancialAccount]:
@@ -215,12 +285,7 @@ class WithdrawalAction(FinancialAction):
     """
 
     def _available(self) -> float:
-        accounts = owned_accounts(self.person, _WITHDRAW_SOURCES[self.action_type])
-        if self.action_type == ActionType.WITHDRAW_401K_PRETAX:
-            return sum(a.pretax_balance for a in accounts)
-        if self.action_type == ActionType.WITHDRAW_401K_ROTH:
-            return sum(a.roth_balance for a in accounts)
-        return sum(a.balance for a in accounts)
+        return withdrawal_available(self.person, self.action_type)
 
     def can_execute(self) -> bool:
         return self.amount > 0 and self._available() > 0

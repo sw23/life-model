@@ -47,7 +47,7 @@ class TestAgentBeatsDoNothing(unittest.TestCase):
 
         env = FinancialLifeEnv()
         state_size = env.observation_space.shape[0]
-        action_size = env.action_space["action_type"].n
+        action_size = env.action_space.n
         agent = FinancialDQNAgent(
             state_size,
             action_size,

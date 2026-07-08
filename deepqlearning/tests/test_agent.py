@@ -149,7 +149,7 @@ class TestRolloutAndEval(unittest.TestCase):
         env = FinancialLifeEnv()
         agent = FinancialDQNAgent(
             state_size=env.observation_space.shape[0],
-            action_size=env.action_space["action_type"].n,
+            action_size=env.action_space.n,
             config={"min_replay_size": 8, "batch_size": 4, "replay_buffer_size": 1000},
         )
         agent.epsilon = 0.0
