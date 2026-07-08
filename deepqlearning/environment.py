@@ -18,6 +18,7 @@ from actions import (
     withdrawal_available,
 )
 from gymnasium import spaces
+from scenarios import HOUSEHOLD_SCENARIOS, EpisodeSampler
 
 from life_model.account.bank import BankAccount
 from life_model.account.brokerage import BrokerageAccount
@@ -146,6 +147,9 @@ class FinancialLifeEnv(gym.Env):
             # scenario (config/scenarios, e.g. "recession") overrides where it sets values.
             "economy_mode": "stochastic",
             "economy_scenario": None,
+            # Household scenario whose distributions are used when reset(options={"randomize":
+            # True}) draws a randomized household (Plan 18 D6).
+            "household_scenario": "basic",
             "reward_weights": {
                 "net_worth": 1.0,
                 "spending_satisfaction": 0.3,
@@ -186,26 +190,67 @@ class FinancialLifeEnv(gym.Env):
         """Size of the observation vector (see OBS_SPEC for the feature layout)."""
         return len(OBS_SPEC)
 
+    def _resolve_episode_household(self, options: Dict) -> Dict[str, Any]:
+        """Resolve the household parameters for this episode (Plan 18 D6).
+
+        Without options the env's configured point household is used (exactly the legacy fixed
+        household). ``options={"scenario": name}`` swaps in that scenario's point household;
+        adding ``"randomize": True`` draws a randomized household around the scenario's point
+        values using the seeded Gymnasium ``np_random`` generator, so the same reset seed
+        always produces the same household.
+        """
+        randomize = bool(options.get("randomize", False))
+        scenario_name = options.get("scenario")
+
+        household_keys = (
+            "person_start_age",
+            "person_retirement_age",
+            "person_gender",
+            "initial_salary",
+            "initial_bank_balance",
+            "initial_spending",
+        )
+        household: Dict[str, Any] = {key: self.config[key] for key in household_keys}
+        household["economy_scenario"] = self.config["economy_scenario"]
+
+        if scenario_name is not None or randomize:
+            sampler = EpisodeSampler(scenario_name or self.config["household_scenario"])
+            if scenario_name is not None:
+                household.update(sampler.point_household())
+            if randomize:
+                household.update(sampler.sample(self.np_random))
+        return household
+
     def reset(self, *, seed: Optional[int] = None, options: Optional[Dict] = None) -> Tuple[np.ndarray, Dict[str, Any]]:
         """Reset the environment to its initial state.
 
         Args:
             seed: Seeds both the Gymnasium RNG and the underlying :class:`LifeModel` so that a
                 given seed reproduces an identical episode.
-            options: Unused; accepted for Gymnasium API compatibility.
+            options: Optional episode options (Plan 18 D6):
+                ``{"randomize": bool, "scenario": str}``. ``randomize=True`` draws the episode's
+                household (start age, salary, spending, balances, retirement age, gender — and
+                optionally a named economy scenario) from the scenario's seeded distributions;
+                omitted or False reproduces the fixed point household exactly.
 
         Returns:
             A ``(observation, info)`` tuple per the Gymnasium API.
         """
         super().reset(seed=seed)
+        options = options or {}
+
+        # Resolve this episode's household (fixed point values, or a seeded random draw).
+        household = self._resolve_episode_household(options)
+        self.episode_household = household
+        self.max_steps = self.config["person_max_age"] - household["person_start_age"]
 
         # Economy (Plan 18 D3): stochastic by default so training sees good and bad years; a
         # named economy scenario (curriculum knob) is applied on top and wins where it sets
         # values. Draws use the model's seeded RNG, so a given seed reproduces the same economy.
         financial_config = FinancialConfig()
         financial_config.model.economy.mode = self.config["economy_mode"]
-        if self.config["economy_scenario"] is not None:
-            scenario_name = self.config["economy_scenario"]
+        if household.get("economy_scenario") is not None:
+            scenario_name = household["economy_scenario"]
             financial_config.apply_scenario(scenario_name, get_scenario(scenario_name))
 
         # Create new model instance, seeded for reproducibility. RL rollouts never read the
@@ -222,14 +267,14 @@ class FinancialLifeEnv(gym.Env):
         self.person = Person(
             family=self.family,
             name="RL_Agent",
-            age=self.config["person_start_age"],
-            retirement_age=self.config["person_retirement_age"],
+            age=household["person_start_age"],
+            retirement_age=household["person_retirement_age"],
             spending=Spending(
                 model=self.model,
-                base=self.config["initial_spending"],
+                base=household["initial_spending"],
                 yearly_increase=2,  # 2% inflation
             ),
-            gender=self.config["person_gender"],
+            gender=household["person_gender"],
             mortality_mode=MortalityMode.STOCHASTIC,
         )
 
@@ -238,7 +283,7 @@ class FinancialLifeEnv(gym.Env):
             owner=self.person,
             company="Bank",
             type="Checking",
-            balance=self.config["initial_bank_balance"],
+            balance=household["initial_bank_balance"],
             interest_rate=0.5,
         )
 
@@ -249,7 +294,7 @@ class FinancialLifeEnv(gym.Env):
             role="Employee",
             salary=Salary(
                 model=self.model,
-                base=self.config["initial_salary"],
+                base=household["initial_salary"],
                 yearly_increase=3,  # 3% annual raises
                 yearly_bonus=1,
             ),
@@ -478,7 +523,7 @@ class FinancialLifeEnv(gym.Env):
             "years_to_retirement": max(0.0, person.retirement_age - person.age) / 50.0,
             "is_retired": 1.0 if person.is_retired else 0.0,
             "mortality_probability": self._mortality_probability(),
-            "life_progress": (person.age - self.config["person_start_age"]) / self.max_steps,
+            "life_progress": (person.age - self.episode_household["person_start_age"]) / self.max_steps,
             "bank_balance": bank_balance / deflator / _MONEY_SCALE,
             "pretax_401k": pretax_401k / deflator / _MONEY_SCALE,
             "roth_401k": roth_401k / deflator / _MONEY_SCALE,
@@ -637,49 +682,41 @@ class FinancialLifeEnv(gym.Env):
 
 
 class FinancialLifeEnvGenerator:
-    """Generator for creating different environment configurations"""
+    """Generator for creating different environment configurations.
+
+    Point households come from ``scenarios.HOUSEHOLD_SCENARIOS`` — the same definitions the
+    domain randomizer draws around — so the fixed and randomized variants of a scenario can
+    never drift apart.
+    """
+
+    @staticmethod
+    def create_scenario_env(scenario: str, config: Optional[Dict] = None) -> FinancialLifeEnv:
+        """Create an environment configured with a named household scenario's point values."""
+        merged = dict(HOUSEHOLD_SCENARIOS[scenario].point)
+        merged["household_scenario"] = scenario
+        if config:
+            merged.update(config)
+        return FinancialLifeEnv(merged)
 
     @staticmethod
     def create_basic_env() -> FinancialLifeEnv:
         """Create basic environment with default settings"""
-        return FinancialLifeEnv()
+        return FinancialLifeEnvGenerator.create_scenario_env("basic")
 
     @staticmethod
     def create_high_earner_env() -> FinancialLifeEnv:
         """Create environment for high earner scenario"""
-        config = {
-            "initial_salary": 120000,
-            "initial_bank_balance": 50000,
-            "initial_spending": 60000,
-            "person_start_age": 30,
-            "person_gender": GenderAtBirth.MALE,
-        }
-        return FinancialLifeEnv(config)
+        return FinancialLifeEnvGenerator.create_scenario_env("high_earner")
 
     @staticmethod
     def create_low_earner_env() -> FinancialLifeEnv:
         """Create environment for low earner scenario"""
-        config = {
-            "initial_salary": 30000,
-            "initial_bank_balance": 2000,
-            "initial_spending": 25000,
-            "person_start_age": 22,
-            "person_gender": GenderAtBirth.FEMALE,
-        }
-        return FinancialLifeEnv(config)
+        return FinancialLifeEnvGenerator.create_scenario_env("low_earner")
 
     @staticmethod
     def create_mid_career_env() -> FinancialLifeEnv:
         """Create environment for mid-career professional"""
-        config = {
-            "initial_salary": 80000,
-            "initial_bank_balance": 30000,
-            "initial_spending": 50000,
-            "person_start_age": 35,
-            "person_retirement_age": 62,
-            "person_gender": GenderAtBirth.FEMALE,
-        }
-        return FinancialLifeEnv(config)
+        return FinancialLifeEnvGenerator.create_scenario_env("mid_career")
 
     @staticmethod
     def create_custom_env(config: Dict) -> FinancialLifeEnv:
