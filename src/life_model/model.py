@@ -131,6 +131,8 @@ class LifeModel(mesa.Model):
         seed: Optional[int] = None,
         config: Optional[FinancialConfig] = None,
         scenario: Optional[str] = None,
+        *,
+        collect_data: bool = True,
     ):
         """LifeModel Helper Class
 
@@ -142,6 +144,12 @@ class LifeModel(mesa.Model):
                 Defaults to a fresh copy of the packaged defaults so that separate
                 models can run different scenarios in the same process.
             scenario (str, optional): Name of a packaged scenario to apply. Defaults to None.
+            collect_data (bool, optional): When False, skip DataCollector construction and
+                per-year collection entirely (``self.datacollector`` is ``None``). Simulation
+                behavior is unchanged; only the yearly stat frames are unavailable, so the
+                reporting helpers (``get_yearly_stat_df``, ``add_agent_stat``) cannot be used.
+                Intended for high-throughput consumers (e.g. RL rollouts) that never read the
+                collected frames. Defaults to True (keyword-only).
         """
         super().__init__(seed=seed)  # Required in Mesa 3.0
         if start_year is None:
@@ -173,17 +181,19 @@ class LifeModel(mesa.Model):
         from .economy import EconomyModel
 
         self.economy = EconomyModel(self)
-        self.datacollector = mesa.DataCollector(
-            model_reporters={
-                **{"Year": "year"},
-                **{x.title: lambda model, x=x: x.model_reporter(model) for x in self.STATS},
-                **{x.title: lambda model, x=x: x.model_reporter(model) for x in self.EXTRA_STATS},
-            },
-            agent_reporters={
-                **{x.title: x.name for x in self.STATS},
-                **{x.title: x.name for x in self.EXTRA_STATS},
-            },
-        )
+        self.datacollector: Optional[mesa.DataCollector] = None
+        if collect_data:
+            self.datacollector = mesa.DataCollector(
+                model_reporters={
+                    **{"Year": "year"},
+                    **{x.title: lambda model, x=x: x.model_reporter(model) for x in self.STATS},
+                    **{x.title: lambda model, x=x: x.model_reporter(model) for x in self.EXTRA_STATS},
+                },
+                agent_reporters={
+                    **{x.title: x.name for x in self.STATS},
+                    **{x.title: x.name for x in self.EXTRA_STATS},
+                },
+            )
 
     @classmethod
     def get_stat_by_name(cls, stat_name: str) -> Optional[Stat]:
@@ -250,7 +260,9 @@ class LifeModel(mesa.Model):
                 getattr(agent, stage)()
 
         # Collect after the stages so row Year=Y holds year-Y flows and balances
-        self.datacollector.collect(self)
+        # (skipped entirely when the model was built with collect_data=False).
+        if self.datacollector is not None:
+            self.datacollector.collect(self)
 
         self.year += 1
         self.running = self.year <= self.end_year
@@ -283,6 +295,15 @@ class LifeModel(mesa.Model):
         for _ in self.get_year_range():
             self.step()
 
+    def _require_datacollector(self) -> mesa.DataCollector:
+        """Return the DataCollector, or raise clearly when built with ``collect_data=False``."""
+        if self.datacollector is None:
+            raise ModelSetupException(
+                "This LifeModel was created with collect_data=False, so no stats were collected. "
+                "Construct the model with collect_data=True (the default) to use reporting helpers."
+            )
+        return self.datacollector
+
     def add_agent_stat(self, title: str, attr_name: str):
         """Add an agent stat to the model
 
@@ -290,7 +311,7 @@ class LifeModel(mesa.Model):
             title (str): Title of the stat
             attr_name (str): Name of the attribute
         """
-        self.datacollector._new_agent_reporter(title, attr_name)
+        self._require_datacollector()._new_agent_reporter(title, attr_name)
 
         # Set stat value to 0 for agents that don't have that attribute
         for agent in self.agents:
@@ -332,7 +353,7 @@ class LifeModel(mesa.Model):
             if stat is not None:
                 stats.append(stat)
         # Create a dataframe from the data
-        df = self.datacollector.get_model_vars_dataframe()
+        df = self._require_datacollector().get_model_vars_dataframe()
         # Only keep certain columns in the data frame
         df = df[columns]
         if real_dollars:

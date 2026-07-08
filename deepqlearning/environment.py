@@ -123,8 +123,9 @@ class FinancialLifeEnv(gym.Env):
         """
         super().reset(seed=seed)
 
-        # Create new model instance, seeded for reproducibility.
-        self.model = LifeModel(start_year=self.config["start_year"], seed=seed)
+        # Create new model instance, seeded for reproducibility. RL rollouts never read the
+        # DataCollector frames, so collection is skipped for throughput (Plan 18 D7).
+        self.model = LifeModel(start_year=self.config["start_year"], seed=seed, collect_data=False)
         self.family = Family(self.model)
 
         # Create person
