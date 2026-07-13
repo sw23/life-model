@@ -415,6 +415,8 @@ class FinancialLifeEnv(gym.Env):
             "died_from_natural_causes": self.died_from_natural_causes,
             "estate_value_at_death": self._estate_value_at_death,
             "mortality_probability": self._mortality_probability(),
+            # Legal-action mask so vectorized collectors can mask without sub-env access.
+            "legal_mask": self.legal_action_mask(),
         }
 
     def _calculate_action_amount(self, action_type: ActionType, fraction: float) -> float:
@@ -662,6 +664,16 @@ class FinancialLifeEnv(gym.Env):
             ):
                 legal_actions.append(index)
         return legal_actions
+
+    def legal_action_mask(self) -> np.ndarray:
+        """Boolean legal-action mask of length ``action_space.n`` for the current state.
+
+        The array form of :meth:`get_legal_actions`, exposed in the reset/step ``info`` so a
+        vectorized collector can mask actions per env without reaching into the sub-envs (works
+        with both ``Sync`` and ``Async`` gymnasium vector backends)."""
+        mask = np.zeros(self.action_space.n, dtype=bool)
+        mask[self.get_legal_actions()] = True
+        return mask
 
 
 class FinancialLifeEnvGenerator:

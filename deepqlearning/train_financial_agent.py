@@ -65,7 +65,13 @@ def create_training_config(scenario: str = "basic") -> dict:
 
 
 def create_agent_config(scenario: str = "basic") -> dict:
-    """Create agent configuration for different scenarios"""
+    """Create agent configuration for different scenarios.
+
+    Note: the legacy ``epsilon_decay`` key is gone — the agent decays epsilon per-episode over
+    ``epsilon_decay_fraction`` of training, so a per-step multiplier was dead config that misled
+    tuners (Plan 19 D4). The D4 upgrades (prioritized replay, n-step returns) are on by default in
+    the agent's own config.
+    """
 
     base_config = {
         "learning_rate": 1e-4,
@@ -73,13 +79,15 @@ def create_agent_config(scenario: str = "basic") -> dict:
         "gamma": 0.99,
         "epsilon_start": 1.0,
         "epsilon_end": 0.01,
-        "epsilon_decay": 0.995,
+        "epsilon_decay_fraction": 0.6,
         "target_update_freq": 100,
         "replay_buffer_size": 50000,
         "min_replay_size": 1000,
         "hidden_sizes": [512, 256, 128],
         "use_dueling": True,
         "use_double_dqn": True,
+        "use_prioritized_replay": True,
+        "n_step": 3,
     }
 
     if scenario == "high_earner":
@@ -91,7 +99,7 @@ def create_agent_config(scenario: str = "basic") -> dict:
     elif scenario == "low_earner":
         # Low earners might need longer exploration
         config = base_config.copy()
-        config["epsilon_decay"] = 0.998
+        config["epsilon_decay_fraction"] = 0.75
         config["epsilon_end"] = 0.05
         return config
     else:
