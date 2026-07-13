@@ -58,21 +58,44 @@ The schema / serializer / scoring / eval / tool-loop paths need only the core si
 gymnasium + pydantic. The **training** stack (`transformers`, `peft`, `trl`, `datasets`,
 `accelerate`) is required only for `slm.train` and for running a real local model.
 
+## Committed artifacts (pipeline-validation scale)
+
+* `slm/data/sample_dataset.jsonl` + `.datasheet.json` — 175 examples (160 decisions across the
+  four household scenarios, 15 refusals), seed 20, 16 trials/candidate. Regeneration is
+  byte-identical, including across `--workers` values.
+* `slm/reports/adviser_eval.json` (produced by `slm/reports/run_eval.py`) — oracle vs
+  distilled-stub vs tool-loop on 32 held-out households (seed 777) plus the held-out
+  `recession` economy, with per-condition heuristic baselines, parse/faithfulness/refusal rates.
+
+Two honest caveats, both artifacts of pipeline-validation scale:
+
+1. **Label skew.** At 16 trials nearly every candidate keeps these easy households solvent
+   (success-rate ties), so the argmax falls through to the median-terminal-wealth tie-break and
+   `max_roth_401k` wins 151/160 decision examples. A production dataset needs harder households
+   (post-14/15 expenses), more trials, and scenario spreads wide enough to differentiate levers.
+2. **Cross-seed faithfulness.** The eval harness re-scores households on its own seeds, so the
+   numeric-faithfulness gate demands that cited numbers reproduce across independent Monte Carlo
+   draws. At 16 trials the noise on dollar medians exceeds the strict 2% tolerance, which is why
+   the tool-loop (whose numbers come from its own live run and are faithful-by-construction to
+   it — unit-tested) scores low here. At production trial counts (≥64) the gate tightens into
+   the intended anti-hallucination check.
+
 ## Reproduce
 
 Everything is deterministic under a seed (same seed → byte-identical JSONL).
 
 ```bash
-# 1. Generate the dataset (pipeline-validation scale — minutes of Monte Carlo scoring).
+# 1. Generate the committed dataset (pipeline-validation scale — ~2 min of Monte Carlo scoring).
 python -m slm.generate_data --scenarios basic,high_earner,low_earner,mid_career \
     --per-scenario 40 --n-trials 16 --seed 20 --workers 4 \
-    --out slm/data/dataset.jsonl
+    --out slm/data/sample_dataset.jsonl \
+    --scale-note "pipeline-validation scale (pre-Plans-14/15; not a publishable adviser)"
 
-# 2. Evaluate stub/oracle/heuristics (proves the harness; no model weights needed).
-python -m slm.evaluate_adviser --adviser oracle --per-scenario 10 --n-trials 16 \
-    --seed 777 --out slm/reports/adviser_eval.json
+# 2. Produce the committed eval report (oracle / distilled-stub / tool-loop; no weights needed).
+python slm/reports/run_eval.py
 
-# 3. (Optional, needs the training stack) Smoke-fine-tune a ~135M model over ~50 examples.
+# 3. (Optional, needs the training stack) Smoke-fine-tune a ~135M model over ~50 examples —
+#    also runnable as the slow test: pytest slm/tests/test_train_smoke_slow.py -m slow
 python -m slm.train slm/configs/train_smoke.yaml
 
 # 4. Validate the full-run / LLM-readiness configs without executing them.

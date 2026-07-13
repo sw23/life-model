@@ -191,9 +191,11 @@ def train(config: TrainConfig):
             task_type="CAUSAL_LM",
         )
 
+    import inspect
+
     from trl import SFTConfig, SFTTrainer
 
-    sft_config = SFTConfig(
+    sft_kwargs: Dict[str, Any] = dict(
         output_dir=config.output_dir,
         num_train_epochs=config.epochs,
         per_device_train_batch_size=config.per_device_batch_size,
@@ -202,12 +204,17 @@ def train(config: TrainConfig):
         warmup_ratio=config.warmup_ratio,
         weight_decay=config.weight_decay,
         gradient_checkpointing=config.gradient_checkpointing,
-        max_seq_length=config.seq_len,
         packing=config.packing,
         seed=config.seed,
         report_to=config.report_to,
         dataset_text_field="text",
     )
+    # trl renamed max_seq_length -> max_length in newer releases; support both so the same code
+    # path (D3) runs across the version range in requirements-slm.txt.
+    sft_params = set(inspect.signature(SFTConfig.__init__).parameters)
+    sft_kwargs["max_length" if "max_length" in sft_params else "max_seq_length"] = config.seq_len
+
+    sft_config = SFTConfig(**sft_kwargs)
     trainer = SFTTrainer(model=model, args=sft_config, train_dataset=dataset, peft_config=peft_config)
     trainer.train()
     trainer.save_model(config.output_dir)
