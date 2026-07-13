@@ -118,6 +118,23 @@ debt:
     default_interest_rate: 18.0
     default_minimum_payment_percent: 2.0
 
+dependents:
+  # Frozen round numbers for dollar-pinned tests (do NOT track published figures).
+  childcare_annual_cost: 10000
+  school_age_annual_cost: 5000
+  college_annual_cost: 20000
+  college_start_age: 18
+  college_years: 4
+  adult_age: 18
+  ctc_per_child: 2000
+  ctc_refundable_max: 1500
+  ctc_qualifying_age_max: 17
+  ctc_phaseout_start:
+    single: 200000
+    married_filing_jointly: 400000
+    head_of_household: 200000
+  ctc_phaseout_rate: 5.0
+
 tax_years:
   2020:
     standard_deduction:

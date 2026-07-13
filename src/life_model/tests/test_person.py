@@ -37,6 +37,11 @@ class TestPerson(unittest.TestCase):
         BankAccount(owner=person, company="Bank of Mojave", type="Checking")
         job = Job(owner=person, company="Fiber Fashion", role="Personal Shopper", salary=Salary(model=model, base=0))
         # Fixture: $10k standard deduction, brackets 10% to $40k then 25%.
+        # Plan 17 D4: DEFAULT (5%) state income tax now enters the SALT itemized deduction. It only
+        # changes the outcome for the top earner, whose state tax ($28,295 = 5% of the $565,900
+        # post-standard AGI) exceeds the $10k standard deduction, flipping them to itemizing:
+        # federal tax on ($575,900 - $28,295) = $130,901.25. Lower rows keep the standard deduction
+        # (state tax < $10k) and are unchanged.
         tax_data = (
             (5900, 0),  # Below standard deduction
             (15900, 590),
@@ -44,7 +49,7 @@ class TestPerson(unittest.TestCase):
             (95900, 15475),
             (109900, 18975),
             (120900, 21725),
-            (575900, 135475),
+            (575900, 130901.25),  # re-baselined: state income tax in SALT (Plan 17 D4)
         )
         for salary, taxes_due in tax_data:
             job.salary.base = salary

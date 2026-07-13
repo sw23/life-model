@@ -3,9 +3,9 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-from typing import Dict, List, Literal, Union
+from typing import Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class StrictModel(BaseModel):
@@ -22,11 +22,16 @@ class StrictModel(BaseModel):
 class StandardDeductionConfig(StrictModel):
     single: int = Field(ge=0)
     married_filing_jointly: int = Field(ge=0)
+    # Optional: HEAD_OF_HOUSEHOLD falls back to `single` when absent, so existing scenarios and
+    # the frozen test fixture load unchanged.
+    head_of_household: Optional[int] = Field(default=None, ge=0)
 
 
 class TaxBracketsConfig(StrictModel):
     single: List[List[Union[int, float]]]
     married_filing_jointly: List[List[Union[int, float]]]
+    # Optional: HEAD_OF_HOUSEHOLD falls back to `single` when absent.
+    head_of_household: Optional[List[List[Union[int, float]]]] = None
 
 
 class FederalTaxConfig(StrictModel):
@@ -44,8 +49,136 @@ class FederalTaxConfig(StrictModel):
     estate_tax_rate: float = Field(default=40.0, ge=0, le=100)
 
 
+# Two-letter USPS codes for the 50 states + DC. Pack keys must be one of these or ``DEFAULT``;
+# an unknown code fails validation at load (Plan 17 acceptance: unknown state → ValidationError).
+US_STATE_CODES = frozenset(
+    {
+        "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID", "IL", "IN",
+        "IA", "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV",
+        "NH", "NJ", "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN",
+        "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY", "DC",
+    }
+)
+
+DEFAULT_STATE_KEY = "DEFAULT"
+
+
+class StateStandardDeductionConfig(StrictModel):
+    """State standard deduction by filing status (defaults to 0 — no deduction)."""
+
+    single: int = Field(default=0, ge=0)
+    married_filing_jointly: int = Field(default=0, ge=0)
+
+
+class StateTaxPack(StrictModel):
+    """State income-tax parameters for a single state.
+
+    Exactly one of ``flat_rate`` or ``brackets`` must be set. ``flat_rate`` of ``0`` models a
+    no-income-tax state (TX/FL/WA). ``brackets`` mirrors the federal ``[lower, upper, rate]`` shape,
+    keyed by filing status (``single`` required; other statuses fall back to ``single`` — Plan 14 D6).
+    """
+
+    flat_rate: Optional[float] = Field(default=None, ge=0, le=100)
+    brackets: Optional[Dict[str, List[List[Union[int, float]]]]] = None
+    standard_deduction: StateStandardDeductionConfig = Field(default_factory=StateStandardDeductionConfig)
+    # Whether pre-tax retirement distributions (401k/IRA withdrawals, RMDs) are taxed by the state.
+    # PA and IL exempt them.
+    retirement_income_taxable: bool = True
+    # Whether Social Security benefits are taxed by the state. Most states exempt them.
+    ss_taxable: bool = False
+
+    @model_validator(mode="after")
+    def _validate_pack(self) -> "StateTaxPack":
+        if self.flat_rate is not None and self.brackets is not None:
+            raise ValueError("StateTaxPack: set exactly one of 'flat_rate' or 'brackets', not both")
+        if self.flat_rate is None and self.brackets is None:
+            raise ValueError("StateTaxPack: one of 'flat_rate' or 'brackets' must be set (use flat_rate: 0 for no tax)")
+        if self.brackets is not None:
+            if "single" not in self.brackets:
+                raise ValueError("StateTaxPack.brackets must define at least the 'single' filing status")
+            valid_statuses = {"single", "married_filing_jointly", "head_of_household"}
+            for status, rows in self.brackets.items():
+                if status not in valid_statuses:
+                    raise ValueError(f"StateTaxPack.brackets: unknown filing status '{status}'")
+                self._validate_brackets(status, rows)
+        return self
+
+    @staticmethod
+    def _validate_brackets(status: str, rows: "List[List[Union[int, float]]]") -> None:
+        """Reject malformed or gapped brackets (Plan 17 acceptance criterion).
+
+        Rows follow the federal ``[lower, upper, rate]`` convention where each row's ``lower`` is
+        the previous row's ``upper`` + 1 (the half-open marginal engine keys off ``upper``). The
+        first row must start at 0 and each subsequent row must be contiguous with the previous.
+        """
+        if not rows:
+            raise ValueError(f"StateTaxPack.brackets['{status}'] must have at least one row")
+        prev_upper: Optional[float] = None
+        for row in rows:
+            if len(row) != 3:
+                raise ValueError(f"StateTaxPack.brackets['{status}'] rows must be [lower, upper, rate]")
+            lower, upper, rate = row
+            if not (0 <= rate <= 100):
+                raise ValueError(f"StateTaxPack.brackets['{status}'] rate {rate} out of range [0, 100]")
+            if upper <= lower:
+                raise ValueError(f"StateTaxPack.brackets['{status}'] row upper {upper} must exceed lower {lower}")
+            if prev_upper is None:
+                if lower != 0:
+                    raise ValueError(f"StateTaxPack.brackets['{status}'] first row must start at lower=0")
+            elif lower != prev_upper + 1:
+                raise ValueError(
+                    f"StateTaxPack.brackets['{status}'] gap: row lower {lower} != previous upper "
+                    f"{prev_upper} + 1"
+                )
+            prev_upper = upper
+
+
 class StateTaxConfig(StrictModel):
-    tax_rate: float = Field(ge=0, le=100)
+    """State tax configuration: a set of per-state packs plus the resident default.
+
+    Back-compat: the legacy scalar ``tax_rate`` key is retained. When present it synthesizes the
+    ``DEFAULT`` pack as a flat rate, so every existing YAML/scenario loads unchanged and produces
+    identical numbers (Plan 17 D1). ``tax_rate`` remains readable for legacy callers.
+    """
+
+    tax_rate: Optional[float] = Field(default=6.0, ge=0, le=100)
+    default_state: str = DEFAULT_STATE_KEY
+    packs: Dict[str, StateTaxPack] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _synthesize_and_validate(self) -> "StateTaxConfig":
+        # Legacy shim: the scalar tax_rate is the authoritative source for the DEFAULT flat pack.
+        if self.tax_rate is not None:
+            self.packs[DEFAULT_STATE_KEY] = StateTaxPack(flat_rate=self.tax_rate)
+        for code in self.packs:
+            if code != DEFAULT_STATE_KEY and code not in US_STATE_CODES:
+                raise ValueError(f"StateTaxConfig: unknown state code '{code}' in packs")
+        if self.default_state not in self.packs:
+            raise ValueError(
+                f"StateTaxConfig.default_state '{self.default_state}' has no matching pack "
+                f"(available: {sorted(self.packs)})"
+            )
+        return self
+
+    def get_pack(self, state: Optional[str]) -> "StateTaxPack":
+        """Resolve the pack for a resident.
+
+        Uses the resident's ``state`` when a matching pack exists, otherwise ``default_state``,
+        otherwise ``DEFAULT``. Never raises: an unknown residency falls back to the default pack.
+        """
+        if state and state in self.packs:
+            return self.packs[state]
+        if self.default_state in self.packs:
+            return self.packs[self.default_state]
+        return self.packs[DEFAULT_STATE_KEY]
+
+    def resolve_state_code(self, state: Optional[str]) -> str:
+        """Return the pack key a resident resolves to (see :meth:`get_pack`)."""
+        if state and state in self.packs:
+            return state
+        if self.default_state in self.packs:
+            return self.default_state
+        return DEFAULT_STATE_KEY
 
 
 class MedicareThresholdConfig(StrictModel):
@@ -221,6 +354,22 @@ class Section121ExclusionConfig(StrictModel):
     married_filing_jointly: int = Field(default=500000, ge=0)
 
 
+class EstateConfig(StrictModel):
+    """Estate-settlement parameters.
+
+    ``inherited_pretax_mode`` controls how a non-spouse beneficiary receives inherited pre-tax
+    retirement balances:
+
+    * ``"ten_year"`` (default) — the SECURE Act 10-year rule: the balance moves into an
+      :class:`~life_model.account.inherited.InheritedPretaxAccount` that keeps growing and pays out
+      an even slice each year over ten years, spreading (and deferring) the beneficiary's tax.
+    * ``"lump_sum"`` — the Plan 09 simplification: the whole pre-tax balance is distributed to the
+      beneficiary and taxed in the death year. Retained for comparability with pre-Plan-16 frames.
+    """
+
+    inherited_pretax_mode: Literal["ten_year", "lump_sum"] = "ten_year"
+
+
 class HousingConfig(StrictModel):
     """Housing parameters (PMI, transaction costs, capital-gains exclusion).
 
@@ -235,6 +384,47 @@ class HousingConfig(StrictModel):
     selling_cost_percent: float = Field(default=6.0, ge=0)  # percent of sale price at sell
     # vintage: IRC §121 primary-residence capital-gains exclusion (statutory, unindexed).
     section_121_exclusion: Section121ExclusionConfig = Field(default_factory=Section121ExclusionConfig)
+
+
+class CTCPhaseoutStartConfig(StrictModel):
+    """Modified-AGI thresholds at which the Child Tax Credit begins to phase out, by filing status.
+
+    Statutory and not inflation-indexed (IRC §24(h)(3)). Head of household shares the single
+    threshold.
+    """
+
+    single: int = Field(default=200000, ge=0)
+    married_filing_jointly: int = Field(default=400000, ge=0)
+    head_of_household: int = Field(default=200000, ge=0)
+
+
+class DependentsConfig(StrictModel):
+    """Costs of raising children and the child-related tax credits.
+
+    Every field has a default so existing configs/scenarios without a ``dependents`` section
+    still load. Cost figures are representative national estimates; credit parameters are
+    verified against primary sources (see the YAML vintage comments).
+    """
+
+    # Age-banded annual cost of a child (nominal; grown by cumulative inflation in Child.pre_step).
+    # vintage: 2024, source: Child Care Aware of America (childcare); USDA/Brookings child-rearing
+    # estimates (school age); College Board Trends in College Pricing (college) — representative
+    # placeholders, TODO(verify) against a primary cost survey.
+    childcare_annual_cost: float = Field(default=12000.0, ge=0)
+    school_age_annual_cost: float = Field(default=8000.0, ge=0)
+    college_annual_cost: float = Field(default=28000.0, ge=0)
+    college_start_age: int = Field(default=18, ge=0)
+    college_years: int = Field(default=4, ge=0)
+    adult_age: int = Field(default=18, ge=0)
+
+    # Child Tax Credit (IRC §24 as amended by the One Big Beautiful Bill Act).
+    # vintage: 2026, source: IRC §24(h) (OBBBA); Rev. Proc. 2025-32.
+    ctc_per_child: float = Field(default=2200.0, ge=0)
+    ctc_refundable_max: float = Field(default=1700.0, ge=0)
+    ctc_qualifying_age_max: int = Field(default=17, ge=0)
+    ctc_phaseout_start: CTCPhaseoutStartConfig = Field(default_factory=CTCPhaseoutStartConfig)
+    # Credit reduction as a percentage of modified AGI over the threshold ($50 per $1,000).
+    ctc_phaseout_rate: float = Field(default=5.0, ge=0, le=100)
 
 
 class YearlyTaxParameters(StrictModel):
@@ -448,6 +638,8 @@ class FinancialConfigModel(StrictModel):
     insurance: InsuranceConfig
     debt: DebtConfig
     housing: HousingConfig = Field(default_factory=HousingConfig)
+    estate: EstateConfig = Field(default_factory=EstateConfig)
     economy: EconomyConfig = Field(default_factory=EconomyConfig)
     healthcare: HealthcareConfig = Field(default_factory=HealthcareConfig)
+    dependents: DependentsConfig = Field(default_factory=DependentsConfig)
     tax_years: Dict[int, YearlyTaxParameters]

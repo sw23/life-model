@@ -13,12 +13,14 @@ from ..services.payment_service import PaymentService
 from ..services.tax_calculation_service import TaxCalculationService
 from ..tax.federal import FilingStatus, get_federal_standard_deduction
 from ..tax.income import IncomeLedger, IncomeType
+from ..tax.state import state_income_tax_for_unit
 from ..tax.tax import TaxesDue, compute_taxes
 from .family import Family
 from .mortality import get_blended_chance_of_mortality, get_chance_of_mortality
 from .types import GenderAtBirth, MortalityMode  # noqa: F401  (re-exported for backward compatibility)
 
 if TYPE_CHECKING:
+    from ..dependents.child import Child
     from ..insurance.social_security import SocialSecurity
 
 
@@ -37,6 +39,7 @@ class Person(LifeModelAgent):
         gender: GenderAtBirth = GenderAtBirth.OTHER,
         mortality_mode: MortalityMode = MortalityMode.IMMORTAL,
         death_age: Optional[int] = None,
+        state: Optional[str] = None,
     ):
         """Person
 
@@ -51,6 +54,9 @@ class Person(LifeModelAgent):
             mortality_mode (MortalityMode, optional): How death is determined each year. Defaults to
                 ``IMMORTAL`` (the person never dies) so existing simulations stay deterministic.
             death_age (int, optional): Age of death when ``mortality_mode`` is ``FIXED_AGE``.
+            state (str, optional): Two-letter state of residence for state income tax. Defaults to
+                ``None``, which falls back to ``config.tax.state.default_state`` (Plan 17 D2). A
+                single state applies to the whole tax unit (no part-year/multi-state).
         """
         super().__init__(family.model)
         self.family = family
@@ -58,6 +64,7 @@ class Person(LifeModelAgent):
         self.age = age
         self.retirement_age = retirement_age
         self.spending = spending
+        self.state = state
         self.gender = gender
         self.mortality_mode = mortality_mode
         self.death_age = death_age
@@ -65,6 +72,9 @@ class Person(LifeModelAgent):
         # Optional explicit estate beneficiary (a Person). When unset, the estate passes to the
         # surviving spouse, then to the first surviving family member.
         self.estate_beneficiary: Optional["Person"] = None
+        # Unified estate-tax exemption consumed during life by taxable gifts (e.g. irrevocable
+        # trust funding above the annual gift exclusion). Reduces the exemption at death.
+        self.estate_exemption_used = 0.0
         # Year this person was widowed (used to switch filing status to SINGLE the following year).
         self._widowed_year: Optional[int] = None
         self.debt = 0
@@ -128,6 +138,11 @@ class Person(LifeModelAgent):
         return self.model.registries.plan_529s.get_items(self)
 
     @property
+    def children(self):
+        """Get all child dependents for this person from the registry"""
+        return self.model.registries.children.get_items(self)
+
+    @property
     def donations(self):
         """Get all donations for this person from the registry"""
         return self.model.registries.donations.get_items(self)
@@ -136,6 +151,16 @@ class Person(LifeModelAgent):
     def donor_advised_funds(self):
         """Get all donor advised funds for this person from the registry"""
         return self.model.registries.donor_advised_funds.get_items(self)
+
+    @property
+    def pensions(self):
+        """Get all pensions for this person from the registry"""
+        return self.model.registries.pensions.get_items(self)
+
+    @property
+    def trusts(self):
+        """Get all trusts for which this person is the grantor, from the registry"""
+        return self.model.registries.trusts.get_items(self)
 
     @property
     def car_loans(self):
@@ -241,22 +266,24 @@ class Person(LifeModelAgent):
         """Itemizable unreimbursed medical with no prospective income (see the ``_with`` method)."""
         return self.medical_expense_deduction_with(0.0)
 
-    def total_itemized_deductions_with(self, additional_income: float = 0.0) -> float:
-        """Total itemized deductions, with ``additional_income`` raising the medical floor.
+    def itemized_deductions(self, state_income_tax_paid: float = 0.0, additional_income: float = 0.0) -> float:
+        """Calculate total itemized deductions.
 
-        Currently includes:
+        Includes:
         - Charitable contributions
         - Mortgage interest (capped to the first $750k of acquisition debt, TCJA)
-        - State and local taxes (property tax here), capped at the SALT limit
-        - Unreimbursed medical expenses above the 7.5%-of-income floor (Plan 15 D6)
-
-        TODO: Add other itemized deductions (state income tax in SALT, etc.)
+        - State and local taxes: property tax plus ``state_income_tax_paid``, capped at the SALT
+          limit (Plan 17 D4). ``state_income_tax_paid`` defaults to 0 so the property-only result
+          is unchanged for every caller that does not thread state income tax.
+        - Unreimbursed medical expenses above the 7.5%-of-income floor (Plan 15 D6);
+          ``additional_income`` (a prospective 401k withdrawal being sized) raises that floor so
+          sized taxes equal settled taxes.
         """
         itemized = self.charitable_deductions
         itemized += self.medical_expense_deduction_with(additional_income)
 
         federal = self.model.config.tax.federal
-        salt_paid = 0.0
+        salt_paid = state_income_tax_paid
         for home in self.homes:
             mortgage = getattr(home, "mortgage", None)
             if mortgage:
@@ -270,19 +297,35 @@ class Person(LifeModelAgent):
                 itemized += interest
             salt_paid += home.property_tax_for_year
 
-        # SALT deduction (property tax) is capped.
+        # SALT deduction (property tax + state income tax) is capped.
         itemized += min(salt_paid, federal.salt_deduction_cap)
 
         return itemized
 
+    def total_itemized_deductions_with(self, additional_income: float = 0.0) -> float:
+        """Total itemized deductions with ``additional_income`` raising the medical floor (Plan 15).
+
+        Property-only SALT (no state income tax threaded); see ``itemized_deductions``.
+        """
+        return self.itemized_deductions(additional_income=additional_income)
+
     @property
     def total_itemized_deductions(self) -> float:
-        """Total itemized deductions with no prospective income (see the ``_with`` method)."""
-        return self.total_itemized_deductions_with(0.0)
+        """Itemized deductions with no prospective income and property-only SALT."""
+        return self.itemized_deductions()
+
+    def federal_deductions_with_state_tax(self, state_income_tax_paid: float, additional_income: float = 0.0) -> float:
+        """Greater of the standard deduction or itemized deductions including state income tax in SALT.
+
+        ``additional_income`` (a prospective 401k withdrawal being sized) raises the medical-expense
+        floor (Plan 15 D6) so sized taxes equal settled taxes.
+        """
+        standard_deduction = get_federal_standard_deduction(self.filing_status, self.model.config)
+        return max(standard_deduction, self.itemized_deductions(state_income_tax_paid, additional_income))
 
     @property
     def federal_deductions(self) -> float:
-        """Get federal deductions - use greater of standard or itemized"""
+        """Get federal deductions - use greater of standard or itemized (property-only SALT)"""
         standard_deduction = get_federal_standard_deduction(self.filing_status, self.model.config)
         itemized_deductions = self.total_itemized_deductions
         return max(standard_deduction, itemized_deductions)
@@ -443,8 +486,19 @@ class Person(LifeModelAgent):
             TaxesDue: Taxes due, split by type.
         """
         ordinary_income = self.taxable_income + additional_income
+        # State income tax from the state pack. Computed against the property-only AGI base so it
+        # does not depend on itself being in SALT; then folded into SALT for the federal base (D4).
+        # ``additional_income`` raises the medical-expense floor (Plan 15 D6) in both the legacy AGI
+        # base and the federal deductions so sizing and settlement stay consistent.
+        totals = self.income.totals_by_type()
+        totals[IncomeType.PRETAX_DISTRIBUTION] = totals.get(IncomeType.PRETAX_DISTRIBUTION, 0.0) + additional_income
+        legacy_agi = max(ordinary_income - self.federal_deductions_with_state_tax(0.0, additional_income), 0)
+        state_tax = state_income_tax_for_unit(
+            totals, self.filing_status, self.state, legacy_agi, self.model.config
+        )
+        deductions = self.federal_deductions_with_state_tax(state_tax, additional_income)
         return compute_taxes(
-            ordinary_income, self.federal_deductions, self.filing_status, [self.fica_wages], self.model.config
+            ordinary_income, deductions, self.filing_status, [self.fica_wages], self.model.config, state_tax=state_tax
         )
 
     def get_married(self, spouse: "Person", link_spouse: bool = True):
@@ -470,6 +524,24 @@ class Person(LifeModelAgent):
             spouse.get_married(self, False)
             event_str = f"{self.name} and {spouse.name} got married at age {self.age} and {spouse.age}"
             self.model.event_log.add(Event(event_str))
+
+    def add_child(self, name: str, birth_year: Optional[int] = None) -> "Child":
+        """Add a child dependent to this person.
+
+        Scheduled births are just ``LifeEvent(year, "Birth of X", person.add_child, "X")``.
+
+        Args:
+            name (str): The child's name.
+            birth_year (int, optional): Year the child was born. Defaults to the current model year.
+
+        Returns:
+            Child: The newly created child (registered on this person).
+        """
+        from ..dependents.child import Child
+
+        if birth_year is None:
+            birth_year = self.model.year
+        return Child(self, name, birth_year)
 
     def get_year_at_age(self, age: int) -> int:
         """Gets the year at a given age.
@@ -533,11 +605,12 @@ class Person(LifeModelAgent):
         simulation so nothing of theirs steps again.
 
         Simplifications (documented, backlog for later refinement):
-          * Non-spouse inherited pre-tax accounts are distributed as a lump sum taxed to the
-            beneficiary in the death year (no 10-year rule).
+          * Non-spouse inherited pre-tax accounts follow ``estate.inherited_pretax_mode``: the
+            SECURE Act 10-year even spread (default) or the legacy death-year lump sum.
           * A widowed spouse files jointly in the death year and single thereafter (no
             qualifying-widow years).
-          * Life-only pensions and life-only annuities simply stop; no state estate taxes.
+          * Pensions with a survivor election continue a reduced stream to a surviving spouse;
+            single-life pensions and life-only annuities simply stop; no state estate taxes.
         """
         if self.is_deceased:
             return
@@ -566,11 +639,24 @@ class Person(LifeModelAgent):
         #     when the person has healthcare agents, so other simulations are unchanged.
         self._charge_end_of_life_costs()
 
+        # 3c. Settle pensions: a survivor election continues a reduced stream to a surviving
+        #     spouse; otherwise the pension terminates. Done BEFORE the estate transfer (so the
+        #     generic registry reassignment doesn't move pensions) and before the Benefit sweep in
+        #     _remove_from_simulation (which would otherwise delete the survivor's continued stream).
+        self._settle_pensions_on_death(spouse)
+
         # 4/5. Transfer the estate and adjust the survivor.
         if inheritor is not None:
             self._transfer_estate(inheritor, is_spouse=inheritor is spouse)
         else:
             self.model.event_log.add(Event(f"{self.name}'s estate had no beneficiary; assets dissolved"))
+
+        # 5b. Trusts settle outside the will: a revocable trust pays out directly to its own
+        #     beneficiaries (its balance was already counted in the gross estate above), escheating
+        #     to the residual inheritor if no beneficiary survives; an irrevocable trust survives
+        #     with its own registry entry and keeps growing.
+        self._settle_trusts_on_death(inheritor)
+
         if spouse is not None:
             self._apply_survivor_adjustments(spouse)
 
@@ -634,6 +720,40 @@ class Person(LifeModelAgent):
         self.model.registries.medicare.clear(self)
         self.model.registries.long_term_care.clear(self)
 
+    def _settle_pensions_on_death(self, spouse: Optional["Person"]):
+        """Continue survivor pensions to a surviving spouse; terminate the rest.
+
+        A pension with ``survivor_percent > 0`` and a surviving spouse transfers to that spouse at
+        ``benefit x survivor_percent/100`` (a real single-life-vs-survivor modeling lever). Without
+        a survivor election or a surviving spouse the pension terminates, as it does today.
+
+        This runs before the estate transfer, so terminated pensions are removed from the registry
+        (the generic reassignment won't touch them) and the survivor's pension is already re-owned
+        by the spouse (the Benefit sweep in ``_remove_from_simulation`` won't delete it).
+        """
+        pensions = self.model.registries.pensions
+        for pension in list(self.pensions):
+            if spouse is not None and getattr(pension, "survivor_percent", 0) > 0:
+                pension.benefit_amount *= pension.survivor_percent / 100.0
+                # The continued stream is single-life on the survivor (no further survivor split).
+                pension.survivor_percent = 0.0
+                # The survivor annuity is in pay immediately: eligibility must not re-evaluate
+                # against the survivor's own retirement status (a working 50-year-old widow still
+                # receives the joint-and-survivor benefit from the year of death).
+                pension.start_age = spouse.age
+                pensions.unregister(self, pension)
+                pensions.register(spouse, pension)
+                pension.person = spouse
+                self.model.event_log.add(
+                    Event(
+                        f"{spouse.name} continues {pension.company} pension at "
+                        f"${pension.benefit_amount:,.0f}/yr after {self.name}'s death"
+                    )
+                )
+            else:
+                pensions.unregister(self, pension)
+                pension.remove()
+
     def _owned_financial_agents(self) -> List["LifeModelAgent"]:
         """All balance-holding accounts (bank, brokerage, IRAs, HSA, 401k) owned by this person."""
         from ..base_classes import FinancialAccount
@@ -643,32 +763,135 @@ class Person(LifeModelAgent):
     def _transfer_estate(self, inheritor: "Person", is_spouse: bool):
         """Move the estate to ``inheritor``.
 
-        A surviving spouse inherits everything via the unlimited marital deduction (no estate tax)
-        and rolls pre-tax accounts over tax-free. A non-spouse beneficiary receives pre-tax
-        accounts as a taxable lump sum, and the estate above the exemption is subject to estate tax.
+        Accounts with a designated (surviving) ``beneficiary`` are routed to that beneficiary
+        first — designation beats the will, as with real retirement accounts. The residual estate
+        then goes to ``inheritor``: a surviving spouse inherits via the unlimited marital deduction
+        (no estate tax) and rolls pre-tax accounts over tax-free; a non-spouse inheritor receives
+        pre-tax accounts per ``estate.inherited_pretax_mode``, and the estate above the exemption
+        is subject to estate tax.
+
+        Estate tax: the unlimited marital deduction shelters only the portion actually passing to
+        the surviving spouse (the residual when the spouse is the residual inheritor, plus any
+        spousal-designated accounts and the spouse's share of revocable-trust payouts). Everything
+        passing to non-spouse recipients — designated or residual — is in the taxable base.
+        Documented simplification: the tax is *charged* to the residual inheritor (no
+        per-beneficiary apportionment of who pays), even when a designation created the liability.
         """
         gross_estate = self._gross_estate_value()
+        taxable_base = max(0.0, gross_estate - self._marital_share(is_spouse))
+
+        self._transfer_designated_accounts()
 
         if not is_spouse:
             self._liquidate_pretax_to(inheritor)
 
         self._reassign_owned_agents(inheritor)
 
-        if not is_spouse:
-            self._apply_estate_tax(inheritor, gross_estate)
+        self._apply_estate_tax(inheritor, taxable_base)
 
         self.model.event_log.add(Event(f"{self.name}'s estate transferred to {inheritor.name}"))
 
+    def _marital_share(self, is_spouse: bool) -> float:
+        """Value of the estate passing to the surviving spouse (sheltered by the unlimited
+        marital deduction).
+
+        Counts spousal-designated account balances, the spouse's share of revocable-trust payouts,
+        and — when the spouse is the residual inheritor — the residual estate (everything not
+        designated away and not passing through a trust to other beneficiaries). A revocable trust
+        with no surviving beneficiaries escheats to the residual estate and is counted there.
+        """
+        from ..estate.trust import TrustType
+
+        spouse = self.spouse if (self.spouse is not None and not self.spouse.is_deceased) else None
+        if spouse is None:
+            return 0.0
+
+        share = 0.0
+        passing_outside_residual = 0.0
+        for acct in self._owned_financial_agents():
+            beneficiary = getattr(acct, "beneficiary", None)
+            if beneficiary is None or beneficiary.is_deceased or beneficiary is self:
+                continue
+            balance = getattr(acct, "balance", 0.0)
+            passing_outside_residual += balance
+            if beneficiary is spouse:
+                share += balance
+        for trust in self.trusts:
+            if trust.trust_type != TrustType.REVOCABLE:
+                continue
+            survivors = [b for b in trust.beneficiaries if not b.is_deceased]
+            if survivors:
+                passing_outside_residual += trust.balance
+                if spouse in survivors:
+                    share += trust.balance / len(survivors)
+            # else: the corpus escheats to the residual estate (counted in the residual below).
+        if is_spouse:
+            residual = self._gross_estate_value() - passing_outside_residual
+            share += max(0.0, residual)
+        return share
+
+    def _transfer_designated_accounts(self):
+        """Route each account with a designated surviving beneficiary directly to that person.
+
+        A designated pre-tax balance passing to someone other than the surviving spouse is
+        distributed under ``estate.inherited_pretax_mode`` (10-year spread or lump sum), exactly
+        like the residual path; a spouse designee gets the tax-free rollover. A predeceased
+        beneficiary is skipped, so the account falls through to the residual-estate path.
+        """
+        from ..account.job401k import Job401kAccount
+        from ..account.traditional_IRA import TraditionalIRA
+
+        spouse = self.spouse if (self.spouse is not None and not self.spouse.is_deceased) else None
+        for acct in self._owned_financial_agents():
+            beneficiary = getattr(acct, "beneficiary", None)
+            if beneficiary is None or beneficiary.is_deceased or beneficiary is self:
+                continue
+            if beneficiary is not spouse:
+                # Non-spouse designee: the pre-tax portion is a taxable inheritance.
+                pretax = 0.0
+                if isinstance(acct, Job401kAccount):
+                    pretax = acct.pretax_balance
+                    acct.pretax_balance = 0.0
+                elif isinstance(acct, TraditionalIRA):
+                    pretax = acct.balance
+                    acct.balance = 0.0
+                if pretax > 0:
+                    self._distribute_inherited_pretax(pretax, beneficiary)
+            acct.person = beneficiary
+            if hasattr(acct, "owner"):
+                acct.owner = beneficiary
+            # Registry-backed accounts (bank accounts) also move their registry entry so the
+            # designee's account properties see them and the residual transfer doesn't re-route them.
+            for reg in self.model.registries.iter_registries():
+                if reg.unregister(self, acct):
+                    reg.register(beneficiary, acct)
+            self.model.event_log.add(Event(f"{self.name}'s designated account transferred to {beneficiary.name}"))
+
     def _gross_estate_value(self) -> float:
-        """Approximate transferable estate value (account balances plus home equity)."""
+        """Approximate transferable estate value (account balances plus home equity).
+
+        Revocable-trust balances are included (the grantor keeps control, so they remain in the
+        gross estate); irrevocable-trust balances are excluded — that exclusion is the modelable
+        estate-planning lever (see :class:`~life_model.estate.trust.Trust`).
+        """
+        from ..estate.trust import TrustType
+
         total = sum(getattr(a, "balance", 0.0) for a in self._owned_financial_agents())
         for home in self.homes:
             equity = home.home_value - (home.mortgage.principal if home.mortgage is not None else 0.0)
             total += max(0.0, equity)
+        total += sum(t.balance for t in self.trusts if t.trust_type == TrustType.REVOCABLE)
         return total
 
     def _liquidate_pretax_to(self, inheritor: "Person"):
-        """Distribute pre-tax account balances as a taxable lump sum to a non-spouse beneficiary."""
+        """Pass the decedent's pre-tax balances to a non-spouse beneficiary.
+
+        Under ``estate.inherited_pretax_mode == "ten_year"`` (default) the balance moves into an
+        :class:`~life_model.account.inherited.InheritedPretaxAccount` that spreads the distribution
+        (and its tax) over ten years per the SECURE Act. Under ``"lump_sum"`` the whole balance is
+        distributed and taxed to the beneficiary in the death year (the Plan 09 simplification,
+        retained for comparability).
+        """
         from ..account.job401k import Job401kAccount
         from ..account.traditional_IRA import TraditionalIRA
 
@@ -680,9 +903,21 @@ class Person(LifeModelAgent):
             elif isinstance(acct, TraditionalIRA):
                 total_pretax += acct.balance
                 acct.balance = 0.0
-        if total_pretax > 0:
-            inheritor.income.add(IncomeType.PRETAX_DISTRIBUTION, total_pretax)
-            inheritor.receive_cash(total_pretax, source=f"inherited retirement from {self.name}")
+        self._distribute_inherited_pretax(total_pretax, inheritor)
+
+    def _distribute_inherited_pretax(self, amount: float, beneficiary: "Person"):
+        """Pass ``amount`` of inherited pre-tax money to a non-spouse ``beneficiary`` per the
+        configured ``estate.inherited_pretax_mode`` (see ``_liquidate_pretax_to``)."""
+        if amount <= 0:
+            return
+        mode = self.model.config.estate.inherited_pretax_mode
+        if mode == "lump_sum":
+            beneficiary.income.add(IncomeType.PRETAX_DISTRIBUTION, amount)
+            beneficiary.receive_cash(amount, source=f"inherited retirement from {self.name}")
+        else:  # "ten_year"
+            from ..account.inherited import InheritedPretaxAccount
+
+            InheritedPretaxAccount(beneficiary, balance=amount, decedent_name=self.name)
 
     def _reassign_owned_agents(self, inheritor: "Person"):
         """Reassign ownership of every owned agent (accounts, homes, jobs, insurance, debts) to
@@ -699,11 +934,29 @@ class Person(LifeModelAgent):
                     item.owner = inheritor
         self.model.registries.transfer_owner(self, inheritor)
 
-    def _apply_estate_tax(self, inheritor: "Person", gross_estate: float):
+    def _settle_trusts_on_death(self, inheritor: Optional["Person"]):
+        """Settle this person's trusts at death: revocable trusts pay out to their beneficiaries
+        (outside ``_find_beneficiary``), escheating to the residual ``inheritor`` when no trust
+        beneficiary survives; irrevocable trusts survive untouched."""
+        from ..estate.trust import TrustType
+
+        for trust in list(self.trusts):
+            if trust.trust_type == TrustType.REVOCABLE:
+                trust.pay_out_at_grantor_death(residual_inheritor=inheritor)
+
+    def _apply_estate_tax(self, inheritor: "Person", taxable_base: float):
+        """Apply estate tax on ``taxable_base`` (the gross estate net of the marital share).
+
+        The tax is charged to the residual inheritor (documented simplification: no
+        per-beneficiary apportionment of who pays).
+        """
         federal = self.model.config.tax.federal
         exemption = getattr(federal, "estate_tax_exemption", 15000000)
+        # Lifetime taxable gifts (e.g. irrevocable trust funding above the annual exclusion)
+        # consume the unified exemption.
+        exemption = max(0.0, exemption - self.estate_exemption_used)
         rate = getattr(federal, "estate_tax_rate", 40.0)
-        taxable = max(0.0, gross_estate - exemption)
+        taxable = max(0.0, taxable_base - exemption)
         estate_tax = taxable * (rate / 100)
         if estate_tax > 0:
             inheritor.pay_bills(estate_tax)

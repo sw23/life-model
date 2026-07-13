@@ -16,6 +16,8 @@ from mesa.visualization import Slider, SolaraViz, make_plot_component
 
 from life_model.account.bank import BankAccount
 from life_model.account.job401k import Job401kAccount
+from life_model.config.financial_config import FinancialConfig
+from life_model.config.models import DEFAULT_STATE_KEY
 from life_model.config.scenarios import list_scenarios
 from life_model.healthcare import LongTermCare, MedicalCosts, Medicare
 from life_model.housing.home import Home, HomeExpenses, Mortgage
@@ -26,6 +28,12 @@ from life_model.work.job import Job, Salary
 
 # Label used in the scenario dropdown for "use the packaged defaults" (scenario=None).
 SCENARIO_DEFAULT_LABEL = "(default)"
+
+# State-of-residence choices for the state dropdown: the packs shipped in the packaged defaults.
+# DEFAULT (the legacy flat rate) stays first so it is the dropdown's default selection.
+STATE_CHOICES = [DEFAULT_STATE_KEY] + sorted(
+    code for code in FinancialConfig().tax.state.packs if code != DEFAULT_STATE_KEY
+)
 
 current_year = datetime.now().year
 
@@ -67,6 +75,7 @@ PERSON_DEFAULTS: Dict[str, Dict[str, Any]] = {
         "retirement_contrib": 6,
         "company_match": 3,
         "retirement_growth": 7.0,
+        "children": 0,
     },
     "jane": {
         "enabled": True,
@@ -84,6 +93,7 @@ PERSON_DEFAULTS: Dict[str, Dict[str, Any]] = {
         "retirement_contrib": 6,
         "company_match": 3,
         "retirement_growth": 7.0,
+        "children": 0,
     },
 }
 
@@ -122,6 +132,7 @@ def _person_param_specs(prefix: str, name: str) -> Dict[str, Any]:
         f"{prefix}_retirement_balance": Slider(f"{name}'s 401k Balance ($)", d["retirement_balance"], 0, 500000, 5000),
         f"{prefix}_retirement_contrib": Slider(f"{name}'s 401k Contribution (%)", d["retirement_contrib"], 0, 50, 1),
         f"{prefix}_company_match": Slider(f"{name}'s 401k Company Match (%)", d["company_match"], 0, 20, 1),
+        f"{prefix}_children": Slider(f"{name}'s Children", d["children"], 0, 5, 1),
     }
 
 
@@ -150,6 +161,7 @@ def _add_person(model: LifeModel, family: Family, prefix: str, kwargs: Dict[str,
             base=g("spending"),
             yearly_increase=_get(kwargs, "spending_increase", SHARED_DEFAULTS["spending_increase"]),
         ),
+        state=_state_value(kwargs.get("state")),
     )
 
     BankAccount(
@@ -180,6 +192,11 @@ def _add_person(model: LifeModel, family: Family, prefix: str, kwargs: Dict[str,
             company_match_percent=g("company_match"),
             average_growth=g("retirement_growth"),
         )
+
+    for i in range(int(g("children"))):
+        # Children are born at the start of the simulation; costs and the Child Tax Credit
+        # then flow through the person's spending and tax unit automatically.
+        person.add_child(f"{prefix.capitalize()}'s Child {i + 1}", birth_year=model.start_year)
 
     return person
 
@@ -247,6 +264,14 @@ def _scenario_value(raw: Any) -> Optional[str]:
     return value
 
 
+def _state_value(raw: Any) -> Optional[str]:
+    """Map the state dropdown selection to a Person ``state`` (None for the DEFAULT pack)."""
+    value = param_value(raw)
+    if value in (None, DEFAULT_STATE_KEY):
+        return None
+    return value
+
+
 class DashboardLifeModel(LifeModel):
     """LifeModel wrapper that builds a family from dashboard parameters."""
 
@@ -272,6 +297,12 @@ model_params = {
         "type": "Select",
         "value": SCENARIO_DEFAULT_LABEL,
         "values": [SCENARIO_DEFAULT_LABEL] + list_scenarios(),
+    },
+    "state": {
+        "label": "State of Residence",
+        "type": "Select",
+        "value": DEFAULT_STATE_KEY,
+        "values": STATE_CHOICES,
     },
     "start_year": Slider("Start Year", SHARED_DEFAULTS["start_year"], 2000, current_year + 50, 1),
     "end_year": Slider("End Year", SHARED_DEFAULTS["end_year"], 2005, current_year + 150, 1),

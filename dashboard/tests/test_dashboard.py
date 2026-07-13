@@ -205,6 +205,36 @@ def test_scenario_default_label_uses_packaged_defaults():
     assert app._scenario_value(app.SCENARIO_DEFAULT_LABEL) is None
 
 
+def test_state_dropdown_maps_to_person_state():
+    """The state dropdown sets Person.state; DEFAULT maps to None (config default pack)."""
+    assert app.model_params["state"]["value"] == "DEFAULT"
+    assert "CA" in app.model_params["state"]["values"]
+    assert app._state_value("DEFAULT") is None
+    assert app._state_value("CA") == "CA"
+
+    from life_model.people.person import Person
+
+    model = DashboardLifeModel(start_year=2023, end_year=2024, jane_enabled=False, state="CA")
+    (person,) = [a for a in model.agents if isinstance(a, Person)]
+    assert person.state == "CA"
+
+    default_model = DashboardLifeModel(start_year=2023, end_year=2024, jane_enabled=False)
+    (default_person,) = [a for a in default_model.agents if isinstance(a, Person)]
+    assert default_person.state is None
+
+
+def test_state_selection_changes_state_tax():
+    """A no-income-tax state (TX) pays less total tax than the DEFAULT flat rate."""
+    common = dict(start_year=2023, end_year=2033, john_enabled=True, jane_enabled=False, john_salary=120000)
+    tx = DashboardLifeModel(state="TX", **common)
+    default = DashboardLifeModel(state="DEFAULT", **common)
+    tx.run()
+    default.run()
+    tx_balance = tx.datacollector.get_model_vars_dataframe()["Bank Balance"].iloc[-1]
+    default_balance = default.datacollector.get_model_vars_dataframe()["Bank Balance"].iloc[-1]
+    assert tx_balance > default_balance
+
+
 def test_start_year_slider_allows_2023():
     """The Start Year slider minimum permits reproducing documented 2023-based examples."""
     start_slider = app.model_params["start_year"]

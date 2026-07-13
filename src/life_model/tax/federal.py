@@ -7,6 +7,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Optional
 
 from ..config.config_manager import config as _global_config
+from .brackets import apply_brackets
 
 if TYPE_CHECKING:
     from ..config.financial_config import FinancialConfig
@@ -15,6 +16,9 @@ if TYPE_CHECKING:
 class FilingStatus(Enum):
     SINGLE = 1
     MARRIED_FILING_JOINTLY = 2
+    # Derived by TaxUnit.build_units for an unmarried member with a dependent child. Falls back
+    # to SINGLE deduction/brackets when the config carries no head_of_household data.
+    HEAD_OF_HOUSEHOLD = 3
 
 
 def _fin(config: "Optional[FinancialConfig]") -> "FinancialConfig":
@@ -50,15 +54,7 @@ def federal_income_tax(income: float, filing_status: FilingStatus, config: "Opti
         total_tax: Amount of tax due based on the taxable income.
     """
     brackets = get_federal_tax_brackets(filing_status, config)
-    total_tax = 0.0
-    prev_upper = 0.0
-    for _start, upper, percent in brackets:
-        if income <= prev_upper:
-            break
-        amount_in_bracket = min(income, upper) - prev_upper
-        total_tax += amount_in_bracket * (percent / 100)
-        prev_upper = upper
-    return total_tax
+    return apply_brackets(income, brackets)
 
 
 def max_tax_rate(filing_status: FilingStatus, config: "Optional[FinancialConfig]" = None) -> float:
