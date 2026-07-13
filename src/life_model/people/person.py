@@ -363,6 +363,114 @@ class Person(LifeModelAgent):
         self.receive_cash(withdrawn)
         return withdrawn
 
+    # ------------------------------------------------------------------
+    # Person-level withdrawal helpers (Plan 18 D1).
+    #
+    # Each helper mirrors withdraw_from_pretax_401ks: it moves money from the account type into
+    # the bank and records the correct income-ledger entry, so the withdrawal is taxed when the
+    # tax unit settles the year inside model.step(). Taxes therefore bite at year-end settlement,
+    # not at the moment of withdrawal — that is the simulator's actual semantics.
+    #
+    # Early-withdrawal penalties are intentionally NOT applied here; they remain the caller's
+    # concern until the core penalty backlog item lands.
+    # ------------------------------------------------------------------
+
+    def _owned_accounts_of_type(self, account_cls) -> List:
+        """This person's accounts of ``account_cls``, discovered by scanning the model's agents
+        (IRA/HSA/brokerage accounts reference ``person`` directly and are not registry-backed)."""
+        return [a for a in self.model.agents if isinstance(a, account_cls) and getattr(a, "person", None) is self]
+
+    @property
+    def traditional_iras(self):
+        """Get all Traditional IRA accounts for this person."""
+        from ..account.traditional_IRA import TraditionalIRA
+
+        return self._owned_accounts_of_type(TraditionalIRA)
+
+    @property
+    def roth_iras(self):
+        """Get all Roth IRA accounts for this person."""
+        from ..account.roth_IRA import RothIRA
+
+        return self._owned_accounts_of_type(RothIRA)
+
+    @property
+    def hsas(self):
+        """Get all Health Savings Accounts for this person."""
+        from ..account.hsa import HealthSavingsAccount
+
+        return self._owned_accounts_of_type(HealthSavingsAccount)
+
+    @property
+    def brokerage_accounts(self):
+        """Get all brokerage accounts for this person."""
+        from ..account.brokerage import BrokerageAccount
+
+        return self._owned_accounts_of_type(BrokerageAccount)
+
+    def withdraw_from_roth_401ks(self, amount: float) -> float:
+        """Withdraws money from Roth 401ks into the bank account.
+
+        Qualified Roth distributions are tax-free, so no income-ledger entry is created
+        (taxation of non-qualified Roth *earnings* is a documented simplification).
+
+        Returns:
+            float: Amount actually withdrawn.
+        """
+        withdrawn = amount - self.deduct_from_roth_401ks(amount)
+        self.receive_cash(withdrawn)
+        return withdrawn
+
+    def withdraw_from_traditional_iras(self, amount: float) -> float:
+        """Withdraws money from Traditional IRAs into the bank account.
+
+        Traditional IRA distributions are ordinary income (no FICA), exactly like pre-tax 401k
+        distributions; the ledger entry is settled by the tax unit at year end.
+
+        Returns:
+            float: Amount actually withdrawn.
+        """
+        withdrawn = amount - self._withdraw_sequence((acct.withdraw for acct in self.traditional_iras), amount)
+        self.income.add(IncomeType.PRETAX_DISTRIBUTION, withdrawn)
+        self.receive_cash(withdrawn)
+        return withdrawn
+
+    def withdraw_from_roth_iras(self, amount: float) -> float:
+        """Withdraws money from Roth IRAs into the bank account (tax-free distribution).
+
+        Returns:
+            float: Amount actually withdrawn.
+        """
+        withdrawn = amount - self._withdraw_sequence((acct.withdraw for acct in self.roth_iras), amount)
+        self.receive_cash(withdrawn)
+        return withdrawn
+
+    def withdraw_from_hsas(self, amount: float) -> float:
+        """Withdraws money from HSAs into the bank account.
+
+        Modeled as a qualified-medical (tax-free) distribution; taxing non-medical HSA
+        withdrawals is a documented simplification pending the core penalty backlog item.
+
+        Returns:
+            float: Amount actually withdrawn.
+        """
+        withdrawn = amount - self._withdraw_sequence((acct.withdraw for acct in self.hsas), amount)
+        self.receive_cash(withdrawn)
+        return withdrawn
+
+    def withdraw_from_brokerage_accounts(self, amount: float) -> float:
+        """Withdraws money from brokerage accounts into the bank account.
+
+        Capital-gains taxation on the sale is not modeled (documented simplification); the
+        withdrawal itself is a nontaxable transfer of principal.
+
+        Returns:
+            float: Amount actually withdrawn.
+        """
+        withdrawn = amount - self._withdraw_sequence((acct.withdraw for acct in self.brokerage_accounts), amount)
+        self.receive_cash(withdrawn)
+        return withdrawn
+
     def receive_cash(self, amount: float, source: str = "income"):
         """Receive cash into the person's primary bank account.
 

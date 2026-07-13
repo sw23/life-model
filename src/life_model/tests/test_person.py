@@ -101,3 +101,90 @@ class TestPerson(unittest.TestCase):
             job.salary.base = salary
             model.step()
             self.assertAlmostEqual(person.stat_taxes_paid_medicare, taxes_due, places=2)
+
+
+class TestPersonWithdrawalHelpers(unittest.TestCase):
+    """Person-level withdrawal helpers (Plan 18 D1): money lands in the bank and taxable
+    distributions create income-ledger entries settled at year end."""
+
+    def _make_person(self):
+        model = LifeModel(start_year=2025)
+        person = Person(
+            family=Family(model), name="Withdrawer", age=45, retirement_age=65, spending=Spending(model, 0)
+        )
+        BankAccount(owner=person, company="Bank", type="Checking", balance=1000)
+        return model, person
+
+    def test_withdraw_from_traditional_iras_is_taxable_income(self):
+        from ..account.traditional_IRA import TraditionalIRA
+
+        model, person = self._make_person()
+        TraditionalIRA(person=person, balance=50000)
+        withdrawn = person.withdraw_from_traditional_iras(20000)
+        self.assertEqual(withdrawn, 20000)
+        self.assertEqual(person.bank_account_balance, 21000)
+        self.assertEqual(person.taxable_income, 20000)
+        self.assertEqual(person.traditional_iras[0].balance, 30000)
+
+    def test_withdraw_from_roth_iras_is_tax_free(self):
+        from ..account.roth_IRA import RothIRA
+
+        model, person = self._make_person()
+        RothIRA(person=person, balance=50000)
+        withdrawn = person.withdraw_from_roth_iras(20000)
+        self.assertEqual(withdrawn, 20000)
+        self.assertEqual(person.bank_account_balance, 21000)
+        self.assertEqual(person.taxable_income, 0)
+
+    def test_withdraw_from_roth_401ks_is_tax_free(self):
+        from ..account.job401k import Job401kAccount
+
+        model, person = self._make_person()
+        job = Job(owner=person, company="Co", role="Dev", salary=Salary(model=model, base=0))
+        Job401kAccount(job=job, roth_balance=30000)
+        withdrawn = person.withdraw_from_roth_401ks(10000)
+        self.assertEqual(withdrawn, 10000)
+        self.assertEqual(person.bank_account_balance, 11000)
+        self.assertEqual(person.taxable_income, 0)
+
+    def test_withdraw_from_hsas_and_brokerage_are_untaxed_transfers(self):
+        from ..account.brokerage import BrokerageAccount
+        from ..account.hsa import HealthSavingsAccount, HSAType
+
+        model, person = self._make_person()
+        HealthSavingsAccount(person=person, hsa_type=HSAType.INDIVIDUAL, balance=5000)
+        BrokerageAccount(person=person, company="Broker", balance=8000)
+        self.assertEqual(person.withdraw_from_hsas(2000), 2000)
+        self.assertEqual(person.withdraw_from_brokerage_accounts(3000), 3000)
+        self.assertEqual(person.bank_account_balance, 6000)
+        self.assertEqual(person.taxable_income, 0)
+
+    def test_withdrawals_are_capped_at_available_balance(self):
+        from ..account.traditional_IRA import TraditionalIRA
+
+        model, person = self._make_person()
+        TraditionalIRA(person=person, balance=1500)
+        withdrawn = person.withdraw_from_traditional_iras(10000)
+        self.assertEqual(withdrawn, 1500)
+        self.assertEqual(person.taxable_income, 1500)
+
+    def test_traditional_ira_withdrawal_is_taxed_at_settlement(self):
+        # The ledger entry must actually increase the taxes settled by the tax unit in step().
+        from ..account.traditional_IRA import TraditionalIRA
+
+        results = {}
+        for withdraw in (False, True):
+            model = LifeModel(start_year=2025, config=_fixture_config())
+            person = Person(
+                family=Family(model), name="Settler", age=45, retirement_age=65, spending=Spending(model, 0)
+            )
+            BankAccount(owner=person, company="Bank", type="Checking", balance=100000)
+            ira = TraditionalIRA(person=person, balance=100000, growth_rate=0)
+            if withdraw:
+                person.withdraw_from_traditional_iras(50000)
+            else:
+                # Move the same cash without a ledger entry so both runs have identical balances.
+                person.receive_cash(ira.withdraw(50000))
+            model.step()
+            results[withdraw] = person.stat_taxes_paid
+        self.assertGreater(results[True], results[False])

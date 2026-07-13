@@ -114,7 +114,9 @@ class TestCheckpointRoundTrip(unittest.TestCase):
         self.assertTrue(all(torch.allclose(sd1[k], sd2[k]) for k in sd1))
         self.assertEqual(agent2.episode_rewards, agent.episode_rewards)
 
-    def test_version_mismatch_warns(self):
+    def test_version_mismatch_refuses_to_load(self):
+        # Plan 18: the observation layout / action space changed, so a checkpoint from another
+        # version must fail loudly with a clear message instead of loading misaligned weights.
         agent = _make_agent()
         path = os.path.join(tempfile.mkdtemp(), "ckpt.pt")
         agent.save_model(path)
@@ -124,14 +126,32 @@ class TestCheckpointRoundTrip(unittest.TestCase):
         torch.save(ckpt, path)
 
         agent2 = _make_agent()
-        # Loading a mismatched version should not raise (just warn) and should still load weights.
-        agent2.load_model(path)
+        with self.assertRaises(ValueError) as ctx:
+            agent2.load_model(path)
+        self.assertIn("model_version", str(ctx.exception))
+
+    def test_missing_obs_version_refuses_to_load(self):
+        # A pre-Plan-18 checkpoint has no obs_version key at all — it must also refuse.
+        agent = _make_agent()
+        path = os.path.join(tempfile.mkdtemp(), "ckpt.pt")
+        agent.save_model(path)
+        ckpt = torch.load(path, weights_only=True)
+        del ckpt["obs_version"]
+        torch.save(ckpt, path)
+
+        agent2 = _make_agent()
+        with self.assertRaises(ValueError):
+            agent2.load_model(path)
 
 
 class TestRolloutAndEval(unittest.TestCase):
     def test_rollout_is_deterministic_for_a_seed(self):
         env = FinancialLifeEnv()
-        agent = _make_agent()
+        agent = FinancialDQNAgent(
+            state_size=env.observation_space.shape[0],
+            action_size=env.action_space.n,
+            config={"min_replay_size": 8, "batch_size": 4, "replay_buffer_size": 1000},
+        )
         agent.epsilon = 0.0
         r1 = rollout(env, agent, training=False, seed=5)
         r2 = rollout(env, agent, training=False, seed=5)

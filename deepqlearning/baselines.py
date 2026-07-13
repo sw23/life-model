@@ -10,48 +10,44 @@ These non-learning policies give the RL agent something to beat. An agent that c
 double as regression detectors.
 """
 
-from typing import Callable, Dict, List, Tuple
+from typing import Callable, Dict, List
 
 import numpy as np
-from actions import ActionType
+from actions import ActionType, encode_flat_action
 from environment import FinancialLifeEnv
 
-# A baseline policy maps the environment's current state to an
-# ``(action_type_index, amount_percentage)`` pair.
-BaselinePolicy = Callable[[FinancialLifeEnv], Tuple[int, float]]
+# A baseline policy maps the environment's current state to a flat discrete action index
+# (Plan 18 D5: the index carries both the action type and the amount bucket).
+BaselinePolicy = Callable[[FinancialLifeEnv], int]
+
+_NO_ACTION = encode_flat_action(ActionType.NO_ACTION)
 
 
-def _index(action_type: ActionType) -> int:
-    return list(ActionType).index(action_type)
-
-
-def do_nothing_policy(env: FinancialLifeEnv) -> Tuple[int, float]:
+def do_nothing_policy(env: FinancialLifeEnv) -> int:
     """Never take a financial action."""
-    return _index(ActionType.NO_ACTION), 0.0
+    return _NO_ACTION
 
 
-def always_max_401k_policy(env: FinancialLifeEnv) -> Tuple[int, float]:
-    """Contribute as much as allowed to the pre-tax 401k every year."""
-    legal = env.get_legal_actions()
-    idx = _index(ActionType.TRANSFER_BANK_TO_401K_PRETAX)
-    if idx in legal:
-        return idx, 1.0
-    return _index(ActionType.NO_ACTION), 0.0
+def always_max_401k_policy(env: FinancialLifeEnv) -> int:
+    """Contribute as much as allowed to the pre-tax 401k every year (the 100% bucket)."""
+    action = encode_flat_action(ActionType.TRANSFER_BANK_TO_401K_PRETAX, 1.00)
+    if action in env.get_legal_actions():
+        return action
+    return _NO_ACTION
 
 
-def save_20_percent_policy(env: FinancialLifeEnv) -> Tuple[int, float]:
-    """Move roughly 20% of the bank balance into the brokerage each year."""
-    legal = env.get_legal_actions()
-    idx = _index(ActionType.TRANSFER_BANK_TO_BROKERAGE)
-    if idx in legal:
-        return idx, 0.2
-    return _index(ActionType.NO_ACTION), 0.0
+def save_25_percent_policy(env: FinancialLifeEnv) -> int:
+    """Move a quarter of the bank balance into the brokerage each year (the 25% bucket)."""
+    action = encode_flat_action(ActionType.TRANSFER_BANK_TO_BROKERAGE, 0.25)
+    if action in env.get_legal_actions():
+        return action
+    return _NO_ACTION
 
 
 BASELINES: Dict[str, BaselinePolicy] = {
     "do_nothing": do_nothing_policy,
     "always_max_401k": always_max_401k_policy,
-    "save_20_percent": save_20_percent_policy,
+    "save_25_percent": save_25_percent_policy,
 }
 
 
@@ -60,8 +56,7 @@ def run_baseline_episode(env: FinancialLifeEnv, policy: BaselinePolicy, seed: in
     env.reset(seed=seed)
     total_reward = 0.0
     while True:
-        action_idx, pct = policy(env)
-        action = {"action_type": action_idx, "amount_percentage": np.array([pct], dtype=np.float32)}
+        action = policy(env)
         _, reward, terminated, truncated, _ = env.step(action)
         total_reward += reward
         if terminated or truncated:

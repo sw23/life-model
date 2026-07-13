@@ -239,7 +239,7 @@ def main():
 
     # Get environment info
     state_size = env.observation_space.shape[0]
-    action_size = env.action_space["action_type"].n
+    action_size = env.action_space.n
 
     print(f"State size: {state_size}")
     print(f"Action size: {action_size}")
