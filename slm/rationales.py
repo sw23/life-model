@@ -36,6 +36,11 @@ def runner_up(scored: List[ScoredCandidate], chosen: str) -> ScoredCandidate:
     return argmax_candidate(others)
 
 
+def rationale_of(scored: List[ScoredCandidate]) -> str:
+    """Convenience: the rationale for the argmax candidate of ``scored``."""
+    return build_rationale(scored, argmax_candidate(scored).decision)
+
+
 def build_rationale(scored: List[ScoredCandidate], chosen_name: str) -> str:
     """Build the counterfactual rationale for ``chosen_name`` from the stored scores."""
     chosen = next(c for c in scored if c.decision == chosen_name)
