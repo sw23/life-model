@@ -168,5 +168,40 @@ class TestMedicare(unittest.TestCase):
         self.assertAlmostEqual(person.stat_money_spent, expected, places=2)
 
 
+class TestWidowIRMAACliff(unittest.TestCase):
+    """Pins the (intentional) widow IRMAA cliff documented in medicare.py.
+
+    A recent widow(er) files SINGLE while the two-year lookback still holds joint-era AGI, so
+    identical income history is measured against the roughly half-sized single thresholds and
+    premiums jump. Real-world SSA life-changing-event reassessment is not modeled.
+    """
+
+    def test_widow_pays_more_on_identical_joint_era_agi(self):
+        from ..tax.federal import FilingStatus
+
+        model = _flat_model()
+        cfg = model.config.healthcare.medicare
+        # Joint-era AGI: below the MFJ tier-1 threshold, but inside the SINGLE tier-1 band
+        # (above the single tier-1 threshold, below the single tier-2 threshold).
+        joint_agi = (cfg.irmaa_tiers[1].magi_min_single + cfg.irmaa_tiers[2].magi_min_single) / 2
+        self.assertLess(joint_agi, cfg.irmaa_tiers[1].magi_min_married_filing_jointly)
+
+        person = _make_person(model, age=70)
+        person.agi_history[model.year - 2] = joint_agi
+        medicare = Medicare(person)
+
+        # While married (MFJ thresholds): base premium.
+        person.filing_status = FilingStatus.MARRIED_FILING_JOINTLY
+        base = (cfg.irmaa_tiers[0].part_b_monthly + cfg.part_d_base_monthly_premium) * 12
+        self.assertAlmostEqual(medicare.annual_premium(), base, places=6)
+
+        # Newly widowed (SINGLE thresholds, same lookback AGI): tier-1 surcharge applies.
+        person.filing_status = FilingStatus.SINGLE
+        tier1 = cfg.irmaa_tiers[1]
+        surcharged = (tier1.part_b_monthly + cfg.part_d_base_monthly_premium + tier1.part_d_monthly_surcharge) * 12
+        self.assertAlmostEqual(medicare.annual_premium(), surcharged, places=6)
+        self.assertGreater(surcharged, base)
+
+
 if __name__ == "__main__":
     unittest.main()

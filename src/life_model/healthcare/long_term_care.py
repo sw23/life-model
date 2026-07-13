@@ -26,6 +26,7 @@ from typing import cast
 from ..insurance.general_insurance import InsuranceType
 from ..model import Event, LifeModel, LifeModelAgent
 from ..people.person import Person
+from .inflation import medical_inflation_factor
 
 
 class LongTermCare(LifeModelAgent):
@@ -58,12 +59,8 @@ class LongTermCare(LifeModelAgent):
         return bands[-1].annual_hazard if bands else 0.0
 
     def _medical_inflation_factor(self) -> float:
-        """Cumulative medical price level (CPI + premium) from the start year, as in MedicalCosts."""
-        premium = self.model.config.healthcare.medical_inflation_premium
-        factor = 1.0
-        for y in range(self.model.start_year, self.model.year):
-            factor *= 1 + (self.model.economy.inflation(y) + premium) / 100
-        return factor
+        """Cumulative medical price level (CPI + premium) from the start year (cached per model)."""
+        return medical_inflation_factor(self.model, self.model.year)
 
     def _draw_episode_duration(self) -> int:
         """Episode length in whole years: exponential with the configured mean, at least 1."""

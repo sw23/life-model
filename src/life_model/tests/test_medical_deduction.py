@@ -125,5 +125,63 @@ class TestMedicalDeduction(unittest.TestCase):
         self.assertAlmostEqual(person.agi_history[2026], 100000 - 32500, places=2)
 
 
+class TestWithdrawalSizingWithMedicalDeduction(unittest.TestCase):
+    """The 401k-withdrawal solver and settlement must agree on the medical floor (review fix).
+
+    The prospective withdrawal is ``additional_income`` during sizing but ledger income at
+    settlement. If the 7.5% medical floor ignores it during sizing, the sized taxes come in
+    lower than the settled taxes and the difference lands as phantom year-end debt.
+    """
+
+    @staticmethod
+    def _high_medical_config(annual_cost):
+        from ..config.financial_config import FinancialConfig
+
+        cfg = FinancialConfig()
+        cfg.apply_scenario(
+            "high_medical",
+            {
+                "economy": {"inflation": 0.0},
+                "healthcare": {
+                    "medical_inflation_premium": 0.0,
+                    "medical_cost_bands": [{"max_age": 200, "annual_cost": annual_cost}],
+                },
+            },
+        )
+        return cfg
+
+    def _make_retiree(self, model, pretax_balance):
+        from ..account.job401k import Job401kAccount
+        from ..work.job import Job, Salary
+
+        family = Family(model)
+        person = Person(family=family, name="R", age=70, retirement_age=65, spending=Spending(model, base=0))
+        BankAccount(owner=person, company="Bank", balance=1000)
+        job = Job(owner=person, company="Co", role="Retiree", salary=Salary(model, base=0))
+        Job401kAccount(job=job, pretax_balance=pretax_balance, roth_balance=0)
+        return person
+
+    def test_medical_costs_funded_from_401k_leave_no_phantom_debt(self):
+        """Reviewer's repro: $2M pretax, $1k bank, $60k medical band => debt == 0 at year end."""
+        model = LifeModel(start_year=2026, end_year=2026, config=self._high_medical_config(60000))
+        person = self._make_retiree(model, pretax_balance=2_000_000)
+        MedicalCosts(person)
+        model.step()
+        self.assertEqual(person.debt, 0)
+        # The withdrawal actually happened (medical costs were funded from the 401k).
+        self.assertLess(person.all_retirement_accounts[0].pretax_balance, 2_000_000)
+
+    def test_ltc_episode_funded_from_401k_leaves_no_phantom_debt(self):
+        """LTC variant: a $111,325/yr care episode funded from the 401k => debt == 0."""
+        model = LifeModel(start_year=2026, end_year=2026, config=self._high_medical_config(0))
+        person = self._make_retiree(model, pretax_balance=2_000_000)
+        ltc = LongTermCare(person)
+        ltc.in_care = True
+        ltc.care_years_remaining = 2
+        model.step()
+        self.assertEqual(person.debt, 0)
+        self.assertLess(person.all_retirement_accounts[0].pretax_balance, 2_000_000)
+
+
 if __name__ == "__main__":
     unittest.main()

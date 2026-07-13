@@ -16,6 +16,7 @@ from typing import Optional, cast
 
 from ..model import LifeModel, LifeModelAgent
 from ..people.person import Person
+from .inflation import medical_inflation_factor
 
 
 class MedicalCosts(LifeModelAgent):
@@ -45,12 +46,9 @@ class MedicalCosts(LifeModelAgent):
 
         Each year compounds ``(CPI inflation + medical_inflation_premium)``, so medical costs
         outpace ordinary CPI by the configured premium. The start year has a factor of 1.0.
+        Cached per model+year (see healthcare.inflation).
         """
-        premium = self.model.config.healthcare.medical_inflation_premium
-        factor = 1.0
-        for y in range(self.model.start_year, year):
-            factor *= 1 + (self.model.economy.inflation(y) + premium) / 100
-        return factor
+        return medical_inflation_factor(self.model, year)
 
     def annual_cost(self, year: Optional[int] = None) -> float:
         """This person's nominal medical cost for ``year`` (defaults to the current model year).

@@ -19,7 +19,12 @@ Documented simplifications (v1):
 * IRMAA thresholds are indexed by CPI (they are CPI-U indexed in law); premiums are indexed by
   medical inflation (CPI + the configured premium) from the model start year, since the configured
   premiums are start-year dollars like every other config dollar value.
-* The threshold column follows the person's *current* filing status.
+* The threshold column follows the person's *current* filing status. This produces a real-world
+  IRMAA cliff for recent widow(er)s: after the survivor switches to SINGLE filing, the two-year
+  lookback still holds joint-era AGI, now measured against the (roughly half-sized) single
+  thresholds — premiums can jump on identical income history. SSA's "life-changing event"
+  reassessment (form SSA-44), which can soften this in reality, is not modeled. This behavior is
+  intentional and pinned by a test.
 * Employer coverage before 65 is out of scope (backlog).
 * Prescription-drug coverage is modeled via the Part D premium (per plan; finer detail backlog).
 """
@@ -29,6 +34,7 @@ from typing import cast
 from ..model import Event, LifeModel, LifeModelAgent
 from ..people.person import Person
 from ..tax.federal import FilingStatus
+from .inflation import medical_inflation_factor
 
 
 class Medicare(LifeModelAgent):
@@ -79,12 +85,8 @@ class Medicare(LifeModelAgent):
         return selected
 
     def _medical_inflation_factor(self) -> float:
-        """Cumulative medical price level (CPI + premium) from the start year, as in MedicalCosts."""
-        premium = self.model.config.healthcare.medical_inflation_premium
-        factor = 1.0
-        for y in range(self.model.start_year, self.model.year):
-            factor *= 1 + (self.model.economy.inflation(y) + premium) / 100
-        return factor
+        """Cumulative medical price level (CPI + premium) from the start year (cached per model)."""
+        return medical_inflation_factor(self.model, self.model.year)
 
     def annual_premium(self) -> float:
         """This year's total Medicare premium (Part B + Part D base + Part D IRMAA surcharge)."""

@@ -215,24 +215,34 @@ class Person(LifeModelAgent):
         agents = [*self.medical_costs, *self.medicare, *self.long_term_care]
         return sum(agent.stat_medical_costs for agent in agents)
 
-    @property
-    def medical_expense_deduction(self) -> float:
+    def medical_expense_deduction_with(self, additional_income: float = 0.0) -> float:
         """Itemizable unreimbursed medical: the excess over the AGI floor (IRC §213(a)).
 
         The floor uses ordinary income *before* deductions: this model computes AGI as
         ``ordinary - deductions`` (tax.py), so using post-deduction income here would be circular.
         For a joint unit the floor is applied per member on their own income (approximation).
+
+        Args:
+            additional_income: Prospective ordinary income not yet in the ledger (e.g. a 401k
+                withdrawal being sized by ``TaxUnit``). Raising the floor by it keeps sized taxes
+                equal to settled taxes — otherwise the floor would rise once the withdrawal lands
+                in the ledger, shrinking the deduction and leaving settlement short of taxes
+                (phantom year-end debt).
         """
         medical = self.unreimbursed_medical_expenses
         if medical <= 0:
             return 0.0
         floor_pct = self.model.config.healthcare.medical_deduction_agi_floor
-        floor = self.income.ordinary_taxable * floor_pct / 100
+        floor = (self.income.ordinary_taxable + additional_income) * floor_pct / 100
         return max(0.0, medical - floor)
 
     @property
-    def total_itemized_deductions(self) -> float:
-        """Calculate total itemized deductions.
+    def medical_expense_deduction(self) -> float:
+        """Itemizable unreimbursed medical with no prospective income (see the ``_with`` method)."""
+        return self.medical_expense_deduction_with(0.0)
+
+    def total_itemized_deductions_with(self, additional_income: float = 0.0) -> float:
+        """Total itemized deductions, with ``additional_income`` raising the medical floor.
 
         Currently includes:
         - Charitable contributions
@@ -243,7 +253,7 @@ class Person(LifeModelAgent):
         TODO: Add other itemized deductions (state income tax in SALT, etc.)
         """
         itemized = self.charitable_deductions
-        itemized += self.medical_expense_deduction
+        itemized += self.medical_expense_deduction_with(additional_income)
 
         federal = self.model.config.tax.federal
         salt_paid = 0.0
@@ -264,6 +274,11 @@ class Person(LifeModelAgent):
         itemized += min(salt_paid, federal.salt_deduction_cap)
 
         return itemized
+
+    @property
+    def total_itemized_deductions(self) -> float:
+        """Total itemized deductions with no prospective income (see the ``_with`` method)."""
+        return self.total_itemized_deductions_with(0.0)
 
     @property
     def federal_deductions(self) -> float:
@@ -589,9 +604,12 @@ class Person(LifeModelAgent):
         Charged only when the person opted into the healthcare subsystem (has any healthcare
         agent), so simulations without healthcare agents keep today's death flow byte-identical.
         The funeral cost is CPI-indexed from the start year; the final-year medical spike is the
-        configured multiplier times the person's current-year medical cost. Costs are paid from
-        the deceased's bank accounts before the estate is valued/transferred; any unpayable
-        remainder is forgiven (the estate cannot go negative).
+        configured multiplier times the person's current-year medical cost, and keys off the
+        ``MedicalCosts`` agent(s) only — a decedent with just Medicare/LongTermCare agents incurs
+        the funeral cost alone. Costs are paid from the deceased's **bank accounts only** before
+        the estate is valued/transferred; any unpayable remainder is forgiven (the estate cannot
+        go negative), so a bank-poor but 401k-rich decedent underpays these costs — retirement
+        accounts are not liquidated for them (documented v1 simplification).
 
         The deceased's healthcare agents are then retired so they are not reassigned to the
         inheritor (medical costs are personal, not inheritable).

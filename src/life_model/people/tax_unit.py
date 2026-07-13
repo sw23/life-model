@@ -81,15 +81,49 @@ class TaxUnit:
     @property
     def federal_deductions(self) -> float:
         """Greater of the standard deduction for the filing status or combined itemized."""
+        return self.federal_deductions_with(0.0)
+
+    def _prospective_withdrawal_allocation(self, amount: float) -> Dict[int, float]:
+        """Predict how ``withdraw_from_pretax_401ks`` would split ``amount`` across members.
+
+        Mirrors the withdrawal order exactly (members in sequence, each up to their combined
+        pre-tax balance) without moving any money, so income-dependent deductions can be
+        evaluated during sizing against the same per-member incomes settlement will see.
+        """
+        allocation: Dict[int, float] = {}
+        remaining = amount
+        for member in self.members:
+            available = sum(acct.pretax_balance for acct in member.all_retirement_accounts)
+            take = min(remaining, available)
+            allocation[member.unique_id] = take
+            remaining -= take
+        return allocation
+
+    def federal_deductions_with(self, additional_income: float = 0.0) -> float:
+        """Federal deductions with a prospective withdrawal's income raising the medical floor.
+
+        The 7.5%-of-income medical floor (Plan 15 D6) depends on ordinary income, so a
+        prospective 401k withdrawal changes the deduction. Evaluating the floor against the
+        same per-member income that settlement will see keeps the sized withdrawal exactly
+        sufficient — without this, sizing over-estimates the medical deduction, taxes come in
+        higher at settlement, and the difference lands as phantom year-end debt.
+        """
         standard_deduction = get_federal_standard_deduction(self.filing_status, self.config)
-        return max(standard_deduction, self.total_itemized_deductions)
+        if additional_income > 0:
+            allocation = self._prospective_withdrawal_allocation(additional_income)
+            itemized = sum(m.total_itemized_deductions_with(allocation[m.unique_id]) for m in self.members)
+        else:
+            itemized = self.total_itemized_deductions
+        return max(standard_deduction, itemized)
 
     def get_income_taxes_due(self, additional_income: float = 0) -> TaxesDue:
         # ``additional_income`` models a prospective pre-tax 401k withdrawal: it is ordinary
-        # income but not FICA wages, so it is not added to the per-member wage bases.
+        # income but not FICA wages, so it is not added to the per-member wage bases. It does
+        # enter the deduction computation (the medical floor is income-dependent).
         ordinary_income = self.taxable_income + additional_income
         wage_incomes = [m.fica_wages for m in self.members]
-        return compute_taxes(ordinary_income, self.federal_deductions, self.filing_status, wage_incomes, self.config)
+        deductions = self.federal_deductions_with(additional_income)
+        return compute_taxes(ordinary_income, deductions, self.filing_status, wage_incomes, self.config)
 
     def withdraw_from_pretax_401ks(self, amount: float) -> float:
         """Withdraw ``amount`` from members' pre-tax 401ks. Returns the amount not withdrawn."""
