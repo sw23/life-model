@@ -85,15 +85,31 @@ class VectorizedTrainer:
             "lr_gamma": 0.5,
             "model_save_path": "financial_dqn_vector.pt",
             "print_freq_steps": 5_000,
+            # Optional TensorBoard logging dir (Plan 19 D4/D5). Uses torch.utils.tensorboard, which
+            # ships with torch; behind a soft import so the trainer runs fine without TensorBoard.
+            "tensorboard_logdir": None,
         }
         if config:
             self.config.update(config)
 
+        self.writer = self._make_tensorboard_writer()
         self.scheduler = self._make_scheduler()
         self.episode_rewards: List[float] = []
         self.eval_rewards: List[float] = []
         self.best_eval = -float("inf")
         self._collected_steps = 0
+
+    def _make_tensorboard_writer(self):
+        logdir = self.config["tensorboard_logdir"]
+        if not logdir:
+            return None
+        try:
+            from torch.utils.tensorboard import SummaryWriter
+        except ImportError:
+            print("TensorBoard requested but torch.utils.tensorboard is unavailable; continuing without it.")
+            return None
+        print(f"TensorBoard logging to {logdir}")
+        return SummaryWriter(log_dir=logdir)
 
     def _make_scheduler(self):
         sched = self.config["lr_schedule"]
@@ -190,12 +206,21 @@ class VectorizedTrainer:
                         f"steps {self._collected_steps:>8d} | eps {self.agent.epsilon:.3f} | "
                         f"recent_return {recent:8.2f} | {rate:7.0f} env-steps/s"
                     )
+                    if self.writer is not None:
+                        self.writer.add_scalar("train/recent_return", recent, self._collected_steps)
+                        self.writer.add_scalar("train/epsilon", self.agent.epsilon, self._collected_steps)
+                        if self.agent.training_losses:
+                            self.writer.add_scalar(
+                                "train/loss", self.agent.training_losses[-1], self._collected_steps
+                            )
 
                 if self._collected_steps - last_eval_at >= self.config["eval_freq_steps"]:
                     last_eval_at = self._collected_steps
                     eval_reward = self._evaluate()
                     self.eval_rewards.append(eval_reward)
                     print(f"  [eval @ {self._collected_steps} steps] greedy return {eval_reward:.2f}")
+                    if self.writer is not None:
+                        self.writer.add_scalar("eval/greedy_return", eval_reward, self._collected_steps)
                     if eval_reward > self.best_eval + 1e-6:
                         self.best_eval = eval_reward
                         rounds_without_improve = 0
@@ -207,6 +232,8 @@ class VectorizedTrainer:
                             break
         finally:
             venv.close()
+            if self.writer is not None:
+                self.writer.close()
 
         return {
             "collected_env_steps": self._collected_steps,
