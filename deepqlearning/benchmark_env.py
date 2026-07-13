@@ -24,7 +24,9 @@ regressions are measurable.
 import argparse
 import time
 
+import numpy as np
 from environment import FinancialLifeEnv
+from vector_trainer import make_vector_env
 
 from life_model.account.bank import BankAccount
 from life_model.account.job401k import Job401kAccount
@@ -87,10 +89,40 @@ def bench_env(num_episodes: int) -> float:
     return steps / elapsed
 
 
+def bench_vector_env(num_envs: int, steps_per_env: int, backend: str) -> float:
+    """Vectorized env steps/sec: ``num_envs`` envs stepped in lockstep with random actions.
+
+    Random actions over the whole discrete space are used (illegal actions no-op), so no per-env
+    masking is needed — this measures raw collection throughput. Async uses one worker process per
+    env; on a multi-core machine this is where the >=3x-over-single-env target (Plan 19 D4) comes
+    from.
+    """
+    venv = make_vector_env({}, num_envs, backend)
+    n = venv.single_action_space.n
+    rng = np.random.default_rng(0)
+    venv.reset(seed=[i for i in range(num_envs)])
+    total_steps = 0
+    start = time.perf_counter()
+    for _ in range(steps_per_env):
+        venv.step(rng.integers(0, n, size=num_envs))
+        total_steps += num_envs
+    elapsed = time.perf_counter() - start
+    venv.close()
+    return total_steps / elapsed
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Benchmark the RL environment and LifeModel step rate")
     parser.add_argument("--models", type=int, default=20, help="Model-only benchmark: number of models")
     parser.add_argument("--episodes", type=int, default=20, help="Env benchmark: number of episodes")
+    parser.add_argument("--num-envs", type=int, default=8, help="Vectorized benchmark: number of parallel envs")
+    parser.add_argument("--vec-steps", type=int, default=400, help="Vectorized benchmark: steps per env")
+    parser.add_argument(
+        "--vec-backends",
+        type=str,
+        default="sync,async",
+        help="Comma-separated vector backends to benchmark (sync, async).",
+    )
     args = parser.parse_args()
 
     with_collector = bench_model_only(collect_data=True, num_models=args.models)
@@ -100,7 +132,20 @@ def main() -> None:
     print(f"model-only steps/sec (collect_data=True):  {with_collector:10.1f}")
     print(f"model-only steps/sec (collect_data=False): {without_collector:10.1f}")
     print(f"  speedup from collect_data=False:         {without_collector / with_collector:10.2f}x")
-    print(f"env steps/sec (random legal actions):      {env_rate:10.1f}")
+    print(f"env steps/sec (single env, random legal):  {env_rate:10.1f}")
+
+    single_env_rate = bench_vector_env(1, args.vec_steps, "sync")
+    print(f"env steps/sec (single env, vector harness):{single_env_rate:10.1f}")
+    for backend in [b.strip() for b in args.vec_backends.split(",") if b.strip()]:
+        try:
+            rate = bench_vector_env(args.num_envs, args.vec_steps, backend)
+        except Exception as exc:  # noqa: BLE001 - report and continue; async can fail on some platforms
+            print(f"vector {backend} ({args.num_envs} envs): failed ({exc})")
+            continue
+        print(
+            f"vector env steps/sec ({backend}, {args.num_envs} envs): {rate:10.1f}  "
+            f"({rate / single_env_rate:5.2f}x single-env)"
+        )
 
 
 if __name__ == "__main__":

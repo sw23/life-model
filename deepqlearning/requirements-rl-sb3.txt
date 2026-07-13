@@ -1,0 +1,10 @@
+# Optional Stable-Baselines3 cross-check dependencies (Plan 19 D4).
+#
+# These are ONLY needed to run deepqlearning/sb3/cross_check.py, which trains an external SB3
+# DQN/PPO agent on the same environment as an independent sanity bound. Nothing in the main
+# trainer, the environment, or the test suite imports Stable-Baselines3 — install this file only
+# if you want to run the cross-check.
+#
+#   pip install -r requirements-rl.txt -r requirements-rl-sb3.txt
+#
+stable-baselines3>=2.3.0

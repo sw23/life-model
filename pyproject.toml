@@ -77,6 +77,7 @@ testpaths = ["src/life_model/tests"]
 markers = [
     "notebooks: end-to-end Jupyter notebook execution tests (slow; run in a dedicated CI job)",
     "documentation: documentation-related tests",
+    "slow: slow tests (e.g. multi-episode RL training smoke tests); run in a dedicated CI job",
 ]
 
 [tool.coverage.run]

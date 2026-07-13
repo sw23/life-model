@@ -1,0 +1,37 @@
+Evaluation protocol — preset=retirement_security n=50 master_seed=12345
+
+[train]
+policy                      mean              95% CI   ruin   succ       nw_p50
+agent                      31.45       [29.18,33.45]   0.00   1.00      335,601
+always_max_401k            30.07       [27.99,31.95]   0.00   1.00      999,864
+contribution_waterfall     30.05       [27.96,31.93]   0.00   1.00      903,471
+emergency_fund_first       30.04       [27.96,31.92]   0.00   1.00      897,910
+four_percent_drawdown      30.04       [27.96,31.91]   0.00   1.00      891,977
+age_glide                  30.02       [27.93,31.90]   0.00   1.00      830,318
+do_nothing                 10.10        [4.13,16.17]   0.36   0.64       25,477
+save_25_percent           -12.15      [-16.02,-7.92]   0.02   0.98      873,992
+
+[held_out_seeds]
+policy                      mean              95% CI   ruin   succ       nw_p50
+agent                      28.51       [25.96,30.92]   0.00   1.00      340,781
+always_max_401k            27.54       [25.23,29.73]   0.00   1.00      945,777
+contribution_waterfall     27.52       [25.21,29.72]   0.00   1.00      860,921
+emergency_fund_first       27.52       [25.21,29.71]   0.00   1.00      855,759
+four_percent_drawdown      27.51       [25.20,29.70]   0.00   1.00      823,523
+age_glide                  27.49       [25.18,29.68]   0.00   1.00      781,753
+do_nothing                  8.86        [3.36,14.33]   0.34   0.62      118,838
+save_25_percent            -2.31        [-7.64,3.17]   0.00   1.00      934,024
+
+[held_out_scenario]
+policy                      mean              95% CI   ruin   succ       nw_p50
+agent                      30.09       [28.03,32.06]   0.00   1.00      416,913
+always_max_401k            29.74       [27.73,31.66]   0.00   1.00    1,053,183
+contribution_waterfall     29.72       [27.71,31.63]   0.00   1.00      980,817
+emergency_fund_first       29.72       [27.71,31.63]   0.00   1.00      972,801
+four_percent_drawdown      29.71       [27.71,31.62]   0.00   1.00      914,771
+age_glide                  29.69       [27.68,31.61]   0.00   1.00      880,657
+do_nothing                 10.75        [5.06,16.46]   0.34   0.66       85,585
+save_25_percent            -3.17        [-8.19,2.13]   0.00   1.00    1,352,041
+
+Intelligent verdict (train, retirement_security): agent=31.45 vs best heuristic contribution_waterfall=30.05 | beats_all=True ci_no_overlap=False => INTELLIGENT=False
+Held-out-seeds gap vs best heuristic: +0.99
