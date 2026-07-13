@@ -21,7 +21,9 @@ from environment import OBS_VERSION, FinancialLifeEnv
 # changes. Checkpoints carrying a different version now refuse to load (their weights would be
 # silently misaligned with the redesigned observation/action spaces). Version 3 = Plan 18
 # redesign (real tax path, model-native mortality, stochastic economy, observation v2).
-MODEL_VERSION = 3
+# Version 4 = Plan 19 utility-based reward (CRRA consumption + terminal bequest/ruin); the value
+# scale changed, so version-3 checkpoints are refused.
+MODEL_VERSION = 4
 
 # Experience tuple for the replay buffer. ``legal_actions`` is the legal mask for ``state`` and
 # ``next_legal_actions`` is the legal mask for ``next_state`` (needed to mask bootstrapped targets).

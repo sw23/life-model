@@ -18,6 +18,7 @@ from actions import (
     withdrawal_available,
 )
 from gymnasium import spaces
+from rewards import DEFAULT_PRESET, RewardConfig, get_reward_config, step_reward
 from scenarios import HOUSEHOLD_SCENARIOS, EpisodeSampler
 
 from life_model.account.bank import BankAccount
@@ -126,7 +127,13 @@ class FinancialLifeEnv(gym.Env):
     # actions (the flat action space carries no amount for them).
     SPENDING_STEP = 0.05
 
-    def __init__(self, config: Optional[Dict] = None, render_mode: Optional[str] = None):
+    def __init__(
+        self,
+        config: Optional[Dict] = None,
+        render_mode: Optional[str] = None,
+        *,
+        reward_config: Optional[RewardConfig] = None,
+    ):
         super().__init__()
 
         # Default configuration
@@ -150,13 +157,6 @@ class FinancialLifeEnv(gym.Env):
             # Household scenario whose distributions are used when reset(options={"randomize":
             # True}) draws a randomized household (Plan 18 D6).
             "household_scenario": "basic",
-            "reward_weights": {
-                "net_worth": 1.0,
-                "spending_satisfaction": 0.3,
-                "bankruptcy_penalty": -10.0,
-                "death_with_money_bonus": 1.0,
-                "unexpected_death_penalty": -5.0,  # Penalty for dying unexpectedly early
-            },
         }
 
         if config:
@@ -164,6 +164,14 @@ class FinancialLifeEnv(gym.Env):
 
         if self.config["economy_mode"] not in _ECONOMY_MODES:
             raise ValueError(f"Unknown economy_mode {self.config['economy_mode']!r}; expected one of {_ECONOMY_MODES}")
+
+        # Utility-based objective (Plan 19 D1). ``reward_config`` (an explicit RewardConfig) wins;
+        # otherwise config["reward_preset"] names a preset; otherwise the default preset. Recorded
+        # so the trainer/eval report can report which objective produced a run.
+        if reward_config is not None:
+            self.reward_config = reward_config
+        else:
+            self.reward_config = get_reward_config(self.config.get("reward_preset", DEFAULT_PRESET))
 
         self.render_mode = render_mode
 
@@ -316,9 +324,10 @@ class FinancialLifeEnv(gym.Env):
         # Set initial model end year
         self.model.end_year = self.model.start_year + self.max_steps
 
-        # Track initial state
+        # Track initial state. The utility reward (Plan 19 D1) is per-year consumption plus a
+        # terminal bequest/ruin term, so it carries no cross-step net-worth baseline — only the
+        # running lifetime spending (for analysis) and the estate value at death are tracked.
         self.initial_net_worth = self._calculate_net_worth()
-        self.previous_net_worth = self.initial_net_worth
         self.total_lifetime_spending = 0.0
         # Net worth captured just before the person died (the estate value the reward sees);
         # None while the person is alive.
@@ -364,12 +373,13 @@ class FinancialLifeEnv(gym.Env):
         if self.person.is_deceased and self._estate_value_at_death is None:
             self._estate_value_at_death = net_worth_before_step
 
-        # Calculate reward
-        reward = self._calculate_reward(action_result)
-
-        # Terminal (task-ending) vs. truncation (time-limit) conditions
+        # Terminal (task-ending) vs. truncation (time-limit) conditions. Computed before the reward
+        # so the utility objective can add its terminal bequest/ruin term on the final step.
         terminated = self._is_terminated()
         truncated = self.current_step >= self.max_steps and not terminated
+
+        # Calculate reward (utility-based; Plan 19 D1)
+        reward = self._calculate_reward(action_result, terminated=terminated, truncated=truncated)
 
         info = self._get_info(action_result, action_type=action_type, action_amount=action_amount)
 
@@ -571,65 +581,38 @@ class FinancialLifeEnv(gym.Env):
         liabilities = self.person.debt + sum(home.mortgage.principal for home in self.person.homes if home.mortgage)
         return assets - liabilities
 
-    def _calculate_reward(self, action_result: ActionResult) -> float:
-        """Calculate reward for the current step.
+    def _calculate_reward(self, action_result: ActionResult, terminated: bool, truncated: bool) -> float:
+        """Utility-based reward for the current step (Plan 19 D1).
 
-        The reward is a change-in-net-worth base plus a spending-utility term, with terminal
-        wealth and mortality adjustments. There is no pre-retirement "bonus" term (it was farmable
-        by simply cutting spending), so the agent is rewarded for genuinely growing wealth.
+        The agent earns the CRRA utility of this year's **real** consumption every step, and on the
+        terminal step earns either a bequest utility on the real net worth it leaves behind or, if
+        it went bankrupt, a large ruin penalty. Time preference is handled entirely by the DQN's
+        ``gamma`` — there is no discounting inside the reward. See ``rewards.py`` for the pure,
+        unit-tested objective; this method only supplies the model-derived quantities it needs.
         """
+        deflator = self.model.economy.cumulative_inflation(self.model.year)
+        nominal_consumption = self.person.spending.get_yearly_spending()
+        self.total_lifetime_spending += nominal_consumption
 
-        reward = 0.0
-        weights = self.config["reward_weights"]
-
-        # Net worth growth reward (change since last step). When the person died this step, use
-        # the estate value at death rather than the post-dissolution ~0 net worth: the estate
-        # passing out of the simulation is not wealth the agent destroyed, and penalizing it
-        # would perversely reward dying poor.
+        # When the person died this step, the estate value at death (captured pre-dissolution) is
+        # the wealth passed on, not the ~0 net worth left after assets dissolve out of the sim.
         if self.died_from_natural_causes and self._estate_value_at_death is not None:
-            current_net_worth = self._estate_value_at_death
+            terminal_net_worth = self._estate_value_at_death
         else:
-            current_net_worth = self._calculate_net_worth()
-        net_worth_growth = current_net_worth - self.previous_net_worth
-        self.previous_net_worth = current_net_worth
-        reward += weights["net_worth"] * (net_worth_growth / 100000.0)  # Normalized by $100k
+            terminal_net_worth = self._calculate_net_worth()
 
-        # Spending satisfaction (diminishing returns on spending)
-        annual_spending = self.person.spending.get_yearly_spending()
-        self.total_lifetime_spending += annual_spending
-        spending_satisfaction = np.log(max(annual_spending, 1000)) / 10.0
-        reward += weights["spending_satisfaction"] * spending_satisfaction
+        # Ruin is the same single threshold that ends the episode, so the penalty and the
+        # bankruptcy termination can never disagree.
+        ruined = self._calculate_net_worth() < self.BANKRUPTCY_THRESHOLD
 
-        # Bankruptcy penalty (same threshold as termination, so they never disagree)
-        if current_net_worth < self.BANKRUPTCY_THRESHOLD:
-            reward += weights["bankruptcy_penalty"]
-
-        # Death with money bonus (terminal wealth — the estate value when the person died)
-        if (self.current_step >= self.max_steps - 1 or self.died_from_natural_causes) and current_net_worth > 0:
-            reward += weights["death_with_money_bonus"] * (current_net_worth / 1000000.0)
-
-        # Unexpected death penalty - penalize dying much earlier than expected lifespan
-        if self.died_from_natural_causes:
-            expected_years_remaining = 0
-            for future_age in range(self.person.age, min(self.config["person_max_age"], 100)):
-                survival_prob = 1.0 - get_chance_of_mortality(
-                    future_age,
-                    self.person.gender if self.person.gender != GenderAtBirth.OTHER else GenderAtBirth.MALE,
-                )
-                expected_years_remaining += survival_prob
-
-            if expected_years_remaining > 20:  # More than 20 years expected remaining
-                penalty_factor = min(expected_years_remaining / 20.0, 2.0)  # Cap at 2x penalty
-                reward += weights["unexpected_death_penalty"] * penalty_factor
-
-        # Action execution penalty for failed actions
-        if not action_result.success:
-            reward -= 0.1
-
-        # Fee penalty
-        reward -= action_result.fees_paid / 10000.0  # Penalty for fees
-
-        return float(reward)
+        return step_reward(
+            nominal_consumption=nominal_consumption,
+            deflator=deflator,
+            config=self.reward_config,
+            terminal=terminated or truncated,
+            nominal_terminal_net_worth=terminal_net_worth,
+            ruined=ruined,
+        )
 
     def _is_terminated(self) -> bool:
         """Whether the episode reached a terminal (task-ending) state.

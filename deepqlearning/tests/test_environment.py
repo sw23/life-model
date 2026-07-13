@@ -67,18 +67,17 @@ class TestSeedingDeterminism(unittest.TestCase):
 
         self.assertEqual(run(7), run(7))
 
-    def test_previous_net_worth_reset_between_episodes(self):
-        # A fresh episode must not compute its first reward against the last episode's net worth.
+    def test_reward_state_reset_between_episodes(self):
+        # A fresh episode must not carry reward accounting state (lifetime spending) from the last
+        # one; the utility reward (Plan 19 D1) is otherwise stateless across steps.
         env = FinancialLifeEnv()
         env.reset(seed=1)
-        # Drive net worth up materially.
         for _ in range(20):
             env.step(_no_action(env))
-        high_net_worth = env._calculate_net_worth()
+        self.assertGreater(env.total_lifetime_spending, 0.0)
 
         env.reset(seed=1)
-        self.assertEqual(env.previous_net_worth, env.initial_net_worth)
-        self.assertNotAlmostEqual(env.previous_net_worth, high_net_worth)
+        self.assertEqual(env.total_lifetime_spending, 0.0)
 
 
 class TestRewardSemantics(unittest.TestCase):
@@ -87,10 +86,19 @@ class TestRewardSemantics(unittest.TestCase):
         # Penalty and termination use the same single threshold constant.
         self.assertEqual(env.BANKRUPTCY_THRESHOLD, -100000)
 
-    def test_no_farmable_early_retirement_bonus(self):
-        # Decreasing spending must not manufacture reward via a pre-retirement bonus.
+    def test_utility_reward_config_replaces_adhoc_weights(self):
+        # Plan 19 D1: the ad-hoc reward-weight shaping (net-worth growth, farmable bonuses) is
+        # replaced by a utility-based RewardConfig; the old weight dict is gone.
+        from rewards import DEFAULT_PRESET, RewardConfig
+
         env = FinancialLifeEnv()
-        self.assertNotIn("early_retirement_bonus", env.config["reward_weights"])
+        self.assertNotIn("reward_weights", env.config)
+        self.assertIsInstance(env.reward_config, RewardConfig)
+        self.assertEqual(env.reward_config.name, DEFAULT_PRESET)
+
+    def test_reward_preset_selectable_via_config(self):
+        env = FinancialLifeEnv({"reward_preset": "wealth_max"})
+        self.assertEqual(env.reward_config.name, "wealth_max")
 
     def test_terminated_on_max_age(self):
         env = FinancialLifeEnv({"person_start_age": 118, "person_max_age": 119})
