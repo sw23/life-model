@@ -16,7 +16,8 @@ pyyaml>=6.0
 
 # --- training backend (HF canonical path; D3) ---
 # Pin ranges, not exact versions, so the same file works across the wide hardware matrix the plan
-# targets (laptop GPU → cluster). Uncomment / install for training runs.
+# targets (laptop GPU → cluster). Required only for training runs (`slm.train`) and for running a
+# real local model; the schema/serializer/scoring/eval/tool-loop paths and CI never need them.
 transformers>=4.44
 peft>=0.12
 trl>=0.9
