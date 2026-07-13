@@ -104,7 +104,8 @@ This package supports a comprehensive range of financial modeling components:
 - [x] **Economic Scenarios** - Configurable market conditions (recession, inflation, etc.)
 - [x] **Payment Services** - Intelligent bill payment with account prioritization
 - [x] **Tax Optimization** - Strategic withdrawal and contribution planning
-- [x] **Deep Q-Learning** - AI-driven financial decision optimization
+- [x] **Deep Q-Learning** - A reinforcement-learning agent (`deepqlearning/`) that learns an in-episode financial policy, evaluated against planner heuristics with an outcome-based protocol
+- [x] **Simulation-Grounded Adviser** - A language-model adviser (`slm/`) that maps a household to a recommended plan-level strategy with a Monte-Carlo-certified rationale (educational decision support, not financial advice; see `slm/README.md`)
 
 ## Examples and Documentation
 
