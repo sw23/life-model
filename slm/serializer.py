@@ -41,13 +41,17 @@ def render_household(profile: HouseholdProfile) -> str:
     )
 
 
-# Regexes anchored to the rendered phrasing above. Each captures one numeric field so the
-# round-trip test can confirm the text states exactly the structured values.
+# Regexes anchored to the rendered phrasing above. Each captures one field so the round-trip test
+# can confirm the text states exactly the structured values, and so the tool-loop adviser
+# (:mod:`slm.advise`) can reconstruct a scoring-ready household from the rendered text alone.
+_SCENARIO_RE = re.compile(r"Household profile \(([A-Za-z0-9_]+) scenario\)")
 _START_AGE_RE = re.compile(r"A (\d+)-year-old")
+_GENDER_RE = re.compile(r"-year-old (\w+) person")
 _RETIRE_AGE_RE = re.compile(r"retire at age (\d+)")
 _SALARY_RE = re.compile(r"salary is \$([\d,]+)")
 _SPENDING_RE = re.compile(r"spending is \$([\d,]+)")
 _BANK_RE = re.compile(r"bank balance is \$([\d,]+)")
+_ECONOMY_RE = re.compile(r"Economic outlook: ([A-Za-z0-9_]+)")
 
 
 def _money(text: str, pattern: re.Pattern) -> int:
@@ -58,11 +62,19 @@ def _money(text: str, pattern: re.Pattern) -> int:
 
 
 def parse_household(text: str) -> Dict[str, Any]:
-    """Recover the numeric household fields from rendered text (inverse of :func:`render_household`)."""
+    """Recover the household fields from rendered text (inverse of :func:`render_household`).
+
+    The economy is returned as ``None`` when the outlook is the ``baseline`` (no named scenario),
+    matching how :func:`render_household` renders a missing ``economy_scenario``.
+    """
+    economy = _ECONOMY_RE.search(text).group(1)
     return {
+        "scenario": _SCENARIO_RE.search(text).group(1),
         "person_start_age": int(_START_AGE_RE.search(text).group(1)),
         "person_retirement_age": int(_RETIRE_AGE_RE.search(text).group(1)),
+        "person_gender": _GENDER_RE.search(text).group(1),
         "initial_salary": _money(text, _SALARY_RE),
         "initial_spending": _money(text, _SPENDING_RE),
         "initial_bank_balance": _money(text, _BANK_RE),
+        "economy_scenario": None if economy == "baseline" else economy,
     }
