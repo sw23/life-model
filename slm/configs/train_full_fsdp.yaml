@@ -1,0 +1,27 @@
+# Large-model full fine-tune with FSDP passthrough (Plan 20 D3, LLM-readiness contract).
+# This config validates but is NOT executed in CI or in session — it demonstrates that the same
+# code path scales to a full fine-tune on a cluster by changing only config + launcher. Launch
+# with e.g. `accelerate launch --config_file <fsdp.yaml> -m slm.train slm/configs/train_full_fsdp.yaml`.
+model_id: Qwen/Qwen2.5-7B-Instruct
+dataset_path: slm/data/dataset.jsonl
+output_dir: slm/checkpoints/full_fsdp
+full_finetune: true          # mutually exclusive with `lora` (validated)
+lora: null
+epochs: 2
+per_device_batch_size: 1
+grad_accum: 8
+learning_rate: 0.00001
+seq_len: 4096
+precision: bf16
+gradient_checkpointing: true
+# Opaque passthrough handed to accelerate/FSDP unchanged; never introspected by slm.train.
+fsdp:
+  sharding_strategy: FULL_SHARD
+  auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  transformer_layer_cls_to_wrap: Qwen2DecoderLayer
+  activation_checkpointing: true
+accelerate:
+  mixed_precision: bf16
+  num_machines: 1
+  num_processes: 8
+report_to: none

@@ -1,0 +1,28 @@
+# Default SLM config (Plan 20 D3): a permissive ~7B instruct model + QLoRA (4-bit).
+# License check (task 7): Qwen2.5-7B-Instruct is released under Apache-2.0 — redistributable and
+# fine-tunable; only weights are gated by size, not license. Record any model swap's license here.
+#
+# Full local run (out of session scope; documented for reproduction — see slm/README.md):
+#   python -m slm.generate_data --per-scenario 4000 --n-trials 64 --seed 20 \
+#       --out slm/data/dataset.jsonl --workers 8
+#   python -m slm.train slm/configs/train_default_qlora.yaml
+#   python -m slm.evaluate_adviser --adviser hf ...   # via slm.backends
+model_id: Qwen/Qwen2.5-7B-Instruct     # Apache-2.0
+dataset_path: slm/data/dataset.jsonl
+output_dir: slm/checkpoints/default_qlora
+epochs: 2
+per_device_batch_size: 1
+grad_accum: 16
+learning_rate: 0.0002
+warmup_ratio: 0.03
+seq_len: 2048
+precision: bf16
+attn_implementation: flash_attention_2
+quantization: 4bit                      # QLoRA
+gradient_checkpointing: true
+lora:
+  rank: 16
+  alpha: 32
+  dropout: 0.05
+  target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+report_to: none
