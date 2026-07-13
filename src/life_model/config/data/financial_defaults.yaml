@@ -591,6 +591,52 @@ economy:
     equity_inflation_correlation: -0.1
     bond_inflation_correlation: -0.2
 
+# Healthcare, Medicare & long-term care (Plan 15). Opt-in agents (MedicalCosts, Medicare,
+# LongTermCare) read this section; a simulation with none constructed is unaffected. Dollar
+# values are vintage-stamped from CMS/SSA/Genworth/NFDA primary sources. Refresh annually via
+# the refresh-financial-data skill (Medicare Part B/D premiums, IRMAA tiers, LTC costs, funeral).
+healthcare:
+  # Age-banded out-of-pocket medical-cost curve (real start-year dollars, per person per year).
+  # max_age is the inclusive upper bound of the band. Scaled each year by cumulative inflation
+  # plus medical_inflation_premium. vintage: 2024, source: CMS NHE / MEPS OOP by age -- TODO(verify)
+  medical_cost_bands:
+    - {max_age: 39,  annual_cost: 1500}
+    - {max_age: 64,  annual_cost: 3000}
+    - {max_age: 74,  annual_cost: 6000}
+    - {max_age: 84,  annual_cost: 9000}
+    - {max_age: 200, annual_cost: 12000}
+  # Percentage points medical inflation runs above CPI.
+  # vintage: 2024, source: CMS National Health Expenditure projections -- TODO(verify)
+  medical_inflation_premium: 2.0
+  medicare:
+    eligibility_age: 65
+    # Part A is premium-free with sufficient work history (documented simplification).
+    # Premiums are MONTHLY (annualized x12 by the Medicare agent).
+    part_b_base_monthly_premium: 202.90  # vintage: 2026, source: CMS 2026 Part B fact sheet
+    part_d_base_monthly_premium: 34.50   # vintage: 2026, source: CMS Part D national base premium
+    # IRMAA tiers: applied when two-year-lookback MAGI EXCEEDS the filing-status lower bound.
+    # vintage: 2026, source: CMS 2026 Parts B fact sheet (Part B monthly); SSA Part D IRMAA.
+    irmaa_tiers:
+      - {magi_min_single: 0,      magi_min_married_filing_jointly: 0,      part_b_monthly: 202.90, part_d_monthly_surcharge: 0.0}
+      - {magi_min_single: 109000, magi_min_married_filing_jointly: 218000, part_b_monthly: 284.06, part_d_monthly_surcharge: 14.5}
+      - {magi_min_single: 137000, magi_min_married_filing_jointly: 274000, part_b_monthly: 405.80, part_d_monthly_surcharge: 37.5}
+      - {magi_min_single: 171000, magi_min_married_filing_jointly: 342000, part_b_monthly: 527.54, part_d_monthly_surcharge: 60.4}
+      - {magi_min_single: 205000, magi_min_married_filing_jointly: 410000, part_b_monthly: 649.28, part_d_monthly_surcharge: 83.3}
+      - {magi_min_single: 500000, magi_min_married_filing_jointly: 750000, part_b_monthly: 690.06, part_d_monthly_surcharge: 91.0}
+  long_term_care:
+    start_age: 65
+    # Annual hazard of entering a care episode, by age band (max_age inclusive).
+    # vintage: 2024, source: calibrated to ASPE lifetime-risk data -- TODO(verify) annual incidence
+    hazard_bands:
+      - {max_age: 74,  annual_hazard: 0.005}
+      - {max_age: 84,  annual_hazard: 0.02}
+      - {max_age: 200, annual_hazard: 0.06}
+    annual_cost: 111325       # vintage: 2024, source: Genworth/CareScout (semi-private nursing home)
+    mean_duration_years: 2.3  # vintage: 2024, source: ASPE mean paid nursing-home episode
+  funeral_cost: 8300              # vintage: 2023, source: NFDA median funeral w/ viewing and burial
+  final_year_medical_multiplier: 2.0  # vintage: 2024, source: elevated end-of-life spend -- TODO(verify)
+  medical_deduction_agi_floor: 7.5    # percent; IRC §213(a) unreimbursed-medical AGI floor
+
 # Year-indexed tax parameters (published values, 2022-2026). Accessed via
 # config.tax_year(year). Years outside the table are projected: earliest entry
 # for prior years, frozen at the latest entry for future years, most-recent

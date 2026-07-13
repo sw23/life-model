@@ -124,8 +124,45 @@ class TaxUnit:
     @property
     def federal_deductions(self) -> float:
         """Greater of the standard deduction for the filing status or combined itemized."""
+        return self.federal_deductions_combined(0.0, 0.0)
+
+    def _prospective_withdrawal_allocation(self, amount: float) -> Dict[int, float]:
+        """Predict how ``withdraw_from_pretax_401ks`` would split ``amount`` across members.
+
+        Mirrors the withdrawal order exactly (members in sequence, each up to their combined
+        pre-tax balance) without moving any money, so income-dependent deductions can be
+        evaluated during sizing against the same per-member incomes settlement will see.
+        """
+        allocation: Dict[int, float] = {}
+        remaining = amount
+        for member in self.members:
+            available = sum(acct.pretax_balance for acct in member.all_retirement_accounts)
+            take = min(remaining, available)
+            allocation[member.unique_id] = take
+            remaining -= take
+        return allocation
+
+    def federal_deductions_combined(self, additional_income: float = 0.0, state_income_tax_paid: float = 0.0) -> float:
+        """Federal deductions folding in BOTH plans' income-dependent itemized adjustments.
+
+        - Plan 15 D6: the 7.5%-of-income medical floor depends on ordinary income, so a prospective
+          401k withdrawal (``additional_income``) changes the deduction. It is allocated across
+          members exactly as ``withdraw_from_pretax_401ks`` will split it, so each member's floor
+          matches what settlement will see — otherwise sizing over-estimates the medical deduction
+          and the shortfall lands as phantom year-end debt.
+        - Plan 17 D4: the unit's state income tax (``state_income_tax_paid``) enters the head's SALT
+          bucket (mirrors ``_record_stats``' head convention), capped at the SALT limit per member.
+
+        With both arguments 0 this is the plain standard-vs-itemized comparison.
+        """
         standard_deduction = get_federal_standard_deduction(self.filing_status, self.config)
-        return max(standard_deduction, self.total_itemized_deductions)
+        allocation = self._prospective_withdrawal_allocation(additional_income) if additional_income > 0 else None
+        itemized = 0.0
+        for index, member in enumerate(self.members):
+            member_income = allocation[member.unique_id] if allocation else 0.0
+            member_state_tax = state_income_tax_paid if index == 0 else 0.0
+            itemized += member.itemized_deductions(member_state_tax, member_income)
+        return max(standard_deduction, itemized)
 
     @property
     def num_qualifying_children(self) -> int:
@@ -154,34 +191,28 @@ class TaxUnit:
     def state_income_tax_due(self, additional_income: float = 0) -> float:
         """State income tax for the unit, resolving the head's state pack (Plan 17).
 
-        Computed against the property-only AGI base so it does not depend on itself being folded
-        into SALT (D4 no-circularity). ``DEFAULT`` residents get the legacy flat number exactly.
+        Computed against the property-only AGI base (``state_income_tax_paid=0``) so it does not
+        depend on itself being folded into SALT (D4 no-circularity). The deduction base *does*
+        reflect ``additional_income`` so the income-dependent medical floor (Plan 15 D6) is
+        consistent between withdrawal sizing and settlement — otherwise the DEFAULT legacy AGI, and
+        thus the flat state tax, would differ between the two and leave phantom year-end debt.
+        ``DEFAULT`` residents get the legacy flat number exactly when there is no medical deduction.
         """
         ordinary_income = self.taxable_income + additional_income
-        legacy_agi = max(ordinary_income - self.federal_deductions, 0)
+        legacy_agi = max(ordinary_income - self.federal_deductions_combined(additional_income, 0.0), 0)
         return state_income_tax_for_unit(
             self._state_income_totals(additional_income), self.filing_status, self.state, legacy_agi, self.config
         )
 
-    def federal_deductions_with_state_tax(self, state_tax: float) -> float:
-        """Federal deductions with the unit's state income tax folded into the head's SALT bucket.
-
-        Attributing the whole unit's state tax to the head (mirrors ``_record_stats``' head
-        convention) keeps the per-member SALT cap behavior unchanged when ``state_tax`` is 0.
-        """
-        standard_deduction = get_federal_standard_deduction(self.filing_status, self.config)
-        itemized = 0.0
-        for index, member in enumerate(self.members):
-            itemized += member.itemized_deductions(state_tax if index == 0 else 0.0)
-        return max(standard_deduction, itemized)
-
     def get_income_taxes_due(self, additional_income: float = 0) -> TaxesDue:
         # ``additional_income`` models a prospective pre-tax 401k withdrawal: it is ordinary
-        # income but not FICA wages, so it is not added to the per-member wage bases.
+        # income but not FICA wages, so it is not added to the per-member wage bases. It does
+        # enter the deduction computation — the medical floor is income-dependent (Plan 15 D6)
+        # and the state income tax it triggers enters SALT (Plan 17 D4).
         ordinary_income = self.taxable_income + additional_income
         wage_incomes = [m.fica_wages for m in self.members]
         state_tax = self.state_income_tax_due(additional_income)
-        deductions = self.federal_deductions_with_state_tax(state_tax)
+        deductions = self.federal_deductions_combined(additional_income, state_tax)
         taxes = compute_taxes(
             ordinary_income, deductions, self.filing_status, wage_incomes, self.config, state_tax=state_tax
         )
@@ -263,6 +294,15 @@ class TaxUnit:
 
         # Size and perform any pre-tax 401k withdrawal, then get the final taxes owed.
         taxes = self._solve_withdrawals_and_taxes(bills)
+
+        # Record this year's AGI on every member (Plan 15 D4). Each member records the AGI of the
+        # return they filed — the unit's full AGI, not a per-member split — because Medicare/IRMAA
+        # later compares the return's MAGI against filing-status thresholds with a two-year
+        # lookback. Recorded after withdrawal solving so 401k distributions are included.
+        agi = max(self.taxable_income - self.federal_deductions, 0.0)
+        year = self.members[0].model.year
+        for member in self.members:
+            member.agi_history[year] = agi
 
         # Pay everything from the combined accounts exactly once; a shortfall becomes new debt.
         # Refundable credits can make the net due negative (a refund): deposit it instead of

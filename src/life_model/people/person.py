@@ -82,6 +82,9 @@ class Person(LifeModelAgent):
         # payroll tax and income tax each see the correct base (see tax/income.py).
         self.income = IncomeLedger()
         self.spouse = None
+        # Per-year record of this member's share of the tax unit's AGI, stamped during
+        # ``TaxUnit.settle_year``. Medicare/IRMAA reads this with a two-year lookback (Plan 15 D4).
+        self.agi_history: dict[int, float] = {}
         self.filing_status = FilingStatus.SINGLE
         self.social_security: Optional[SocialSecurity] = None
         self.retirement_triggered = False
@@ -175,6 +178,21 @@ class Person(LifeModelAgent):
         return self.model.registries.student_loans.get_items(self)
 
     @property
+    def medical_costs(self):
+        """Get the MedicalCosts agent(s) for this person from the registry (Plan 15)."""
+        return self.model.registries.medical_costs.get_items(self)
+
+    @property
+    def medicare(self):
+        """Get the Medicare agent(s) for this person from the registry (Plan 15)."""
+        return self.model.registries.medicare.get_items(self)
+
+    @property
+    def long_term_care(self):
+        """Get the LongTermCare agent(s) for this person from the registry (Plan 15)."""
+        return self.model.registries.long_term_care.get_items(self)
+
+    @property
     def all_debts(self):
         """All personal debts serviced by the simulation (car loans, credit cards, student loans).
 
@@ -210,7 +228,45 @@ class Person(LifeModelAgent):
 
         return donation_deductions + daf_contribution_deductions
 
-    def itemized_deductions(self, state_income_tax_paid: float = 0.0) -> float:
+    @property
+    def unreimbursed_medical_expenses(self) -> float:
+        """This year's unreimbursed medical spend from the healthcare agents (Plan 15 D6).
+
+        Sums the ``stat_medical_costs`` stamped in ``pre_step`` by the person's opt-in healthcare
+        agents: age-curve costs (MedicalCosts), Medicare premiums (deductible per IRS Pub. 502),
+        and net-of-insurance long-term-care costs. LTC insurance *premiums* are not included in v1
+        (their age-capped deductibility is a documented simplification/backlog).
+        """
+        agents = [*self.medical_costs, *self.medicare, *self.long_term_care]
+        return sum(agent.stat_medical_costs for agent in agents)
+
+    def medical_expense_deduction_with(self, additional_income: float = 0.0) -> float:
+        """Itemizable unreimbursed medical: the excess over the AGI floor (IRC §213(a)).
+
+        The floor uses ordinary income *before* deductions: this model computes AGI as
+        ``ordinary - deductions`` (tax.py), so using post-deduction income here would be circular.
+        For a joint unit the floor is applied per member on their own income (approximation).
+
+        Args:
+            additional_income: Prospective ordinary income not yet in the ledger (e.g. a 401k
+                withdrawal being sized by ``TaxUnit``). Raising the floor by it keeps sized taxes
+                equal to settled taxes — otherwise the floor would rise once the withdrawal lands
+                in the ledger, shrinking the deduction and leaving settlement short of taxes
+                (phantom year-end debt).
+        """
+        medical = self.unreimbursed_medical_expenses
+        if medical <= 0:
+            return 0.0
+        floor_pct = self.model.config.healthcare.medical_deduction_agi_floor
+        floor = (self.income.ordinary_taxable + additional_income) * floor_pct / 100
+        return max(0.0, medical - floor)
+
+    @property
+    def medical_expense_deduction(self) -> float:
+        """Itemizable unreimbursed medical with no prospective income (see the ``_with`` method)."""
+        return self.medical_expense_deduction_with(0.0)
+
+    def itemized_deductions(self, state_income_tax_paid: float = 0.0, additional_income: float = 0.0) -> float:
         """Calculate total itemized deductions.
 
         Includes:
@@ -219,10 +275,12 @@ class Person(LifeModelAgent):
         - State and local taxes: property tax plus ``state_income_tax_paid``, capped at the SALT
           limit (Plan 17 D4). ``state_income_tax_paid`` defaults to 0 so the property-only result
           is unchanged for every caller that does not thread state income tax.
-
-        TODO: Add other itemized deductions (medical expenses, etc.)
+        - Unreimbursed medical expenses above the 7.5%-of-income floor (Plan 15 D6);
+          ``additional_income`` (a prospective 401k withdrawal being sized) raises that floor so
+          sized taxes equal settled taxes.
         """
         itemized = self.charitable_deductions
+        itemized += self.medical_expense_deduction_with(additional_income)
 
         federal = self.model.config.tax.federal
         salt_paid = state_income_tax_paid
@@ -244,15 +302,26 @@ class Person(LifeModelAgent):
 
         return itemized
 
+    def total_itemized_deductions_with(self, additional_income: float = 0.0) -> float:
+        """Total itemized deductions with ``additional_income`` raising the medical floor (Plan 15).
+
+        Property-only SALT (no state income tax threaded); see ``itemized_deductions``.
+        """
+        return self.itemized_deductions(additional_income=additional_income)
+
     @property
     def total_itemized_deductions(self) -> float:
-        """Itemized deductions excluding state income tax (property-only SALT)."""
+        """Itemized deductions with no prospective income and property-only SALT."""
         return self.itemized_deductions()
 
-    def federal_deductions_with_state_tax(self, state_income_tax_paid: float) -> float:
-        """Greater of the standard deduction or itemized deductions including state income tax in SALT."""
+    def federal_deductions_with_state_tax(self, state_income_tax_paid: float, additional_income: float = 0.0) -> float:
+        """Greater of the standard deduction or itemized deductions including state income tax in SALT.
+
+        ``additional_income`` (a prospective 401k withdrawal being sized) raises the medical-expense
+        floor (Plan 15 D6) so sized taxes equal settled taxes.
+        """
         standard_deduction = get_federal_standard_deduction(self.filing_status, self.model.config)
-        return max(standard_deduction, self.itemized_deductions(state_income_tax_paid))
+        return max(standard_deduction, self.itemized_deductions(state_income_tax_paid, additional_income))
 
     @property
     def federal_deductions(self) -> float:
@@ -527,13 +596,15 @@ class Person(LifeModelAgent):
         ordinary_income = self.taxable_income + additional_income
         # State income tax from the state pack. Computed against the property-only AGI base so it
         # does not depend on itself being in SALT; then folded into SALT for the federal base (D4).
+        # ``additional_income`` raises the medical-expense floor (Plan 15 D6) in both the legacy AGI
+        # base and the federal deductions so sizing and settlement stay consistent.
         totals = self.income.totals_by_type()
         totals[IncomeType.PRETAX_DISTRIBUTION] = totals.get(IncomeType.PRETAX_DISTRIBUTION, 0.0) + additional_income
-        legacy_agi = max(ordinary_income - self.federal_deductions, 0)
+        legacy_agi = max(ordinary_income - self.federal_deductions_with_state_tax(0.0, additional_income), 0)
         state_tax = state_income_tax_for_unit(
             totals, self.filing_status, self.state, legacy_agi, self.model.config
         )
-        deductions = self.federal_deductions_with_state_tax(state_tax)
+        deductions = self.federal_deductions_with_state_tax(state_tax, additional_income)
         return compute_taxes(
             ordinary_income, deductions, self.filing_status, [self.fica_wages], self.model.config, state_tax=state_tax
         )
@@ -671,7 +742,12 @@ class Person(LifeModelAgent):
         #    joint-and-survivor continue to the inheritor.
         self._settle_annuities_on_death(inheritor)
 
-        # 3b. Settle pensions: a survivor election continues a reduced stream to a surviving
+        # 3b. End-of-life costs (Plan 15 D7): funeral plus a final-year medical spike reduce the
+        #     estate *before* it is valued, transferred, and estate-taxed. Opt-in: charged only
+        #     when the person has healthcare agents, so other simulations are unchanged.
+        self._charge_end_of_life_costs()
+
+        # 3c. Settle pensions: a survivor election continues a reduced stream to a surviving
         #     spouse; otherwise the pension terminates. Done BEFORE the estate transfer (so the
         #     generic registry reassignment doesn't move pensions) and before the Benefit sweep in
         #     _remove_from_simulation (which would otherwise delete the survivor's continued stream).
@@ -715,6 +791,42 @@ class Person(LifeModelAgent):
             if not (continues and inheritor is not None):
                 # Life-only, or no beneficiary to continue payments: the annuity stops.
                 annuity.is_active = False
+
+    def _charge_end_of_life_costs(self):
+        """Charge funeral and final-year medical costs against the estate (Plan 15 D7).
+
+        Charged only when the person opted into the healthcare subsystem (has any healthcare
+        agent), so simulations without healthcare agents keep today's death flow byte-identical.
+        The funeral cost is CPI-indexed from the start year; the final-year medical spike is the
+        configured multiplier times the person's current-year medical cost, and keys off the
+        ``MedicalCosts`` agent(s) only — a decedent with just Medicare/LongTermCare agents incurs
+        the funeral cost alone. Costs are paid from the deceased's **bank accounts only** before
+        the estate is valued/transferred; any unpayable remainder is forgiven (the estate cannot
+        go negative), so a bank-poor but 401k-rich decedent underpays these costs — retirement
+        accounts are not liquidated for them (documented v1 simplification).
+
+        The deceased's healthcare agents are then retired so they are not reassigned to the
+        inheritor (medical costs are personal, not inheritable).
+        """
+        healthcare_agents = [*self.medical_costs, *self.medicare, *self.long_term_care]
+        if not healthcare_agents:
+            return
+
+        healthcare = self.model.config.healthcare
+        cost = healthcare.funeral_cost * self.model.economy.cumulative_inflation(self.model.year)
+        for medical in self.medical_costs:
+            cost += healthcare.final_year_medical_multiplier * medical.annual_cost()
+        unpaid = self.deduct_from_bank_accounts(cost)
+        self.model.event_log.add(
+            Event(f"{self.name}'s estate paid ${cost - unpaid:,.0f} in end-of-life costs (funeral + final medical)")
+        )
+
+        # Retire the healthcare agents with their owner.
+        for agent in healthcare_agents:
+            agent.remove()
+        self.model.registries.medical_costs.clear(self)
+        self.model.registries.medicare.clear(self)
+        self.model.registries.long_term_care.clear(self)
 
     def _settle_pensions_on_death(self, spouse: Optional["Person"]):
         """Continue survivor pensions to a surviving spouse; terminate the rest.

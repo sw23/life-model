@@ -18,6 +18,7 @@ from .models import (
     EconomyConfig,
     EstateConfig,
     FinancialConfigModel,
+    HealthcareConfig,
     HousingConfig,
     InsuranceConfig,
     RetirementConfig,
@@ -112,6 +113,10 @@ class FinancialConfig(ScenarioConfig):
     @property
     def economy(self) -> EconomyConfig:
         return self._model.economy
+
+    @property
+    def healthcare(self) -> HealthcareConfig:
+        return self._model.healthcare
 
     @property
     def dependents(self) -> DependentsConfig:

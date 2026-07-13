@@ -19,6 +19,7 @@ from life_model.account.job401k import Job401kAccount
 from life_model.config.financial_config import FinancialConfig
 from life_model.config.models import DEFAULT_STATE_KEY
 from life_model.config.scenarios import list_scenarios
+from life_model.healthcare import LongTermCare, MedicalCosts, Medicare
 from life_model.housing.home import Home, HomeExpenses, Mortgage
 from life_model.model import LifeModel
 from life_model.people.family import Family
@@ -106,6 +107,9 @@ SHARED_DEFAULTS: Dict[str, Any] = {
     "home_price": 400000,
     "mortgage_rate": 6.0,
     "mortgage_term": 30,
+    # Healthcare agents (medical cost curve, Medicare, long-term care) are opt-in and default
+    # off so existing dashboard runs keep producing the same numbers (Plan 15).
+    "healthcare_enabled": False,
 }
 
 
@@ -236,6 +240,22 @@ def _add_home(model: LifeModel, owner: Optional[Person], kwargs: Dict[str, Any])
     )
 
 
+def _add_healthcare(model: LifeModel, people: "tuple[Optional[Person], ...]", kwargs: Dict[str, Any]) -> None:
+    """Attach the opt-in healthcare agents to each enabled person when the toggle is on.
+
+    Adds the age-related medical cost curve, Medicare (premiums + IRMAA), and the long-term-care
+    hazard model (Plan 15). Default off for back-compat.
+    """
+    if not _get(kwargs, "healthcare_enabled", SHARED_DEFAULTS["healthcare_enabled"]):
+        return
+    for person in people:
+        if person is None:
+            continue
+        MedicalCosts(person)
+        Medicare(person)
+        LongTermCare(person)
+
+
 def _scenario_value(raw: Any) -> Optional[str]:
     """Map the scenario dropdown selection to a LifeModel scenario name (or None for defaults)."""
     value = param_value(raw)
@@ -267,6 +287,7 @@ class DashboardLifeModel(LifeModel):
         john = _add_person(self, family, "john", kwargs)
         jane = _add_person(self, family, "jane", kwargs)
         _add_home(self, john or jane, kwargs)
+        _add_healthcare(self, (john, jane), kwargs)
 
 
 # Model parameters for the dashboard (single source: SHARED_DEFAULTS + PERSON_DEFAULTS).
@@ -289,6 +310,11 @@ model_params = {
     "spending_increase": Slider("Annual Spending Increase (%)", SHARED_DEFAULTS["spending_increase"], 0, 10, 0.5),
     "bank_interest_rate": Slider("Bank Interest Rate (%)", SHARED_DEFAULTS["bank_interest_rate"], 0, 5, 0.1),
     "home_enabled": {"label": "Include a Home", "type": "Checkbox", "value": SHARED_DEFAULTS["home_enabled"]},
+    "healthcare_enabled": {
+        "label": "Model healthcare costs (medical curve, Medicare, LTC)",
+        "type": "Checkbox",
+        "value": SHARED_DEFAULTS["healthcare_enabled"],
+    },
     "home_price": Slider("Home Price ($)", SHARED_DEFAULTS["home_price"], 100000, 1000000, 25000),
     "mortgage_rate": Slider("Mortgage Rate (%)", SHARED_DEFAULTS["mortgage_rate"], 0, 12, 0.25),
     "mortgage_term": Slider("Mortgage Term (years)", SHARED_DEFAULTS["mortgage_term"], 10, 30, 5),

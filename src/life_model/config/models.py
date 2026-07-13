@@ -500,6 +500,134 @@ class EconomyConfig(StrictModel):
     stochastic: StochasticEconomyConfig = Field(default_factory=StochasticEconomyConfig)
 
 
+class MedicalCostBandConfig(StrictModel):
+    """One age band of the out-of-pocket medical-cost curve.
+
+    ``max_age`` is the inclusive upper bound of the band (use a large sentinel for the top band);
+    ``annual_cost`` is the real (start-year-dollar) out-of-pocket medical spend for a person in the
+    band before inflation indexing.
+    """
+
+    max_age: int = Field(ge=0)
+    annual_cost: float = Field(ge=0)
+
+
+class MedicareIRMAATierConfig(StrictModel):
+    """One IRMAA tier: the MAGI lower bounds and the resulting monthly premiums.
+
+    The tier applies when two-year-lookback MAGI *exceeds* the filing-status lower bound. The base
+    tier uses a lower bound of 0 and carries the standard (unsurcharged) Part B premium.
+    """
+
+    magi_min_single: float = Field(ge=0)
+    magi_min_married_filing_jointly: float = Field(ge=0)
+    part_b_monthly: float = Field(ge=0)
+    part_d_monthly_surcharge: float = Field(ge=0)
+
+
+class MedicareConfig(StrictModel):
+    eligibility_age: int = Field(default=65, ge=0)
+    # Part A is premium-free for people with sufficient work history (documented simplification).
+    part_b_base_monthly_premium: float = Field(default=202.90, ge=0)
+    part_d_base_monthly_premium: float = Field(default=34.50, ge=0)
+    irmaa_tiers: List[MedicareIRMAATierConfig] = Field(
+        default_factory=lambda: [
+            # vintage: 2026, source: CMS 2026 Parts B Premiums fact sheet; Part D IRMAA (SSA).
+            MedicareIRMAATierConfig(
+                magi_min_single=0,
+                magi_min_married_filing_jointly=0,
+                part_b_monthly=202.90,
+                part_d_monthly_surcharge=0.0,
+            ),
+            MedicareIRMAATierConfig(
+                magi_min_single=109000,
+                magi_min_married_filing_jointly=218000,
+                part_b_monthly=284.06,
+                part_d_monthly_surcharge=14.50,
+            ),
+            MedicareIRMAATierConfig(
+                magi_min_single=137000,
+                magi_min_married_filing_jointly=274000,
+                part_b_monthly=405.80,
+                part_d_monthly_surcharge=37.50,
+            ),
+            MedicareIRMAATierConfig(
+                magi_min_single=171000,
+                magi_min_married_filing_jointly=342000,
+                part_b_monthly=527.54,
+                part_d_monthly_surcharge=60.40,
+            ),
+            MedicareIRMAATierConfig(
+                magi_min_single=205000,
+                magi_min_married_filing_jointly=410000,
+                part_b_monthly=649.28,
+                part_d_monthly_surcharge=83.30,
+            ),
+            MedicareIRMAATierConfig(
+                magi_min_single=500000,
+                magi_min_married_filing_jointly=750000,
+                part_b_monthly=690.06,
+                part_d_monthly_surcharge=91.00,
+            ),
+        ]
+    )
+
+
+class LTCHazardBandConfig(StrictModel):
+    """One age band of the annual long-term-care onset hazard."""
+
+    max_age: int = Field(ge=0)
+    annual_hazard: float = Field(ge=0, le=1)
+
+
+class LongTermCareConfig(StrictModel):
+    start_age: int = Field(default=65, ge=0)
+    # Annual hazard of entering a care episode, by age band (TODO(verify): calibrated to ASPE
+    # lifetime-risk data, not a published annual-incidence table).
+    hazard_bands: List[LTCHazardBandConfig] = Field(
+        default_factory=lambda: [
+            LTCHazardBandConfig(max_age=74, annual_hazard=0.005),
+            LTCHazardBandConfig(max_age=84, annual_hazard=0.02),
+            LTCHazardBandConfig(max_age=200, annual_hazard=0.06),
+        ]
+    )
+    # vintage: 2024, source: Genworth/CareScout Cost of Care (semi-private nursing home, median).
+    annual_cost: float = Field(default=111325, ge=0)
+    # vintage: 2024, source: ASPE (mean paid nursing-home episode ~2.3 years).
+    mean_duration_years: float = Field(default=2.3, gt=0)
+
+
+class HealthcareConfig(StrictModel):
+    """Healthcare, Medicare, and long-term-care parameters (Plan 15).
+
+    Every field has a default so existing YAML without a ``healthcare`` section still loads.
+    """
+
+    # Age-banded out-of-pocket medical-cost curve (real start-year dollars).
+    # vintage: 2024, source: CMS NHE / MEPS out-of-pocket by age — TODO(verify) exact per-band OOP.
+    medical_cost_bands: List[MedicalCostBandConfig] = Field(
+        default_factory=lambda: [
+            MedicalCostBandConfig(max_age=39, annual_cost=1500),
+            MedicalCostBandConfig(max_age=64, annual_cost=3000),
+            MedicalCostBandConfig(max_age=74, annual_cost=6000),
+            MedicalCostBandConfig(max_age=84, annual_cost=9000),
+            MedicalCostBandConfig(max_age=200, annual_cost=12000),
+        ]
+    )
+    # Percentage points that medical inflation runs above CPI.
+    # vintage: 2024, source: CMS National Health Expenditure projections — TODO(verify).
+    medical_inflation_premium: float = Field(default=2.0, ge=0)
+    medicare: MedicareConfig = Field(default_factory=MedicareConfig)
+    long_term_care: LongTermCareConfig = Field(default_factory=LongTermCareConfig)
+    # vintage: 2023, source: NFDA median cost of a funeral with viewing and burial ($8,300).
+    funeral_cost: float = Field(default=8300, ge=0)
+    # Final-year medical spend as a multiple of the person's current-year medical cost.
+    # vintage: 2024, source: end-of-life spending is elevated — TODO(verify) exact multiplier.
+    final_year_medical_multiplier: float = Field(default=2.0, ge=0)
+    # AGI floor (percent) above which unreimbursed medical is deductible (IRC §213(a)).
+    medical_deduction_agi_floor: float = Field(default=7.5, ge=0, le=100)
+
+
 class FinancialConfigModel(StrictModel):
     """Complete financial configuration model with validation"""
 
@@ -512,5 +640,6 @@ class FinancialConfigModel(StrictModel):
     housing: HousingConfig = Field(default_factory=HousingConfig)
     estate: EstateConfig = Field(default_factory=EstateConfig)
     economy: EconomyConfig = Field(default_factory=EconomyConfig)
+    healthcare: HealthcareConfig = Field(default_factory=HealthcareConfig)
     dependents: DependentsConfig = Field(default_factory=DependentsConfig)
     tax_years: Dict[int, YearlyTaxParameters]

@@ -150,8 +150,30 @@ class MortgageRegistry(PersonRegistry["Mortgage"]):
     pass
 
 
+class MedicalCostsRegistry(PersonRegistry["MedicalCosts"]):
+    """Registry for managing per-person MedicalCosts agents"""
+
+    pass
+
+
+class MedicareRegistry(PersonRegistry["Medicare"]):
+    """Registry for managing per-person Medicare agents"""
+
+    pass
+
+
+class LongTermCareRegistry(PersonRegistry["LongTermCare"]):
+    """Registry for managing per-person LongTermCare agents"""
+
+    pass
+
+
 class ChildRegistry(PersonRegistry["Child"]):
     """Registry for managing Child (dependent) relationships"""
+
+    pass
+
+
 class PensionRegistry(PersonRegistry["Pension"]):
     """Registry for managing Pension (defined-benefit) relationships"""
 
@@ -182,6 +204,9 @@ class ModelRegistries:
         self.credit_cards = CreditCardRegistry()
         self.student_loans = StudentLoanRegistry()
         self.mortgages = MortgageRegistry()
+        self.medical_costs = MedicalCostsRegistry()
+        self.medicare = MedicareRegistry()
+        self.long_term_care = LongTermCareRegistry()
         self.children = ChildRegistry()
         self.pensions = PensionRegistry()
         # Trusts are keyed by their grantor. They are deliberately kept out of iter_registries so
@@ -205,6 +230,9 @@ class ModelRegistries:
         self.credit_cards.clear(owner)
         self.student_loans.clear(owner)
         self.mortgages.clear(owner)
+        self.medical_costs.clear(owner)
+        self.medicare.clear(owner)
+        self.long_term_care.clear(owner)
         self.children.clear(owner)
         self.pensions.clear(owner)
         self.trusts.clear(owner)
@@ -226,6 +254,9 @@ class ModelRegistries:
             self.credit_cards,
             self.student_loans,
             self.mortgages,
+            self.medical_costs,
+            self.medicare,
+            self.long_term_care,
             self.children,
             self.pensions,
         ]
