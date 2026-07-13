@@ -12,8 +12,8 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from baselines import BASELINES  # noqa: E402
-from evaluation import EvalProtocol, format_comparison_table, run_policy_episode, spawn_seeds  # noqa: E402
 from environment import FinancialLifeEnv  # noqa: E402
+from evaluation import EvalProtocol, format_comparison_table, run_policy_episode, spawn_seeds  # noqa: E402
 
 _REQUIRED_STAT_KEYS = {
     "n", "mean_return", "ci_low", "ci_high", "ruin_rate", "success_rate",
