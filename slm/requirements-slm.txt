@@ -1,0 +1,32 @@
+# Language-model adviser dependencies (Plan 20). Isolated from the core package: nothing here
+# enters requirements.txt or the wheel. CI never loads model weights — the schema/serializer/
+# scoring/eval/tool-loop tests all run against the deterministic stub AdviserModel and need only
+# the core simulator + gymnasium + pydantic (already core/RL deps).
+#
+# The training stack (transformers/peft/trl/datasets/accelerate) is required ONLY for the
+# `slm.train` smoke SFT (marked slow/manual) and for running a real local model through the
+# adviser/eval harness. Install it explicitly when you want to train or run weights.
+
+# --- data generation & scoring (reuses the RL env) ---
+gymnasium==1.3.0
+
+# --- schema / config ---
+pydantic>=2.0
+pyyaml>=6.0
+
+# --- training backend (HF canonical path; D3) ---
+# Pin ranges, not exact versions, so the same file works across the wide hardware matrix the plan
+# targets (laptop GPU → cluster). Uncomment / install for training runs.
+transformers>=4.44
+peft>=0.12
+trl>=0.9
+datasets>=2.20
+accelerate>=0.33
+torch>=2.2.2
+
+# --- optional Apple-silicon backend (D3, nice-to-have) ---
+# mlx>=0.15
+# mlx-lm>=0.16
+
+# --- optional API-backed upper-bound baseline (D5) ---
+# anthropic>=0.34
