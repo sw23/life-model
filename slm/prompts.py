@@ -68,14 +68,9 @@ def format_decision_menu() -> str:
 def build_decision_question(household_text: str, question: Optional[str] = None) -> str:
     """Assemble the user turn: the rendered household, the menu, and the ask."""
     ask = question or (
-        "Given this household's situation, which single strategy from the menu should they "
-        "follow, and why?"
+        "Given this household's situation, which single strategy from the menu should they follow, and why?"
     )
-    return (
-        f"{household_text}\n\n"
-        f"Decision menu (choose exactly one by machine name):\n{format_decision_menu()}\n\n"
-        f"{ask}"
-    )
+    return f"{household_text}\n\nDecision menu (choose exactly one by machine name):\n{format_decision_menu()}\n\n{ask}"
 
 
 def build_messages(household_text: str, question: Optional[str] = None) -> List[Dict[str, str]]:

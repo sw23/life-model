@@ -48,9 +48,7 @@ class TestPension(unittest.TestCase):
 
     def test_benefit_lands_in_cash_and_ordinary_income_not_fica(self):
         model = LifeModel(start_year=2020, end_year=2020)
-        person = Person(
-            family=Family(model), name="Pat", age=66, retirement_age=65, spending=Spending(model, 0)
-        )
+        person = Person(family=Family(model), name="Pat", age=66, retirement_age=65, spending=Spending(model, 0))
         BankAccount(person, "Bank", balance=0, interest_rate=0)
         pension = Pension(person, "MegaCorp", vesting_years=5, benefit_amount=30000)
 
@@ -70,9 +68,7 @@ class TestPension(unittest.TestCase):
 
     def test_pension_income_stat_recorded(self):
         model = LifeModel(start_year=2020, end_year=2020)
-        person = Person(
-            family=Family(model), name="Pat", age=66, retirement_age=65, spending=Spending(model, 0)
-        )
+        person = Person(family=Family(model), name="Pat", age=66, retirement_age=65, spending=Spending(model, 0))
         BankAccount(person, "Bank", balance=0, interest_rate=0)
         Pension(person, "MegaCorp", vesting_years=5, benefit_amount=30000)
         model.step()
@@ -81,9 +77,7 @@ class TestPension(unittest.TestCase):
 
     def test_cola_compounds(self):
         model = LifeModel(start_year=2020, end_year=2022)
-        person = Person(
-            family=Family(model), name="Pat", age=66, retirement_age=65, spending=Spending(model, 0)
-        )
+        person = Person(family=Family(model), name="Pat", age=66, retirement_age=65, spending=Spending(model, 0))
         BankAccount(person, "Bank", balance=0, interest_rate=0)
         Pension(person, "MegaCorp", vesting_years=5, benefit_amount=10000, cola_percent=2.0)
         model.run()
@@ -97,9 +91,7 @@ class TestPension(unittest.TestCase):
     def test_no_cola_before_eligibility(self):
         # A pension not yet in pay does not accrue COLA.
         model = LifeModel(start_year=2020, end_year=2021)
-        person = Person(
-            family=Family(model), name="Pat", age=63, retirement_age=65, spending=Spending(model, 0)
-        )
+        person = Person(family=Family(model), name="Pat", age=63, retirement_age=65, spending=Spending(model, 0))
         BankAccount(person, "Bank", balance=0, interest_rate=0)
         pension = Pension(person, "MegaCorp", vesting_years=5, benefit_amount=10000, cola_percent=2.0)
         model.run()  # ages 64, 65 -> becomes eligible in the final year only

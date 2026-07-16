@@ -81,9 +81,7 @@ def main() -> None:
     model.learn(total_timesteps=args.timesteps)
 
     # Score the SB3 agent alongside the baselines with the same protocol.
-    protocol = EvalProtocol(
-        env_config={}, reward_preset=args.reward_preset, n_eval=args.n_eval, master_seed=12345
-    )
+    protocol = EvalProtocol(env_config={}, reward_preset=args.reward_preset, n_eval=args.n_eval, master_seed=12345)
     env = make_env()
     seeds = protocol._conditions()["train"]["seeds"]
     outcomes = [run_policy_episode(env, sb3_policy(model), s) for s in seeds]

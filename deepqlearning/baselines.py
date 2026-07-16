@@ -228,9 +228,7 @@ def collect_teacher_experiences(
             next_state, reward, terminated, truncated, _ = env.step(action)
             done = terminated or truncated
             next_legal_actions = env.get_legal_actions()
-            transitions.append(
-                (state, action, float(reward), next_state, done, legal_actions, next_legal_actions)
-            )
+            transitions.append((state, action, float(reward), next_state, done, legal_actions, next_legal_actions))
             state = next_state
             steps += 1
             if done or (max_per_seed is not None and steps >= max_per_seed):

@@ -228,17 +228,20 @@ def train(config: TrainConfig):
 def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Fine-tune the SLM adviser (Plan 20 D3).")
     parser.add_argument("config", help="Path to the TrainConfig YAML.")
-    parser.add_argument("--validate-only", action="store_true",
-                        help="Validate the config (and dataset presence) without training.")
+    parser.add_argument(
+        "--validate-only", action="store_true", help="Validate the config (and dataset presence) without training."
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: Optional[List[str]] = None) -> None:
     args = _parse_args(argv)
     config = TrainConfig.from_yaml(args.config)
-    print(f"Validated TrainConfig: model_id={config.model_id} "
-          f"mode={'full_finetune' if config.full_finetune else 'lora'} "
-          f"precision={config.precision} quantization={config.quantization}")
+    print(
+        f"Validated TrainConfig: model_id={config.model_id} "
+        f"mode={'full_finetune' if config.full_finetune else 'lora'} "
+        f"precision={config.precision} quantization={config.quantization}"
+    )
     if args.validate_only:
         return
     out = train(config)

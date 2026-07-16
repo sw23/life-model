@@ -208,8 +208,8 @@ class NStepAccumulator:
         state, action, _, legal = self._items[0]
         reward = 0.0
         for k in range(upto):
-            reward += (self.gamma ** k) * self._items[k][2]
-        discount = self.gamma ** upto
+            reward += (self.gamma**k) * self._items[k][2]
+        discount = self.gamma**upto
         return Experience(state, action, float(reward), next_state, done, legal, next_legal_actions, discount)
 
     def push(self, state, action, reward, legal_actions, next_state, next_legal_actions, done):

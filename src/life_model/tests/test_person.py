@@ -109,9 +109,7 @@ class TestPersonWithdrawalHelpers(unittest.TestCase):
 
     def _make_person(self):
         model = LifeModel(start_year=2025)
-        person = Person(
-            family=Family(model), name="Withdrawer", age=45, retirement_age=65, spending=Spending(model, 0)
-        )
+        person = Person(family=Family(model), name="Withdrawer", age=45, retirement_age=65, spending=Spending(model, 0))
         BankAccount(owner=person, company="Bank", type="Checking", balance=1000)
         return model, person
 

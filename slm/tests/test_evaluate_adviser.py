@@ -27,9 +27,7 @@ from slm.scoring import argmax_candidate, score_household
 @pytest.fixture(scope="module")
 def evaluator():
     # One scenario, no held-out economy overlay, tiny counts: keeps the harness cheap for CI.
-    return AdviserEvaluator(
-        scenarios=["basic"], n_per_scenario=3, n_trials=4, master_seed=777, held_out_scenario=None
-    )
+    return AdviserEvaluator(scenarios=["basic"], n_per_scenario=3, n_trials=4, master_seed=777, held_out_scenario=None)
 
 
 @pytest.fixture(scope="module")

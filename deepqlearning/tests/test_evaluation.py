@@ -16,8 +16,16 @@ from environment import FinancialLifeEnv  # noqa: E402
 from evaluation import EvalProtocol, format_comparison_table, run_policy_episode, spawn_seeds  # noqa: E402
 
 _REQUIRED_STAT_KEYS = {
-    "n", "mean_return", "ci_low", "ci_high", "ruin_rate", "success_rate",
-    "net_worth_p10", "net_worth_p50", "net_worth_p90", "mean_steps",
+    "n",
+    "mean_return",
+    "ci_low",
+    "ci_high",
+    "ruin_rate",
+    "success_rate",
+    "net_worth_p10",
+    "net_worth_p50",
+    "net_worth_p90",
+    "mean_steps",
 }
 
 

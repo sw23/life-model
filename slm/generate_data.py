@@ -154,9 +154,7 @@ def _refusal_examples(provenance: Provenance) -> List[AdviceExample]:
     return examples
 
 
-def _sample_households(
-    scenarios: List[str], n_per_scenario: int, generation_seed: int
-) -> List[Tuple[str, Dict, int]]:
+def _sample_households(scenarios: List[str], n_per_scenario: int, generation_seed: int) -> List[Tuple[str, Dict, int]]:
     """Draw every household sequentially from one seeded RNG (scenario-major, deterministic)."""
     rng = np.random.default_rng(generation_seed)
     items: List[Tuple[str, Dict, int]] = []
@@ -278,8 +276,13 @@ def write_dataset(
     with open(out_path, "w") as fh:
         fh.write(examples_to_jsonl(examples))
     datasheet = build_datasheet(
-        examples, scenarios, n_trials, generation_seed, reward_preset,
-        name=out_path, scale_note=scale_note,
+        examples,
+        scenarios,
+        n_trials,
+        generation_seed,
+        reward_preset,
+        name=out_path,
+        scale_note=scale_note,
     )
     if datasheet_path is None:
         datasheet_path = out_path.rsplit(".", 1)[0] + ".datasheet.json"
@@ -291,8 +294,7 @@ def write_dataset(
 
 def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate simulator-verified adviser data (Plan 20 D2).")
-    parser.add_argument("--scenarios", default=",".join(DEFAULT_SCENARIOS),
-                        help="Comma-separated household scenarios.")
+    parser.add_argument("--scenarios", default=",".join(DEFAULT_SCENARIOS), help="Comma-separated household scenarios.")
     parser.add_argument("--per-scenario", type=int, default=25, help="Households per scenario.")
     parser.add_argument("--n-trials", type=int, default=24, help="Monte Carlo trials per candidate.")
     parser.add_argument("--seed", type=int, default=20, help="Generation master seed.")
@@ -323,8 +325,10 @@ def main(argv: Optional[List[str]] = None) -> None:
         include_refusals=not args.no_refusals,
         workers=args.workers,
     )
-    print(f"Wrote {datasheet.n_examples} examples "
-          f"({datasheet.n_decision_examples} decisions, {datasheet.n_refusal_examples} refusals) to {args.out}")
+    print(
+        f"Wrote {datasheet.n_examples} examples "
+        f"({datasheet.n_decision_examples} decisions, {datasheet.n_refusal_examples} refusals) to {args.out}"
+    )
 
 
 if __name__ == "__main__":

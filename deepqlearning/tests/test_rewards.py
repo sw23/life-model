@@ -141,16 +141,24 @@ class TestStepReward(unittest.TestCase):
     def test_nonterminal_is_consumption_only(self):
         cfg = _cfg()
         r = step_reward(
-            nominal_consumption=40_000, deflator=1.0, config=cfg,
-            terminal=False, nominal_terminal_net_worth=1_000_000, ruined=False,
+            nominal_consumption=40_000,
+            deflator=1.0,
+            config=cfg,
+            terminal=False,
+            nominal_terminal_net_worth=1_000_000,
+            ruined=False,
         )
         self.assertAlmostEqual(r, consumption_utility(40_000, 1.0, cfg))
 
     def test_terminal_solvent_adds_bequest(self):
         cfg = _cfg()
         r = step_reward(
-            nominal_consumption=40_000, deflator=1.0, config=cfg,
-            terminal=True, nominal_terminal_net_worth=800_000, ruined=False,
+            nominal_consumption=40_000,
+            deflator=1.0,
+            config=cfg,
+            terminal=True,
+            nominal_terminal_net_worth=800_000,
+            ruined=False,
         )
         expected = consumption_utility(40_000, 1.0, cfg) + bequest_utility(800_000, 1.0, cfg)
         self.assertAlmostEqual(r, expected)
@@ -158,15 +166,23 @@ class TestStepReward(unittest.TestCase):
     def test_terminal_ruined_applies_penalty_not_bequest(self):
         cfg = _cfg()
         r = step_reward(
-            nominal_consumption=40_000, deflator=1.0, config=cfg,
-            terminal=True, nominal_terminal_net_worth=-50_000, ruined=True,
+            nominal_consumption=40_000,
+            deflator=1.0,
+            config=cfg,
+            terminal=True,
+            nominal_terminal_net_worth=-50_000,
+            ruined=True,
         )
         expected = consumption_utility(40_000, 1.0, cfg) + cfg.ruin_penalty
         self.assertAlmostEqual(r, expected)
         # Ruin must be materially worse than a solvent terminal step, so bankruptcy is deterred.
         solvent = step_reward(
-            nominal_consumption=40_000, deflator=1.0, config=cfg,
-            terminal=True, nominal_terminal_net_worth=500_000, ruined=False,
+            nominal_consumption=40_000,
+            deflator=1.0,
+            config=cfg,
+            terminal=True,
+            nominal_terminal_net_worth=500_000,
+            ruined=False,
         )
         self.assertLess(r, solvent)
 
@@ -174,8 +190,12 @@ class TestStepReward(unittest.TestCase):
         cfg = _cfg()
         for terminal, ruined in ((False, False), (True, False), (True, True)):
             r = step_reward(
-                nominal_consumption=np.float64(40_000), deflator=np.float64(1.2), config=cfg,
-                terminal=terminal, nominal_terminal_net_worth=np.float64(500_000), ruined=ruined,
+                nominal_consumption=np.float64(40_000),
+                deflator=np.float64(1.2),
+                config=cfg,
+                terminal=terminal,
+                nominal_terminal_net_worth=np.float64(500_000),
+                ruined=ruined,
             )
             self.assertIs(type(r), float, f"terminal={terminal} ruined={ruined} leaked non-float")
 

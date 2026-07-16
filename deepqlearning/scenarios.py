@@ -116,10 +116,15 @@ class EpisodeSampler:
         s = self.scenario
         p = s.point
 
-        start_age = int(rng.integers(p["person_start_age"] - s.start_age_spread,
-                                     p["person_start_age"] + s.start_age_spread + 1))
-        retirement_age = int(rng.integers(p["person_retirement_age"] - s.retirement_age_spread,
-                                          p["person_retirement_age"] + s.retirement_age_spread + 1))
+        start_age = int(
+            rng.integers(p["person_start_age"] - s.start_age_spread, p["person_start_age"] + s.start_age_spread + 1)
+        )
+        retirement_age = int(
+            rng.integers(
+                p["person_retirement_age"] - s.retirement_age_spread,
+                p["person_retirement_age"] + s.retirement_age_spread + 1,
+            )
+        )
         # A retirement age at least a decade out keeps every episode a meaningful planning task.
         retirement_age = max(retirement_age, start_age + 10)
 

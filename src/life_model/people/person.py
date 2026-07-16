@@ -270,6 +270,7 @@ class Person(LifeModelAgent):
         """Calculate total itemized deductions.
 
         Includes:
+
         - Charitable contributions
         - Mortgage interest (capped to the first $750k of acquisition debt, TCJA)
         - State and local taxes: property tax plus ``state_income_tax_paid``, capped at the SALT
@@ -601,9 +602,7 @@ class Person(LifeModelAgent):
         totals = self.income.totals_by_type()
         totals[IncomeType.PRETAX_DISTRIBUTION] = totals.get(IncomeType.PRETAX_DISTRIBUTION, 0.0) + additional_income
         legacy_agi = max(ordinary_income - self.federal_deductions_with_state_tax(0.0, additional_income), 0)
-        state_tax = state_income_tax_for_unit(
-            totals, self.filing_status, self.state, legacy_agi, self.model.config
-        )
+        state_tax = state_income_tax_for_unit(totals, self.filing_status, self.state, legacy_agi, self.model.config)
         deductions = self.federal_deductions_with_state_tax(state_tax, additional_income)
         return compute_taxes(
             ordinary_income, deductions, self.filing_status, [self.fica_wages], self.model.config, state_tax=state_tax

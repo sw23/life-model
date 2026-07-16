@@ -239,7 +239,10 @@ def main():
     parser.add_argument("--plot_results", action="store_true", help="Plot training results")
     parser.add_argument("--save_plots", type=str, default=None, help="Path to save training plots")
     parser.add_argument(
-        "--reward-preset", type=str, default=DEFAULT_PRESET, choices=sorted(REWARD_PRESETS),
+        "--reward-preset",
+        type=str,
+        default=DEFAULT_PRESET,
+        choices=sorted(REWARD_PRESETS),
         help="Reward objective preset (Plan 19 D1)",
     )
     parser.add_argument("--vectorized", action="store_true", help="Use the vectorized trainer (Plan 19 D4)")
@@ -299,8 +302,10 @@ def main():
                 },
             )
             stats = vtrainer.train()
-            print(f"Vectorized training done: {stats['episodes']} episodes, "
-                  f"{stats['collected_env_steps']} env steps, best eval {stats['best_eval_return']:.2f}")
+            print(
+                f"Vectorized training done: {stats['episodes']} episodes, "
+                f"{stats['collected_env_steps']} env steps, best eval {stats['best_eval_return']:.2f}"
+            )
         else:
             training_config = create_training_config(args.scenario)
             if args.episodes:

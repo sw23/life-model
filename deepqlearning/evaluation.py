@@ -199,7 +199,7 @@ class EvalProtocol:
         """Map condition name -> {env_extra_config, seeds}. Seed sets are disjoint spawns."""
         # Two disjoint seed sets from the master seed: train and held-out.
         both = spawn_seeds(self.master_seed, 2 * self.n_eval)
-        train_seeds, held_out_seeds = both[: self.n_eval], both[self.n_eval:]
+        train_seeds, held_out_seeds = both[: self.n_eval], both[self.n_eval :]
         conditions = {
             "train": {"extra": None, "seeds": train_seeds},
             "held_out_seeds": {"extra": None, "seeds": held_out_seeds},
@@ -242,8 +242,7 @@ class EvalProtocol:
         for cond_name, spec in conditions.items():
             env = self._make_env(spec["extra"])
             report["conditions"][cond_name] = {
-                name: self.evaluate_policy(policy, env, spec["seeds"]).as_dict()
-                for name, policy in policies.items()
+                name: self.evaluate_policy(policy, env, spec["seeds"]).as_dict() for name, policy in policies.items()
             }
 
         if agent is not None:
@@ -287,8 +286,10 @@ class EvalProtocol:
 def format_comparison_table(report: Dict) -> str:
     """Render the protocol report as a plain-text comparison table for the trainer to print."""
     lines: List[str] = []
-    lines.append(f"Evaluation protocol — preset={report['reward_preset']} n={report['n_eval']} "
-                 f"master_seed={report['master_seed']}")
+    lines.append(
+        f"Evaluation protocol — preset={report['reward_preset']} n={report['n_eval']} "
+        f"master_seed={report['master_seed']}"
+    )
     header = f"{'policy':22s} {'mean':>9s} {'95% CI':>19s} {'ruin':>6s} {'succ':>6s} {'nw_p50':>12s}"
     for cond_name, cond in report["conditions"].items():
         lines.append("")

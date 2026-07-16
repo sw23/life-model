@@ -28,9 +28,7 @@ def simulator_commit() -> str:
         return env
     try:
         here = os.path.dirname(os.path.abspath(__file__))
-        out = subprocess.check_output(
-            ["git", "rev-parse", "HEAD"], cwd=here, stderr=subprocess.DEVNULL
-        )
+        out = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=here, stderr=subprocess.DEVNULL)
         return out.decode().strip()
     except Exception:
         return "unknown"

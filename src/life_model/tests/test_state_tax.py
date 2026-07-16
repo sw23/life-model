@@ -162,8 +162,9 @@ class TestStateBase(unittest.TestCase):
         pa_tax = state_income_tax_for_unit(totals, FilingStatus.SINGLE, "PA", legacy_agi_base=99999, config=config)
         self.assertEqual(pa_tax, 0.0)
         # TX has no income tax.
-        tx_tax = state_income_tax_for_unit(self._totals(WAGES=100000), FilingStatus.SINGLE, "TX",
-                                           legacy_agi_base=99999, config=config)
+        tx_tax = state_income_tax_for_unit(
+            self._totals(WAGES=100000), FilingStatus.SINGLE, "TX", legacy_agi_base=99999, config=config
+        )
         self.assertEqual(tx_tax, 0.0)
 
     def test_ss_exempt_by_default(self):
@@ -312,8 +313,9 @@ class TestShippedPacks(unittest.TestCase):
         totals = self._totals(PRETAX_DISTRIBUTION=50000, SS_BENEFIT=15000)
         pa = state_income_tax_for_unit(totals, FilingStatus.SINGLE, "PA", legacy_agi_base=65000, config=self.config)
         self.assertEqual(pa, 0.0)
-        default = state_income_tax_for_unit(totals, FilingStatus.SINGLE, None, legacy_agi_base=65000,
-                                            config=self.config)
+        default = state_income_tax_for_unit(
+            totals, FilingStatus.SINGLE, None, legacy_agi_base=65000, config=self.config
+        )
         self.assertAlmostEqual(default, 65000 * self.config.tax.state.tax_rate / 100, places=6)
 
     def test_il_exempts_retirement_but_taxes_wages(self):
@@ -321,8 +323,11 @@ class TestShippedPacks(unittest.TestCase):
             self._totals(WAGES=60000), FilingStatus.SINGLE, "IL", legacy_agi_base=60000, config=self.config
         )
         retiree_tax = state_income_tax_for_unit(
-            self._totals(PRETAX_DISTRIBUTION=60000), FilingStatus.SINGLE, "IL",
-            legacy_agi_base=60000, config=self.config
+            self._totals(PRETAX_DISTRIBUTION=60000),
+            FilingStatus.SINGLE,
+            "IL",
+            legacy_agi_base=60000,
+            config=self.config,
         )
         self.assertGreater(wages_tax, 0.0)
         self.assertEqual(retiree_tax, 0.0)

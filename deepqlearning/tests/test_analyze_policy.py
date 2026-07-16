@@ -31,8 +31,13 @@ class TestAnalyzePolicy(unittest.TestCase):
         out_dir = tempfile.mkdtemp()
         manifest = analyze(agent, {}, out_dir, n_episodes=4)
 
-        for name in ("policy_heatmap.png", "contribution_schedule.png", "lifetime_trace.png",
-                     "lifetime_trace.json", "analysis_manifest.json"):
+        for name in (
+            "policy_heatmap.png",
+            "contribution_schedule.png",
+            "lifetime_trace.png",
+            "lifetime_trace.json",
+            "analysis_manifest.json",
+        ):
             path = os.path.join(out_dir, name)
             self.assertTrue(os.path.exists(path), f"missing artifact {name}")
             self.assertGreater(os.path.getsize(path), 0)

@@ -53,10 +53,57 @@ class FederalTaxConfig(StrictModel):
 # an unknown code fails validation at load (Plan 17 acceptance: unknown state → ValidationError).
 US_STATE_CODES = frozenset(
     {
-        "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID", "IL", "IN",
-        "IA", "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV",
-        "NH", "NJ", "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN",
-        "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY", "DC",
+        "AL",
+        "AK",
+        "AZ",
+        "AR",
+        "CA",
+        "CO",
+        "CT",
+        "DE",
+        "FL",
+        "GA",
+        "HI",
+        "ID",
+        "IL",
+        "IN",
+        "IA",
+        "KS",
+        "KY",
+        "LA",
+        "ME",
+        "MD",
+        "MA",
+        "MI",
+        "MN",
+        "MS",
+        "MO",
+        "MT",
+        "NE",
+        "NV",
+        "NH",
+        "NJ",
+        "NM",
+        "NY",
+        "NC",
+        "ND",
+        "OH",
+        "OK",
+        "OR",
+        "PA",
+        "RI",
+        "SC",
+        "SD",
+        "TN",
+        "TX",
+        "UT",
+        "VT",
+        "VA",
+        "WA",
+        "WV",
+        "WI",
+        "WY",
+        "DC",
     }
 )
 
@@ -127,8 +174,7 @@ class StateTaxPack(StrictModel):
                     raise ValueError(f"StateTaxPack.brackets['{status}'] first row must start at lower=0")
             elif lower != prev_upper + 1:
                 raise ValueError(
-                    f"StateTaxPack.brackets['{status}'] gap: row lower {lower} != previous upper "
-                    f"{prev_upper} + 1"
+                    f"StateTaxPack.brackets['{status}'] gap: row lower {lower} != previous upper {prev_upper} + 1"
                 )
             prev_upper = upper
 

@@ -130,9 +130,17 @@ class AdviserEvaluator:
             if decision is not None and decision in by_name:
                 adviser_stats = by_name[decision]
                 faithful = is_faithful(answer, scored, decision)
-                results.append(HouseholdResult(household_text, True, decision,
-                                               adviser_stats.success_rate, adviser_stats.net_worth_p50,
-                                               argmax, faithful))
+                results.append(
+                    HouseholdResult(
+                        household_text,
+                        True,
+                        decision,
+                        adviser_stats.success_rate,
+                        adviser_stats.net_worth_p50,
+                        argmax,
+                        faithful,
+                    )
+                )
             else:
                 results.append(HouseholdResult(household_text, False, None, None, None, argmax, True))
 
@@ -146,8 +154,10 @@ class AdviserEvaluator:
         faithfulness_rate = float(np.mean([r.faithful for r in parsed])) if parsed else 1.0
 
         heuristics = {
-            n: {"mean_success_rate": float(np.mean(heuristic_success[n])),
-                "mean_net_worth_p50": float(np.mean(heuristic_p50[n]))}
+            n: {
+                "mean_success_rate": float(np.mean(heuristic_success[n])),
+                "mean_net_worth_p50": float(np.mean(heuristic_p50[n])),
+            }
             for n in HEURISTIC_NAMES
         }
         best_name = max(heuristics, key=lambda n: heuristics[n]["mean_success_rate"])
@@ -230,8 +240,10 @@ class AdviserEvaluator:
 
 def format_report(report: Dict) -> str:
     """Render the adviser eval report as a short text table."""
-    lines = [f"Adviser evaluation — preset={report['reward_preset']} "
-             f"seed={report['master_seed']} n_trials={report['n_trials']}"]
+    lines = [
+        f"Adviser evaluation — preset={report['reward_preset']} "
+        f"seed={report['master_seed']} n_trials={report['n_trials']}"
+    ]
     for cond_name, cond in report["conditions"].items():
         lines.append("")
         lines.append(f"[{cond_name}] n={cond['n_households']}")
@@ -240,8 +252,10 @@ def format_report(report: Dict) -> str:
         lines.append(f"  best heuristic ({cond['best_heuristic']}) {cond['best_heuristic_mean_success_rate']:.3f}")
         lines.append(f"  beats best heuristic  {cond['adviser_beats_best_heuristic']}")
         lines.append(f"  numeric faithfulness  {cond['numeric_faithfulness_rate']:.2f}")
-        lines.append(f"  oracle success        {cond['oracle_mean_success_rate']:.3f} "
-                     f"(>= all heuristics: {cond['oracle_beats_all_heuristics']})")
+        lines.append(
+            f"  oracle success        {cond['oracle_mean_success_rate']:.3f} "
+            f"(>= all heuristics: {cond['oracle_beats_all_heuristics']})"
+        )
     r = report["refusals"]
     lines.append("")
     lines.append(f"[refusals] n={r['n_prompts']} refusal_rate={r['refusal_rate']:.2f}")
@@ -256,8 +270,12 @@ def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=777)
     parser.add_argument("--held-out-scenario", default="recession")
     parser.add_argument("--reward-preset", default=DEFAULT_REWARD_PRESET)
-    parser.add_argument("--adviser", default="oracle", choices=["oracle", "stub"],
-                        help="Which stub adviser to evaluate (real backends load via slm.backends).")
+    parser.add_argument(
+        "--adviser",
+        default="oracle",
+        choices=["oracle", "stub"],
+        help="Which stub adviser to evaluate (real backends load via slm.backends).",
+    )
     parser.add_argument("--fixed-decision", default=None, help="Fixed decision for the stub adviser.")
     parser.add_argument("--out", default=None, help="Write the JSON report here.")
     return parser.parse_args(argv)

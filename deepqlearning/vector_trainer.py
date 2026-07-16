@@ -210,9 +210,7 @@ class VectorizedTrainer:
                         self.writer.add_scalar("train/recent_return", recent, self._collected_steps)
                         self.writer.add_scalar("train/epsilon", self.agent.epsilon, self._collected_steps)
                         if self.agent.training_losses:
-                            self.writer.add_scalar(
-                                "train/loss", self.agent.training_losses[-1], self._collected_steps
-                            )
+                            self.writer.add_scalar("train/loss", self.agent.training_losses[-1], self._collected_steps)
 
                 if self._collected_steps - last_eval_at >= self.config["eval_freq_steps"]:
                     last_eval_at = self._collected_steps

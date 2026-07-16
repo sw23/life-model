@@ -47,14 +47,12 @@ STRATEGIES: Tuple[Strategy, ...] = (
     Strategy(
         "age_glide",
         "Age-based savings glide path",
-        "Contribute a rising share of savings to the pre-tax 401k as you age "
-        "(about 10% under 35, up to 100% at 55+).",
+        "Contribute a rising share of savings to the pre-tax 401k as you age (about 10% under 35, up to 100% at 55+).",
     ),
     Strategy(
         "emergency_fund_first",
         "Emergency fund first",
-        "Build a 6-month cash cushion before investing any surplus, then invest via the "
-        "tax-advantaged waterfall.",
+        "Build a 6-month cash cushion before investing any surplus, then invest via the tax-advantaged waterfall.",
     ),
     Strategy(
         "four_percent_drawdown",

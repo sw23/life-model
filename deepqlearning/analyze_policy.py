@@ -99,13 +99,17 @@ def action_heatmap(trajectories: List[List[Dict]], out_path: str, n_wealth_bins:
     cmap = matplotlib.colors.ListedColormap(_CATEGORY_COLORS)
     fig, ax = plt.subplots(figsize=(10, 6))
     ax.imshow(
-        np.ma.masked_less(grid, 0), origin="lower", aspect="auto", cmap=cmap,
-        vmin=0, vmax=len(_CATEGORIES) - 1,
+        np.ma.masked_less(grid, 0),
+        origin="lower",
+        aspect="auto",
+        cmap=cmap,
+        vmin=0,
+        vmax=len(_CATEGORIES) - 1,
     )
     ax.set_xticks(range(n_age))
-    ax.set_xticklabels([f"{age_edges[i]:.0f}-{age_edges[i+1]:.0f}" for i in range(n_age)], rotation=45, ha="right")
+    ax.set_xticklabels([f"{age_edges[i]:.0f}-{age_edges[i + 1]:.0f}" for i in range(n_age)], rotation=45, ha="right")
     ax.set_yticks(range(n_wealth))
-    ax.set_yticklabels([f"${wealth_edges[i]/1e3:.0f}k" for i in range(n_wealth)])
+    ax.set_yticklabels([f"${wealth_edges[i] / 1e3:.0f}k" for i in range(n_wealth)])
     ax.set_xlabel("Age")
     ax.set_ylabel("Net worth decile (lower edge)")
     ax.set_title("Dominant action by age x wealth")
@@ -114,8 +118,12 @@ def action_heatmap(trajectories: List[List[Dict]], out_path: str, n_wealth_bins:
     fig.tight_layout()
     fig.savefig(out_path, dpi=120, bbox_inches="tight")
     plt.close(fig)
-    return {"grid": grid.tolist(), "categories": _CATEGORIES, "age_edges": age_edges.tolist(),
-            "wealth_edges": wealth_edges.tolist()}
+    return {
+        "grid": grid.tolist(),
+        "categories": _CATEGORIES,
+        "age_edges": age_edges.tolist(),
+        "wealth_edges": wealth_edges.tolist(),
+    }
 
 
 def contribution_schedule(trajectories: List[List[Dict]], out_path: str) -> Dict:
@@ -163,14 +171,16 @@ def lifetime_trace(
         legal = env.get_legal_actions()
         action = agent.select_action(state, legal, training=False)
         state, reward, terminated, truncated, info = env.step(action)
-        rows.append({
-            "age": info.get("age"),
-            "net_worth": float(info.get("net_worth", 0.0)),
-            "action_type": info.get("action_type"),
-            "action_amount": float(info.get("action_amount") or 0.0),
-            "reward": float(reward),
-            "is_retired": bool(info.get("is_retired")),
-        })
+        rows.append(
+            {
+                "age": info.get("age"),
+                "net_worth": float(info.get("net_worth", 0.0)),
+                "action_type": info.get("action_type"),
+                "action_amount": float(info.get("action_amount") or 0.0),
+                "reward": float(reward),
+                "is_retired": bool(info.get("is_retired")),
+            }
+        )
         if terminated or truncated:
             break
     agent.epsilon = old_eps
@@ -206,8 +216,12 @@ def analyze(agent: FinancialDQNAgent, env_config: Optional[Dict], out_dir: str, 
     trace = lifetime_trace(
         agent, env_config, os.path.join(out_dir, "lifetime_trace.png"), os.path.join(out_dir, "lifetime_trace.json")
     )
-    manifest = {"n_episodes": n_episodes, "heatmap": heatmap, "schedule": schedule,
-                "lifetime_trace_summary": {k: v for k, v in trace.items() if k != "rows"}}
+    manifest = {
+        "n_episodes": n_episodes,
+        "heatmap": heatmap,
+        "schedule": schedule,
+        "lifetime_trace_summary": {k: v for k, v in trace.items() if k != "rows"},
+    }
     with open(os.path.join(out_dir, "analysis_manifest.json"), "w") as f:
         json.dump(manifest, f, indent=2)
     print(f"Policy analysis artifacts written to {out_dir}")

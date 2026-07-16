@@ -88,8 +88,9 @@ def test_every_row_schema_valid_via_jsonl(examples):
 
 
 def test_datasheet_counts_match(examples):
-    ds = build_datasheet(examples, SCEN, n_trials=4, generation_seed=20,
-                         reward_preset="retirement_security", name="t", scale_note="test")
+    ds = build_datasheet(
+        examples, SCEN, n_trials=4, generation_seed=20, reward_preset="retirement_security", name="t", scale_note="test"
+    )
     assert ds.n_examples == len(examples)
     assert ds.n_decision_examples + ds.n_refusal_examples == len(examples)
     assert ds.n_refusal_examples == 3 * len(OUT_OF_SCOPE_DOMAINS)

@@ -97,8 +97,7 @@ class ToolLoopAdviser:
         lines = ["Simulator Monte Carlo results (success rate, median terminal net worth):"]
         for c in sorted(scored, key=lambda s: s.success_rate, reverse=True):
             title = STRATEGY_BY_NAME[c.decision].title
-            lines.append(f"- {c.decision} ({title}): success {c.success_rate:.0%}, "
-                         f"median ${c.net_worth_p50:,.0f}")
+            lines.append(f"- {c.decision} ({title}): success {c.success_rate:.0%}, median ${c.net_worth_p50:,.0f}")
         lines.append("Reconsider and give your final DECISION and RATIONALE.")
         return {"role": "user", "content": "\n".join(lines)}
 
