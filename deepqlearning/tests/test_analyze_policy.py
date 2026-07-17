@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Tests for the policy-analysis artifacts (Plan 19 D5): they generate headlessly."""
+"""Tests for the policy-analysis artifacts: they generate headlessly."""
 
 import os
 import sys

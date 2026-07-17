@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Tests for AGI history recording and the Medicare/IRMAA agent (Plan 15 D4, Task 4)."""
+"""Tests for AGI history recording and the Medicare/IRMAA agent."""
 
 import unittest
 

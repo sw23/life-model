@@ -69,7 +69,7 @@ class TestSeedingDeterminism(unittest.TestCase):
 
     def test_reward_state_reset_between_episodes(self):
         # A fresh episode must not carry reward accounting state (lifetime spending) from the last
-        # one; the utility reward (Plan 19 D1) is otherwise stateless across steps.
+        # one; the utility reward is otherwise stateless across steps.
         env = FinancialLifeEnv()
         env.reset(seed=1)
         for _ in range(20):
@@ -87,8 +87,8 @@ class TestRewardSemantics(unittest.TestCase):
         self.assertEqual(env.BANKRUPTCY_THRESHOLD, -100000)
 
     def test_utility_reward_config_replaces_adhoc_weights(self):
-        # Plan 19 D1: the ad-hoc reward-weight shaping (net-worth growth, farmable bonuses) is
-        # replaced by a utility-based RewardConfig; the old weight dict is gone.
+        # The reward is a utility-based RewardConfig; the env carries no reward-weight shaping
+        # dict (no ``reward_weights`` key in its config).
         from rewards import DEFAULT_PRESET, RewardConfig
 
         env = FinancialLifeEnv()
@@ -109,7 +109,7 @@ class TestRewardSemantics(unittest.TestCase):
 
 
 class TestModelNativeMortality(unittest.TestCase):
-    """Plan 18 D2: death is decided by the model (Person mortality machinery), not the env."""
+    """Death is decided by the model (Person mortality machinery), not the env."""
 
     def test_person_uses_stochastic_mortality(self):
         from life_model.people.person import MortalityMode
@@ -155,7 +155,7 @@ class TestModelNativeMortality(unittest.TestCase):
 
 
 class TestStochasticEconomy(unittest.TestCase):
-    """Plan 18 D3: the economy is stochastic by default, seeded, and observable."""
+    """The economy is stochastic by default, seeded, and observable."""
 
     def test_default_mode_is_stochastic(self):
         env = FinancialLifeEnv()
@@ -204,7 +204,7 @@ class TestStochasticEconomy(unittest.TestCase):
 
 
 class TestObservationV2(unittest.TestCase):
-    """Plan 18 D4: observation features are hand-checkable, bounded, and decision-relevant."""
+    """Observation features are hand-checkable, bounded, and decision-relevant."""
 
     def _fixed_env(self, config=None):
         cfg = {"economy_mode": "fixed"}

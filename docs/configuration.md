@@ -15,7 +15,7 @@ against the Pydantic models in `src/life_model/config/models.py`
 — in the defaults *or* in a scenario override — raises a `ValidationError` at load
 time instead of being silently dropped.
 
-Field defaults live only in the YAML/Pydantic models; call sites no longer carry
+Field defaults live only in the YAML/Pydantic models; call sites do not carry
 their own hardcoded fallbacks. Each dated section of the YAML carries a
 `# vintage: <year>, source: <doc>` comment citing the primary IRS/SSA source.
 
@@ -53,9 +53,8 @@ Prefer the typed properties on `FinancialConfig`:
 | `config.insurance` | life insurance defaults |
 | `config.debt` | credit card defaults |
 
-The legacy dot-notation accessor `config.get("tax.state.tax_rate")` still works
-but emits a `DeprecationWarning`; it will be removed once all consumers are
-migrated.
+The dot-notation accessor `config.get("tax.state.tax_rate")` still works
+but emits a `DeprecationWarning`; prefer the typed properties above.
 
 ## Authoring scenarios
 
@@ -93,7 +92,7 @@ filing are not modeled.
 ```yaml
 tax:
   state:
-    tax_rate: 6.0        # legacy flat rate; becomes the DEFAULT pack (back-compat)
+    tax_rate: 6.0        # flat rate; becomes the DEFAULT pack
     default_state: DEFAULT
     packs:
       PA:                              # key: two-letter USPS code (or DEFAULT)
@@ -122,8 +121,8 @@ subtracts categories the pack exempts (pre-tax retirement distributions when
 `retirement_income_taxable: false`; the Social Security taxable portion unless
 `ss_taxable: true`) plus the state standard deduction. State income tax paid
 joins property tax in the federal SALT itemized deduction, subject to
-`tax.federal.salt_deduction_cap`. The `DEFAULT` pack reproduces the legacy
-behavior exactly: flat `tax_rate` applied to the federal AGI base.
+`tax.federal.salt_deduction_cap`. The `DEFAULT` pack applies a single flat
+`tax_rate` to the federal AGI base.
 
 The packaged packs (CA, NY, TX, FL, WA, PA, IL, MA) are 2025-vintage and stamped
 with their state DOR sources in the YAML; refresh them annually alongside the

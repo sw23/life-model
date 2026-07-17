@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Statistical evaluation protocol for RL policies (Plan 19 D3).
+"""Statistical evaluation protocol for RL policies.
 
 The old evaluation was a hand-rolled mean of a handful of greedy episodes with no statistics. This
 module replaces it with a defensible protocol that runs **every policy (the trained agent plus all
@@ -24,7 +24,7 @@ Three conditions isolate generalization:
 
 Per-condition/per-policy seeds are spawned with :class:`numpy.random.SeedSequence` (the same
 mechanism as :class:`life_model.montecarlo.MonteCarlo`), so a report is reproducible under its
-master seed. The **operational definition of "intelligent"** (D3) is computed on the ``train``
+master seed. The **operational definition of "intelligent"** is computed on the ``train``
 condition for the default objective: the agent's mean return exceeds every planner heuristic's and
 its CI does not overlap the best heuristic's. The held-out gap is reported, not gated.
 """
@@ -166,7 +166,7 @@ def summarize(outcomes: List[EpisodeOutcome], resamples: int, ci: float, rng: np
 
 @dataclass
 class EvalProtocol:
-    """Runs the D3 statistical evaluation protocol over all policies and conditions.
+    """Runs the statistical evaluation protocol over all policies and conditions.
 
     Args:
         env_config: Base environment config for the training distribution (merged over the env
@@ -250,7 +250,7 @@ class EvalProtocol:
         return report
 
     def _intelligence_verdict(self, report: Dict) -> Dict:
-        """Operational 'intelligent' verdict (D3), computed on the train condition.
+        """Operational 'intelligent' verdict, computed on the train condition.
 
         The agent is intelligent iff its mean return exceeds every planner heuristic's AND its CI
         low is above the best heuristic's CI high (non-overlapping). The held-out-seeds gap is

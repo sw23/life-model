@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Backend tests (Plan 20 D5): the real backends import without pulling in any weights/SDKs.
+"""Backend tests: the real backends import without pulling in any weights/SDKs.
 
 CI never loads model weights — these assert only that the module imports and the classes conform
 to the AdviserModel protocol shape (constructors lazy-import their heavy deps, so importing the

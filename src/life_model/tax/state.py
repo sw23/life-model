@@ -5,11 +5,11 @@
 
 """State income tax.
 
-Two code paths coexist (Plan 17):
+Two code paths coexist:
 
-* The legacy scalar path — :func:`state_income_tax` / :func:`get_state_tax_rate` — applies the
-  ``DEFAULT`` flat rate to a federal-style AGI base. It is what every ``DEFAULT`` resident and every
-  pre-Plan-17 caller uses, so its numbers are byte-identical to the old single-rate model.
+* The scalar path — :func:`state_income_tax` / :func:`get_state_tax_rate` — applies the
+  ``DEFAULT`` flat rate to a federal-style AGI base. It is the path every ``DEFAULT`` resident
+  uses: a single flat rate on the federal-style AGI base.
 * The pack path — :func:`state_income_tax_for_unit` — resolves a per-state
   :class:`~life_model.config.models.StateTaxPack` and computes a real state taxable-income base
   (exempting retirement distributions and/or Social Security where the state does) before applying
@@ -33,12 +33,12 @@ def _fin(config: "Optional[FinancialConfig]") -> "FinancialConfig":
 
 
 def get_state_tax_rate(config: "Optional[FinancialConfig]" = None) -> float:
-    """Get the configured DEFAULT flat state tax rate (legacy accessor)."""
+    """Get the configured DEFAULT flat state tax rate."""
     return _fin(config).tax.state.tax_rate
 
 
 def state_income_tax(income: float, config: "Optional[FinancialConfig]" = None) -> float:
-    """Calculate state income taxes due at the DEFAULT flat rate (legacy path).
+    """Calculate state income taxes due at the DEFAULT flat rate.
 
     Args:
         income (float): Income subject to state income taxes (a federal-style AGI base).
@@ -51,7 +51,7 @@ def state_income_tax(income: float, config: "Optional[FinancialConfig]" = None) 
 
 
 def _bracket_rows(pack: "StateTaxPack", filing_status: "FilingStatus"):
-    """Return the bracket rows for ``filing_status`` with single-fallback (Plan 14 D6)."""
+    """Return the bracket rows for ``filing_status`` with single-fallback."""
     brackets = pack.brackets or {}
     key = "married_filing_jointly" if filing_status.value == 2 else "single"
     return brackets.get(key, brackets["single"])
@@ -71,8 +71,8 @@ def state_income_tax_for_unit(
 ) -> float:
     """Compute state income tax for a tax unit resolving the resident's state pack.
 
-    ``DEFAULT`` residents use the legacy federal-AGI base (byte-identical to the old flat model).
-    Real state packs build a state taxable-income base from the income ledger totals: ordinary
+    ``DEFAULT`` residents use the federal-style AGI base with the flat rate. Real state packs
+    build a state taxable-income base from the income ledger totals: ordinary
     income minus exempt retirement distributions (when ``not retirement_income_taxable``) minus the
     Social Security taxable portion (when ``not ss_taxable``) minus the state standard deduction,
     then the flat rate or brackets.
@@ -82,7 +82,7 @@ def state_income_tax_for_unit(
             (see :meth:`~life_model.tax.income.IncomeLedger.totals_by_type`).
         filing_status: Filing status of the unit.
         state: The resident's state code (``None`` → the config default state).
-        legacy_agi_base: The federal-style AGI base used for the ``DEFAULT`` (legacy) path.
+        legacy_agi_base: The federal-style AGI base used for the ``DEFAULT`` flat-rate path.
         config: Per-model config. Defaults to the global config.
     """
     state_config = _fin(config).tax.state
@@ -92,7 +92,7 @@ def state_income_tax_for_unit(
     pack = state_config.get_pack(state)
 
     if resolved == DEFAULT_STATE_KEY:
-        # Legacy flat behavior on the federal AGI base — preserves existing numbers exactly.
+        # ``DEFAULT`` flat rate applied to the federal AGI base.
         return legacy_agi_base * (pack.flat_rate or 0.0) / 100
 
     ordinary = sum(totals_by_type.values())

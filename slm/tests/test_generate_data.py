@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Data-generation tests (Plan 20 D2 acceptance):
+"""Data-generation tests (acceptance):
 
 * same seed -> byte-identical JSONL,
 * every rationale number is reproducible from the stored scoring results,

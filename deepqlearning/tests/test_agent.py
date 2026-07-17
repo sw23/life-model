@@ -115,7 +115,7 @@ class TestCheckpointRoundTrip(unittest.TestCase):
         self.assertEqual(agent2.episode_rewards, agent.episode_rewards)
 
     def test_version_mismatch_refuses_to_load(self):
-        # Plan 18: the observation layout / action space changed, so a checkpoint from another
+        # The observation layout / action space changed, so a checkpoint from another
         # version must fail loudly with a clear message instead of loading misaligned weights.
         agent = _make_agent()
         path = os.path.join(tempfile.mkdtemp(), "ckpt.pt")

@@ -26,5 +26,5 @@
   "scale_note": "pipeline-validation scale (pre-Plans-14/15; not a publishable adviser)",
   "schema_version": 1,
   "simulator_commit": "af454e9c531538967b3804dd9cea1800b59be7c4",
-  "teacher_gating": "DQN excluded (Plan 19 protocol_report.json: verdict_intelligent=false, ci_does_not_overlap_best=false); candidates = heuristics + Roth/pre-tax levers, label = grid argmax."
+  "teacher_gating": "DQN excluded (protocol report: verdict_intelligent=false, ci_does_not_overlap_best=false); candidates = heuristics + Roth/pre-tax levers, label = grid argmax."
 }

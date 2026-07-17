@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Real ``AdviserModel`` backends (Plan 20 D5, task 7 — optional).
+"""Real ``AdviserModel`` backends (optional).
 
 Three interchangeable implementations of the :class:`~slm.adviser.AdviserModel` protocol, all
 behind lazy imports so this module (and CI) never loads weights or SDKs it doesn't use:
@@ -66,7 +66,7 @@ class HFAdviserModel:
 
 
 class MLXAdviserModel:
-    """Local Apple-silicon adviser via ``mlx-lm`` (optional; not load-bearing per D3)."""
+    """Local Apple-silicon adviser via ``mlx-lm`` (optional; not load-bearing)."""
 
     def __init__(self, model_id: str, adapter_path: Optional[str] = None, max_new_tokens: int = 256):
         from mlx_lm import load
@@ -84,7 +84,7 @@ class MLXAdviserModel:
 
 
 class APIAdviserModel:
-    """Hosted-Claude adviser via the Anthropic SDK — an upper-bound baseline (D5).
+    """Hosted-Claude adviser via the Anthropic SDK — an upper-bound baseline.
 
     The system turn maps to the Messages API ``system`` parameter; the remaining turns map to
     ``messages``. Deterministic sampling is not guaranteed for hosted models, so the eval report

@@ -48,7 +48,7 @@ class TestBaselines(unittest.TestCase):
 
 
 class TestPlannerBaselines(unittest.TestCase):
-    """Plan 19 D2: the planner-grade baselines that define the 'intelligent' bar."""
+    """The planner-grade baselines that define the 'intelligent' bar."""
 
     def test_all_planner_baselines_registered(self):
         for name in PLANNER_BASELINES:

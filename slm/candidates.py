@@ -3,13 +3,13 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Executable policies for each strategy in the decision vocabulary (Plan 20 D2).
+"""Executable policies for each strategy in the decision vocabulary.
 
 This is the bridge from a strategy *name* (see :mod:`slm.strategies`) to the deterministic
-baseline policy that realizes it in the RL environment. The candidate set is the Plan 19 planner
-heuristics plus two Roth/pre-tax split levers, matching the plan-level levers named in D2.
+baseline policy that realizes it in the RL environment. The candidate set is the planner-grade
+heuristics plus two Roth/pre-tax split levers, matching the plan-level levers.
 
-**Teacher gating (D2, Risks):** the trained DQN is *not* in the candidate set. Per Plan 19's
+**Teacher gating:** the trained DQN is *not* in the candidate set. Per the
 protocol report (``deepqlearning/reports/retirement_security/protocol_report.json``:
 ``verdict_intelligent = false``, ``ci_does_not_overlap_best = false``), the DQN did not achieve
 CI-separated superiority over the heuristics, so distilling from it would silently cap the

@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Tests for the ``healthcare`` config section (Plan 15, Task 1)."""
+"""Tests for the ``healthcare`` config section."""
 
 import unittest
 from pathlib import Path

@@ -1,4 +1,4 @@
-# Smoke SFT config (Plan 20 task 4): a ~135M-parameter instruct model over ~50 examples, LoRA.
+# Smoke SFT config: a ~135M-parameter instruct model over ~50 examples, LoRA.
 # Marked slow/manual — proves the training code path end-to-end on tiny compute. The default SLM
 # config (train_default_qlora.yaml) fine-tunes from this SAME code path with only these values
 # changed, which is the LLM-readiness contract.

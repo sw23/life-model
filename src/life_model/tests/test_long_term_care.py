@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Tests for the long-term-care hazard/care-state agent and LTC insurance offset (Plan 15 D5)."""
+"""Tests for the long-term-care hazard/care-state agent and LTC insurance offset."""
 
 import unittest
 

@@ -3,10 +3,10 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Utility-based reward for the financial life environment (Plan 19 D1).
+"""Utility-based reward for the financial life environment.
 
-The reward has genuine financial-planning semantics instead of the old ad-hoc net-worth-growth
-shaping (which is maximized by hoarding and never spending). Each simulated year the agent earns
+The reward has genuine financial-planning semantics (a naive net-worth-growth shaping would be
+maximized by hoarding and never spending). Each simulated year the agent earns
 the **CRRA utility of its real (inflation-deflated) consumption** ``u(c_t)``; at the end of the
 episode it earns a **bequest term** ``b(W)`` on the real net worth it leaves behind, unless it
 went bankrupt, in which case it takes a large **ruin penalty** aligned with the environment's
@@ -15,7 +15,7 @@ bankruptcy termination threshold.
 Design notes:
 
 * **Purity.** Every function here is pure: it takes plain Python floats and returns a Python
-  ``float`` (never an ``np.float64`` — the Plan 12 regression stays fixed). The environment feeds
+  ``float`` (never an ``np.float64`` — downstream callers and serialization assume plain floats). The environment feeds
   it nominal dollars, the cumulative-inflation deflator, and terminal flags; nothing here touches
   the model. That makes the objective unit-testable in isolation (monotonicity, concavity,
   deflation correctness, ruin alignment).
@@ -138,7 +138,7 @@ def step_reward(
 
     Always includes the year's consumption utility. On the terminal step it adds either the ruin
     penalty (if the episode ended in bankruptcy) or the bequest utility (otherwise). Returns a
-    Python ``float`` so no ``np.float64`` leaks into the replay buffer (Plan 12 regression).
+    Python ``float`` so no ``np.float64`` leaks into the replay buffer.
 
     Args:
         nominal_consumption: This year's spending in nominal dollars.
@@ -162,8 +162,8 @@ def step_reward(
 # ruin penalty). The eval report records which preset produced it.
 REWARD_PRESETS: Dict[str, RewardConfig] = {
     # Bequest-dominant: per-year consumption barely matters and terminal (log) wealth dominates,
-    # so the optimal policy accumulates — an approximation of the legacy wealth-max objective,
-    # kept for comparability across the reward redesign.
+    # so the optimal policy accumulates — a wealth-accumulation objective, useful as a comparison
+    # point against the consumption-based presets.
     "wealth_max": RewardConfig(
         name="wealth_max",
         crra_gamma=1.0,
@@ -204,7 +204,7 @@ REWARD_PRESETS: Dict[str, RewardConfig] = {
     ),
 }
 
-# The plan's default objective (D1): ruin-avoidance is the headline retirement-planning question.
+# Default objective: ruin-avoidance is the headline retirement-planning question.
 DEFAULT_PRESET = "retirement_security"
 
 

@@ -108,7 +108,7 @@ SHARED_DEFAULTS: Dict[str, Any] = {
     "mortgage_rate": 6.0,
     "mortgage_term": 30,
     # Healthcare agents (medical cost curve, Medicare, long-term care) are opt-in and default
-    # off so existing dashboard runs keep producing the same numbers (Plan 15).
+    # off so existing dashboard runs keep producing the same numbers.
     "healthcare_enabled": False,
 }
 
@@ -244,7 +244,7 @@ def _add_healthcare(model: LifeModel, people: "tuple[Optional[Person], ...]", kw
     """Attach the opt-in healthcare agents to each enabled person when the toggle is on.
 
     Adds the age-related medical cost curve, Medicare (premiums + IRMAA), and the long-term-care
-    hazard model (Plan 15). Default off for back-compat.
+    hazard model. Opt-in; defaults off.
     """
     if not _get(kwargs, "healthcare_enabled", SHARED_DEFAULTS["healthcare_enabled"]):
         return

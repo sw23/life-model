@@ -4,7 +4,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Policy-analysis artifacts for a trained agent (Plan 19 D5).
+"""Policy-analysis artifacts for a trained agent.
 
 Turns a black-box checkpoint into human-checkable pictures of *what the policy does*:
 
@@ -28,7 +28,7 @@ from typing import Dict, List, Optional
 
 import matplotlib
 
-matplotlib.use("Agg")  # headless: never require a display (Plan 19 D5)
+matplotlib.use("Agg")  # headless: never require a display
 
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
@@ -208,7 +208,7 @@ def lifetime_trace(
 
 
 def analyze(agent: FinancialDQNAgent, env_config: Optional[Dict], out_dir: str, n_episodes: int = 50) -> Dict:
-    """Generate all D5 artifacts into ``out_dir`` and return a manifest of their data + paths."""
+    """Generate all policy-analysis artifacts into ``out_dir`` and return a manifest of their data + paths."""
     os.makedirs(out_dir, exist_ok=True)
     trajectories = collect_greedy_trajectories(agent, env_config, n_episodes)
     heatmap = action_heatmap(trajectories, os.path.join(out_dir, "policy_heatmap.png"))

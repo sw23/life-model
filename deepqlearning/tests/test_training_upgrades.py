@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Tests for the Plan 19 D4 training upgrades: PER, n-step returns, batched action selection,
+"""Tests for the training upgrades: PER, n-step returns, batched action selection,
 and vectorized-collection reproducibility."""
 
 import os
@@ -107,7 +107,7 @@ class TestBatchedActionSelection(unittest.TestCase):
 class TestVectorizedReproducibility(unittest.TestCase):
     def test_same_base_seed_reproduces_per_env_streams(self):
         # Per-env seeds derived from a base seed must reproduce identical reward streams under
-        # a fixed action policy (Plan 19 D4 acceptance).
+        # a fixed action policy (acceptance).
         def collect(base):
             venv = make_vector_env({}, num_envs=4, backend="sync")
             no_op = venv.single_action_space.n - 1

@@ -50,7 +50,7 @@ class FederalTaxConfig(StrictModel):
 
 
 # Two-letter USPS codes for the 50 states + DC. Pack keys must be one of these or ``DEFAULT``;
-# an unknown code fails validation at load (Plan 17 acceptance: unknown state → ValidationError).
+# an unknown code fails validation at load (unknown state → ValidationError).
 US_STATE_CODES = frozenset(
     {
         "AL",
@@ -122,7 +122,7 @@ class StateTaxPack(StrictModel):
 
     Exactly one of ``flat_rate`` or ``brackets`` must be set. ``flat_rate`` of ``0`` models a
     no-income-tax state (TX/FL/WA). ``brackets`` mirrors the federal ``[lower, upper, rate]`` shape,
-    keyed by filing status (``single`` required; other statuses fall back to ``single`` — Plan 14 D6).
+    keyed by filing status (``single`` required; other statuses fall back to ``single``).
     """
 
     flat_rate: Optional[float] = Field(default=None, ge=0, le=100)
@@ -152,7 +152,7 @@ class StateTaxPack(StrictModel):
 
     @staticmethod
     def _validate_brackets(status: str, rows: "List[List[Union[int, float]]]") -> None:
-        """Reject malformed or gapped brackets (Plan 17 acceptance criterion).
+        """Reject malformed or gapped brackets.
 
         Rows follow the federal ``[lower, upper, rate]`` convention where each row's ``lower`` is
         the previous row's ``upper`` + 1 (the half-open marginal engine keys off ``upper``). The
@@ -182,9 +182,9 @@ class StateTaxPack(StrictModel):
 class StateTaxConfig(StrictModel):
     """State tax configuration: a set of per-state packs plus the resident default.
 
-    Back-compat: the legacy scalar ``tax_rate`` key is retained. When present it synthesizes the
-    ``DEFAULT`` pack as a flat rate, so every existing YAML/scenario loads unchanged and produces
-    identical numbers (Plan 17 D1). ``tax_rate`` remains readable for legacy callers.
+    The scalar ``tax_rate`` key is supported: when present it synthesizes the ``DEFAULT`` pack as
+    a flat rate, so a YAML/scenario that sets only ``tax_rate`` loads as a single flat-rate pack.
+    ``tax_rate`` remains readable for callers that want the flat rate directly.
     """
 
     tax_rate: Optional[float] = Field(default=6.0, ge=0, le=100)
@@ -193,7 +193,7 @@ class StateTaxConfig(StrictModel):
 
     @model_validator(mode="after")
     def _synthesize_and_validate(self) -> "StateTaxConfig":
-        # Legacy shim: the scalar tax_rate is the authoritative source for the DEFAULT flat pack.
+        # The scalar tax_rate is the authoritative source for the DEFAULT flat pack.
         if self.tax_rate is not None:
             self.packs[DEFAULT_STATE_KEY] = StateTaxPack(flat_rate=self.tax_rate)
         for code in self.packs:
@@ -409,8 +409,8 @@ class EstateConfig(StrictModel):
     * ``"ten_year"`` (default) — the SECURE Act 10-year rule: the balance moves into an
       :class:`~life_model.account.inherited.InheritedPretaxAccount` that keeps growing and pays out
       an even slice each year over ten years, spreading (and deferring) the beneficiary's tax.
-    * ``"lump_sum"`` — the Plan 09 simplification: the whole pre-tax balance is distributed to the
-      beneficiary and taxed in the death year. Retained for comparability with pre-Plan-16 frames.
+    * ``"lump_sum"`` — the lump-sum simplification: the whole pre-tax balance is distributed to the
+      beneficiary and taxed in the death year. Retained for comparability with older frames.
     """
 
     inherited_pretax_mode: Literal["ten_year", "lump_sum"] = "ten_year"
@@ -644,7 +644,7 @@ class LongTermCareConfig(StrictModel):
 
 
 class HealthcareConfig(StrictModel):
-    """Healthcare, Medicare, and long-term-care parameters (Plan 15).
+    """Healthcare, Medicare, and long-term-care parameters.
 
     Every field has a default so existing YAML without a ``healthcare`` section still loads.
     """

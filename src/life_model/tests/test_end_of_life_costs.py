@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Tests for end-of-life costs at death (Plan 15 D7, Task 7)."""
+"""Tests for end-of-life costs at death."""
 
 import unittest
 

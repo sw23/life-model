@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Long-term-care need as a seeded hazard plus a care state (Plan 15 D5).
+"""Long-term-care need as a seeded hazard plus a care state.
 
 ``LongTermCare`` is an opt-in per-person agent. From a configured start age it draws care-need
 each year from an age-banded annual hazard table using ``model.random`` (reproducible under a

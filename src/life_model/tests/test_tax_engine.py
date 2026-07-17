@@ -3,9 +3,9 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Regression tests for Plan 05 — tax engine correctness.
+"""Regression tests for tax engine correctness.
 
-Each test targets a specific tax bug catalogued in plans/05-tax-engine.md. Dollar
+Each test targets a specific tax-engine bug. Dollar
 assertions read the frozen fixture config (fixtures/test_config.yaml), never live-year
 defaults, so they stay stable across annual data refreshes.
 """
@@ -35,7 +35,7 @@ def _fixture_config() -> FinancialConfig:
 
 
 class TestBracketMath(unittest.TestCase):
-    """Item 4: brackets are half-open and computed marginally with no boundary gaps."""
+    """Brackets are half-open and computed marginally with no boundary gaps."""
 
     def setUp(self):
         self.config = _fixture_config()
@@ -48,7 +48,7 @@ class TestBracketMath(unittest.TestCase):
         self.assertAlmostEqual(tax, 4000.125, places=4)
 
     def test_marginal_is_not_rounded(self):
-        # Item 4 / Plan 04 D3: no premature round() to the dollar.
+        # No premature round() to the dollar.
         tax = federal_income_tax(40010.40, FilingStatus.SINGLE, self.config)
         # $40,000 @ 10% + $10.40 @ 25% = 4000 + 2.60 = 4002.60
         self.assertAlmostEqual(tax, 4002.60, places=4)
@@ -71,7 +71,7 @@ class TestFicaPerPerson(unittest.TestCase):
     """Bugs 1-3: FICA is a per-person payroll tax on wages only."""
 
     def test_retiree_401k_distribution_pays_no_fica(self):
-        # Bug 1: a retiree living on 401k distributions has no wages, so owes zero FICA.
+        # A retiree living on 401k distributions has no wages, so owes zero FICA.
         model = LifeModel(start_year=2020, end_year=2020, config=_fixture_config())
         family = Family(model)
         person = Person(family, "Retired R", age=65, retirement_age=60, spending=Spending(model, base=30000))
@@ -87,7 +87,7 @@ class TestFicaPerPerson(unittest.TestCase):
         self.assertEqual(person.stat_taxes_paid_medicare, 0)
 
     def test_worker_pretax_deferral_still_pays_fica_on_full_gross(self):
-        # Bug 2: pre-tax 401k deferrals reduce income tax but are still FICA wages.
+        # Pre-tax 401k deferrals reduce income tax but are still FICA wages.
         model = LifeModel(start_year=2020, end_year=2020, config=_fixture_config())
         family = Family(model)
         person = Person(family, "Saver S", age=40, retirement_age=70, spending=Spending(model, base=0))
@@ -103,7 +103,7 @@ class TestFicaPerPerson(unittest.TestCase):
         self.assertAlmostEqual(person.stat_taxes_paid_medicare, 100000 * 0.0145, places=2)
 
     def test_two_earner_mfj_each_under_cap_pays_ss_on_both_salaries(self):
-        # Bug 3: the Social Security wage cap is per person, not on combined MFJ wages.
+        # The Social Security wage cap is per person, not on combined MFJ wages.
         # Fixture wage base is $110k; two earners at $70k and $80k are both under it.
         model = LifeModel(start_year=2020, end_year=2020, config=_fixture_config())
         family = Family(model)
@@ -123,7 +123,7 @@ class TestFicaPerPerson(unittest.TestCase):
 
 
 class TestWithdrawalSizing(unittest.TestCase):
-    """Item 9 / D3: pre-tax withdrawals are sized by a fixed-point solve, not a max-rate buffer."""
+    """Pre-tax withdrawals are sized by a fixed-point solve, not a max-rate buffer."""
 
     def test_fifty_k_net_need_no_over_withdrawal(self):
         # A retiree needs $50k of spending funded entirely from a pre-tax 401k, with an empty
@@ -163,9 +163,9 @@ class TestDeductionTiming(unittest.TestCase):
         return person.stat_taxes_paid_federal
 
     def test_recurring_donation_reduces_federal_tax(self):
-        # Bug 5: a donation made this year must be deductible this year. Itemizing $30k (vs the
+        # A donation made this year must be deductible this year. Itemizing $30k (vs the
         # $10k fixture standard deduction) lowers taxable income by $20k -> $5k less tax at 25%.
-        # Plan 17 D4: DEFAULT (5%) state income tax now also enters SALT. Only the itemizing
+        # DEFAULT (5%) state income tax now also enters SALT. Only the itemizing
         # (donation) case includes it: state tax = 5% of the $70k post-charity AGI = $3,500, adding
         # $3,500 * 25% = $875 of federal savings. Total delta = $5,000 + $875 = $5,875.
         tax_without = self._federal_tax_with_donation(0)
@@ -174,7 +174,7 @@ class TestDeductionTiming(unittest.TestCase):
         self.assertAlmostEqual(tax_without - tax_with, 5875.0, places=2)
 
     def test_daf_deposit_creates_no_deduction(self):
-        # Bug 6: a bare deposit (no cash leaving the person) is not a deductible contribution.
+        # A bare deposit (no cash leaving the person) is not a deductible contribution.
         model = LifeModel(start_year=2020, end_year=2020, config=_fixture_config())
         family = Family(model)
         person = Person(family, "DAF Owner", age=40, retirement_age=70, spending=Spending(model, base=0))
@@ -213,7 +213,7 @@ def _add_home(person, loan_amount=300000, rate=5.0, property_tax_percent=1.0, pu
 
 
 class TestHousingDeductions(unittest.TestCase):
-    """Bug 7: mortgage interest uses pre-payment interest with a $750k cap; property tax is SALT."""
+    """Mortgage interest uses pre-payment interest with a $750k cap; property tax is SALT."""
 
     def test_interest_recorded_before_payment(self):
         mortgage = Mortgage(loan_amount=300000, start_date=2020, length_years=30, yearly_interest_rate=5.0)
@@ -251,7 +251,7 @@ class TestHousingDeductions(unittest.TestCase):
 
 
 class TestRmdStartAge(unittest.TestCase):
-    """Item 13: RMD start-age gate and a clamped, IndexError-free table lookup."""
+    """RMD start-age gate and a clamped, IndexError-free table lookup."""
 
     def setUp(self):
         # Fixture RMD table: ages 72-75 with periods 25/24/23/22.

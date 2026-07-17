@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Tests for the LifeModel ``collect_data`` opt-out flag (Plan 18 D7).
+"""Tests for the LifeModel ``collect_data`` opt-out flag.
 
 The flag must produce zero behavior change to the simulation itself: with the same seed and
 household, a model built with ``collect_data=False`` steps to exactly the same balances as one

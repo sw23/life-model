@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""The ``AdviserModel`` interface abstraction and deterministic stubs (Plan 20 D5, task 1).
+"""The ``AdviserModel`` interface abstraction and deterministic stubs.
 
 The whole pipeline talks to a model through one tiny protocol — ``generate(messages) -> text`` —
 so a local SLM, a local MLX model, and a hosted API model are interchangeable on the same eval

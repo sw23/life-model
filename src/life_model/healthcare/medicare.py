@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Medicare premiums with IRMAA income surcharges (Plan 15 D4).
+"""Medicare premiums with IRMAA income surcharges.
 
 ``Medicare`` is an opt-in per-person agent. From the configured eligibility age (65) it charges
 Part B and Part D premiums each year through ``person.spending.add_expense`` so they settle with

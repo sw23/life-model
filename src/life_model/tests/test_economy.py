@@ -93,7 +93,7 @@ class TestEconomyConsumers(unittest.TestCase):
         model = LifeModel(start_year=2026, end_year=2027, config=_config(wage_growth=5.0))
         salary = Salary(model=model, base=100000, yearly_increase=None)
         self.assertEqual(salary.yearly_increase, 5.0)
-        # Explicit 0 stays 0 (back-compat default).
+        # An explicit 0 is honored (not replaced by the economy default).
         self.assertEqual(Salary(model=model, base=1, yearly_increase=0).yearly_increase, 0)
 
     def test_spending_none_opts_into_inflation(self):

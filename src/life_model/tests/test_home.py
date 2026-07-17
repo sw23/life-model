@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Tests for Plan 07 housing: mortgage amortization, purchase/sale cash flows, §121, and PMI."""
+"""Tests for housing: mortgage amortization, purchase/sale cash flows, §121, and PMI."""
 
 import unittest
 

@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Adviser eval-harness tests (Plan 20 D4 acceptance):
+"""Adviser eval-harness tests (acceptance):
 
 * the oracle adviser (always argmax) scores >= every heuristic on outcome quality — validating
   the harness end-to-end without any model;

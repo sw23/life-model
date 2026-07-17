@@ -48,7 +48,7 @@ class TestActionSpaceHonesty(unittest.TestCase):
 
 
 class TestFlatActionIndexer(unittest.TestCase):
-    """Plan 18 D5: the flat index space is exactly (amount actions x buckets) + singletons and
+    """The flat index space is exactly (amount actions x buckets) + singletons and
     the encoder/decoder are exact inverses."""
 
     def test_flat_action_count(self):
@@ -206,7 +206,7 @@ class TestActionEffects(unittest.TestCase):
 
 
 class TestWithdrawalTaxDifferential(unittest.TestCase):
-    """Plan 18 D1 headline criterion: pre-tax vs Roth withdrawals of the same gross amount must
+    """Headline criterion: pre-tax vs Roth withdrawals of the same gross amount must
     produce measurably different multi-year net worth, because pre-tax withdrawals are taxed at
     year-end settlement while Roth withdrawals are not."""
 

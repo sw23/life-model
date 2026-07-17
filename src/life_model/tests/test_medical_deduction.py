@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Tests for the unreimbursed-medical itemized deduction (Plan 15 D6, Task 6)."""
+"""Tests for the unreimbursed-medical itemized deduction."""
 
 import unittest
 

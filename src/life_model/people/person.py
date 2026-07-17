@@ -55,7 +55,7 @@ class Person(LifeModelAgent):
                 ``IMMORTAL`` (the person never dies) so existing simulations stay deterministic.
             death_age (int, optional): Age of death when ``mortality_mode`` is ``FIXED_AGE``.
             state (str, optional): Two-letter state of residence for state income tax. Defaults to
-                ``None``, which falls back to ``config.tax.state.default_state`` (Plan 17 D2). A
+                ``None``, which falls back to ``config.tax.state.default_state``. A
                 single state applies to the whole tax unit (no part-year/multi-state).
         """
         super().__init__(family.model)
@@ -83,7 +83,7 @@ class Person(LifeModelAgent):
         self.income = IncomeLedger()
         self.spouse = None
         # Per-year record of this member's share of the tax unit's AGI, stamped during
-        # ``TaxUnit.settle_year``. Medicare/IRMAA reads this with a two-year lookback (Plan 15 D4).
+        # ``TaxUnit.settle_year``. Medicare/IRMAA reads this with a two-year lookback.
         self.agi_history: dict[int, float] = {}
         self.filing_status = FilingStatus.SINGLE
         self.social_security: Optional[SocialSecurity] = None
@@ -179,17 +179,17 @@ class Person(LifeModelAgent):
 
     @property
     def medical_costs(self):
-        """Get the MedicalCosts agent(s) for this person from the registry (Plan 15)."""
+        """Get the MedicalCosts agent(s) for this person from the registry."""
         return self.model.registries.medical_costs.get_items(self)
 
     @property
     def medicare(self):
-        """Get the Medicare agent(s) for this person from the registry (Plan 15)."""
+        """Get the Medicare agent(s) for this person from the registry."""
         return self.model.registries.medicare.get_items(self)
 
     @property
     def long_term_care(self):
-        """Get the LongTermCare agent(s) for this person from the registry (Plan 15)."""
+        """Get the LongTermCare agent(s) for this person from the registry."""
         return self.model.registries.long_term_care.get_items(self)
 
     @property
@@ -230,7 +230,7 @@ class Person(LifeModelAgent):
 
     @property
     def unreimbursed_medical_expenses(self) -> float:
-        """This year's unreimbursed medical spend from the healthcare agents (Plan 15 D6).
+        """This year's unreimbursed medical spend from the healthcare agents.
 
         Sums the ``stat_medical_costs`` stamped in ``pre_step`` by the person's opt-in healthcare
         agents: age-curve costs (MedicalCosts), Medicare premiums (deductible per IRS Pub. 502),
@@ -274,9 +274,9 @@ class Person(LifeModelAgent):
         - Charitable contributions
         - Mortgage interest (capped to the first $750k of acquisition debt, TCJA)
         - State and local taxes: property tax plus ``state_income_tax_paid``, capped at the SALT
-          limit (Plan 17 D4). ``state_income_tax_paid`` defaults to 0 so the property-only result
+          limit. ``state_income_tax_paid`` defaults to 0 so the property-only result
           is unchanged for every caller that does not thread state income tax.
-        - Unreimbursed medical expenses above the 7.5%-of-income floor (Plan 15 D6);
+        - Unreimbursed medical expenses above the 7.5%-of-income floor;
           ``additional_income`` (a prospective 401k withdrawal being sized) raises that floor so
           sized taxes equal settled taxes.
         """
@@ -304,7 +304,7 @@ class Person(LifeModelAgent):
         return itemized
 
     def total_itemized_deductions_with(self, additional_income: float = 0.0) -> float:
-        """Total itemized deductions with ``additional_income`` raising the medical floor (Plan 15).
+        """Total itemized deductions with ``additional_income`` raising the medical floor.
 
         Property-only SALT (no state income tax threaded); see ``itemized_deductions``.
         """
@@ -319,7 +319,7 @@ class Person(LifeModelAgent):
         """Greater of the standard deduction or itemized deductions including state income tax in SALT.
 
         ``additional_income`` (a prospective 401k withdrawal being sized) raises the medical-expense
-        floor (Plan 15 D6) so sized taxes equal settled taxes.
+        floor so sized taxes equal settled taxes.
         """
         standard_deduction = get_federal_standard_deduction(self.filing_status, self.model.config)
         return max(standard_deduction, self.itemized_deductions(state_income_tax_paid, additional_income))
@@ -434,7 +434,7 @@ class Person(LifeModelAgent):
         return withdrawn
 
     # ------------------------------------------------------------------
-    # Person-level withdrawal helpers (Plan 18 D1).
+    # Person-level withdrawal helpers.
     #
     # Each helper mirrors withdraw_from_pretax_401ks: it moves money from the account type into
     # the bank and records the correct income-ledger entry, so the withdrawal is taxed when the
@@ -596,8 +596,8 @@ class Person(LifeModelAgent):
         """
         ordinary_income = self.taxable_income + additional_income
         # State income tax from the state pack. Computed against the property-only AGI base so it
-        # does not depend on itself being in SALT; then folded into SALT for the federal base (D4).
-        # ``additional_income`` raises the medical-expense floor (Plan 15 D6) in both the legacy AGI
+        # does not depend on itself being in SALT; then folded into SALT for the federal base.
+        # ``additional_income`` raises the medical-expense floor in both the DEFAULT AGI
         # base and the federal deductions so sizing and settlement stay consistent.
         totals = self.income.totals_by_type()
         totals[IncomeType.PRETAX_DISTRIBUTION] = totals.get(IncomeType.PRETAX_DISTRIBUTION, 0.0) + additional_income
@@ -619,7 +619,7 @@ class Person(LifeModelAgent):
         self.filing_status = FilingStatus.MARRIED_FILING_JOINTLY
         if link_spouse:
             # Merge the spouse's family into this person's family so the couple settles as a
-            # single joint tax unit (previously each spouse could sit in a separate family and
+            # single joint tax unit (otherwise each spouse could sit in a separate family and
             # each compute a full MFJ tax on half the income).
             if spouse.family is not self.family:
                 vacated_family = spouse.family
@@ -713,7 +713,7 @@ class Person(LifeModelAgent):
 
         Simplifications (documented, backlog for later refinement):
           * Non-spouse inherited pre-tax accounts follow ``estate.inherited_pretax_mode``: the
-            SECURE Act 10-year even spread (default) or the legacy death-year lump sum.
+            SECURE Act 10-year even spread (default) or the death-year lump sum.
           * A widowed spouse files jointly in the death year and single thereafter (no
             qualifying-widow years).
           * Pensions with a survivor election continue a reduced stream to a surviving spouse;
@@ -741,7 +741,7 @@ class Person(LifeModelAgent):
         #    joint-and-survivor continue to the inheritor.
         self._settle_annuities_on_death(inheritor)
 
-        # 3b. End-of-life costs (Plan 15 D7): funeral plus a final-year medical spike reduce the
+        # 3b. End-of-life costs: funeral plus a final-year medical spike reduce the
         #     estate *before* it is valued, transferred, and estate-taxed. Opt-in: charged only
         #     when the person has healthcare agents, so other simulations are unchanged.
         self._charge_end_of_life_costs()
@@ -792,7 +792,7 @@ class Person(LifeModelAgent):
                 annuity.is_active = False
 
     def _charge_end_of_life_costs(self):
-        """Charge funeral and final-year medical costs against the estate (Plan 15 D7).
+        """Charge funeral and final-year medical costs against the estate.
 
         Charged only when the person opted into the healthcare subsystem (has any healthcare
         agent), so simulations without healthcare agents keep today's death flow byte-identical.
@@ -996,7 +996,7 @@ class Person(LifeModelAgent):
         Under ``estate.inherited_pretax_mode == "ten_year"`` (default) the balance moves into an
         :class:`~life_model.account.inherited.InheritedPretaxAccount` that spreads the distribution
         (and its tax) over ten years per the SECURE Act. Under ``"lump_sum"`` the whole balance is
-        distributed and taxed to the beneficiary in the death year (the Plan 09 simplification,
+        distributed and taxed to the beneficiary in the death year (the lump-sum simplification,
         retained for comparability).
         """
         from ..account.job401k import Job401kAccount
@@ -1084,7 +1084,7 @@ class Person(LifeModelAgent):
 
     def _remove_from_simulation(self):
         """Remove the deceased and any now-empty owned agents from the model, and zero the
-        deceased's statistics so aggregate reporting no longer counts them."""
+        deceased's statistics so aggregate reporting excludes them."""
         # Any financial accounts still owned by the deceased were emptied (non-spouse pre-tax) or
         # never transferred; remove them so they stop stepping.
         for acct in self._owned_financial_agents():

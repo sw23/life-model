@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Training config-validation and data-collation tests (Plan 20 task 4, CI — no weights).
+"""Training config-validation and data-collation tests (CI — no weights).
 
 Covers the LLM-readiness contract: the shipped smoke / default / full-FSDP configs all validate
 from the same schema, the lora-vs-full_finetune modes are mutually exclusive, and the JSONL

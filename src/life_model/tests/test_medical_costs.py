@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Tests for the age-related medical cost curve agent (Plan 15 D2, Task 3)."""
+"""Tests for the age-related medical cost curve agent."""
 
 import unittest
 
@@ -62,7 +62,7 @@ class TestMedicalCosts(unittest.TestCase):
         self.assertAlmostEqual(factor_2030, 1.05**4, places=10)
 
     def test_age_increasing_real_medical_spend(self):
-        """A seeded retiree run shows medical spend rising faster than CPI (acceptance criterion)."""
+        """A seeded retiree run shows medical spend rising faster than CPI."""
         model = LifeModel(start_year=2026, end_year=2056, seed=42)
         person = _make_person(model, age=60, base_spending=0)
         MedicalCosts(person)

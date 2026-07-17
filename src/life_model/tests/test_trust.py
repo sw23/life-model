@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Tests for revocable/irrevocable trusts and their estate integration (Plan 16 D5)."""
+"""Tests for revocable/irrevocable trusts and their estate integration."""
 
 import unittest
 

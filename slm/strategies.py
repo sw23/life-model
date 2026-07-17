@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""The adviser's decision vocabulary — plan-level levers (Plan 20 D2).
+"""The adviser's decision vocabulary — plan-level levers.
 
 Each *strategy* is a named, plan-level lever the adviser can recommend: a savings/contribution
 policy (savings rate, Roth vs pre-tax split, emergency-fund ordering) or a drawdown policy. This
@@ -33,7 +33,7 @@ class Strategy:
 
 
 # Canonical, ordered decision vocabulary. Each maps to an executable baseline policy in
-# slm.candidates. These cover the plan-level levers named in D2: savings rate (age_glide),
+# slm.candidates. These cover the plan-level levers: savings rate (age_glide),
 # Roth/pre-tax split (max_pretax_401k vs max_roth_401k), emergency-fund ordering
 # (emergency_fund_first), a tax-advantaged waterfall (contribution_waterfall), and drawdown
 # ordering (four_percent_drawdown).

@@ -3,25 +3,25 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Outcome-based evaluation of an adviser (Plan 20 D4, task 3 — built before training).
+"""Outcome-based evaluation of an adviser (built before training).
 
-Extends Plan 19's protocol from RL policies to *text advice*. For each held-out household the
+Extends the RL-policy evaluation protocol to *text advice*. For each held-out household the
 harness:
 
 1. asks the adviser for a decision (``AdviserModel.generate`` on the rendered household + menu),
 2. parses the structured ``DECISION`` block (format/parse-rate metric),
 3. **executes** the recommended lever in the simulator — a shared-seed Monte Carlo run — and
-   compares its success rate / terminal-wealth percentiles against the Plan 19 heuristics on the
-   *same* seeds (outcome-quality metric),
+   compares its success rate / terminal-wealth percentiles against the heuristic (planner-grade)
+   baselines on the *same* seeds (outcome-quality metric),
 4. checks the rationale's numbers against a fresh scoring run (numeric-faithfulness metric).
 
 Because the adviser must choose from the fixed decision menu, its choice is always one of the
 scored candidates — so a single ``score_household`` pass per household covers the adviser, every
 heuristic, the oracle argmax, and the faithfulness targets.
 
-Held-out conditions mirror Plan 19: ``held_out_seeds`` (unseen draws) and ``held_out_scenario``
+Held-out conditions mirror the RL evaluation protocol: ``held_out_seeds`` (unseen draws) and ``held_out_scenario``
 (an economy the data was not generated under). An out-of-scope ``refusal`` set measures trained
-scope discipline (D6). The JSON report is committed as documentation, exactly like Plan 19's.
+scope discipline. The JSON report is committed as documentation, like the RL protocol report.
 
 The **oracle sanity check** (acceptance): a ``ScriptedAdviserModel`` that emits each household's
 argmax scores at least as high as every heuristic on outcome quality — proving the harness
@@ -49,7 +49,7 @@ from .strategies import STRATEGY_NAMES
 
 DEFAULT_REWARD_PRESET = "retirement_security"
 
-# Heuristic candidates the adviser is measured against (Plan 19 planner baselines present in the
+# Heuristic candidates the adviser is measured against (planner-grade baselines present in the
 # decision menu). The Roth/pre-tax levers are candidates but not "planner heuristics", so they are
 # reported but not part of the heuristic bar.
 HEURISTIC_NAMES = ("contribution_waterfall", "age_glide", "emergency_fund_first", "four_percent_drawdown")
@@ -74,7 +74,7 @@ def _scored_by_name(scored: List[ScoredCandidate]) -> Dict[str, ScoredCandidate]
 
 @dataclass
 class AdviserEvaluator:
-    """Runs the D4 outcome harness over held-out households + an out-of-scope refusal set.
+    """Runs the outcome harness over held-out households + an out-of-scope refusal set.
 
     Args:
         scenarios: Household scenarios to draw held-out households from.
@@ -180,7 +180,7 @@ class AdviserEvaluator:
         }
 
     def evaluate_refusals(self, adviser: AdviserModel) -> Dict:
-        """Refusal-set metric (D6): fraction of out-of-scope prompts the adviser refuses."""
+        """Refusal-set metric: fraction of out-of-scope prompts the adviser refuses."""
         phrasings = ("Should I {d}?", "Is it a good idea to {d} right now?", "Can you advise whether to {d}?")
         prompts = [t.format(d=desc) for desc in OUT_OF_SCOPE_DOMAINS.values() for t in phrasings]
         refused = sum(1 for q in prompts if is_refusal(adviser.generate(build_refusal_messages(q))))
@@ -263,7 +263,7 @@ def format_report(report: Dict) -> str:
 
 
 def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Outcome-based adviser evaluation (Plan 20 D4).")
+    parser = argparse.ArgumentParser(description="Outcome-based adviser evaluation.")
     parser.add_argument("--scenarios", default=",".join(DEFAULT_SCENARIOS))
     parser.add_argument("--per-scenario", type=int, default=10)
     parser.add_argument("--n-trials", type=int, default=16)

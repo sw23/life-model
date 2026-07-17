@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""State tax pack tests (Plan 17).
+"""State tax pack tests.
 
 Configs are built from the frozen fixture and augmented with explicit packs so the numbers stay
 stable across annual data refreshes (they do not depend on the shipped state DOR values).
@@ -44,12 +44,12 @@ TX_PACK = {"flat_rate": 0.0}
 
 
 class TestBackCompatShim(unittest.TestCase):
-    """Task 1: the legacy tax_rate key still loads and produces the DEFAULT flat pack."""
+    """The scalar tax_rate key loads and produces the DEFAULT flat pack."""
 
     def test_legacy_tax_rate_synthesizes_default_pack(self):
         config = _config()
         state = config.tax.state
-        self.assertEqual(state.tax_rate, 5.0)  # fixture legacy rate
+        self.assertEqual(state.tax_rate, 5.0)  # fixture flat rate
         self.assertEqual(state.default_state, "DEFAULT")
         self.assertIn("DEFAULT", state.packs)
         self.assertEqual(state.packs["DEFAULT"].flat_rate, 5.0)
@@ -62,7 +62,7 @@ class TestBackCompatShim(unittest.TestCase):
 
 
 class TestPackValidation(unittest.TestCase):
-    """Task 1: malformed packs are rejected at load, not at tax time."""
+    """Malformed packs are rejected at load, not at tax time."""
 
     def test_unknown_state_rejected(self):
         with self.assertRaises(ValueError):
@@ -97,7 +97,7 @@ class TestPackValidation(unittest.TestCase):
 
 
 class TestTotalsByType(unittest.TestCase):
-    """Task 2: IncomeLedger.totals_by_type decomposes ordinary income by category."""
+    """IncomeLedger.totals_by_type decomposes ordinary income by category."""
 
     def test_totals_by_type(self):
         ledger = IncomeLedger()
@@ -115,7 +115,7 @@ class TestTotalsByType(unittest.TestCase):
 
 
 class TestApplyBracketsProperty(unittest.TestCase):
-    """Task 3 (Risks): the shared bracket helper must match federal_income_tax exactly."""
+    """The shared bracket helper must match federal_income_tax exactly."""
 
     def test_apply_brackets_matches_federal(self):
         rng = random.Random(20250707)
@@ -139,7 +139,7 @@ class TestApplyBracketsProperty(unittest.TestCase):
 
 
 class TestStateBase(unittest.TestCase):
-    """Task 3: the state taxable-income base honors each pack's exemptions."""
+    """The state taxable-income base honors each pack's exemptions."""
 
     def _totals(self, **kwargs):
         totals = {t: 0.0 for t in IncomeType}
@@ -205,7 +205,7 @@ class TestModelDefaults(unittest.TestCase):
 
 
 class TestSALTIntegration(unittest.TestCase):
-    """Task 4/D4: state income tax joins property tax under the SALT cap."""
+    """State income tax joins property tax under the SALT cap."""
 
     def test_state_income_tax_capped_in_salt(self):
         config = _config()  # fixture salt cap defaults to $40k
@@ -240,7 +240,7 @@ class TestSALTIntegration(unittest.TestCase):
 
 
 class TestScenarioComparisons(unittest.TestCase):
-    """Task 5 acceptance scenarios (with fixture-frozen packs, not shipped DOR values)."""
+    """State-tax scenarios with fixture-frozen packs (not shipped DOR values)."""
 
     def _run(self, state, config, *, wages=0.0, pretax_income=0.0):
         model = LifeModel(config=config, start_year=2020, end_year=2020)
@@ -278,7 +278,7 @@ class TestScenarioComparisons(unittest.TestCase):
 
 
 class TestShippedPacks(unittest.TestCase):
-    """Task 5: the packaged financial_defaults.yaml ships valid, sane starter packs.
+    """The packaged financial_defaults.yaml ships valid, sane starter packs.
 
     Only structural/sign assertions here (no pinned dollar values) so the annual
     refresh-financial-data pass doesn't break these tests.
@@ -352,7 +352,7 @@ class TestShippedPacks(unittest.TestCase):
 
 
 class TestMixedStateUnit(unittest.TestCase):
-    """D2 simplification: a mixed-state couple is taxed in the head's state, with a warning."""
+    """A mixed-state couple is taxed in the head's state, with a warning."""
 
     def _couple(self, state_a, state_b):
         model = LifeModel(config=_config(default_state="DEFAULT", packs={"CA": CA_PACK, "TX": TX_PACK}))
@@ -394,7 +394,7 @@ class TestMixedStateUnit(unittest.TestCase):
 
 
 class TestPersonState(unittest.TestCase):
-    """Task 2/D2: Person.state is keyword-only and defaults to None (config default)."""
+    """Person.state is keyword-only and defaults to None (config default)."""
 
     def test_person_state_default_none(self):
         model = LifeModel(config=_config())

@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Tool-loop adviser: draft -> simulate -> revise (Plan 20 D1b, task 6).
+"""Tool-loop adviser: draft -> simulate -> revise.
 
 The distilled model answers directly (mode a). The **tool-loop** (mode b) wraps any
 :class:`~slm.adviser.AdviserModel` and puts a live simulator behind its advice: the model drafts a
@@ -14,7 +14,7 @@ rewrites the rationale from the fresh simulation numbers. That sidesteps halluci
 entirely: the shipped numbers are, by construction, the simulator's.
 
 Crucially the tool-loop is *itself* an ``AdviserModel`` (``generate(messages) -> text``), so it
-drops into the identical Plan 20 eval harness as the distilled model — the evaluation compares
+drops into the identical eval harness as the distilled model — the evaluation compares
 distilled-only vs tool-loop on the same held-out set. It reconstructs the scoring household from
 the rendered household text (the serializer round-trips every field), so it needs nothing beyond
 the messages it is handed. Scoring uses seeds derived from the household text, so a given household

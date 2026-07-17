@@ -3,10 +3,10 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Pure unit tests for the utility-based reward (Plan 19 D1).
+"""Pure unit tests for the utility-based reward.
 
 Properties covered: CRRA monotonicity and concavity, the log branch at gamma==1, deflation
-correctness, ruin alignment / terminal-branch selection, and — the Plan 12 regression — that every
+correctness, ruin alignment / terminal-branch selection, and — the float-type regression — that every
 returned value is a genuine Python float, not an ``np.float64``.
 """
 

@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Tests for the SECURE Act 10-year inherited-account rule (Plan 16 D3)."""
+"""Tests for the SECURE Act 10-year inherited-account rule."""
 
 import unittest
 

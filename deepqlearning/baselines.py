@@ -8,17 +8,17 @@
 These non-learning policies give the RL agent something to beat. The simple ones
 (``do_nothing``, ``always_max_401k``, ``save_25_percent``) double as regression detectors — an
 agent that cannot beat "do nothing" on the same seeds is a sign the environment or agent is
-broken. The **planner-grade** policies (Plan 19 D2) are the real bar: they encode strategies a
+broken. The **planner-grade** policies are the real bar: they encode strategies a
 human advisor would recognize — a tax-advantaged contribution waterfall, an age-based savings
 glide path, a 4%-rule retirement drawdown with Roth-last ordering, and an emergency-fund-first
-rule. "Intelligent" is defined (D3) as beating *these* on the default objective.
+rule. "Intelligent" is defined as beating *these* on the default objective.
 
 Every policy is a pure function of the environment's current state and returns a **legal** flat
 action index (or ``NO_ACTION``, which is always legal), so a policy never desyncs from the action
 mask. Being a deterministic function of the seeded state, each policy is reproducible per seed.
 
 The planner policies are also usable as curriculum teachers: :func:`collect_teacher_experiences`
-runs them to produce transitions that can warm-start the replay buffer (Plan 19 D2/D4), kept
+runs them to produce transitions that can warm-start the replay buffer, kept
 behind an off-by-default trainer flag.
 """
 
@@ -29,7 +29,7 @@ from actions import ActionType, encode_flat_action
 from environment import FinancialLifeEnv
 
 # A baseline policy maps the environment's current state to a flat discrete action index
-# (Plan 18 D5: the index carries both the action type and the amount bucket).
+# (the index carries both the action type and the amount bucket).
 BaselinePolicy = Callable[[FinancialLifeEnv], int]
 
 _NO_ACTION = encode_flat_action(ActionType.NO_ACTION)
@@ -57,7 +57,7 @@ def _months_of_cash(env: FinancialLifeEnv) -> float:
 
 
 # ---------------------------------------------------------------------------
-# Simple baselines (kept from Plan 18; regression detectors, not the real bar).
+# Simple baselines (regression detectors, not the real bar).
 # ---------------------------------------------------------------------------
 
 
@@ -77,7 +77,7 @@ def save_25_percent_policy(env: FinancialLifeEnv) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Planner-grade baselines (Plan 19 D2). These are the bar the RL agent must beat.
+# Planner-grade baselines. These are the bar the RL agent must beat.
 # ---------------------------------------------------------------------------
 
 
@@ -124,7 +124,7 @@ def age_glide_policy(env: FinancialLifeEnv) -> int:
     return _first_legal(env, [encode_flat_action(ActionType.TRANSFER_BANK_TO_401K_PRETAX, bucket)])
 
 
-# Retirement drawdown ordering (Plan 19 D2): taxable/tax-deferred first, Roth last, matching the
+# Retirement drawdown ordering: taxable/tax-deferred first, Roth last, matching the
 # PaymentService withdrawal priorities so Roth compounding is preserved longest.
 _DRAWDOWN_ORDER = (
     ActionType.WITHDRAW_BROKERAGE,
@@ -172,7 +172,7 @@ BASELINES: Dict[str, BaselinePolicy] = {
     "emergency_fund_first": emergency_fund_first_policy,
 }
 
-# The planner-grade policies that define the "intelligent" bar (D3). The simple policies stay in
+# The planner-grade policies that define the "intelligent" bar. The simple policies stay in
 # BASELINES as regression detectors but are not part of the bar.
 PLANNER_BASELINES = (
     "contribution_waterfall",
@@ -211,7 +211,7 @@ def collect_teacher_experiences(
     seeds: List[int],
     max_per_seed: Optional[int] = None,
 ) -> List[tuple]:
-    """Roll a teacher ``policy`` and return replay transitions for warm-starting (Plan 19 D2/D4).
+    """Roll a teacher ``policy`` and return replay transitions for warm-starting.
 
     Each transition is ``(state, action, reward, next_state, done, legal_actions,
     next_legal_actions)`` — the exact tuple ``FinancialDQNAgent.store_experience`` expects — so a

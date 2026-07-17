@@ -1,4 +1,4 @@
-# Default SLM config (Plan 20 D3): a permissive ~7B instruct model + QLoRA (4-bit).
+# Default SLM config: a permissive ~7B instruct model + QLoRA (4-bit).
 # License check (task 7): Qwen2.5-7B-Instruct is released under Apache-2.0 — redistributable and
 # fine-tunable; only weights are gated by size, not license. Record any model swap's license here.
 #

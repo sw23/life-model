@@ -214,7 +214,7 @@ class Investment(FinancialAccount, ABC):
         beneficiary: Optional["Person"] = None,
     ):
         super().__init__(person, balance, beneficiary=beneficiary)
-        # An explicit growth_rate overrides the economy (back-compat); None defers to the economy's
+        # An explicit growth_rate overrides the economy; None defers to the economy's
         # return for this account's asset class, re-read each year so path/stochastic economies flow
         # through to account growth.
         self._growth_rate_override = growth_rate

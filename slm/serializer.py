@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Household <-> natural-language serialization (Plan 20 task 1).
+"""Household <-> natural-language serialization.
 
 :func:`render_household` turns a structured :class:`~slm.schema.HouseholdProfile` into a compact,
 faithful English profile the model reads. :func:`parse_household` recovers the numeric fields from

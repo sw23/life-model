@@ -49,14 +49,14 @@ tax:
     estate_tax_exemption: 15000000
     estate_tax_rate: 40.0  # percentage
   state:
-    # Legacy flat rate. Kept as the authoritative source for the DEFAULT pack (the back-compat
-    # shim synthesizes packs.DEFAULT from it), so pre-pack configs and scenarios that override
-    # tax.state.tax_rate keep working and produce identical numbers.
+    # Flat rate that is the authoritative source for the DEFAULT pack: the config synthesizes
+    # packs.DEFAULT from it, so a config or scenario that sets only tax.state.tax_rate loads as a
+    # single flat-rate pack.
     tax_rate: 6.0  # percentage
-    # Residents with no explicit Person(state=...) fall back to this pack. DEFAULT preserves the
-    # pre-Plan-17 behavior (flat tax_rate on the federal AGI base).
+    # Residents with no explicit Person(state=...) fall back to this pack. DEFAULT applies the flat
+    # tax_rate to the federal AGI base.
     default_state: DEFAULT
-    # Per-state tax packs (Plan 17 D5). Each pack has exactly one of flat_rate or brackets
+    # Per-state tax packs. Each pack has exactly one of flat_rate or brackets
     # ([lower, upper, rate] rows per filing status; missing statuses fall back to single), an
     # optional state standard deduction (default 0), and the two base flags:
     #   retirement_income_taxable — pre-tax 401k/IRA distributions and RMDs (default true)
@@ -556,7 +556,7 @@ dependents:
 # Estate settlement. inherited_pretax_mode controls how a non-spouse beneficiary receives an
 # inherited pre-tax retirement balance: "ten_year" applies the SECURE Act 10-year rule (the
 # balance keeps growing and pays out an even slice each year over ten years), while "lump_sum"
-# distributes and taxes the whole balance in the death year (the pre-Plan-16 simplification).
+# distributes and taxes the whole balance in the death year (the lump-sum simplification).
 # vintage: 2020, source: SECURE Act §401 (10-year rule for non-eligible designated beneficiaries)
 estate:
   inherited_pretax_mode: ten_year  # ten_year | lump_sum
@@ -591,7 +591,7 @@ economy:
     equity_inflation_correlation: -0.1
     bond_inflation_correlation: -0.2
 
-# Healthcare, Medicare & long-term care (Plan 15). Opt-in agents (MedicalCosts, Medicare,
+# Healthcare, Medicare & long-term care. Opt-in agents (MedicalCosts, Medicare,
 # LongTermCare) read this section; a simulation with none constructed is unaffected. Dollar
 # values are vintage-stamped from CMS/SSA/Genworth/NFDA primary sources. Refresh annually via
 # the refresh-financial-data skill (Medicare Part B/D premiums, IRMAA tiers, LTC costs, funeral).

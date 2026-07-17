@@ -126,18 +126,16 @@ class Insurance(LifeModelAgent):
         return self.model.year - self.policy_start_year
 
     def pay_premium(self) -> bool:
-        """Charge the annual premium through the tax unit's bill path (Plan 15 D3).
+        """Charge the annual premium through the tax unit's bill path.
 
-        Previously this debited the bank directly in ``pre_step``, which bypassed the tax unit's
-        year-end settlement — premiums were invisible to withdrawal sizing and to
-        ``stat_money_spent``, so a cash-poor retiree would never size a 401k withdrawal to cover
-        them. The premium is now added to the person's spending (``spending.add_expense``) so it
-        settles through :meth:`TaxUnit.settle_year` alongside every other bill and participates in
-        withdrawal sizing.
+        The premium is added to the person's spending (``spending.add_expense``) so it settles
+        through :meth:`TaxUnit.settle_year` alongside every other bill and participates in
+        withdrawal sizing — a cash-poor retiree sizes a 401k withdrawal to cover it, and it is
+        reflected in ``stat_money_spent``.
 
         Solvency is resolved at settlement: a unit-wide shortfall becomes debt (as with any other
-        bill). The policy no longer lapses on a single missed payment here — an always-paid-if-
-        solvent simplification of the prior lapse-on-shortfall behavior (documented).
+        bill). A single missed payment does not lapse the policy — an always-paid-if-solvent
+        simplification (documented).
 
         Returns True when the premium was charged (coverage active), else False.
         """
@@ -158,7 +156,7 @@ class Insurance(LifeModelAgent):
             description: Description of the claim.
             charge_loss: When True (default) the person incurs the loss from their bank at claim
                 time (single-deductible convention). Pass False when the loss has already been
-                charged elsewhere (e.g. LTC care costs routed through the bill path, Plan 15 D5)
+                charged elsewhere (e.g. LTC care costs routed through the bill path)
                 so only the payout is credited.
         """
         if not self.is_coverage_active:

@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Numeric-faithfulness gate (Plan 20 D4, metric family 2).
+"""Numeric-faithfulness gate (metric family 2).
 
 The anti-hallucination check: every number an adviser cites in its rationale must match a figure
 re-derived from a fresh scoring run of the household within tolerance. A rationale that cites *no*

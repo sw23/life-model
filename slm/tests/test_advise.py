@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Tool-loop adviser tests (Plan 20 task 6):
+"""Tool-loop adviser tests:
 
 * the tool-loop is an AdviserModel (drops into the eval harness),
 * it is deterministic end-to-end under the stub,
@@ -55,7 +55,7 @@ def test_tool_loop_output_parses_and_is_faithful():
 
 
 def test_trust_simulation_corrects_dominated_pick():
-    # A stub that always picks the historically weak "save_25_percent"-like lever is corrected to
+    # A stub that always picks the weak "save_25_percent"-like lever is corrected to
     # the simulator's best when trust_simulation is on.
     loop = ToolLoopAdviser(
         StubAdviserModel(fixed_decision="max_roth_401k"),

@@ -3,18 +3,18 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Monte Carlo scoring of candidate decisions on a household (Plan 20 D2, task 2).
+"""Monte Carlo scoring of candidate decisions on a household.
 
 Each candidate strategy is scored on a *shared* set of trial seeds so the comparison is paired:
 the same economy/mortality draws under every strategy, so the deltas the rationale cites are
-attributable to the decision, not to lucky seeds. Scoring reuses the Plan 19 outcome machinery
+attributable to the decision, not to lucky seeds. Scoring reuses the RL outcome machinery
 (``run_policy_episode``): per-trial real terminal net worth, ruin, and the utility return.
 
 All figures are rounded deterministically (rates to 4 dp, dollars to 2 dp) so the scored records
 — and therefore the rationale numbers copied from them and the serialized JSONL — are
 byte-identical under the same seed. Trial counts are modest by design: they rank candidates (rank
 stability), they are not tight confidence intervals, and the datasheet records the count so
-precision claims stay honest (D2 cost note).
+precision claims stay honest.
 """
 
 from typing import Dict, List, Optional

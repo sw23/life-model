@@ -42,8 +42,8 @@ def federal_income_tax(income: float, filing_status: FilingStatus, config: "Opti
     Brackets are treated as half-open marginal segments ``[prev_upper, upper)`` where ``upper``
     is each row's second column (the last row uses ``inf``). Using the upper bound as the segment
     boundary — rather than the row's own ``start`` (which is ``prev_upper + 1``) — closes the $1
-    gaps the old ``[start, end]`` rows left between brackets. The result is not rounded (Plan 04
-    D3); callers round the final total tax bill once.
+    gaps the old ``[start, end]`` rows left between brackets. The result is not rounded; callers
+    round the final total tax bill once.
 
     Args:
         income (float): Taxable income.

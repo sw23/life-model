@@ -37,7 +37,7 @@ class TestPerson(unittest.TestCase):
         BankAccount(owner=person, company="Bank of Mojave", type="Checking")
         job = Job(owner=person, company="Fiber Fashion", role="Personal Shopper", salary=Salary(model=model, base=0))
         # Fixture: $10k standard deduction, brackets 10% to $40k then 25%.
-        # Plan 17 D4: DEFAULT (5%) state income tax now enters the SALT itemized deduction. It only
+        # DEFAULT (5%) state income tax enters the SALT itemized deduction. It only
         # changes the outcome for the top earner, whose state tax ($28,295 = 5% of the $565,900
         # post-standard AGI) exceeds the $10k standard deduction, flipping them to itemizing:
         # federal tax on ($575,900 - $28,295) = $130,901.25. Lower rows keep the standard deduction
@@ -49,7 +49,7 @@ class TestPerson(unittest.TestCase):
             (95900, 15475),
             (109900, 18975),
             (120900, 21725),
-            (575900, 130901.25),  # re-baselined: state income tax in SALT (Plan 17 D4)
+            (575900, 130901.25),  # state income tax enters SALT
         )
         for salary, taxes_due in tax_data:
             job.salary.base = salary
@@ -104,7 +104,7 @@ class TestPerson(unittest.TestCase):
 
 
 class TestPersonWithdrawalHelpers(unittest.TestCase):
-    """Person-level withdrawal helpers (Plan 18 D1): money lands in the bank and taxable
+    """Person-level withdrawal helpers: money lands in the bank and taxable
     distributions create income-ledger entries settled at year end."""
 
     def _make_person(self):

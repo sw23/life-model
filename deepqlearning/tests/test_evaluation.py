@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Tests for the statistical evaluation protocol (Plan 19 D3)."""
+"""Tests for the statistical evaluation protocol."""
 
 import os
 import sys

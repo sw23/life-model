@@ -3,14 +3,14 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Templated counterfactual rationales (Plan 20 D2, task 2).
+"""Templated counterfactual rationales.
 
 The rationale is a pure function of the stored :class:`~slm.schema.ScoredCandidate` records: it
 compares the chosen (argmax) lever against the next-best one and cites the success-rate and
 median-terminal-wealth figures straight from the scoring run. Because every number is copied from
 a stored score, faithfulness is guaranteed at data time — the generator test recomputes the exact
 string from the stored scores, and the eval harness re-derives the same numbers from a fresh
-scoring run (numeric-faithfulness gate, D4).
+scoring run (numeric-faithfulness gate).
 """
 
 import re
@@ -76,7 +76,7 @@ def cited_dollars(rationale: str) -> List[int]:
 def faithfulness_targets(scored: List[ScoredCandidate], chosen_name: str) -> Tuple[List[int], List[int]]:
     """The (percentages, dollars) a faithful rationale for ``chosen_name`` should cite.
 
-    Used by the eval harness (D4): re-derive these from a fresh scoring run and confirm the
+    Used by the eval harness: re-derive these from a fresh scoring run and confirm the
     adviser's rationale cites matching numbers within tolerance.
     """
     chosen = next(c for c in scored if c.decision == chosen_name)

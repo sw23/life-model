@@ -68,7 +68,7 @@ class Child(LifeModelAgent):
         """This year's child cost in current (nominal) dollars.
 
         The nominal band cost is grown by cumulative inflation from the start year so a child born
-        later costs later-year dollars (D2).
+        later costs later-year dollars.
         """
         nominal = self.nominal_cost_for_age(self.age)
         if nominal <= 0:
@@ -119,7 +119,7 @@ class Child(LifeModelAgent):
             # into the owner's bank tax-free, so college is funded from the 529 before other
             # assets. The full tuition is then charged to spending; because the qualified
             # withdrawal already sits in the bank, only the shortfall the 529 could not cover
-            # actually reduces other assets (D3). This keeps bank+529 conservation intact while
+            # actually reduces other assets. This keeps bank+529 conservation intact while
             # making the 529 machinery load-bearing.
             self._draw_college_from_529s(cost)
         self.person.spending.add_expense(cost)

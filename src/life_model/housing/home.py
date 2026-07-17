@@ -52,8 +52,7 @@ class Home(LifeModelAgent):
         self.home_value: float = self.purchase_price
 
         # Cost basis for the §121 capital-gains calculation on sale: purchase price plus the
-        # cumulative cost of improvements made while owned (home.py improvements were previously an
-        # expense that never affected basis).
+        # cumulative cost of improvements made while owned.
         self.cost_basis: float = self.purchase_price
         self.total_improvements: float = 0.0
         self.sold: bool = False
@@ -148,7 +147,7 @@ class Home(LifeModelAgent):
             exclusion = housing.section_121_exclusion.single
         taxable_gain = max(0.0, gain - exclusion)
         if taxable_gain > 0:
-            # No dedicated long-term-capital-gains schedule exists yet (Plan 05); the taxable
+            # No dedicated long-term-capital-gains schedule exists yet; the taxable
             # excess is recognized as ordinary income as an approximation.
             self.person.income.add(IncomeType.ORDINARY, taxable_gain)
 
@@ -178,7 +177,7 @@ class Home(LifeModelAgent):
         if self.sold:
             return 0.0
         expenses_paid = self.expenses.get_yearly_spending()
-        # Improvements add to the home's cost basis (they were previously a pure expense).
+        # Improvements add to the home's cost basis.
         self.total_improvements += self.expenses.improvement_amount
         pmi_paid = self._pmi_for_year()
         mortgage_paid = 0.0

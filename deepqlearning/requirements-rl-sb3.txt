@@ -1,4 +1,4 @@
-# Optional Stable-Baselines3 cross-check dependencies (Plan 19 D4).
+# Optional Stable-Baselines3 cross-check dependencies.
 #
 # These are ONLY needed to run deepqlearning/sb3/cross_check.py, which trains an external SB3
 # DQN/PPO agent on the same environment as an independent sanity bound. Nothing in the main

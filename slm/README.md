@@ -1,4 +1,4 @@
-# slm — Simulation-Grounded Language-Model Adviser (Plan 20)
+# slm — Simulation-Grounded Language-Model Adviser
 
 A product directory (like `deepqlearning/`), fully isolated from the core `life_model` package and
 **excluded from the published wheel**. It turns the life-model simulator into a *data generator*
@@ -31,14 +31,14 @@ report in this directory are explicitly at *pipeline-validation scale*, not a pr
 | Decisions | `strategies.py`, `candidates.py` | The plan-level lever vocabulary → executable baseline policies. |
 | Score | `scoring.py` | Shared-seed Monte Carlo scoring of each candidate on a household. |
 | Generate | `generate_data.py` | Seeded households → scored candidates → argmax label + counterfactual rationale + refusals → JSONL + datasheet. |
-| Evaluate | `evaluate_adviser.py`, `faithfulness.py` | Execute the advised decision in the simulator; compare vs Plan 19 heuristics; numeric-faithfulness + parse-rate + refusal metrics; oracle sanity check. |
+| Evaluate | `evaluate_adviser.py`, `faithfulness.py` | Execute the advised decision in the simulator; compare vs planner-grade heuristics; numeric-faithfulness + parse-rate + refusal metrics; oracle sanity check. |
 | Train | `train.py` | Size-agnostic HF SFT (LoRA/QLoRA or full+FSDP) from one YAML `TrainConfig`. |
 | Advise | `advise.py` | Draft → simulate → revise tool-loop; itself an `AdviserModel`. |
 | Backends | `backends.py`, `adviser.py` | `AdviserModel` protocol + stub / HF / MLX / Anthropic-API implementations. |
 
 ## Teacher gating (why the DQN isn't used)
 
-Per Plan 19's protocol report
+Per the protocol report
 (`deepqlearning/reports/retirement_security/protocol_report.json`: `verdict_intelligent=false`,
 `ci_does_not_overlap_best=false`), the trained DQN did **not** achieve CI-separated superiority
 over the planner heuristics. A mediocre teacher silently caps the student, so the candidate set is
@@ -125,7 +125,7 @@ license of any model you swap in here. **Weights are never committed** — only 
 plus a small representative dataset sample (< 5 MB). The datasheet records the generation seed,
 simulator commit, config hash, and trial counts so any run is auditable and reproducible.
 
-## Deferred (Plan 20 D7 → backlog)
+## Deferred
 
 RL fine-tuning (GRPO with a Monte Carlo reward), DPO on the stored scored alternatives, multi-turn
 advising dialogues, and RAG over tax documents. The schema already stores scored alternatives per

@@ -87,8 +87,8 @@ class Family(LifeModelAgent):
         return spending_balance
 
     # NOTE: Family deliberately has no get_income_taxes_due. Tax math happens exclusively in
-    # TaxUnit (see step below), which is state-pack- and SALT-aware (Plan 17); a family-level
-    # computation would silently use the legacy flat state rate and ignore both. Use
+    # TaxUnit (see step below), which is state-pack- and SALT-aware; a family-level
+    # computation would silently use the DEFAULT flat state rate and ignore both. Use
     # TaxUnit.build_units(family) and the units' get_income_taxes_due if unit taxes are needed.
 
     def step(self):

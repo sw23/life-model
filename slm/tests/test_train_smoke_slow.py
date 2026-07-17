@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Slow/manual SFT smoke test (Plan 20 task 4).
+"""Slow/manual SFT smoke test.
 
 Fine-tunes a ~135M-parameter instruct model over ~50 generated examples through the real HF
 backend, proving the training code path end-to-end on tiny compute. Skips gracefully when the

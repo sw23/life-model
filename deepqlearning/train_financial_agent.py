@@ -70,10 +70,9 @@ def create_training_config(scenario: str = "basic") -> dict:
 def create_agent_config(scenario: str = "basic") -> dict:
     """Create agent configuration for different scenarios.
 
-    Note: the legacy ``epsilon_decay`` key is gone — the agent decays epsilon per-episode over
-    ``epsilon_decay_fraction`` of training, so a per-step multiplier was dead config that misled
-    tuners (Plan 19 D4). The D4 upgrades (prioritized replay, n-step returns) are on by default in
-    the agent's own config.
+    Note: the agent decays epsilon per-episode over ``epsilon_decay_fraction`` of training, so
+    there is no per-step ``epsilon_decay`` multiplier. Prioritized replay and n-step returns are
+    on by default in the agent's own config.
     """
 
     base_config = {
@@ -216,7 +215,7 @@ def evaluate_trained_agent(agent: FinancialDQNAgent, env: FinancialLifeEnv, num_
 
 
 def run_protocol_report(agent, env_config, preset, out_path, n_eval, master_seed=12345):
-    """Run the D3 statistical protocol on the trained agent + all baselines, print the comparison
+    """Run the statistical protocol on the trained agent + all baselines, print the comparison
     table, and write the JSON report."""
     protocol = EvalProtocol(env_config=env_config, reward_preset=preset, n_eval=n_eval, master_seed=master_seed)
     report = protocol.run(agent=agent)
@@ -243,14 +242,14 @@ def main():
         type=str,
         default=DEFAULT_PRESET,
         choices=sorted(REWARD_PRESETS),
-        help="Reward objective preset (Plan 19 D1)",
+        help="Reward objective preset",
     )
-    parser.add_argument("--vectorized", action="store_true", help="Use the vectorized trainer (Plan 19 D4)")
+    parser.add_argument("--vectorized", action="store_true", help="Use the vectorized trainer")
     parser.add_argument("--num-envs", type=int, default=8, help="Vectorized trainer: number of parallel envs")
     parser.add_argument("--backend", type=str, default="sync", choices=["sync", "async"], help="Vector env backend")
     parser.add_argument("--total-env-steps", type=int, default=200_000, help="Vectorized trainer: collection budget")
     parser.add_argument("--tensorboard", type=str, default=None, help="TensorBoard log dir (vectorized trainer)")
-    parser.add_argument("--protocol-eval", action="store_true", help="Run the D3 statistical protocol at the end")
+    parser.add_argument("--protocol-eval", action="store_true", help="Run the statistical protocol at the end")
     parser.add_argument("--protocol-n-eval", type=int, default=50, help="Episodes per policy per condition")
 
     args = parser.parse_args()
@@ -326,7 +325,7 @@ def main():
         json.dump([{**r, "trajectory": r["trajectory"]} for r in eval_results], f, indent=2)
     print(f"Evaluation results saved to {eval_path}")
 
-    # Statistical protocol report (Plan 19 D3): agent vs every baseline on shared seeds.
+    # Statistical protocol report: agent vs every baseline on shared seeds.
     if args.protocol_eval:
         report_path = BASE_PATH / "results" / f"protocol_report_{args.scenario}_{args.reward_preset}.json"
         run_protocol_report(agent, scenario_config, args.reward_preset, str(report_path), args.protocol_n_eval)

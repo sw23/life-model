@@ -60,7 +60,7 @@ class TestGeneralInsurance(unittest.TestCase):
         self.assertEqual(insurance.base_annual_premium, 2000)
 
     def test_premium_payment_success(self):
-        """Premium is charged into the bill path, not debited from the bank directly (Plan 15 D3)."""
+        """Premium is charged into the bill path, not debited from the bank directly."""
         insurance = Insurance(
             person=self.john,
             insurance_type=InsuranceType.AUTO,
@@ -75,14 +75,14 @@ class TestGeneralInsurance(unittest.TestCase):
 
         self.assertTrue(result)
         self.assertEqual(insurance.stat_premiums_paid, 1500)
-        # Plan 15 D3: the premium is queued as spending for the tax unit to settle, not deducted
+        # The premium is queued as spending for the tax unit to settle, not deducted
         # from the bank here. The bank balance is unchanged until settlement.
         self.assertEqual(self.john.bank_account_balance, initial_balance)
         self.assertEqual(self.john.spending.one_time_expenses, 1500)
         self.assertTrue(insurance.is_active)
 
     def test_premium_payment_insufficient_funds(self):
-        """Plan 15 D3: premiums no longer lapse on a single missed payment; the shortfall settles as debt."""
+        """A single missed payment does not lapse the policy; the shortfall settles as debt."""
         insurance = Insurance(
             person=self.john,
             insurance_type=InsuranceType.AUTO,
@@ -307,7 +307,7 @@ class TestGeneralInsurance(unittest.TestCase):
         self.assertAlmostEqual(insurance.annual_premium, expected_premium, places=2)
 
     def test_pre_step_premium_payment(self):
-        """pre_step queues the premium as spending for settlement (Plan 15 D3)."""
+        """pre_step queues the premium as spending for settlement."""
         insurance = Insurance(
             person=self.john,
             insurance_type=InsuranceType.AUTO,
@@ -320,7 +320,7 @@ class TestGeneralInsurance(unittest.TestCase):
         initial_balance = self.john.bank_account_balance
         insurance.pre_step()
 
-        # Plan 15 D3: the premium is added to spending in pre_step (settled later by the tax unit),
+        # The premium is added to spending in pre_step (settled later by the tax unit),
         # so the bank is unchanged here.
         self.assertEqual(self.john.bank_account_balance, initial_balance)
         self.assertEqual(self.john.spending.one_time_expenses, 1200)
@@ -453,7 +453,7 @@ class TestGeneralInsuranceClaims(unittest.TestCase):
 
 
 class TestPremiumSettlementRouting(unittest.TestCase):
-    """Plan 15 D3: general-insurance premiums settle through the tax unit's bill path."""
+    """General-insurance premiums settle through the tax unit's bill path."""
 
     def test_premium_appears_in_money_spent(self):
         """After a simulated year, the premium is part of stat_money_spent (not a silent bank debit)."""
@@ -474,7 +474,7 @@ class TestPremiumSettlementRouting(unittest.TestCase):
         self.assertEqual(john.stat_money_spent, 11500)
 
     def test_premium_triggers_401k_withdrawal_when_bank_short(self):
-        """A cash-poor person sizes a pre-tax 401k withdrawal to cover the premium (Plan 15 D3)."""
+        """A cash-poor person sizes a pre-tax 401k withdrawal to cover the premium."""
         from ..account.job401k import Job401kAccount
         from ..work.job import Job, Salary
 

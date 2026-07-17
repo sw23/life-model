@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Provenance helpers: simulator commit and config hash (Plan 20 D2).
+"""Provenance helpers: simulator commit and config hash.
 
 Advice provenance must be auditable and staleness must be detectable: the datasheet stamps the
 simulator commit and a hash of the financial-config data the scoring ran against, so a dataset

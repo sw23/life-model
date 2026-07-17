@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Shared medical-inflation deflator for the healthcare agents (Plan 15).
+"""Shared medical-inflation deflator for the healthcare agents.
 
 Medical costs, Medicare premiums, and LTC costs all index by cumulative *medical* inflation:
 each year compounds ``CPI inflation + healthcare.medical_inflation_premium``. The factor is

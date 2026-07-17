@@ -4,7 +4,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Stable-Baselines3 cross-check (Plan 19 D4 optional integration).
+"""Stable-Baselines3 cross-check (optional integration).
 
 Trains an *external* SB3 agent (DQN or PPO) on the exact same :class:`FinancialLifeEnv` and scores
 it with the same statistical evaluation protocol used for the in-house agent. This is an

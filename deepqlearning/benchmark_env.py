@@ -4,7 +4,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Performance harness for the RL environment (Plan 18 D7).
+"""Performance harness for the RL environment.
 
 Measures and prints:
 
@@ -94,7 +94,7 @@ def bench_vector_env(num_envs: int, steps_per_env: int, backend: str) -> float:
 
     Random actions over the whole discrete space are used (illegal actions no-op), so no per-env
     masking is needed — this measures raw collection throughput. Async uses one worker process per
-    env; on a multi-core machine this is where the >=3x-over-single-env target (Plan 19 D4) comes
+    env; on a multi-core machine this is where the >=3x-over-single-env target comes
     from.
     """
     venv = make_vector_env({}, num_envs, backend)

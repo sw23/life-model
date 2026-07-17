@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Versioned dataset schema for the adviser (Plan 20 D2, task 1).
+"""Versioned dataset schema for the adviser.
 
 ``schema_version = 1``. The models reuse the repository's ``StrictModel`` convention
 (``extra='forbid'`` — a misspelled key fails validation at load time). The schema stores each
@@ -12,8 +12,7 @@ example in three redundant, cross-checkable forms:
 * structured ``household`` (machine-readable) AND rendered ``household_text`` (what the model
   reads),
 * the full ``decision_space`` and every ``scored_alternative`` (so the label and the rationale
-  numbers are auditable — and so DPO/GRPO can consume the same file later without regeneration,
-  D7),
+  numbers are auditable — and so DPO/GRPO can consume the same file later without regeneration),
 * the chat ``messages`` (system + user + target assistant) the trainer collates.
 
 Every rationale figure is a copy of a number in ``scored_alternatives``, so faithfulness is
@@ -30,7 +29,7 @@ SCHEMA_VERSION = 1
 
 
 class ChatMessage(StrictModel):
-    """One chat turn. The tokenizer's own chat template is applied at train time (D3)."""
+    """One chat turn. The tokenizer's own chat template is applied at train time."""
 
     role: Literal["system", "user", "assistant"]
     content: str
@@ -101,7 +100,7 @@ class Datasheet(StrictModel):
 
     Records exactly what is needed to reproduce and to detect staleness: the generation seed, the
     simulator commit, the config hash, the trial counts, and the teacher-gating decision (whether
-    the DQN was eligible to prune candidates per Plan 19's protocol).
+    the DQN was eligible to prune candidates per the RL protocol).
     """
 
     schema_version: Literal[1] = SCHEMA_VERSION

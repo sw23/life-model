@@ -122,8 +122,6 @@ class Donation(LifeModelAgent):
 
         Donations run in ``pre_step`` (after income is deposited, priority 10) so that the
         charitable deduction is visible when the tax unit settles taxes in the ``step`` stage.
-        Previously donations executed in ``post_step`` — after taxes were already computed — so
-        the deduction never reduced taxes.
         """
         # Reset this year's donation stat, then make the donation so the deduction is current.
         self.stat_charitable_donations = 0

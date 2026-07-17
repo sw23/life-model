@@ -3,9 +3,9 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""System prompt, chat-message construction, and the structured decision protocol (Plan 20 D6).
+"""System prompt, chat-message construction, and the structured decision protocol.
 
-The framing here is load-bearing, not boilerplate (D6): every training example carries this
+The framing here is load-bearing, not boilerplate: every training example carries this
 system prompt, so scope discipline and the "educational, not fiduciary" posture are *trained*,
 not merely requested at inference time. The model answers with a small structured block
 (``DECISION`` / ``RATIONALE`` or ``REFUSE``) that the eval harness parses deterministically.
@@ -16,7 +16,7 @@ from typing import Dict, List, Optional
 
 from .strategies import STRATEGIES, decision_space
 
-#: The system prompt baked into every training example and every inference call (D6). It fixes
+#: The system prompt baked into every training example and every inference call. It fixes
 #: the role (simulation-grounded educational decision support, not fiduciary advice), the output
 #: format, and the scope-refusal rule for unmodeled domains.
 SYSTEM_PROMPT = (
@@ -46,7 +46,7 @@ SYSTEM_PROMPT = (
     "REFUSE: <one sentence explaining the topic is outside what the simulator models>"
 )
 
-# Out-of-scope domains the refusal examples (D6) are drawn from. Each is something the simulator
+# Out-of-scope domains the refusal examples are drawn from. Each is something the simulator
 # does not price, so an adviser distilled from it has no verified ground truth to stand on.
 OUT_OF_SCOPE_DOMAINS: Dict[str, str] = {
     "crypto": "whether to buy Bitcoin, Ethereum, or other cryptocurrency",

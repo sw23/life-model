@@ -37,7 +37,7 @@ from life_model.people.mortality import get_blended_chance_of_mortality, get_cha
 from life_model.people.person import GenderAtBirth, MortalityMode, Person, Spending
 from life_model.work.job import Job, Salary
 
-# Observation layout version (Plan 18 D4). Bumped whenever the feature list, ordering,
+# Observation layout version. Bumped whenever the feature list, ordering,
 # normalization, or bounds below change, so checkpoints trained against a different layout are
 # rejected instead of silently misread.
 OBS_VERSION = 2
@@ -109,7 +109,7 @@ class FinancialLifeEnv(gym.Env):
     Gymnasium API: ``reset(seed=..., options=...) -> (obs, info)`` and
     ``step(action) -> (obs, reward, terminated, truncated, info)``.
 
-    **Tax semantics (Plan 18 D1):** actions execute through the model's real money path. A
+    **Tax semantics:** actions execute through the model's real money path. A
     taxable withdrawal (pre-tax 401k, traditional IRA) records ordinary income on the person's
     ledger, and the tax unit settles all taxes once per simulated year inside ``model.step()`` —
     so the tax on a withdrawal bites at year-end settlement within the same ``step()`` call, not
@@ -148,14 +148,14 @@ class FinancialLifeEnv(gym.Env):
             "initial_spending": 30000,
             "max_action_amount": 50000,  # Max amount for transfer/withdrawal actions
             "account_growth": 6.0,  # Average annual growth for the created 401k (percent)
-            # Economy behavior (Plan 18 D3): "stochastic" draws correlated equity/bond/inflation
+            # Economy behavior: "stochastic" draws correlated equity/bond/inflation
             # each year from the model's seeded RNG (training default — the agent sees bad years);
             # "fixed" reproduces the constant-rate economy for unit tests. A named economy
             # scenario (config/scenarios, e.g. "recession") overrides where it sets values.
             "economy_mode": "stochastic",
             "economy_scenario": None,
             # Household scenario whose distributions are used when reset(options={"randomize":
-            # True}) draws a randomized household (Plan 18 D6).
+            # True}) draws a randomized household.
             "household_scenario": "basic",
         }
 
@@ -165,7 +165,7 @@ class FinancialLifeEnv(gym.Env):
         if self.config["economy_mode"] not in _ECONOMY_MODES:
             raise ValueError(f"Unknown economy_mode {self.config['economy_mode']!r}; expected one of {_ECONOMY_MODES}")
 
-        # Utility-based objective (Plan 19 D1). ``reward_config`` (an explicit RewardConfig) wins;
+        # Utility-based objective. ``reward_config`` (an explicit RewardConfig) wins;
         # otherwise config["reward_preset"] names a preset; otherwise the default preset. Recorded
         # so the trainer/eval report can report which objective produced a run.
         if reward_config is not None:
@@ -179,7 +179,7 @@ class FinancialLifeEnv(gym.Env):
         self.max_steps = self.config["person_max_age"] - self.config["person_start_age"]
         self.current_step = 0
 
-        # Fully discrete flat action space (Plan 18 D5): every amount-bearing action crossed
+        # Fully discrete flat action space: every amount-bearing action crossed
         # with the amount buckets, plus the singleton actions. "How much" is part of the policy.
         self.action_space = spaces.Discrete(flat_action_count())
 
@@ -199,10 +199,10 @@ class FinancialLifeEnv(gym.Env):
         return len(OBS_SPEC)
 
     def _resolve_episode_household(self, options: Dict) -> Dict[str, Any]:
-        """Resolve the household parameters for this episode (Plan 18 D6).
+        """Resolve the household parameters for this episode.
 
-        Without options the env's configured point household is used (exactly the legacy fixed
-        household). ``options={"scenario": name}`` swaps in that scenario's point household;
+        Without options the env's configured point household is used. ``options={"scenario":
+        name}`` swaps in that scenario's point household;
         adding ``"randomize": True`` draws a randomized household around the scenario's point
         values using the seeded Gymnasium ``np_random`` generator, so the same reset seed
         always produces the same household.
@@ -235,7 +235,7 @@ class FinancialLifeEnv(gym.Env):
         Args:
             seed: Seeds both the Gymnasium RNG and the underlying :class:`LifeModel` so that a
                 given seed reproduces an identical episode.
-            options: Optional episode options (Plan 18 D6):
+            options: Optional episode options:
                 ``{"randomize": bool, "scenario": str}``. ``randomize=True`` draws the episode's
                 household (start age, salary, spending, balances, retirement age, gender — and
                 optionally a named economy scenario) from the scenario's seeded distributions;
@@ -252,7 +252,7 @@ class FinancialLifeEnv(gym.Env):
         self.episode_household = household
         self.max_steps = self.config["person_max_age"] - household["person_start_age"]
 
-        # Economy (Plan 18 D3): stochastic by default so training sees good and bad years; a
+        # Economy: stochastic by default so training sees good and bad years; a
         # named economy scenario (curriculum knob) is applied on top and wins where it sets
         # values. Draws use the model's seeded RNG, so a given seed reproduces the same economy.
         financial_config = FinancialConfig()
@@ -262,13 +262,13 @@ class FinancialLifeEnv(gym.Env):
             financial_config.apply_scenario(scenario_name, get_scenario(scenario_name))
 
         # Create new model instance, seeded for reproducibility. RL rollouts never read the
-        # DataCollector frames, so collection is skipped for throughput (Plan 18 D7).
+        # DataCollector frames, so collection is skipped for throughput.
         self.model = LifeModel(
             start_year=self.config["start_year"], seed=seed, config=financial_config, collect_data=False
         )
         self.family = Family(self.model)
 
-        # Create person with model-native stochastic mortality (Plan 18 D2): death is decided by
+        # Create person with model-native stochastic mortality: death is decided by
         # Person._check_mortality against the model's seeded RNG, and dying runs the full death
         # machinery (life insurance, estate transfer/tax, survivor adjustments) inside the
         # reward-visible world.
@@ -324,7 +324,7 @@ class FinancialLifeEnv(gym.Env):
         # Set initial model end year
         self.model.end_year = self.model.start_year + self.max_steps
 
-        # Track initial state. The utility reward (Plan 19 D1) is per-year consumption plus a
+        # Track initial state. The utility reward is per-year consumption plus a
         # terminal bequest/ruin term, so it carries no cross-step net-worth baseline — only the
         # running lifetime spending (for analysis) and the estate value at death are tracked.
         self.initial_net_worth = self._calculate_net_worth()
@@ -363,7 +363,7 @@ class FinancialLifeEnv(gym.Env):
             percentage_change=self.SPENDING_STEP,
         )
 
-        # Step the simulation forward one year. Mortality is model-native (Plan 18 D2): the
+        # Step the simulation forward one year. Mortality is model-native: the
         # person may die inside this call, which runs the full death machinery and removes their
         # agents from the model. Snapshot the pre-step net worth so the estate value at death is
         # observable to the reward (post-death net worth reads ~0 once assets dissolve).
@@ -378,7 +378,7 @@ class FinancialLifeEnv(gym.Env):
         terminated = self._is_terminated()
         truncated = self.current_step >= self.max_steps and not terminated
 
-        # Calculate reward (utility-based; Plan 19 D1)
+        # Calculate reward (utility-based)
         reward = self._calculate_reward(action_result, terminated=terminated, truncated=truncated)
 
         info = self._get_info(action_result, action_type=action_type, action_amount=action_amount)
@@ -570,7 +570,7 @@ class FinancialLifeEnv(gym.Env):
         }
 
     def _get_observation(self) -> np.ndarray:
-        """Observation vector v2 (Plan 18 D4): assembled in OBS_SPEC order and clipped into the
+        """Observation vector v2: assembled in OBS_SPEC order and clipped into the
         declared per-feature bounds."""
         features = self._compute_observation_features()
         raw = np.array([features[name] for name, _, _ in OBS_SPEC], dtype=np.float32)
@@ -584,7 +584,7 @@ class FinancialLifeEnv(gym.Env):
         return assets - liabilities
 
     def _calculate_reward(self, action_result: ActionResult, terminated: bool, truncated: bool) -> float:
-        """Utility-based reward for the current step (Plan 19 D1).
+        """Utility-based reward for the current step.
 
         The agent earns the CRRA utility of this year's **real** consumption every step, and on the
         terminal step earns either a bequest utility on the real net worth it leaves behind or, if

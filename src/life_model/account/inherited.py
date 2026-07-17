@@ -14,7 +14,7 @@ class InheritedPretaxAccount(Investment):
 
     When a non-spouse inherits a decedent's pre-tax retirement money (traditional 401k / IRA), the
     balance moves into this account instead of being dumped into the beneficiary's income as a
-    single-year lump sum (the Plan 09 simplification). The account keeps growing like any equity
+    single-year lump sum (the lump-sum simplification). The account keeps growing like any equity
     :class:`~life_model.base_classes.Investment`, and each year distributes an even slice —
     ``balance / years_remaining`` — over ten years, recording each distribution as
     :class:`~life_model.tax.income.IncomeType.PRETAX_DISTRIBUTION` (ordinary income, no FICA) and

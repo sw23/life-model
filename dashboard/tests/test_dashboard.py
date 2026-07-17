@@ -160,8 +160,9 @@ def test_disabled_person_yields_single_person_at_import_defaults():
 def test_param_spec_and_fallback_defaults_agree():
     """Each person's control spec default equals the fallback default (single source of truth).
 
-    Regression: previously the checkbox spec and the code default disagreed (e.g. Jane's enabled
-    flag and salary), so import-time and post-slider construction diverged.
+    This invariant keeps import-time and post-slider construction in agreement: they read the
+    control-spec default and the code fallback independently, so a mismatch (e.g. an ``enabled``
+    flag or salary) would make the two construction paths diverge.
     """
     for prefix, name in (("john", "John"), ("jane", "Jane")):
         specs = app._person_param_specs(prefix, name)

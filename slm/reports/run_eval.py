@@ -3,9 +3,9 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Produce the committed Plan 20 evaluation report (tasks 5 + 6).
+"""Produce the committed evaluation report (tasks 5 + 6).
 
-Runs three advisers through the identical outcome harness (D4) on the same held-out households
+Runs three advisers through the identical outcome harness on the same held-out households
 (seeds disjoint from the generation seed) and the held-out ``recession`` economy scenario:
 
 * ``oracle``   — ScriptedAdviserModel emitting each household's candidate-grid argmax (the
@@ -13,8 +13,8 @@ Runs three advisers through the identical outcome harness (D4) on the same held-
 * ``distilled_stub`` — the deterministic StubAdviserModel standing in for the distilled SLM
   (weights are out of session scope; the stub exercises the identical generate→parse→execute
   path a real model would);
-* ``tool_loop`` — the same stub wrapped in the draft→simulate→revise ToolLoopAdviser (D1b),
-  reported alongside per the plan.
+* ``tool_loop`` — the same stub wrapped in the draft→simulate→revise ToolLoopAdviser,
+  reported alongside.
 
 Usage::
 
@@ -49,10 +49,10 @@ def main() -> None:
 
     report = {
         "note": (
-            "Pipeline-validation scale (Plan 20 task 5). The 'distilled_stub' adviser is the "
+            "Pipeline-validation scale. The 'distilled_stub' adviser is the "
             "deterministic stub AdviserModel standing in for a trained SLM (full QLoRA run is "
             "documented in slm/README.md, not executed here); 'tool_loop' wraps the same stub "
-            "in the D1b draft->simulate->revise loop; 'oracle' validates the harness. "
+            "in the draft->simulate->revise loop; 'oracle' validates the harness. "
             "Faithfulness caveat: the harness re-scores each household on ITS OWN seed set, so "
             "the numeric-faithfulness gate measures whether cited numbers reproduce across "
             "independent Monte Carlo draws. At n_trials=16 the cross-seed noise on dollar "

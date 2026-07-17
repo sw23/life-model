@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Healthcare, Medicare & long-term-care agents (Plan 15).
+"""Healthcare, Medicare & long-term-care agents.
 
 These agents are opt-in: they are constructed explicitly (like insurance policies) and registered
 in per-type registries. A simulation that constructs none of them is unaffected. Money they charge

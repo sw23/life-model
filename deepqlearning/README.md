@@ -2,10 +2,10 @@
 
 Train an AI agent to make financial decisions over a person's lifetime. The agent learns to
 manage bank accounts, retirement funds, debt, and lifestyle choices to optimize a defensible,
-utility-based financial-planning objective (Plan 19) — and is measured against planner-grade
+utility-based financial-planning objective — and is measured against planner-grade
 heuristics with a proper statistical protocol.
 
-## 🎯 The objective — what "good" means (Plan 19 D1)
+## 🎯 The objective — what "good" means
 
 The reward is **not** "maximize net worth" (whose optimal policy is to hoard and never spend). It
 is a utility-based objective defined in `rewards.py`:
@@ -24,7 +24,7 @@ every eval report:
 | Preset | Character |
 |--------|-----------|
 | `retirement_security` (**default**) | Ruin-avoidance dominant: a large ruin penalty over a lifetime of O(1) consumption utilities makes "don't run out of money" first-order. |
-| `wealth_max` | Bequest-dominant; approximates the legacy wealth-accumulation objective (kept for comparability). |
+| `wealth_max` | Bequest-dominant wealth-accumulation objective; a comparison point for the consumption-based presets. |
 | `smooth_consumption` | High CRRA risk aversion; pushes toward a smooth lifetime consumption path. |
 
 Select a preset with `--reward-preset` (trainer) or `reward_preset` in the env config.
@@ -38,11 +38,11 @@ pip install -r ../requirements.txt -r requirements-rl.txt
 
 ### 2. Train Your First Agent
 ```bash
-# Vectorized trainer (Plan 19 D4) on the default retirement_security objective
+# Vectorized trainer on the default retirement_security objective
 python train_financial_agent.py --scenario basic --vectorized --num-envs 8 \
     --total-env-steps 200000 --reward-preset retirement_security --protocol-eval
 
-# Legacy single-env trainer, fixed episode count
+# Single-env trainer, fixed episode count
 python train_financial_agent.py --scenario high_earner --episodes 1500
 ```
 
@@ -67,7 +67,7 @@ anchor the domain randomizer, so fixed and randomized variants can never drift a
 `env.reset(seed=..., options={"randomize": True, "scenario": "basic"})` draws the episode's
 household — start age, retirement age, salary, spending, bank balance, gender — from seeded
 distributions around the scenario's point values (`EpisodeSampler` in `scenarios.py`). The same
-seed always reproduces the same household and trajectory; without options the legacy fixed
+seed always reproduces the same household and trajectory; without options the fixed point
 household is reproduced exactly. A scenario can also carry named economy scenarios (e.g.
 `recession`) to sample per episode as a curriculum knob.
 
@@ -76,7 +76,7 @@ household is reproduced exactly. A scenario can also carry named economy scenari
 Each environment step is one simulated year: the agent picks one flat discrete action, then the
 underlying `life_model` simulation advances a year (income, account growth, RMDs, taxes, death).
 
-**Fidelity notes (Plan 18):**
+**Fidelity notes:**
 
 - **Taxes are actually paid.** Withdrawals execute through the model's real money path: a
   pre-tax 401k or traditional IRA withdrawal records ordinary income on the person's ledger and
@@ -164,13 +164,13 @@ python train_financial_agent.py --scenario basic --load_model models/financial_d
 python train_financial_agent.py --scenario basic --eval_only --load_model models/financial_dqn_basic.pt
 ```
 
-> **Checkpoint compatibility:** checkpoints carry `MODEL_VERSION` (now **4** — bumped for the
-> Plan 19 utility reward) and `OBS_VERSION`, saved as tensor-only `.pt` files plus a
+> **Checkpoint compatibility:** checkpoints carry `MODEL_VERSION` (currently **4**) and
+> `OBS_VERSION`, saved as tensor-only `.pt` files plus a
 > `.history.json` sidecar so they load under modern PyTorch defaults
 > (`torch.load(..., weights_only=True)`). Loading a checkpoint from a different version **fails
-> with a clear error** — the observation layout, action space (Plan 18), and reward scale (Plan 19)
-> changed, so old weights would be silently misaligned. Retrain, or check out the code version that
-> produced the checkpoint.
+> with a clear error** — a checkpoint's weights are tied to a specific observation layout, action
+> space, and reward scale, so a mismatched checkpoint would be silently misaligned. Retrain, or
+> check out the code version that produced the checkpoint.
 
 ### Generate Training Plots
 ```bash
@@ -181,7 +181,7 @@ python train_financial_agent.py --scenario basic --plot_results
 python train_financial_agent.py --scenario basic --plot_results --save_plots plots/basic_training.png
 ```
 
-## 📊 Baselines & the bar (Plan 19 D2)
+## 📊 Baselines & the bar
 
 `baselines.py` provides planner-grade heuristics an advisor would recognize — these are the bar
 the agent must beat, not "do nothing":
@@ -197,7 +197,7 @@ Each is a deterministic function of the seeded state that emits only legal actio
 random seeds). The simple `do_nothing` / `always_max_401k` / `save_25_percent` policies remain as
 regression detectors.
 
-## 🔬 Evaluation protocol & reading the report (Plan 19 D3)
+## 🔬 Evaluation protocol & reading the report
 
 `evaluation.py`'s `EvalProtocol` runs the agent and every baseline on **identical**
 `SeedSequence`-spawned seed sets across three conditions and writes a JSON report + a comparison
@@ -228,7 +228,7 @@ reward is meant to produce. This is an honest snapshot — a full-scale run (bel
 widen the gap; the "beats every heuristic with separated CIs" claim will only be made here once a
 committed report shows it.
 
-## 🏋️ Training upgrades (Plan 19 D4)
+## 🏋️ Training upgrades
 
 The trainer stack (`agent.py`, `vector_trainer.py`) is modernized while staying dependency-light
 (`requirements-rl.txt` is still gymnasium + torch only):
@@ -255,7 +255,7 @@ The trainer stack (`agent.py`, `vector_trainer.py`) is modernized while staying 
   python sb3/cross_check.py --algo dqn --timesteps 200000
   ```
 
-## 🔎 Policy analysis (Plan 19 D5)
+## 🔎 Policy analysis
 
 `analyze_policy.py` turns a checkpoint into human-checkable artifacts (headless Agg backend):
 
@@ -287,8 +287,8 @@ Reference (Apple Silicon, Python 3.12; env steps use random actions):
 | vector env, **async**, 8 envs | ~1,900 (**~1.6x** single-env) |
 | vector env, **async**, 16 envs | ~2,100 (**~1.7x** single-env) |
 
-> **Honest note on the ≥3× target.** Plan 19 D4 targets ≥3× env-steps/sec from vectorization. On
-> this workload that is **not reached**: each simulated year is cheap (~1 ms), so `gymnasium`
+> **Honest note on the ≥3× target.** The vectorized trainer targets ≥3× env-steps/sec from
+> vectorization. On this workload that is **not reached**: each simulated year is cheap (~1 ms), so `gymnasium`
 > `AsyncVectorEnv`'s per-step multiprocessing IPC/synchronization overhead dominates and caps the
 > speedup at ~1.6–2.0× (confirmed to persist even with an empty `info` payload). The vectorized
 > collector is correct, reproducible, and enables batched inference; the raw throughput ceiling is

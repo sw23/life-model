@@ -222,8 +222,8 @@ class TestEstateTransferNonSpouse(unittest.TestCase):
         self.assertAlmostEqual(child.bank_account_balance, 51000, delta=1.0)
 
     def test_nonspouse_pretax_inheritance_is_taxed(self):
-        # Pins the Plan 09 lump-sum simplification under the explicit "lump_sum" mode (Plan 16 D3
-        # makes "ten_year" the default; this mode must reproduce the pre-plan behavior exactly).
+        # Pins the lump-sum simplification under the explicit "lump_sum" mode ("ten_year" is
+        # the default; this mode must reproduce the earlier behavior exactly).
         model = LifeModel(start_year=2026, end_year=2027)
         model.config.model.estate.inherited_pretax_mode = "lump_sum"
         family = Family(model)
@@ -251,13 +251,13 @@ class TestEstateTransferNonSpouse(unittest.TestCase):
 
 
 class TestPerAccountBeneficiary(unittest.TestCase):
-    """Plan 16 D4: per-account beneficiary designation honored in _transfer_estate."""
+    """Per-account beneficiary designation honored in _transfer_estate."""
 
     def _family_with_designated_ira(self, *, designate_child=True, child_dies_first=False):
         from ..config.financial_config import FinancialConfig
 
         cfg = FinancialConfig()
-        # Use the legacy lump-sum path so the designated routing is visible in a single year.
+        # Use the lump-sum path so the designated routing is visible in a single year.
         cfg.model.estate.inherited_pretax_mode = "lump_sum"
         model = LifeModel(start_year=2026, end_year=2027, config=cfg)
         family = Family(model)
@@ -462,7 +462,7 @@ class TestPensionSurvivorAtDeath(unittest.TestCase):
         self.assertEqual(pension_income[2030], 0)
 
     def test_survivor_transfer_runs_before_benefit_sweep(self):
-        # Regression pin (plan Risks): the survivor transfer must happen before
+        # The survivor transfer must happen before
         # _remove_from_simulation's Benefit sweep, or the continued stream would be deleted.
         model, breadwinner, spouse = self._couple(survivor_percent=50)
         model.run()

@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Tests for domain randomization: EpisodeSampler and reset(options=...) (Plan 18 D6)."""
+"""Tests for domain randomization: EpisodeSampler and reset(options=...)."""
 
 import os
 import sys
@@ -64,7 +64,7 @@ class TestEpisodeSampler(unittest.TestCase):
 
 class TestResetOptions(unittest.TestCase):
     def test_default_reset_reproduces_fixed_household(self):
-        # Plan 18 D6 acceptance: randomize=False (or no options) reproduces the legacy point
+        # randomize=False (or no options) reproduces the fixed point
         # household exactly.
         env = FinancialLifeEnv()
         env.reset(seed=0)

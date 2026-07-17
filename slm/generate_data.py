@@ -3,18 +3,18 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Simulator-verified decision-pair generation (Plan 20 D2, task 2).
+"""Simulator-verified decision-pair generation.
 
 The pipeline, fully offline and deterministic under ``generation_seed``:
 
-1. Sample seeded households from Plan 18's :class:`EpisodeSampler` across named scenarios.
+1. Sample seeded households from the RL environment's :class:`EpisodeSampler` across named scenarios.
 2. Enumerate candidate plan-level levers (:mod:`slm.candidates`) — heuristics + Roth/pre-tax
    split; the DQN is excluded by teacher gating (see :mod:`slm.candidates`).
 3. Score each candidate with a shared-seed Monte Carlo run (:mod:`slm.scoring`).
 4. Label = the argmax candidate; rationale = a templated counterfactual whose every number is
    copied from the scoring run (:mod:`slm.rationales`) — certified, not stylistic.
 5. Emit versioned JSONL + a datasheet (generation seed, simulator commit, config hash, trial
-   count) and explicit out-of-scope refusal examples (D6).
+   count) and explicit out-of-scope refusal examples.
 
 Determinism guarantees:
 
@@ -64,10 +64,10 @@ from .strategies import decision_space
 DEFAULT_REWARD_PRESET = "retirement_security"
 DEFAULT_SCENARIOS = ("basic", "high_earner", "low_earner", "mid_career")
 
-# Teacher-gating provenance string recorded in the datasheet (Plan 19 protocol report:
+# Teacher-gating provenance string recorded in the datasheet (protocol report:
 # verdict_intelligent=false), so the dataset states honestly that the DQN was not used as a teacher.
 TEACHER_GATING = (
-    "DQN excluded (Plan 19 protocol_report.json: verdict_intelligent=false, "
+    "DQN excluded (protocol report: verdict_intelligent=false, "
     "ci_does_not_overlap_best=false); candidates = heuristics + Roth/pre-tax levers, label = grid argmax."
 )
 
@@ -127,7 +127,7 @@ def _decision_example(
 
 
 def _refusal_examples(provenance: Provenance) -> List[AdviceExample]:
-    """Explicit out-of-scope refusal examples (D6), so scope discipline is trained, not just prompted."""
+    """Explicit out-of-scope refusal examples, so scope discipline is trained, not just prompted."""
     # A few phrasings per domain give the refusal behavior linguistic coverage without a paraphrase model.
     phrasings = ("Should I {d}?", "Is it a good idea to {d} right now?", "Can you advise whether to {d}?")
     examples: List[AdviceExample] = []
@@ -293,7 +293,7 @@ def write_dataset(
 
 
 def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Generate simulator-verified adviser data (Plan 20 D2).")
+    parser = argparse.ArgumentParser(description="Generate simulator-verified adviser data.")
     parser.add_argument("--scenarios", default=",".join(DEFAULT_SCENARIOS), help="Comma-separated household scenarios.")
     parser.add_argument("--per-scenario", type=int, default=25, help="Households per scenario.")
     parser.add_argument("--n-trials", type=int, default=24, help="Monte Carlo trials per candidate.")

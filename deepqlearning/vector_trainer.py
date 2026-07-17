@@ -3,11 +3,11 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Vectorized data collection and training upgrades (Plan 19 D4).
+"""Vectorized data collection and training upgrades.
 
-The legacy trainer collected from a single sequential environment. This module drives ``N`` envs
-through :mod:`gymnasium.vector` (``Sync`` by default for deterministic n-step/masking; ``Async``
-for throughput) feeding one shared learner, and adds the rest of the D4 stack:
+This module drives ``N`` envs through :mod:`gymnasium.vector` (``Sync`` by default for
+deterministic n-step/masking; ``Async`` for throughput) feeding one shared learner, and adds the
+rest of the training stack:
 
 * **Prioritized replay + n-step returns** — supplied by :class:`FinancialDQNAgent` /
   :class:`NStepAccumulator`; this trainer just routes per-env transitions into them.
@@ -64,7 +64,7 @@ def _masks_from_info(info: Dict, num_envs: int, action_size: int) -> List[List[i
 
 
 class VectorizedTrainer:
-    """Trains a :class:`FinancialDQNAgent` from vectorized collection with the D4 upgrades."""
+    """Trains a :class:`FinancialDQNAgent` from vectorized collection with the vectorized upgrades."""
 
     def __init__(self, agent: FinancialDQNAgent, env_config: Optional[Dict] = None, config: Optional[Dict] = None):
         self.agent = agent
@@ -85,7 +85,7 @@ class VectorizedTrainer:
             "lr_gamma": 0.5,
             "model_save_path": "financial_dqn_vector.pt",
             "print_freq_steps": 5_000,
-            # Optional TensorBoard logging dir (Plan 19 D4/D5). Uses torch.utils.tensorboard, which
+            # Optional TensorBoard logging dir. Uses torch.utils.tensorboard, which
             # ships with torch; behind a soft import so the trainer runs fine without TensorBoard.
             "tensorboard_logdir": None,
         }

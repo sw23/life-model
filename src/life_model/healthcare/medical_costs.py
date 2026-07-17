@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Age-related out-of-pocket medical cost curve (Plan 15 D2).
+"""Age-related out-of-pocket medical cost curve.
 
 ``MedicalCosts`` is an opt-in per-person agent. Each year it looks up the person's age band in the
 configured cost curve, indexes it by cumulative *medical* inflation (CPI plus a health-spending

@@ -31,13 +31,13 @@ class TaxUnit:
       4. Pay bills + taxes from the members' combined accounts exactly once. Any shortfall
          becomes new debt on the first member.
 
-    ``Family`` is only a container/aggregator built on top of tax units; it no longer performs
-    any tax math. This single abstraction is what makes married-couple housing, family debt,
+    ``Family`` is only a container/aggregator built on top of tax units; it performs no
+    tax math. This single abstraction is what makes married-couple housing, family debt,
     and mixed-filing-status families settle correctly.
 
-    **Single-state simplification (Plan 17 D2):** the whole unit files in the *head's* state
+    **Single-state simplification:** the whole unit files in the *head's* state
     (``members[0].state``), and the head is whichever spouse was constructed first (agent order ==
-    construction order, Plan 04 D2). A CA-head/TX-spouse couple therefore pays CA tax on the full
+    construction order). A CA-head/TX-spouse couple therefore pays CA tax on the full
     combined income — and swapping the construction order flips that to TX. Part-year and
     multi-state filing are not modeled; a ``UserWarning`` is emitted (once per head, per run) when
     unit members declare differing states so the order-dependence is visible rather than silent.
@@ -49,7 +49,7 @@ class TaxUnit:
         self.members = members
         self.filing_status = members[0].filing_status
         self.config = members[0].model.config
-        # A tax unit files in a single state — the head's (Plan 17 D2). No part-year/multi-state.
+        # A tax unit files in a single state — the head's. No part-year/multi-state.
         self.state = members[0].state
         self._warn_if_mixed_states()
 
@@ -79,7 +79,7 @@ class TaxUnit:
         joint unit; every other member is its own single unit. An unmarried member with at least
         one dependent child files HEAD_OF_HOUSEHOLD (the unit's status only — the person's own
         ``filing_status`` is untouched); when the config carries no head_of_household data the
-        deduction/brackets fall back to single, so this is a strict superset of old behavior.
+        deduction/brackets fall back to single.
         """
         units: List["TaxUnit"] = []
         seen = set()
@@ -145,12 +145,12 @@ class TaxUnit:
     def federal_deductions_combined(self, additional_income: float = 0.0, state_income_tax_paid: float = 0.0) -> float:
         """Federal deductions folding in BOTH plans' income-dependent itemized adjustments.
 
-        - Plan 15 D6: the 7.5%-of-income medical floor depends on ordinary income, so a prospective
+        - The 7.5%-of-income medical floor depends on ordinary income, so a prospective
           401k withdrawal (``additional_income``) changes the deduction. It is allocated across
           members exactly as ``withdraw_from_pretax_401ks`` will split it, so each member's floor
           matches what settlement will see — otherwise sizing over-estimates the medical deduction
           and the shortfall lands as phantom year-end debt.
-        - Plan 17 D4: the unit's state income tax (``state_income_tax_paid``) enters the head's SALT
+        - The unit's state income tax (``state_income_tax_paid``) enters the head's SALT
           bucket (mirrors ``_record_stats``' head convention), capped at the SALT limit per member.
 
         With both arguments 0 this is the plain standard-vs-itemized comparison.
@@ -189,14 +189,14 @@ class TaxUnit:
         return totals
 
     def state_income_tax_due(self, additional_income: float = 0) -> float:
-        """State income tax for the unit, resolving the head's state pack (Plan 17).
+        """State income tax for the unit, resolving the head's state pack.
 
         Computed against the property-only AGI base (``state_income_tax_paid=0``) so it does not
-        depend on itself being folded into SALT (D4 no-circularity). The deduction base *does*
-        reflect ``additional_income`` so the income-dependent medical floor (Plan 15 D6) is
-        consistent between withdrawal sizing and settlement — otherwise the DEFAULT legacy AGI, and
+        depend on itself being folded into SALT (avoids circularity). The deduction base *does*
+        reflect ``additional_income`` so the income-dependent medical floor is
+        consistent between withdrawal sizing and settlement — otherwise the DEFAULT AGI, and
         thus the flat state tax, would differ between the two and leave phantom year-end debt.
-        ``DEFAULT`` residents get the legacy flat number exactly when there is no medical deduction.
+        ``DEFAULT`` residents get the flat-rate number exactly when there is no medical deduction.
         """
         ordinary_income = self.taxable_income + additional_income
         legacy_agi = max(ordinary_income - self.federal_deductions_combined(additional_income, 0.0), 0)
@@ -207,8 +207,8 @@ class TaxUnit:
     def get_income_taxes_due(self, additional_income: float = 0) -> TaxesDue:
         # ``additional_income`` models a prospective pre-tax 401k withdrawal: it is ordinary
         # income but not FICA wages, so it is not added to the per-member wage bases. It does
-        # enter the deduction computation — the medical floor is income-dependent (Plan 15 D6)
-        # and the state income tax it triggers enters SALT (Plan 17 D4).
+        # enter the deduction computation — the medical floor is income-dependent
+        # and the state income tax it triggers enters SALT.
         ordinary_income = self.taxable_income + additional_income
         wage_incomes = [m.fica_wages for m in self.members]
         state_tax = self.state_income_tax_due(additional_income)
@@ -295,7 +295,7 @@ class TaxUnit:
         # Size and perform any pre-tax 401k withdrawal, then get the final taxes owed.
         taxes = self._solve_withdrawals_and_taxes(bills)
 
-        # Record this year's AGI on every member (Plan 15 D4). Each member records the AGI of the
+        # Record this year's AGI on every member. Each member records the AGI of the
         # return they filed — the unit's full AGI, not a per-member split — because Medicare/IRMAA
         # later compares the return's MAGI against filing-status thresholds with a two-year
         # lookback. Recorded after withdrawal solving so 401k distributions are included.

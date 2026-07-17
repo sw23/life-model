@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Integration tests for Plan 07 — personal debt is serviced by the simulation loop.
+"""Integration tests: personal debt is serviced by the simulation loop.
 
 These tests exercise the full year-step settlement (no manual ``make_payment`` calls): a person's
 car loan, credit card, and student loan accrue interest and receive payments through the tax

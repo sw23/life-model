@@ -16,12 +16,9 @@ import torch.nn as nn
 import torch.optim as optim
 from environment import OBS_VERSION, FinancialLifeEnv
 
-# Bumped whenever the reward shaping, observation layout, action space, or checkpoint format
-# changes. Checkpoints carrying a different version now refuse to load (their weights would be
-# silently misaligned with the redesigned observation/action spaces). Version 3 = Plan 18
-# redesign (real tax path, model-native mortality, stochastic economy, observation v2).
-# Version 4 = Plan 19 utility-based reward (CRRA consumption + terminal bequest/ruin); the value
-# scale changed, so version-3 checkpoints are refused.
+# Identifies the checkpoint format: reward shaping, observation layout, action space, and tensor
+# layout. A checkpoint whose version differs from the code refuses to load rather than silently
+# misaligning its weights against a different observation/action space (see ``load_model``).
 MODEL_VERSION = 4
 
 # Experience tuple for the replay buffer. ``legal_actions`` is the legal action list for ``state``
@@ -144,8 +141,7 @@ class ReplayBuffer:
 class PrioritizedReplayBuffer:
     """Proportional prioritized experience replay (Schaul et al. 2016).
 
-    Real PER — the ``use_prioritized_replay`` flag used to be declared and never implemented
-    (Plan 19 D4). Transitions are sampled with probability proportional to ``priority**alpha``
+    Transitions are sampled with probability proportional to ``priority**alpha``
     (priority = last-seen TD error), and the resulting bias is corrected with importance-sampling
     weights ``(N * P(i))**(-beta)`` normalized by their max. New transitions enter at the current
     max priority so they are seen at least once; :meth:`update_priorities` refreshes priorities
@@ -189,7 +185,7 @@ class PrioritizedReplayBuffer:
 
 
 class NStepAccumulator:
-    """Builds n-step transitions for a single episode stream (Plan 19 D4).
+    """Builds n-step transitions for a single episode stream.
 
     Push each ``(state, action, reward, legal_actions)`` as it happens; :meth:`push` emits the
     finalized n-step transitions that are ready (their ``next_state`` is now known). On episode end,
@@ -253,7 +249,7 @@ class FinancialDQNAgent:
             "hidden_sizes": [512, 256, 128],
             "use_dueling": True,
             "use_double_dqn": True,
-            # Prioritized experience replay (Plan 19 D4 — now really implemented). When True the
+            # Prioritized experience replay. When True the
             # agent uses a PrioritizedReplayBuffer with proportional sampling and IS-weight
             # correction; alpha controls prioritization strength, beta (annealed to 1 over
             # per_beta_steps gradient steps) controls the IS correction.
@@ -261,7 +257,7 @@ class FinancialDQNAgent:
             "per_alpha": 0.6,
             "per_beta_start": 0.4,
             "per_beta_steps": 100000,
-            # N-step returns (Plan 19 D4). n_step=1 recovers vanilla 1-step DQN.
+            # N-step returns. n_step=1 recovers vanilla 1-step DQN.
             "n_step": 3,
         }
 
@@ -288,7 +284,7 @@ class FinancialDQNAgent:
         # Optimizer
         self.optimizer = optim.Adam(self.q_network.parameters(), lr=self.config["learning_rate"])
 
-        # Replay buffer: prioritized or uniform (Plan 19 D4).
+        # Replay buffer: prioritized or uniform.
         self.use_per = bool(self.config["use_prioritized_replay"])
         if self.use_per:
             self.replay_buffer = PrioritizedReplayBuffer(
@@ -348,7 +344,7 @@ class FinancialDQNAgent:
     def select_actions_batch(
         self, states: np.ndarray, legal_actions_batch: List[List[int]], training: bool = True
     ) -> List[int]:
-        """Epsilon-greedy action selection for a batch of states (vectorized collection, D4).
+        """Epsilon-greedy action selection for a batch of states (vectorized collection).
 
         Each row independently explores with probability ``epsilon`` (a random legal action) or
         exploits (masked greedy). One batched forward pass serves all envs.
@@ -537,8 +533,8 @@ class FinancialDQNAgent:
 
         Raises:
             ValueError: If the checkpoint's ``model_version`` or ``obs_version`` does not match
-                the current code. The observation layout and action space changed across
-                versions, so an old checkpoint's weights would be silently misaligned — failing
+                the current code. A checkpoint's weights are tied to a specific observation layout
+                and action space, so a version mismatch would silently misalign them — failing
                 loudly here is the guard.
         """
         if not os.path.exists(filepath):
@@ -552,9 +548,9 @@ class FinancialDQNAgent:
         if version != MODEL_VERSION or obs_version != OBS_VERSION:
             raise ValueError(
                 f"Checkpoint {filepath!r} has model_version={version}, obs_version={obs_version}, but this "
-                f"code is model_version={MODEL_VERSION}, obs_version={OBS_VERSION}. The observation layout "
-                "and action space were redesigned (Plan 18), so old checkpoints cannot be loaded — retrain, "
-                "or check out the code version that produced the checkpoint."
+                f"code is model_version={MODEL_VERSION}, obs_version={OBS_VERSION}. A checkpoint is tied to a "
+                "specific observation layout and action space, so a mismatched checkpoint cannot be loaded — "
+                "retrain, or check out the code version that produced the checkpoint."
             )
 
         self.q_network.load_state_dict(checkpoint["q_network_state_dict"])
@@ -597,8 +593,8 @@ def rollout(
 ) -> RolloutResult:
     """Run one episode. The single episode loop used by training, evaluation, and analysis.
 
-    The action space is fully discrete (Plan 18 D5): the policy's chosen index carries both the
-    action type and the amount bucket, so there is no separate amount to fill in. When
+    The action space is fully discrete: the policy's chosen index carries both the action
+    type and the amount bucket, so there is no separate amount to fill in. When
     ``training`` is True, experiences are stored and a gradient step is taken each step.
     """
     state, info = env.reset(seed=seed)
@@ -607,7 +603,7 @@ def rollout(
     terminated = False
     truncated = False
     trajectory: List[Dict] = []
-    # N-step accumulator for the training path (Plan 19 D4). n_step=1 recovers 1-step DQN.
+    # N-step accumulator for the training path. n_step=1 recovers 1-step DQN.
     nstep = NStepAccumulator(agent.config.get("n_step", 1), agent.config["gamma"]) if training else None
 
     while True:

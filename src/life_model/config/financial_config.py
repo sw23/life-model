@@ -36,8 +36,8 @@ class FinancialConfig(ScenarioConfig):
 
     The validated Pydantic model (:class:`FinancialConfigModel`) is *the* runtime
     object: domain code reads typed attributes via the ``tax``/``retirement``/...
-    properties instead of navigating an untyped dict. The legacy ``get(dot_key)``
-    accessor remains during the migration but emits a ``DeprecationWarning``.
+    properties instead of navigating an untyped dict. The ``get(dot_key)``
+    accessor is deprecated and emits a ``DeprecationWarning``.
     """
 
     def __init__(self, config_file: Optional[str] = None, scenario: Optional[str] = None):

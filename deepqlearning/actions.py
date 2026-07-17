@@ -77,7 +77,7 @@ _WITHDRAW_SOURCES = {
     ActionType.WITHDRAW_HSA: HealthSavingsAccount,
 }
 
-# Person-level withdrawal helper for each withdrawal action (Plan 18 D1). Every withdrawal goes
+# Person-level withdrawal helper for each withdrawal action. Every withdrawal goes
 # through the model's real money path: the helper deposits into the bank and records the correct
 # income-ledger entry (pre-tax 401k / traditional IRA distributions are ordinary income), so the
 # tax unit actually taxes the withdrawal when it settles the year inside ``model.step()``.
@@ -109,7 +109,7 @@ EARLY_WITHDRAWAL_AGE = 59.5
 EARLY_WITHDRAWAL_PENALTY = 0.10
 
 # ---------------------------------------------------------------------------
-# Flat (fully discrete) action space (Plan 18 D5).
+# Flat (fully discrete) action space.
 #
 # DQN cannot output a continuous amount head, so "how much" is made part of the policy by
 # crossing every amount-bearing action with a small set of amount buckets (fractions of the
@@ -210,7 +210,7 @@ class ActionResult:
 
     There is deliberately no tax field here: taxable withdrawals are recorded on the person's
     income ledger and settled by the tax unit at year end, so taxes flow through the model's
-    real money path rather than action-local bookkeeping (Plan 18 D1).
+    real money path rather than action-local bookkeeping.
     """
 
     success: bool

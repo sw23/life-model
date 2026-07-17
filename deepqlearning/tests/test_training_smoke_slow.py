@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Slow training smoke test (Plan 19 D6).
+"""Slow training smoke test.
 
 The default CI training path is only the 10-episode notebook fast-path. This ``slow``-marked test
 runs ~150 episodes on a fixed seed and asserts the bar that is *reliably* achievable at that scale
@@ -13,8 +13,8 @@ and robust across platforms/torch builds:
 * the final greedy agent beats the ``do_nothing`` and ``save_25_percent`` baselines on shared
   held-out seeds.
 
-An earlier version also asserted that eval return "improves over the first third" of training.
-That bar was dropped: at 150 episodes the eval trajectory on ``retirement_security`` is dominated
+The smoke test deliberately does not assert that eval return "improves over the first third" of
+training: at 150 episodes the eval trajectory on ``retirement_security`` is dominated
 by episode-to-episode variance (a single early eval can already sit near the run's peak), so the
 first-vs-last comparison flakes across platforms without indicating a real regression. The genuine
 "the agent learned a good policy" claim is documented by the committed local/manual protocol run

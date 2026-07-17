@@ -3,9 +3,9 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Episode scenario definitions and domain randomization (Plan 18 D6).
+"""Episode scenario definitions and domain randomization.
 
-Each named household scenario carries a *point* household (the legacy deterministic
+Each named household scenario carries a *point* household (the deterministic
 configuration — used exactly when randomization is off) and the spreads for drawing a
 randomized household around it. :class:`EpisodeSampler` performs the draw using the
 environment's Gymnasium ``np_random`` generator, so the same reset seed always produces the
@@ -26,9 +26,9 @@ from life_model.people.person import GenderAtBirth
 
 @dataclass(frozen=True)
 class HouseholdScenario:
-    """A named household scenario: a legacy point household plus randomization spreads."""
+    """A named household scenario: a fixed point household plus randomization spreads."""
 
-    #: The exact household used when randomization is off (the legacy point scenario).
+    #: The exact household used when randomization is off (the fixed point scenario).
     point: Dict[str, Any]
     #: Genders drawn from (uniformly) when randomizing.
     genders: Tuple[GenderAtBirth, ...] = (GenderAtBirth.MALE, GenderAtBirth.FEMALE)
@@ -47,9 +47,9 @@ class HouseholdScenario:
     economy_scenarios: Tuple[Optional[str], ...] = field(default=())
 
 
-# The four point scenarios previously hardcoded in FinancialLifeEnvGenerator, now the
-# distribution anchors. Point values must stay exactly equal to the legacy configurations so
-# that randomize=False reproduces the historical fixed households.
+# The four point household scenarios that anchor the randomization distributions. With
+# randomization off, ``randomize=False`` reproduces these exact point households, so the point
+# values are the fixed, deterministic configurations.
 HOUSEHOLD_SCENARIOS: Dict[str, HouseholdScenario] = {
     "basic": HouseholdScenario(
         point={
@@ -108,7 +108,7 @@ class EpisodeSampler:
         self.scenario = HOUSEHOLD_SCENARIOS[scenario]
 
     def point_household(self) -> Dict[str, Any]:
-        """The scenario's exact legacy point household (used when randomization is off)."""
+        """The scenario's exact fixed point household (used when randomization is off)."""
         return dict(self.scenario.point)
 
     def sample(self, rng: np.random.Generator) -> Dict[str, Any]:

@@ -3,11 +3,11 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Size-agnostic SFT entrypoint driven by one YAML config (Plan 20 D3, task 4).
+"""Size-agnostic SFT entrypoint driven by one YAML config.
 
 The same code path fine-tunes a ~100M smoke model on a laptop and a multi-billion-parameter model
-on a cluster — only the :class:`TrainConfig` YAML and the launcher differ, which is the plan's
-LLM-readiness contract. The canonical backend is HF ``transformers`` + ``peft`` + ``trl``
+on a cluster — only the :class:`TrainConfig` YAML and the launcher differ (an intentional
+LLM-readiness contract). The canonical backend is HF ``transformers`` + ``peft`` + ``trl``
 (``SFTTrainer``); the transformers stack is imported lazily inside :func:`train`, so importing
 this module (for config validation and data collation) never pulls in torch/transformers and CI
 can run those parts with no weights.
@@ -33,7 +33,7 @@ from .schema import AdviceExample
 
 
 class LoraSettings(StrictModel):
-    """LoRA/QLoRA adapter hyperparameters (D3)."""
+    """LoRA/QLoRA adapter hyperparameters."""
 
     rank: int = Field(default=16, ge=1)
     alpha: int = Field(default=32, ge=1)
@@ -210,7 +210,7 @@ def train(config: TrainConfig):
         dataset_text_field="text",
     )
     # trl renamed max_seq_length -> max_length in newer releases; support both so the same code
-    # path (D3) runs across the version range in requirements-slm.txt.
+    # path runs across the version range in requirements-slm.txt.
     sft_params = set(inspect.signature(SFTConfig.__init__).parameters)
     sft_kwargs["max_length" if "max_length" in sft_params else "max_seq_length"] = config.seq_len
 
@@ -226,7 +226,7 @@ def train(config: TrainConfig):
 
 
 def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Fine-tune the SLM adviser (Plan 20 D3).")
+    parser = argparse.ArgumentParser(description="Fine-tune the SLM adviser.")
     parser.add_argument("config", help="Path to the TrainConfig YAML.")
     parser.add_argument(
         "--validate-only", action="store_true", help="Validate the config (and dataset presence) without training."
