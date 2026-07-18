@@ -88,9 +88,7 @@ def parse_household(text: str) -> Dict[str, Any]:
     """
     economy = _ECONOMY_RE.search(text).group(1)
     children_match = _CHILDREN_RE.search(text)
-    children_ages = (
-        [int(a) for a in children_match.group(1).split(",")] if children_match is not None else []
-    )
+    children_ages = [int(a) for a in children_match.group(1).split(",")] if children_match is not None else []
     healthcare_match = _HEALTHCARE_RE.search(text)
     models_healthcare = healthcare_match is not None and healthcare_match.group(1) is None
     return {
