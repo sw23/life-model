@@ -18,12 +18,12 @@ pyyaml>=6.0
 # Pin ranges, not exact versions, so the same file works across the wide hardware matrix the plan
 # targets (laptop GPU → cluster). Required only for training runs (`slm.train`) and for running a
 # real local model; the schema/serializer/scoring/eval/tool-loop paths and CI never need them.
-transformers>=4.44
-peft>=0.12
-trl>=0.9
-datasets>=2.20
-accelerate>=0.33
-torch>=2.2.2
+transformers>=5.14.1
+peft>=0.19.1
+trl>=1.8.0
+datasets>=5.0.0
+accelerate>=1.14.0
+torch>=2.13.0
 
 # --- optional Apple-silicon backend (nice-to-have) ---
 # mlx>=0.15
