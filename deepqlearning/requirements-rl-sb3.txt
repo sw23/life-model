@@ -7,4 +7,4 @@
 #
 #   pip install -r requirements-rl.txt -r requirements-rl-sb3.txt
 #
-stable-baselines3>=2.3.0
+stable-baselines3>=2.9.0
