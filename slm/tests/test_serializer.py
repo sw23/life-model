@@ -46,6 +46,28 @@ def test_round_trip_recovers_economy_scenario():
     assert parse_household(render_household(p))["economy_scenario"] == "recession"
 
 
+def test_round_trip_recovers_children_and_healthcare():
+    p = _profile(children_ages=[2, 5, 11], models_healthcare=True)
+    recovered = parse_household(render_household(p))
+    assert recovered["children_ages"] == [2, 5, 11]
+    assert recovered["models_healthcare"] is True
+
+
+def test_round_trip_defaults_no_children_no_healthcare():
+    recovered = parse_household(render_household(_profile()))
+    assert recovered["children_ages"] == []
+    assert recovered["models_healthcare"] is False
+
+
+def test_children_and_healthcare_surfaced_in_text():
+    text = render_household(_profile(children_ages=[4], models_healthcare=True))
+    assert "1 child (age 4)" in text
+    assert "Healthcare costs" in text and "are modeled" in text
+    no_kids = render_household(_profile())
+    assert "no children" in no_kids
+    assert "not modeled" in no_kids
+
+
 def test_text_mentions_key_facts():
     text = render_household(_profile())
     assert "mid_career" in text

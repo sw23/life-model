@@ -46,6 +46,11 @@ class HouseholdProfile(StrictModel):
     initial_bank_balance: float
     initial_spending: float = Field(ge=0)
     economy_scenario: Optional[str] = None
+    # Household composition. ``children_ages`` are the ages (at the start year) of modeled child
+    # dependents; ``models_healthcare`` marks that age-banded medical costs and Medicare premiums
+    # are priced for the person. Defaults keep older/simple households unchanged.
+    children_ages: List[int] = Field(default_factory=list)
+    models_healthcare: bool = False
 
 
 class ScoredCandidate(StrictModel):

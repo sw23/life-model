@@ -30,6 +30,9 @@ from life_model.account.traditional_IRA import TraditionalIRA
 from life_model.base_classes import FinancialAccount
 from life_model.config.financial_config import FinancialConfig
 from life_model.config.scenarios import get_scenario
+from life_model.dependents.child import Child
+from life_model.healthcare.medical_costs import MedicalCosts
+from life_model.healthcare.medicare import Medicare
 from life_model.limits import required_min_distrib, rmd_start_age
 from life_model.model import LifeModel
 from life_model.people.family import Family
@@ -157,6 +160,13 @@ class FinancialLifeEnv(gym.Env):
             # Household scenario whose distributions are used when reset(options={"randomize":
             # True}) draws a randomized household.
             "household_scenario": "basic",
+            # Household composition (opt-in; both default to "off" so existing scenarios build the
+            # same single-earner household as before). ``children_ages`` is the ages, at the start
+            # year, of modeled child dependents (each attached as a life_model Child). When
+            # ``models_healthcare`` is set, the person also gets age-banded medical costs and, from
+            # the Medicare eligibility age, Medicare premiums.
+            "children_ages": (),
+            "models_healthcare": False,
         }
 
         if config:
@@ -217,6 +227,8 @@ class FinancialLifeEnv(gym.Env):
             "initial_salary",
             "initial_bank_balance",
             "initial_spending",
+            "children_ages",
+            "models_healthcare",
         )
         household: Dict[str, Any] = {key: self.config[key] for key in household_keys}
         household["economy_scenario"] = self.config["economy_scenario"]
@@ -314,6 +326,18 @@ class FinancialLifeEnv(gym.Env):
         self.traditional_ira = TraditionalIRA(person=self.person)
         self.roth_ira = RothIRA(person=self.person)
         self.hsa = HealthSavingsAccount(person=self.person, hsa_type=HSAType.INDIVIDUAL)
+
+        # Optional household composition (defaults off, so a household that sets neither builds the
+        # same person as before). Children incur age-banded dependent costs; healthcare adds the
+        # age-banded medical-cost curve plus Medicare premiums from the eligibility age. All of
+        # these settle through the person's spending, so they reduce the money the agent can save.
+        self.children = [
+            Child(self.person, f"Child{i + 1}", self.model.start_year - int(age))
+            for i, age in enumerate(household.get("children_ages", ()) or ())
+        ]
+        if household.get("models_healthcare", False):
+            self.medical_costs = MedicalCosts(self.person)
+            self.medicare = Medicare(self.person)
 
         # Action executor
         self.action_executor = ActionExecutor(self.model)

@@ -15,12 +15,17 @@ generated rationales are certified by Monte Carlo simulation rather than asserte
 
 ## Fidelity ceiling (read before trusting any numbers)
 
-Advice fidelity is capped by what the simulator models. Until Plans 14–15 land, the simulator
-prices **no children and no healthcare** — the two biggest household expenses — so a model
-distilled from it will be confidently wrong about them. Every dataset stamps the simulator commit
-and config hash in its datasheet, so stale data is detectable. **Treat all pre-14/15 models as
-pipeline-validation artifacts, not publishable advisers.** The committed dataset sample and eval
-report in this directory are explicitly at *pipeline-validation scale*, not a production run.
+Advice fidelity is capped by what the **pipeline actually scores**. Scored households now include
+child dependents (age-banded childcare / school / college costs) and healthcare (the age-related
+medical-cost curve plus Medicare premiums from the eligibility age), so the levers face the two
+biggest lifetime household expenses rather than a bare single-earner. What is still *not* priced
+here caps fidelity further: no spouse/second earner, no explicit housing purchase, and children are
+drawn synthetically (0–3 dependents with plausible ages) rather than from real household
+demographics. Every dataset stamps the simulator commit and config hash in its datasheet, so data
+generated against an older configuration is detectable after the fact. **Treat any model distilled
+from a pipeline-validation dataset as a pipeline-validation artifact, not a publishable adviser.**
+The committed dataset sample and eval report in this directory are explicitly at
+*pipeline-validation scale*, not a production run.
 
 ## Pipeline
 
@@ -61,18 +66,21 @@ gymnasium + pydantic. The **training** stack (`transformers`, `peft`, `trl`, `da
 ## Committed artifacts (pipeline-validation scale)
 
 * `slm/data/sample_dataset.jsonl` + `.datasheet.json` — 175 examples (160 decisions across the
-  four household scenarios, 15 refusals), seed 20, 16 trials/candidate. Regeneration is
-  byte-identical, including across `--workers` values.
+  four household scenarios, 15 refusals), seed 20, 16 trials/candidate. Every scored household
+  prices healthcare (age-banded medical costs + Medicare) and 126/160 also carry child dependents
+  (0–3 kids at plausible ages). Regeneration is byte-identical, including across `--workers` values.
 * `slm/reports/adviser_eval.json` (produced by `slm/reports/run_eval.py`) — oracle vs
   distilled-stub vs tool-loop on 32 held-out households (seed 777) plus the held-out
   `recession` economy, with per-condition heuristic baselines, parse/faithfulness/refusal rates.
 
 Two honest caveats, both artifacts of pipeline-validation scale:
 
-1. **Label skew.** At 16 trials nearly every candidate keeps these easy households solvent
-   (success-rate ties), so the argmax falls through to the median-terminal-wealth tie-break and
-   `max_roth_401k` wins 151/160 decision examples. A production dataset needs harder households
-   (post-14/15 expenses), more trials, and scenario spreads wide enough to differentiate levers.
+1. **Label skew.** At 16 trials many candidates still tie on the (now harder) households'
+   success rate, so the argmax often falls through to the median-terminal-wealth tie-break and
+   `max_roth_401k` wins 120/160 decision examples — down from 151/160 before children/healthcare
+   were priced, with the remaining 40 now spread across the other five levers. A production dataset
+   needs still-harder households (spouse/second earner, explicit housing), more trials, and scenario
+   spreads wide enough to separate the levers further.
 2. **Cross-seed faithfulness.** The eval harness re-scores households on its own seeds, so the
    numeric-faithfulness gate demands that cited numbers reproduce across independent Monte Carlo
    draws. At 16 trials the noise on dollar medians exceeds the strict 2% tolerance, which is why
@@ -89,7 +97,7 @@ Everything is deterministic under a seed (same seed → byte-identical JSONL).
 python -m slm.generate_data --scenarios basic,high_earner,low_earner,mid_career \
     --per-scenario 40 --n-trials 16 --seed 20 --workers 4 \
     --out slm/data/sample_dataset.jsonl \
-    --scale-note "pipeline-validation scale (pre-Plans-14/15; not a publishable adviser)"
+    --scale-note "pipeline-validation scale (not a publishable adviser)"
 
 # 2. Produce the committed eval report (oracle / distilled-stub / tool-loop; no weights needed).
 python slm/reports/run_eval.py

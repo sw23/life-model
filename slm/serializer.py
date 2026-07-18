@@ -29,6 +29,19 @@ def render_household(profile: HouseholdProfile) -> str:
     """Render a household profile as a faithful natural-language paragraph."""
     years_to_retirement = max(0, profile.person_retirement_age - profile.person_start_age)
     economy = profile.economy_scenario or "baseline"
+    if profile.children_ages:
+        n = len(profile.children_ages)
+        noun = "child" if n == 1 else "children"
+        ages_word = "age" if n == 1 else "ages"
+        ages = ", ".join(str(a) for a in profile.children_ages)
+        children_clause = f"The household has {n} {noun} ({ages_word} {ages}). "
+    else:
+        children_clause = "The household has no children. "
+    healthcare_clause = (
+        "Healthcare costs (age-related medical spending and Medicare) are modeled."
+        if profile.models_healthcare
+        else "Healthcare costs are not modeled."
+    )
     return (
         f"Household profile ({profile.scenario} scenario). "
         f"A {profile.person_start_age}-year-old {profile.person_gender.lower()} person "
@@ -37,7 +50,9 @@ def render_household(profile: HouseholdProfile) -> str:
         f"Current salary is {_fmt_money(profile.initial_salary)} per year, "
         f"annual spending is {_fmt_money(profile.initial_spending)}, "
         f"and the starting bank balance is {_fmt_money(profile.initial_bank_balance)}. "
-        f"Economic outlook: {economy}."
+        f"Economic outlook: {economy}. "
+        f"{children_clause}"
+        f"{healthcare_clause}"
     )
 
 
@@ -52,6 +67,8 @@ _SALARY_RE = re.compile(r"salary is \$([\d,]+)")
 _SPENDING_RE = re.compile(r"spending is \$([\d,]+)")
 _BANK_RE = re.compile(r"bank balance is \$([\d,]+)")
 _ECONOMY_RE = re.compile(r"Economic outlook: ([A-Za-z0-9_]+)")
+_CHILDREN_RE = re.compile(r"has \d+ (?:child|children) \(ages? ([\d, ]+)\)")
+_HEALTHCARE_RE = re.compile(r"Healthcare costs[^.]* are (not )?modeled")
 
 
 def _money(text: str, pattern: re.Pattern) -> int:
@@ -65,9 +82,17 @@ def parse_household(text: str) -> Dict[str, Any]:
     """Recover the household fields from rendered text (inverse of :func:`render_household`).
 
     The economy is returned as ``None`` when the outlook is the ``baseline`` (no named scenario),
-    matching how :func:`render_household` renders a missing ``economy_scenario``.
+    matching how :func:`render_household` renders a missing ``economy_scenario``. Children and
+    healthcare default to "none"/"not modeled" when the text omits those clauses, so text produced
+    by an older renderer still parses.
     """
     economy = _ECONOMY_RE.search(text).group(1)
+    children_match = _CHILDREN_RE.search(text)
+    children_ages = (
+        [int(a) for a in children_match.group(1).split(",")] if children_match is not None else []
+    )
+    healthcare_match = _HEALTHCARE_RE.search(text)
+    models_healthcare = healthcare_match is not None and healthcare_match.group(1) is None
     return {
         "scenario": _SCENARIO_RE.search(text).group(1),
         "person_start_age": int(_START_AGE_RE.search(text).group(1)),
@@ -77,4 +102,6 @@ def parse_household(text: str) -> Dict[str, Any]:
         "initial_spending": _money(text, _SPENDING_RE),
         "initial_bank_balance": _money(text, _BANK_RE),
         "economy_scenario": None if economy == "baseline" else economy,
+        "children_ages": children_ages,
+        "models_healthcare": models_healthcare,
     }

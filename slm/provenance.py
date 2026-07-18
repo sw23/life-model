@@ -7,8 +7,8 @@
 
 Advice provenance must be auditable and staleness must be detectable: the datasheet stamps the
 simulator commit and a hash of the financial-config data the scoring ran against, so a dataset
-generated before Plans 14/15 land (which change what the simulator prices) is identifiable after
-the fact (Risks note).
+generated against an older simulator (one that priced a different set of household expenses) is
+identifiable after the fact (Risks note).
 """
 
 import hashlib

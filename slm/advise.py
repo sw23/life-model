@@ -73,6 +73,8 @@ def _household_from_text(text: str) -> Dict:
         "initial_salary": float(parsed["initial_salary"]),
         "initial_bank_balance": float(parsed["initial_bank_balance"]),
         "initial_spending": float(parsed["initial_spending"]),
+        "children_ages": list(parsed["children_ages"]),
+        "models_healthcare": parsed["models_healthcare"],
     }
     if parsed["economy_scenario"] is not None:
         household["economy_scenario"] = parsed["economy_scenario"]

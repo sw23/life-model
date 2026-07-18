@@ -266,7 +266,7 @@ class FinancialDQNAgent:
 
         self.state_size = state_size
         self.action_size = action_size
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = self._select_device(self.config.get("device"))
 
         # Initialize networks
         if self.config["use_dueling"]:
@@ -304,6 +304,28 @@ class FinancialDQNAgent:
         print(f"Using Dueling DQN: {self.config['use_dueling']}")
         print(f"Using Double DQN: {self.config['use_double_dqn']}")
         print(f"Using Prioritized Replay: {self.use_per}, n-step: {self.config['n_step']}")
+
+    @staticmethod
+    def _select_device(preference: Optional[str] = None) -> torch.device:
+        """Pick a compute device: CUDA when available, otherwise CPU. Apple MPS (Metal) is used
+        only when explicitly requested (``preference="mps"``).
+
+        ``preference`` may force a specific backend (``"cuda"``, ``"mps"``, ``"cpu"``); an
+        unavailable choice falls back to CPU. MPS is opt-in (never auto-selected) because for this
+        workload the per-step cost is dominated by the CPU-bound ``life_model`` simulation and the
+        network is small, so MPS typically performs worse than CPU for single-env training — the
+        vectorized trainer's environment parallelism is the larger lever.
+        """
+        if preference:
+            pref = preference.lower()
+            if pref == "cuda" and torch.cuda.is_available():
+                return torch.device("cuda")
+            if pref == "mps" and torch.backends.mps.is_available():
+                return torch.device("mps")
+            return torch.device("cpu")
+        if torch.cuda.is_available():
+            return torch.device("cuda")
+        return torch.device("cpu")
 
     def _per_beta(self) -> float:
         """Current PER importance-sampling exponent, annealed from ``per_beta_start`` to 1.0."""

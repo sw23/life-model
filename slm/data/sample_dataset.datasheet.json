@@ -1,6 +1,6 @@
 {
-  "config_hash": "91a8e702e6bb2ee0",
-  "created_utc": "2026-07-13T05:55:58+00:00",
+  "config_hash": "c39a5e5d8243cd75",
+  "created_utc": "2026-07-18T06:24:20+00:00",
   "decision_space": [
     "contribution_waterfall",
     "age_glide",
@@ -23,8 +23,8 @@
   "n_trials_per_candidate": 16,
   "name": "slm/data/sample_dataset.jsonl",
   "reward_preset": "retirement_security",
-  "scale_note": "pipeline-validation scale (pre-Plans-14/15; not a publishable adviser)",
+  "scale_note": "pipeline-validation scale (not a publishable adviser)",
   "schema_version": 1,
-  "simulator_commit": "af454e9c531538967b3804dd9cea1800b59be7c4",
+  "simulator_commit": "dfac8798d2e136d650ea7e29d48fa30a688048c8",
   "teacher_gating": "DQN excluded (protocol report: verdict_intelligent=false, ci_does_not_overlap_best=false); candidates = heuristics + Roth/pre-tax levers, label = grid argmax."
 }

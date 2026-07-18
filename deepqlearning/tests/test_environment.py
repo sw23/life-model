@@ -49,6 +49,58 @@ class TestGymnasiumAPI(unittest.TestCase):
         self.assertEqual(len(env.person.all_retirement_accounts), 1)
 
 
+class TestHouseholdComposition(unittest.TestCase):
+    """Opt-in children and healthcare attach to the scored household and cost real money."""
+
+    def test_default_household_has_no_children_or_healthcare(self):
+        env = FinancialLifeEnv()
+        env.reset(seed=0)
+        self.assertEqual(env.children, [])
+        self.assertEqual(list(env.person.children), [])
+        self.assertFalse(hasattr(env, "medicare"))
+        self.assertFalse(hasattr(env, "medical_costs"))
+
+    def test_children_and_healthcare_attach(self):
+        env = FinancialLifeEnv({"children_ages": [2, 5], "models_healthcare": True})
+        env.reset(seed=0)
+        self.assertEqual(len(env.children), 2)
+        self.assertEqual(sorted(c.age for c in env.children), [2, 5])
+        self.assertEqual(len(list(env.person.children)), 2)
+        self.assertTrue(hasattr(env, "medicare"))
+        self.assertTrue(hasattr(env, "medical_costs"))
+
+    def test_children_and_healthcare_are_charged_each_year(self):
+        env = FinancialLifeEnv({"children_ages": [3], "models_healthcare": True})
+        env.reset(seed=0)
+        env.step(_no_action(env))
+        # The child (age 3, in the childcare band) and the age-banded medical curve both charge a
+        # positive cost through the person's spending during the simulated year.
+        self.assertGreater(env.children[0].stat_dependent_costs, 0)
+        self.assertGreater(env.medical_costs.stat_medical_costs, 0)
+
+    def test_children_and_healthcare_reduce_net_worth(self):
+        # A young, high-earning, low-spending household over a short horizon: solvent and with
+        # negligible mortality, so the only material difference is the dependent + medical burden.
+        base = {
+            "person_start_age": 35,
+            "person_retirement_age": 65,
+            "initial_salary": 150000,
+            "initial_spending": 30000,
+            "initial_bank_balance": 80000,
+        }
+
+        def net_worth_after(config, steps=8):
+            env = FinancialLifeEnv(config)
+            env.reset(seed=3)
+            for _ in range(steps):
+                env.step(_no_action(env))
+            return env._calculate_net_worth()
+
+        plain = net_worth_after(dict(base))
+        burdened = net_worth_after({**base, "children_ages": [3], "models_healthcare": True})
+        self.assertLess(burdened, plain)
+
+
 class TestSeedingDeterminism(unittest.TestCase):
     def test_same_seed_reproduces_trajectory(self):
         def run(seed):

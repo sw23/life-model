@@ -89,6 +89,8 @@ def _to_profile(scenario: str, household: Dict) -> HouseholdProfile:
         initial_bank_balance=float(household["initial_bank_balance"]),
         initial_spending=float(household["initial_spending"]),
         economy_scenario=household.get("economy_scenario"),
+        children_ages=[int(a) for a in household.get("children_ages", [])],
+        models_healthcare=bool(household.get("models_healthcare", False)),
     )
 
 
@@ -154,6 +156,22 @@ def _refusal_examples(provenance: Provenance) -> List[AdviceExample]:
     return examples
 
 
+def _augment_household(rng: np.random.Generator, household: Dict) -> Dict:
+    """Add opt-in children and healthcare to a sampled household (deterministic under ``rng``).
+
+    Healthcare (age-banded medical spending plus Medicare from the eligibility age) is priced for
+    every household — it is a lifetime expense the simulator now models. Children are drawn as 0-3
+    dependents with ages plausible for the person's start age, so households differ in dependent
+    burden and the levers face households the earlier single-earner draws never exercised.
+    """
+    start_age = int(household["person_start_age"])
+    max_child_age = max(0, min(18, start_age - 18))
+    num_children = int(rng.integers(0, 4))
+    household["children_ages"] = sorted(int(rng.integers(0, max_child_age + 1)) for _ in range(num_children))
+    household["models_healthcare"] = True
+    return household
+
+
 def _sample_households(scenarios: List[str], n_per_scenario: int, generation_seed: int) -> List[Tuple[str, Dict, int]]:
     """Draw every household sequentially from one seeded RNG (scenario-major, deterministic)."""
     rng = np.random.default_rng(generation_seed)
@@ -162,7 +180,8 @@ def _sample_households(scenarios: List[str], n_per_scenario: int, generation_see
     for scenario in scenarios:
         sampler = EpisodeSampler(scenario)
         for _ in range(n_per_scenario):
-            items.append((scenario, sampler.sample(rng), index))
+            household = _augment_household(rng, sampler.sample(rng))
+            items.append((scenario, household, index))
             index += 1
     return items
 
