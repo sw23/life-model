@@ -14,8 +14,11 @@ from .base_config import ScenarioConfig
 from .models import (
     AccountsConfig,
     DebtConfig,
+    DependentsConfig,
     EconomyConfig,
+    EstateConfig,
     FinancialConfigModel,
+    HealthcareConfig,
     HousingConfig,
     InsuranceConfig,
     RetirementConfig,
@@ -33,8 +36,8 @@ class FinancialConfig(ScenarioConfig):
 
     The validated Pydantic model (:class:`FinancialConfigModel`) is *the* runtime
     object: domain code reads typed attributes via the ``tax``/``retirement``/...
-    properties instead of navigating an untyped dict. The legacy ``get(dot_key)``
-    accessor remains during the migration but emits a ``DeprecationWarning``.
+    properties instead of navigating an untyped dict. The ``get(dot_key)``
+    accessor is deprecated and emits a ``DeprecationWarning``.
     """
 
     def __init__(self, config_file: Optional[str] = None, scenario: Optional[str] = None):
@@ -104,8 +107,20 @@ class FinancialConfig(ScenarioConfig):
         return self._model.housing
 
     @property
+    def estate(self) -> EstateConfig:
+        return self._model.estate
+
+    @property
     def economy(self) -> EconomyConfig:
         return self._model.economy
+
+    @property
+    def healthcare(self) -> HealthcareConfig:
+        return self._model.healthcare
+
+    @property
+    def dependents(self) -> DependentsConfig:
+        return self._model.dependents
 
     def tax_year(self, year: int, inflation_factor: float = 1.0) -> YearlyTaxParameters:
         """Get the tax parameters applicable to a given calendar year.
@@ -167,8 +182,11 @@ class FinancialConfig(ScenarioConfig):
         sd = data["standard_deduction"]
         sd["single"] = round_to(sd["single"] * factor, 50)
         sd["married_filing_jointly"] = round_to(sd["married_filing_jointly"] * factor, 50)
-        for status in ("single", "married_filing_jointly"):
-            data["tax_brackets"][status] = [scale_bracket(b) for b in data["tax_brackets"][status]]
+        if sd.get("head_of_household") is not None:
+            sd["head_of_household"] = round_to(sd["head_of_household"] * factor, 50)
+        for status in ("single", "married_filing_jointly", "head_of_household"):
+            if data["tax_brackets"].get(status) is not None:
+                data["tax_brackets"][status] = [scale_bracket(b) for b in data["tax_brackets"][status]]
         data["ss_wage_base"] = round_to(data["ss_wage_base"] * factor, 300)
         data["limit_401k_base"] = round_to(data["limit_401k_base"] * factor, 500)
         data["limit_401k_catch_up"] = round_to(data["limit_401k_catch_up"] * factor, 500)
@@ -184,14 +202,26 @@ class FinancialConfig(ScenarioConfig):
     # Convenience methods (typed, read from the model)
     # ------------------------------------------------------------------
     def get_federal_standard_deduction(self, filing_status: "FilingStatus") -> float:
-        """Get federal standard deduction for filing status"""
+        """Get federal standard deduction for filing status.
+
+        HEAD_OF_HOUSEHOLD uses its own configured value when present and falls back to
+        ``single`` when the config carries no head_of_household data (documented behavior).
+        """
         deduction = self._model.tax.federal.standard_deduction
-        return deduction.single if filing_status.value == 1 else deduction.married_filing_jointly
+        if filing_status.value == 2:
+            return deduction.married_filing_jointly
+        if filing_status.value == 3 and deduction.head_of_household is not None:
+            return deduction.head_of_household
+        return deduction.single
 
     def get_federal_tax_brackets(self, filing_status: "FilingStatus") -> list:
-        """Get federal tax brackets for filing status"""
+        """Get federal tax brackets for filing status (HEAD_OF_HOUSEHOLD falls back to single)."""
         brackets = self._model.tax.federal.tax_brackets
-        return brackets.single if filing_status.value == 1 else brackets.married_filing_jointly
+        if filing_status.value == 2:
+            return brackets.married_filing_jointly
+        if filing_status.value == 3 and brackets.head_of_household is not None:
+            return brackets.head_of_household
+        return brackets.single
 
     def get_job_401k_contrib_limit(self, age: int) -> int:
         """Get 401k contribution limit based on age"""

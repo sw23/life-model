@@ -139,3 +139,8 @@ dmypy.json
 deepqlearning/models/
 deepqlearning/plots/
 deepqlearning/results/
+
+# SLM adviser: never commit model weights/checkpoints or large generated datasets;
+# only the small committed sample + datasheet + reports live in git.
+slm/checkpoints/
+slm/data/dataset.jsonl

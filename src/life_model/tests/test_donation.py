@@ -75,7 +75,7 @@ class TestDonation(unittest.TestCase):
 
         Donations happen in pre_step (before the tax unit settles spending/bills) so the
         deduction is available at tax time. A donation is limited to the cash on hand, and any
-        spending that can no longer be covered becomes debt.
+        spending that cannot be covered becomes debt.
         """
         # Set balance less than the donation amount.
         self.bank_account.balance = 3000

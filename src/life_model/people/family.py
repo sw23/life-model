@@ -5,7 +5,6 @@
 
 from ..model import LifeModel, LifeModelAgent
 from ..tax.federal import FilingStatus, get_federal_standard_deduction
-from ..tax.tax import TaxesDue, compute_taxes
 from .tax_unit import TaxUnit
 
 
@@ -87,23 +86,10 @@ class Family(LifeModelAgent):
             spending_balance = member.pay_bills(spending_balance)
         return spending_balance
 
-    def get_income_taxes_due(self, additional_income: float = 0) -> TaxesDue:
-        """Get income taxes due for the year.
-
-        FICA is computed per member on their own wages; ``additional_income`` is ordinary income
-        but not FICA wages.
-
-        Args:
-            additional_income (float, optional): Additional ordinary income to include. Defaults to 0.
-
-        Returns:
-            TaxesDue: Taxes due, split by type.
-        """
-        ordinary_income = self.combined_taxable_income + additional_income
-        wage_incomes = [member.fica_wages for member in self.members]
-        return compute_taxes(
-            ordinary_income, self.federal_deductions, self.filing_status, wage_incomes, self.model.config
-        )
+    # NOTE: Family deliberately has no get_income_taxes_due. Tax math happens exclusively in
+    # TaxUnit (see step below), which is state-pack- and SALT-aware; a family-level
+    # computation would silently use the DEFAULT flat state rate and ignore both. Use
+    # TaxUnit.build_units(family) and the units' get_income_taxes_due if unit taxes are needed.
 
     def step(self):
         # Family performs no tax math. It groups its members into filing units and lets each

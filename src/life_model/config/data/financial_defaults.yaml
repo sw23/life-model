@@ -16,6 +16,7 @@ tax:
     standard_deduction:
       single: 16100
       married_filing_jointly: 32200
+      head_of_household: 24150
     tax_brackets:
       single:
         - [0, 12400, 10]
@@ -33,6 +34,14 @@ tax:
         - [403551, 512450, 32]
         - [512451, 768700, 35]
         - [768701, .inf, 37]
+      head_of_household:
+        - [0, 17700, 10]
+        - [17701, 67450, 12]
+        - [67451, 105700, 22]
+        - [105701, 201775, 24]
+        - [201776, 256200, 32]
+        - [256201, 640600, 35]
+        - [640601, .inf, 37]
     # vintage: 2026, source: IRC §163(h)(3) (TCJA acquisition-debt limit); §164(b)(6) SALT cap (OBBBA)
     mortgage_interest_debt_limit: 750000
     salt_deduction_cap: 40000
@@ -40,7 +49,130 @@ tax:
     estate_tax_exemption: 15000000
     estate_tax_rate: 40.0  # percentage
   state:
+    # Flat rate that is the authoritative source for the DEFAULT pack: the config synthesizes
+    # packs.DEFAULT from it, so a config or scenario that sets only tax.state.tax_rate loads as a
+    # single flat-rate pack.
     tax_rate: 6.0  # percentage
+    # Residents with no explicit Person(state=...) fall back to this pack. DEFAULT applies the flat
+    # tax_rate to the federal AGI base.
+    default_state: DEFAULT
+    # Per-state tax packs. Each pack has exactly one of flat_rate or brackets
+    # ([lower, upper, rate] rows per filing status; missing statuses fall back to single), an
+    # optional state standard deduction (default 0), and the two base flags:
+    #   retirement_income_taxable — pre-tax 401k/IRA distributions and RMDs (default true)
+    #   ss_taxable — the federally taxable portion of Social Security benefits (default false;
+    #                most states exempt SS entirely)
+    # Local/city income taxes (e.g. NYC), state EITCs, and state-specific credits are out of
+    # scope. Refresh these packs annually against each state DOR (see refresh-financial-data).
+    packs:
+      # vintage: 2025, source: CA FTB 2025 Form 540 Tax Rate Schedules (X/Y) and 2025 standard
+      # deduction; top bracket folds in the 1% Mental Health Services Tax (R&TC §17043) on
+      # taxable income over $1M. — TODO(verify): FTB PDF unreachable; thresholds cross-checked
+      # against secondary sources only, and the §17043 $1M MHST threshold (not doubled for MFJ)
+      # should be confirmed against the FTB schedule.
+      CA:
+        brackets:
+          single:
+            - [0, 10756, 1.0]
+            - [10757, 25499, 2.0]
+            - [25500, 40245, 4.0]
+            - [40246, 55866, 6.0]
+            - [55867, 70612, 8.0]
+            - [70613, 360659, 9.3]
+            - [360660, 432787, 10.3]
+            - [432788, 721314, 11.3]
+            - [721315, 1000000, 12.3]
+            - [1000001, .inf, 13.3]  # 12.3% + 1% MHST over $1M
+          married_filing_jointly:
+            - [0, 21512, 1.0]
+            - [21513, 50998, 2.0]
+            - [50999, 80490, 4.0]
+            - [80491, 111732, 6.0]
+            - [111733, 141224, 8.0]
+            - [141225, 721318, 9.3]
+            - [721319, 865574, 10.3]
+            - [865575, 1000000, 11.3]
+            - [1000001, 1442628, 12.3]   # 11.3% + 1% MHST over $1M
+            - [1442629, .inf, 13.3]      # 12.3% + 1% MHST
+        standard_deduction:
+          single: 5706
+          married_filing_jointly: 11412
+        # CA taxes retirement distributions in full and exempts Social Security.
+        retirement_income_taxable: true
+        ss_taxable: false
+      # vintage: 2025, source: NY DTF Form IT-201 instructions, 2025 tax rate schedules and
+      # standard deduction. — TODO(verify): thresholds cross-checked against secondary sources;
+      # NY's supplemental "tax benefit recapture" above $107,650 NYAGI and the $20k
+      # private-pension/IRA exclusion for 59.5+ are not modeled.
+      NY:
+        brackets:
+          single:
+            - [0, 8500, 4.0]
+            - [8501, 11700, 4.5]
+            - [11701, 13900, 5.25]
+            - [13901, 80650, 5.5]
+            - [80651, 215400, 6.0]
+            - [215401, 1077550, 6.85]
+            - [1077551, 5000000, 9.65]
+            - [5000001, 25000000, 10.3]
+            - [25000001, .inf, 10.9]
+          married_filing_jointly:
+            - [0, 17150, 4.0]
+            - [17151, 23600, 4.5]
+            - [23601, 27900, 5.25]
+            - [27901, 161550, 5.5]
+            - [161551, 323200, 6.0]
+            - [323201, 2155350, 6.85]
+            - [2155351, 5000000, 9.65]
+            - [5000001, 25000000, 10.3]
+            - [25000001, .inf, 10.9]
+        standard_deduction:
+          single: 8000
+          married_filing_jointly: 16050
+        retirement_income_taxable: true  # simplification: NY's $20k retirement exclusion not modeled
+        ss_taxable: false
+      # vintage: 2025, source: TX — no state individual income tax (Tex. Const. art. VIII §24-a).
+      TX:
+        flat_rate: 0.0
+      # vintage: 2025, source: FL — no state individual income tax (Fla. Const. art. VII §5).
+      FL:
+        flat_rate: 0.0
+      # vintage: 2025, source: WA — no state individual income tax on wages/retirement income.
+      # Simplification: WA's 7% capital-gains excise (RCW 82.87) is not modeled.
+      WA:
+        flat_rate: 0.0
+      # vintage: 2025, source: PA DOR — flat personal income tax 3.07% (72 P.S. §7302);
+      # retirement-plan distributions after retirement and Social Security are not taxable
+      # compensation (61 Pa. Code §101.6). No standard deduction.
+      PA:
+        flat_rate: 3.07
+        retirement_income_taxable: false
+        ss_taxable: false
+      # vintage: 2025, source: IL DOR 2025 IL-1040 instructions — flat 4.95% (35 ILCS 5/201);
+      # federally taxed retirement income and Social Security are subtracted (IL-1040 Line 5).
+      # The exemption allowance ($2,850 single / $5,700 MFJ, 2025) is modeled as a standard
+      # deduction; its AGI phase-out over $250k/$500k is not modeled.
+      IL:
+        flat_rate: 4.95
+        retirement_income_taxable: false
+        ss_taxable: false
+        standard_deduction:
+          single: 2850
+          married_filing_jointly: 5700
+      # vintage: 2025, source: MA DOR (mass.gov "Massachusetts 4% Surtax on Taxable Income") —
+      # flat 5% plus 4% surtax on taxable income over $1,083,150 (2025, inflation-indexed),
+      # modeled as two brackets. The personal exemption ($4,400 single / $8,800 MFJ) is modeled
+      # as a standard deduction. The surtax threshold does not double for joint filers.
+      MA:
+        brackets:
+          single:
+            - [0, 1083150, 5.0]
+            - [1083151, .inf, 9.0]  # 5% + 4% surtax
+        standard_deduction:
+          single: 4400
+          married_filing_jointly: 8800
+        retirement_income_taxable: true
+        ss_taxable: false
   fica:
     # vintage: 2026, source: SSA Contribution & Benefit Base (ssa.gov/oact/cola/cbb.html)
     social_security_rate: 6.2  # percentage
@@ -395,6 +527,40 @@ housing:
     single: 250000
     married_filing_jointly: 500000
 
+# Children and dependents: age-banded cost of raising a child and the child-related
+# tax credits. Costs are nominal (start-year dollars) and grown by cumulative inflation
+# in Child.pre_step so a child born later costs later-year dollars.
+dependents:
+  # Age-banded annual cost of a child. Representative national estimates.
+  # vintage: 2024, source: Child Care Aware of America (childcare ~0-5); USDA/Brookings
+  #   child-rearing cost estimates (school age 6-17); College Board Trends in College
+  #   Pricing (college) -- placeholders, TODO(verify) against a primary cost survey.
+  childcare_annual_cost: 12000    # ages 0 through college_start_age-13 (roughly 0-5)
+  school_age_annual_cost: 8000    # school-age band (roughly 6-17)
+  college_annual_cost: 28000      # per college year; drawn from a 529 first when available
+  college_start_age: 18
+  college_years: 4
+  adult_age: 18                   # costs stop at this age (except the college band)
+  # Child Tax Credit (IRC §24 as amended by the One Big Beautiful Bill Act).
+  # vintage: 2026, source: IRC §24(h)(2)/(5) (OBBBA), Rev. Proc. 2025-32.
+  ctc_per_child: 2200
+  ctc_refundable_max: 1700
+  ctc_qualifying_age_max: 17
+  # Phase-out thresholds are statutory and not inflation-indexed.
+  # vintage: statutory, source: IRC §24(h)(3).
+  ctc_phaseout_start:
+    single: 200000
+    married_filing_jointly: 400000
+    head_of_household: 200000
+  ctc_phaseout_rate: 5.0          # percent of modified AGI over threshold ($50 per $1,000)
+# Estate settlement. inherited_pretax_mode controls how a non-spouse beneficiary receives an
+# inherited pre-tax retirement balance: "ten_year" applies the SECURE Act 10-year rule (the
+# balance keeps growing and pays out an even slice each year over ten years), while "lump_sum"
+# distributes and taxes the whole balance in the death year (the lump-sum simplification).
+# vintage: 2020, source: SECURE Act §401 (10-year rule for non-eligible designated beneficiaries)
+estate:
+  inherited_pretax_mode: ten_year  # ten_year | lump_sum
+
 # Economy-wide rates driving account returns, wage growth, and inflation. A single
 # EconomyModel per simulation reads this section and answers per-year rate queries.
 # The defaults reproduce the pre-economy per-account constants, so `mode: fixed` leaves
@@ -425,6 +591,52 @@ economy:
     equity_inflation_correlation: -0.1
     bond_inflation_correlation: -0.2
 
+# Healthcare, Medicare & long-term care. Opt-in agents (MedicalCosts, Medicare,
+# LongTermCare) read this section; a simulation with none constructed is unaffected. Dollar
+# values are vintage-stamped from CMS/SSA/Genworth/NFDA primary sources. Refresh annually via
+# the refresh-financial-data skill (Medicare Part B/D premiums, IRMAA tiers, LTC costs, funeral).
+healthcare:
+  # Age-banded out-of-pocket medical-cost curve (real start-year dollars, per person per year).
+  # max_age is the inclusive upper bound of the band. Scaled each year by cumulative inflation
+  # plus medical_inflation_premium. vintage: 2024, source: CMS NHE / MEPS OOP by age -- TODO(verify)
+  medical_cost_bands:
+    - {max_age: 39,  annual_cost: 1500}
+    - {max_age: 64,  annual_cost: 3000}
+    - {max_age: 74,  annual_cost: 6000}
+    - {max_age: 84,  annual_cost: 9000}
+    - {max_age: 200, annual_cost: 12000}
+  # Percentage points medical inflation runs above CPI.
+  # vintage: 2024, source: CMS National Health Expenditure projections -- TODO(verify)
+  medical_inflation_premium: 2.0
+  medicare:
+    eligibility_age: 65
+    # Part A is premium-free with sufficient work history (documented simplification).
+    # Premiums are MONTHLY (annualized x12 by the Medicare agent).
+    part_b_base_monthly_premium: 202.90  # vintage: 2026, source: CMS 2026 Part B fact sheet
+    part_d_base_monthly_premium: 34.50   # vintage: 2026, source: CMS Part D national base premium
+    # IRMAA tiers: applied when two-year-lookback MAGI EXCEEDS the filing-status lower bound.
+    # vintage: 2026, source: CMS 2026 Parts B fact sheet (Part B monthly); SSA Part D IRMAA.
+    irmaa_tiers:
+      - {magi_min_single: 0,      magi_min_married_filing_jointly: 0,      part_b_monthly: 202.90, part_d_monthly_surcharge: 0.0}
+      - {magi_min_single: 109000, magi_min_married_filing_jointly: 218000, part_b_monthly: 284.06, part_d_monthly_surcharge: 14.5}
+      - {magi_min_single: 137000, magi_min_married_filing_jointly: 274000, part_b_monthly: 405.80, part_d_monthly_surcharge: 37.5}
+      - {magi_min_single: 171000, magi_min_married_filing_jointly: 342000, part_b_monthly: 527.54, part_d_monthly_surcharge: 60.4}
+      - {magi_min_single: 205000, magi_min_married_filing_jointly: 410000, part_b_monthly: 649.28, part_d_monthly_surcharge: 83.3}
+      - {magi_min_single: 500000, magi_min_married_filing_jointly: 750000, part_b_monthly: 690.06, part_d_monthly_surcharge: 91.0}
+  long_term_care:
+    start_age: 65
+    # Annual hazard of entering a care episode, by age band (max_age inclusive).
+    # vintage: 2024, source: calibrated to ASPE lifetime-risk data -- TODO(verify) annual incidence
+    hazard_bands:
+      - {max_age: 74,  annual_hazard: 0.005}
+      - {max_age: 84,  annual_hazard: 0.02}
+      - {max_age: 200, annual_hazard: 0.06}
+    annual_cost: 111325       # vintage: 2024, source: Genworth/CareScout (semi-private nursing home)
+    mean_duration_years: 2.3  # vintage: 2024, source: ASPE mean paid nursing-home episode
+  funeral_cost: 8300              # vintage: 2023, source: NFDA median funeral w/ viewing and burial
+  final_year_medical_multiplier: 2.0  # vintage: 2024, source: elevated end-of-life spend -- TODO(verify)
+  medical_deduction_agi_floor: 7.5    # percent; IRC §213(a) unreimbursed-medical AGI floor
+
 # Year-indexed tax parameters (published values, 2022-2026). Accessed via
 # config.tax_year(year). Years outside the table are projected: earliest entry
 # for prior years, frozen at the latest entry for future years, most-recent
@@ -438,6 +650,7 @@ tax_years:
     standard_deduction:
       single: 12950
       married_filing_jointly: 25900
+      head_of_household: 19400
     tax_brackets:
       single:
         - [0, 10275, 10]
@@ -455,6 +668,14 @@ tax_years:
         - [340101, 431900, 32]
         - [431901, 647850, 35]
         - [647851, .inf, 37]
+      head_of_household:
+        - [0, 14650, 10]
+        - [14651, 55900, 12]
+        - [55901, 89050, 22]
+        - [89051, 170050, 24]
+        - [170051, 215950, 32]
+        - [215951, 539900, 35]
+        - [539901, .inf, 37]
     ss_wage_base: 147000
     limit_401k_base: 20500
     limit_401k_catch_up: 6500
@@ -468,6 +689,7 @@ tax_years:
     standard_deduction:
       single: 13850
       married_filing_jointly: 27700
+      head_of_household: 20800
     tax_brackets:
       single:
         - [0, 11000, 10]
@@ -485,6 +707,14 @@ tax_years:
         - [364201, 462500, 32]
         - [462501, 693750, 35]
         - [693751, .inf, 37]
+      head_of_household:
+        - [0, 15700, 10]
+        - [15701, 59850, 12]
+        - [59851, 95350, 22]
+        - [95351, 182100, 24]
+        - [182101, 231250, 32]
+        - [231251, 578100, 35]
+        - [578101, .inf, 37]
     ss_wage_base: 160200
     limit_401k_base: 22500
     limit_401k_catch_up: 7500
@@ -498,6 +728,7 @@ tax_years:
     standard_deduction:
       single: 14600
       married_filing_jointly: 29200
+      head_of_household: 21900
     tax_brackets:
       single:
         - [0, 11600, 10]
@@ -515,6 +746,14 @@ tax_years:
         - [383901, 487450, 32]
         - [487451, 731200, 35]
         - [731201, .inf, 37]
+      head_of_household:
+        - [0, 16550, 10]
+        - [16551, 63100, 12]
+        - [63101, 100500, 22]
+        - [100501, 191950, 24]
+        - [191951, 243700, 32]
+        - [243701, 609350, 35]
+        - [609351, .inf, 37]
     ss_wage_base: 168600
     limit_401k_base: 23000
     limit_401k_catch_up: 7500
@@ -528,6 +767,7 @@ tax_years:
     standard_deduction:
       single: 15750
       married_filing_jointly: 31500
+      head_of_household: 23625
     tax_brackets:
       single:
         - [0, 11925, 10]
@@ -545,6 +785,14 @@ tax_years:
         - [394601, 501050, 32]
         - [501051, 751600, 35]
         - [751601, .inf, 37]
+      head_of_household:
+        - [0, 17000, 10]
+        - [17001, 64850, 12]
+        - [64851, 103350, 22]
+        - [103351, 197300, 24]
+        - [197301, 250500, 32]
+        - [250501, 626350, 35]
+        - [626351, .inf, 37]
     ss_wage_base: 176100
     limit_401k_base: 23500
     limit_401k_catch_up: 7500
@@ -558,6 +806,7 @@ tax_years:
     standard_deduction:
       single: 16100
       married_filing_jointly: 32200
+      head_of_household: 24150
     tax_brackets:
       single:
         - [0, 12400, 10]
@@ -575,6 +824,14 @@ tax_years:
         - [403551, 512450, 32]
         - [512451, 768700, 35]
         - [768701, .inf, 37]
+      head_of_household:
+        - [0, 17700, 10]
+        - [17701, 67450, 12]
+        - [67451, 105700, 22]
+        - [105701, 201775, 24]
+        - [201776, 256200, 32]
+        - [256201, 640600, 35]
+        - [640601, .inf, 37]
     ss_wage_base: 184500
     limit_401k_base: 24500
     limit_401k_catch_up: 8000

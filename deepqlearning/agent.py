@@ -13,19 +13,25 @@ from typing import Dict, List, Optional
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
-from environment import FinancialLifeEnv
+from environment import OBS_VERSION, FinancialLifeEnv
 
-# Bumped whenever the reward shaping, action space, or checkpoint format changes so that stale
-# checkpoints/curves are flagged as incomparable on load.
-MODEL_VERSION = 2
+# Identifies the checkpoint format: reward shaping, observation layout, action space, and tensor
+# layout. A checkpoint whose version differs from the code refuses to load rather than silently
+# misaligning its weights against a different observation/action space (see ``load_model``).
+MODEL_VERSION = 4
 
-# Experience tuple for the replay buffer. ``legal_actions`` is the legal mask for ``state`` and
-# ``next_legal_actions`` is the legal mask for ``next_state`` (needed to mask bootstrapped targets).
+# Experience tuple for the replay buffer. ``legal_actions`` is the legal action list for ``state``
+# and ``next_legal_actions`` is the list for ``next_state`` (needed to mask bootstrapped targets).
+# ``reward`` is the (possibly n-step) discounted reward and ``discount`` is the discount applied to
+# the bootstrapped next-state value: ``gamma`` for a 1-step transition, ``gamma**n`` for an n-step
+# one. ``discount`` defaults to ``None`` (interpreted as plain ``gamma``) so callers/tests that
+# build 7-field experiences keep working.
 Experience = namedtuple(
-    "Experience", ["state", "action", "reward", "next_state", "done", "legal_actions", "next_legal_actions"]
+    "Experience",
+    ["state", "action", "reward", "next_state", "done", "legal_actions", "next_legal_actions", "discount"],
 )
+Experience.__new__.__defaults__ = (None,)
 
 
 class DQNNetwork(nn.Module):
@@ -115,7 +121,7 @@ class DuelingDQN(nn.Module):
 
 
 class ReplayBuffer:
-    """Experience replay buffer for training stability"""
+    """Uniform experience replay buffer for training stability."""
 
     def __init__(self, capacity: int):
         self.buffer = deque(maxlen=capacity)
@@ -130,6 +136,96 @@ class ReplayBuffer:
 
     def __len__(self):
         return len(self.buffer)
+
+
+class PrioritizedReplayBuffer:
+    """Proportional prioritized experience replay (Schaul et al. 2016).
+
+    Transitions are sampled with probability proportional to ``priority**alpha``
+    (priority = last-seen TD error), and the resulting bias is corrected with importance-sampling
+    weights ``(N * P(i))**(-beta)`` normalized by their max. New transitions enter at the current
+    max priority so they are seen at least once; :meth:`update_priorities` refreshes priorities
+    after each gradient step.
+    """
+
+    def __init__(self, capacity: int, alpha: float = 0.6, epsilon: float = 1e-6):
+        self.capacity = capacity
+        self.alpha = alpha
+        self.epsilon = epsilon
+        self.buffer: List[Experience] = []
+        self.priorities = np.zeros(capacity, dtype=np.float64)
+        self.pos = 0
+
+    def push(self, *args):
+        max_prio = self.priorities[: len(self.buffer)].max() if self.buffer else 1.0
+        if len(self.buffer) < self.capacity:
+            self.buffer.append(Experience(*args))
+        else:
+            self.buffer[self.pos] = Experience(*args)
+        self.priorities[self.pos] = max_prio
+        self.pos = (self.pos + 1) % self.capacity
+
+    def sample(self, batch_size: int, beta: float = 0.4):
+        """Return ``(experiences, indices, is_weights)``."""
+        size = len(self.buffer)
+        prios = self.priorities[:size] ** self.alpha
+        probs = prios / prios.sum()
+        indices = np.random.choice(size, batch_size, p=probs)
+        experiences = [self.buffer[i] for i in indices]
+        weights = (size * probs[indices]) ** (-beta)
+        weights = weights / weights.max()
+        return experiences, indices, weights.astype(np.float32)
+
+    def update_priorities(self, indices: np.ndarray, td_errors: np.ndarray):
+        for idx, err in zip(indices, td_errors):
+            self.priorities[idx] = abs(float(err)) + self.epsilon
+
+    def __len__(self):
+        return len(self.buffer)
+
+
+class NStepAccumulator:
+    """Builds n-step transitions for a single episode stream.
+
+    Push each ``(state, action, reward, legal_actions)`` as it happens; :meth:`push` emits the
+    finalized n-step transitions that are ready (their ``next_state`` is now known). On episode end,
+    :meth:`flush` emits the truncated-horizon transitions for the tail of the episode. Each emitted
+    transition carries ``reward = sum_{k} gamma**k r_{t+k}`` and ``discount = gamma**steps`` so the
+    learner bootstraps with the correct horizon.
+    """
+
+    def __init__(self, n_step: int, gamma: float):
+        self.n_step = max(1, int(n_step))
+        self.gamma = gamma
+        self._items: deque = deque()
+
+    def _make(self, upto: int, next_state, next_legal_actions, done) -> Experience:
+        """Build the transition starting at the oldest item, spanning ``upto`` rewards."""
+        state, action, _, legal = self._items[0]
+        reward = 0.0
+        for k in range(upto):
+            reward += (self.gamma**k) * self._items[k][2]
+        discount = self.gamma**upto
+        return Experience(state, action, float(reward), next_state, done, legal, next_legal_actions, discount)
+
+    def push(self, state, action, reward, legal_actions, next_state, next_legal_actions, done):
+        """Record a step and return a list of finalized n-step transitions (possibly empty)."""
+        self._items.append((state, action, float(reward), list(legal_actions)))
+        emitted: List[Experience] = []
+        if done:
+            emitted.extend(self.flush(next_state, next_legal_actions))
+        elif len(self._items) >= self.n_step:
+            emitted.append(self._make(self.n_step, next_state, next_legal_actions, done=False))
+            self._items.popleft()
+        return emitted
+
+    def flush(self, next_state, next_legal_actions) -> List[Experience]:
+        """Emit truncated transitions for every remaining start index at episode end."""
+        emitted: List[Experience] = []
+        while self._items:
+            emitted.append(self._make(len(self._items), next_state, next_legal_actions, done=True))
+            self._items.popleft()
+        return emitted
 
 
 class FinancialDQNAgent:
@@ -153,7 +249,16 @@ class FinancialDQNAgent:
             "hidden_sizes": [512, 256, 128],
             "use_dueling": True,
             "use_double_dqn": True,
-            "use_prioritized_replay": False,
+            # Prioritized experience replay. When True the
+            # agent uses a PrioritizedReplayBuffer with proportional sampling and IS-weight
+            # correction; alpha controls prioritization strength, beta (annealed to 1 over
+            # per_beta_steps gradient steps) controls the IS correction.
+            "use_prioritized_replay": True,
+            "per_alpha": 0.6,
+            "per_beta_start": 0.4,
+            "per_beta_steps": 100000,
+            # N-step returns. n_step=1 recovers vanilla 1-step DQN.
+            "n_step": 3,
         }
 
         if config:
@@ -161,7 +266,7 @@ class FinancialDQNAgent:
 
         self.state_size = state_size
         self.action_size = action_size
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = self._select_device(self.config.get("device"))
 
         # Initialize networks
         if self.config["use_dueling"]:
@@ -179,8 +284,14 @@ class FinancialDQNAgent:
         # Optimizer
         self.optimizer = optim.Adam(self.q_network.parameters(), lr=self.config["learning_rate"])
 
-        # Replay buffer
-        self.replay_buffer = ReplayBuffer(self.config["replay_buffer_size"])
+        # Replay buffer: prioritized or uniform.
+        self.use_per = bool(self.config["use_prioritized_replay"])
+        if self.use_per:
+            self.replay_buffer = PrioritizedReplayBuffer(
+                self.config["replay_buffer_size"], alpha=self.config["per_alpha"]
+            )
+        else:
+            self.replay_buffer = ReplayBuffer(self.config["replay_buffer_size"])
 
         # Training state
         self.epsilon = self.config["epsilon_start"]
@@ -192,6 +303,35 @@ class FinancialDQNAgent:
         print(f"Network architecture: {self.config['hidden_sizes']}")
         print(f"Using Dueling DQN: {self.config['use_dueling']}")
         print(f"Using Double DQN: {self.config['use_double_dqn']}")
+        print(f"Using Prioritized Replay: {self.use_per}, n-step: {self.config['n_step']}")
+
+    @staticmethod
+    def _select_device(preference: Optional[str] = None) -> torch.device:
+        """Pick a compute device: CUDA when available, otherwise CPU. Apple MPS (Metal) is used
+        only when explicitly requested (``preference="mps"``).
+
+        ``preference`` may force a specific backend (``"cuda"``, ``"mps"``, ``"cpu"``); an
+        unavailable choice falls back to CPU. MPS is opt-in (never auto-selected) because for this
+        workload the per-step cost is dominated by the CPU-bound ``life_model`` simulation and the
+        network is small, so MPS typically performs worse than CPU for single-env training — the
+        vectorized trainer's environment parallelism is the larger lever.
+        """
+        if preference:
+            pref = preference.lower()
+            if pref == "cuda" and torch.cuda.is_available():
+                return torch.device("cuda")
+            if pref == "mps" and torch.backends.mps.is_available():
+                return torch.device("mps")
+            return torch.device("cpu")
+        if torch.cuda.is_available():
+            return torch.device("cuda")
+        return torch.device("cpu")
+
+    def _per_beta(self) -> float:
+        """Current PER importance-sampling exponent, annealed from ``per_beta_start`` to 1.0."""
+        start = self.config["per_beta_start"]
+        frac = min(1.0, self.steps_done / max(1, self.config["per_beta_steps"]))
+        return start + (1.0 - start) * frac
 
     def _legal_mask(self, legal_actions_batch: List[List[int]]) -> torch.Tensor:
         """Build an additive mask (0 for legal, -inf for illegal) for a batch of legal-action lists."""
@@ -223,6 +363,33 @@ class FinancialDQNAgent:
             self.q_network.train()
         return action
 
+    def select_actions_batch(
+        self, states: np.ndarray, legal_actions_batch: List[List[int]], training: bool = True
+    ) -> List[int]:
+        """Epsilon-greedy action selection for a batch of states (vectorized collection).
+
+        Each row independently explores with probability ``epsilon`` (a random legal action) or
+        exploits (masked greedy). One batched forward pass serves all envs.
+        """
+        n = len(legal_actions_batch)
+        was_training = self.q_network.training
+        self.q_network.eval()
+        with torch.no_grad():
+            state_tensor = torch.tensor(np.asarray(states), dtype=torch.float32).to(self.device)
+            q_values = self.q_network(state_tensor) + self._legal_mask(legal_actions_batch)
+            greedy = q_values.argmax(dim=1).tolist()
+        if was_training:
+            self.q_network.train()
+
+        actions: List[int] = []
+        for i in range(n):
+            legal = legal_actions_batch[i]
+            if training and legal and random.random() < self.epsilon:
+                actions.append(random.choice(legal))
+            else:
+                actions.append(int(greedy[i]))
+        return actions
+
     def store_experience(
         self,
         state: np.ndarray,
@@ -232,26 +399,51 @@ class FinancialDQNAgent:
         done: bool,
         legal_actions: List[int],
         next_legal_actions: List[int],
+        discount: Optional[float] = None,
     ):
-        """Store experience in replay buffer"""
+        """Store an experience in the replay buffer.
+
+        ``discount`` is the discount to apply to the bootstrapped next-state value (``gamma`` for a
+        1-step transition, ``gamma**n`` for n-step). ``None`` (the default) is interpreted as plain
+        ``gamma`` at training time, so existing 1-step callers are unaffected.
+        """
         self.replay_buffer.push(
-            state, action, float(reward), next_state, done, list(legal_actions), list(next_legal_actions)
+            state, action, float(reward), next_state, done, list(legal_actions), list(next_legal_actions), discount
         )
 
+    def store_prebuilt(self, experience: Experience):
+        """Store an already-built :class:`Experience` (e.g. from :class:`NStepAccumulator`)."""
+        self.replay_buffer.push(*experience)
+
     def train(self) -> Optional[float]:
-        """Train the agent on a batch of experiences"""
+        """Train the agent on a batch of experiences.
+
+        Supports prioritized replay (importance-sampling-weighted loss + priority updates from the
+        TD errors) and per-transition discounts (``gamma**n`` for n-step returns). A ``None``
+        discount is treated as plain ``gamma``.
+        """
 
         if len(self.replay_buffer) < self.config["min_replay_size"]:
             return None
 
-        # Sample batch
-        experiences = self.replay_buffer.sample(self.config["batch_size"])
+        # Sample batch (prioritized returns indices + IS weights; uniform returns a plain list).
+        if self.use_per:
+            experiences, indices, is_weights = self.replay_buffer.sample(
+                self.config["batch_size"], beta=self._per_beta()
+            )
+            weights = torch.tensor(is_weights, dtype=torch.float32, device=self.device).unsqueeze(1)
+        else:
+            experiences = self.replay_buffer.sample(self.config["batch_size"])
+            indices, weights = None, None
         batch = Experience(*zip(*experiences))
 
         # Convert to tensors
+        gamma = self.config["gamma"]
+        discounts = [gamma if d is None else float(d) for d in batch.discount]
         state_batch = torch.tensor(np.array(batch.state), dtype=torch.float32).to(self.device)
         action_batch = torch.tensor(batch.action, dtype=torch.long).to(self.device)
         reward_batch = torch.tensor(batch.reward, dtype=torch.float32).to(self.device)
+        discount_batch = torch.tensor(discounts, dtype=torch.float32).to(self.device)
         next_state_batch = torch.tensor(np.array(batch.next_state), dtype=torch.float32).to(self.device)
         done_batch = torch.tensor([bool(d) for d in batch.done], dtype=torch.bool).to(self.device)
         next_legal_mask = self._legal_mask(list(batch.next_legal_actions))
@@ -277,12 +469,16 @@ class FinancialDQNAgent:
                 target_next_q = self.target_network(next_state_batch) + next_legal_mask
                 next_q_values = target_next_q.max(1)[0].unsqueeze(1)
 
-            # Compute target Q values
+            # Target uses the per-transition discount (gamma**n for n-step).
             target_q_values = reward_batch.unsqueeze(1)
-            target_q_values = target_q_values + self.config["gamma"] * next_q_values * ~done_batch.unsqueeze(1)
+            target_q_values = target_q_values + discount_batch.unsqueeze(1) * next_q_values * ~done_batch.unsqueeze(1)
 
-        # Compute loss
-        loss = F.mse_loss(current_q_values, target_q_values)
+        # Loss: TD error, IS-weighted under PER.
+        td_errors = current_q_values - target_q_values
+        if self.use_per:
+            loss = (weights * td_errors.pow(2)).mean()
+        else:
+            loss = td_errors.pow(2).mean()
 
         # Optimize
         self.optimizer.zero_grad()
@@ -292,6 +488,10 @@ class FinancialDQNAgent:
         torch.nn.utils.clip_grad_norm_(self.q_network.parameters(), 1.0)
 
         self.optimizer.step()
+
+        # Refresh priorities from the fresh TD errors.
+        if self.use_per:
+            self.replay_buffer.update_priorities(indices, td_errors.detach().squeeze(1).cpu().numpy())
 
         # Update target network
         if self.steps_done % self.config["target_update_freq"] == 0:
@@ -329,6 +529,7 @@ class FinancialDQNAgent:
         """
         checkpoint = {
             "model_version": MODEL_VERSION,
+            "obs_version": OBS_VERSION,
             "q_network_state_dict": self.q_network.state_dict(),
             "target_network_state_dict": self.target_network.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
@@ -339,6 +540,7 @@ class FinancialDQNAgent:
 
         history = {
             "model_version": MODEL_VERSION,
+            "obs_version": OBS_VERSION,
             "config": self.config,
             "training_losses": [float(x) for x in self.training_losses],
             "episode_rewards": [float(x) for x in self.episode_rewards],
@@ -349,7 +551,14 @@ class FinancialDQNAgent:
         print(f"Model saved to {filepath}")
 
     def load_model(self, filepath: str):
-        """Load the model saved by :meth:`save_model` (tensor-only ``.pt`` + JSON sidecar)."""
+        """Load the model saved by :meth:`save_model` (tensor-only ``.pt`` + JSON sidecar).
+
+        Raises:
+            ValueError: If the checkpoint's ``model_version`` or ``obs_version`` does not match
+                the current code. A checkpoint's weights are tied to a specific observation layout
+                and action space, so a version mismatch would silently misalign them — failing
+                loudly here is the guard.
+        """
         if not os.path.exists(filepath):
             print(f"Model file {filepath} not found")
             return
@@ -357,10 +566,13 @@ class FinancialDQNAgent:
         checkpoint = torch.load(filepath, map_location=self.device, weights_only=True)
 
         version = checkpoint.get("model_version")
-        if version != MODEL_VERSION:
-            print(
-                f"WARNING: checkpoint model_version {version} != current {MODEL_VERSION}; "
-                "reward shaping/action space may have changed and metrics are not comparable."
+        obs_version = checkpoint.get("obs_version")
+        if version != MODEL_VERSION or obs_version != OBS_VERSION:
+            raise ValueError(
+                f"Checkpoint {filepath!r} has model_version={version}, obs_version={obs_version}, but this "
+                f"code is model_version={MODEL_VERSION}, obs_version={OBS_VERSION}. A checkpoint is tied to a "
+                "specific observation layout and action space, so a mismatched checkpoint cannot be loaded — "
+                "retrain, or check out the code version that produced the checkpoint."
             )
 
         self.q_network.load_state_dict(checkpoint["q_network_state_dict"])
@@ -399,13 +611,13 @@ def rollout(
     agent: FinancialDQNAgent,
     training: bool = False,
     seed: Optional[int] = None,
-    amount_percentage: float = 0.1,
-    randomize_amount: bool = False,
     collect_trajectory: bool = False,
 ) -> RolloutResult:
     """Run one episode. The single episode loop used by training, evaluation, and analysis.
 
-    When ``training`` is True, experiences are stored and a gradient step is taken each step.
+    The action space is fully discrete: the policy's chosen index carries both the action
+    type and the amount bucket, so there is no separate amount to fill in. When
+    ``training`` is True, experiences are stored and a gradient step is taken each step.
     """
     state, info = env.reset(seed=seed)
     total_reward = 0.0
@@ -413,16 +625,12 @@ def rollout(
     terminated = False
     truncated = False
     trajectory: List[Dict] = []
+    # N-step accumulator for the training path. n_step=1 recovers 1-step DQN.
+    nstep = NStepAccumulator(agent.config.get("n_step", 1), agent.config["gamma"]) if training else None
 
     while True:
         legal_actions = env.get_legal_actions()
-        action_type = agent.select_action(state, legal_actions, training=training)
-
-        if randomize_amount:
-            pct = float(np.random.uniform(0, 0.3))
-        else:
-            pct = amount_percentage
-        action = {"action_type": action_type, "amount_percentage": np.array([pct], dtype=np.float32)}
+        action = agent.select_action(state, legal_actions, training=training)
 
         next_state, reward, terminated, truncated, info = env.step(action)
         done = terminated or truncated
@@ -430,7 +638,8 @@ def rollout(
 
         if training:
             next_legal_actions = env.get_legal_actions()
-            agent.store_experience(state, action_type, reward, next_state, done, legal_actions, next_legal_actions)
+            for exp in nstep.push(state, action, reward, legal_actions, next_state, next_legal_actions, done):
+                agent.store_prebuilt(exp)
             agent.train()
 
         if collect_trajectory:
@@ -489,13 +698,11 @@ class FinancialDQNTrainer:
         num_episodes = self.config["num_episodes"]
         print(f"Starting training for {num_episodes} episodes")
         print(f"Environment: {type(self.env).__name__}")
-        print(f"Action space size: {self.env.action_space['action_type'].n}")
+        print(f"Action space size: {self.env.action_space.n}")
         print(f"State space size: {self.env.observation_space.shape[0]}")
 
         for episode in range(num_episodes):
-            result = rollout(
-                self.env, self.agent, training=True, seed=self._episode_seed(episode), randomize_amount=True
-            )
+            result = rollout(self.env, self.agent, training=True, seed=self._episode_seed(episode))
             self.episode_rewards.append(result.total_reward)
             self.agent.episode_rewards.append(result.total_reward)
 

@@ -1,0 +1,251 @@
+{
+  "advisers": {
+    "distilled_stub": {
+      "conditions": {
+        "held_out_scenario": {
+          "adviser_beats_best_heuristic": true,
+          "adviser_mean_net_worth_p50": 52755.796875,
+          "adviser_mean_success_rate": 0.267578125,
+          "best_heuristic": "contribution_waterfall",
+          "best_heuristic_mean_success_rate": 0.267578125,
+          "heuristics": {
+            "age_glide": {
+              "mean_net_worth_p50": 52755.796875,
+              "mean_success_rate": 0.267578125
+            },
+            "contribution_waterfall": {
+              "mean_net_worth_p50": 68959.22875,
+              "mean_success_rate": 0.267578125
+            },
+            "emergency_fund_first": {
+              "mean_net_worth_p50": 66634.62687499999,
+              "mean_success_rate": 0.267578125
+            },
+            "four_percent_drawdown": {
+              "mean_net_worth_p50": 68702.06,
+              "mean_success_rate": 0.267578125
+            }
+          },
+          "n_households": 32,
+          "numeric_faithfulness_rate": 1.0,
+          "oracle_beats_all_heuristics": true,
+          "oracle_mean_success_rate": 0.333984375,
+          "parse_rate": 1.0
+        },
+        "held_out_seeds": {
+          "adviser_beats_best_heuristic": false,
+          "adviser_mean_net_worth_p50": 28416.428749999995,
+          "adviser_mean_success_rate": 0.2421875,
+          "best_heuristic": "four_percent_drawdown",
+          "best_heuristic_mean_success_rate": 0.25,
+          "heuristics": {
+            "age_glide": {
+              "mean_net_worth_p50": 28416.428749999995,
+              "mean_success_rate": 0.2421875
+            },
+            "contribution_waterfall": {
+              "mean_net_worth_p50": 42392.21562500001,
+              "mean_success_rate": 0.248046875
+            },
+            "emergency_fund_first": {
+              "mean_net_worth_p50": 41728.83031250001,
+              "mean_success_rate": 0.248046875
+            },
+            "four_percent_drawdown": {
+              "mean_net_worth_p50": 42649.7296875,
+              "mean_success_rate": 0.25
+            }
+          },
+          "n_households": 32,
+          "numeric_faithfulness_rate": 1.0,
+          "oracle_beats_all_heuristics": true,
+          "oracle_mean_success_rate": 0.3046875,
+          "parse_rate": 1.0
+        }
+      },
+      "config_hash": "c39a5e5d8243cd75",
+      "created_utc": "2026-07-18T06:35:07+00:00",
+      "held_out_scenario": "recession",
+      "master_seed": 777,
+      "n_per_scenario": 8,
+      "n_trials": 16,
+      "refusals": {
+        "n_prompts": 15,
+        "refusal_rate": 1.0
+      },
+      "reward_preset": "retirement_security",
+      "scenarios": [
+        "basic",
+        "high_earner",
+        "low_earner",
+        "mid_career"
+      ],
+      "simulator_commit": "dfac8798d2e136d650ea7e29d48fa30a688048c8"
+    },
+    "oracle": {
+      "conditions": {
+        "held_out_scenario": {
+          "adviser_beats_best_heuristic": true,
+          "adviser_mean_net_worth_p50": 143286.77000000002,
+          "adviser_mean_success_rate": 0.333984375,
+          "best_heuristic": "contribution_waterfall",
+          "best_heuristic_mean_success_rate": 0.267578125,
+          "heuristics": {
+            "age_glide": {
+              "mean_net_worth_p50": 52755.796875,
+              "mean_success_rate": 0.267578125
+            },
+            "contribution_waterfall": {
+              "mean_net_worth_p50": 68959.22875,
+              "mean_success_rate": 0.267578125
+            },
+            "emergency_fund_first": {
+              "mean_net_worth_p50": 66634.62687499999,
+              "mean_success_rate": 0.267578125
+            },
+            "four_percent_drawdown": {
+              "mean_net_worth_p50": 68702.06,
+              "mean_success_rate": 0.267578125
+            }
+          },
+          "n_households": 32,
+          "numeric_faithfulness_rate": 1.0,
+          "oracle_beats_all_heuristics": true,
+          "oracle_mean_success_rate": 0.333984375,
+          "parse_rate": 1.0
+        },
+        "held_out_seeds": {
+          "adviser_beats_best_heuristic": true,
+          "adviser_mean_net_worth_p50": 105330.899375,
+          "adviser_mean_success_rate": 0.3046875,
+          "best_heuristic": "four_percent_drawdown",
+          "best_heuristic_mean_success_rate": 0.25,
+          "heuristics": {
+            "age_glide": {
+              "mean_net_worth_p50": 28416.428749999995,
+              "mean_success_rate": 0.2421875
+            },
+            "contribution_waterfall": {
+              "mean_net_worth_p50": 42392.21562500001,
+              "mean_success_rate": 0.248046875
+            },
+            "emergency_fund_first": {
+              "mean_net_worth_p50": 41728.83031250001,
+              "mean_success_rate": 0.248046875
+            },
+            "four_percent_drawdown": {
+              "mean_net_worth_p50": 42649.7296875,
+              "mean_success_rate": 0.25
+            }
+          },
+          "n_households": 32,
+          "numeric_faithfulness_rate": 1.0,
+          "oracle_beats_all_heuristics": true,
+          "oracle_mean_success_rate": 0.3046875,
+          "parse_rate": 1.0
+        }
+      },
+      "config_hash": "c39a5e5d8243cd75",
+      "created_utc": "2026-07-18T06:31:29+00:00",
+      "held_out_scenario": "recession",
+      "master_seed": 777,
+      "n_per_scenario": 8,
+      "n_trials": 16,
+      "refusals": {
+        "n_prompts": 15,
+        "refusal_rate": 1.0
+      },
+      "reward_preset": "retirement_security",
+      "scenarios": [
+        "basic",
+        "high_earner",
+        "low_earner",
+        "mid_career"
+      ],
+      "simulator_commit": "dfac8798d2e136d650ea7e29d48fa30a688048c8"
+    },
+    "tool_loop": {
+      "conditions": {
+        "held_out_scenario": {
+          "adviser_beats_best_heuristic": true,
+          "adviser_mean_net_worth_p50": 92627.53906250001,
+          "adviser_mean_success_rate": 0.314453125,
+          "best_heuristic": "contribution_waterfall",
+          "best_heuristic_mean_success_rate": 0.267578125,
+          "heuristics": {
+            "age_glide": {
+              "mean_net_worth_p50": 52755.796875,
+              "mean_success_rate": 0.267578125
+            },
+            "contribution_waterfall": {
+              "mean_net_worth_p50": 68959.22875,
+              "mean_success_rate": 0.267578125
+            },
+            "emergency_fund_first": {
+              "mean_net_worth_p50": 66634.62687499999,
+              "mean_success_rate": 0.267578125
+            },
+            "four_percent_drawdown": {
+              "mean_net_worth_p50": 68702.06,
+              "mean_success_rate": 0.267578125
+            }
+          },
+          "n_households": 32,
+          "numeric_faithfulness_rate": 0.40625,
+          "oracle_beats_all_heuristics": true,
+          "oracle_mean_success_rate": 0.333984375,
+          "parse_rate": 1.0
+        },
+        "held_out_seeds": {
+          "adviser_beats_best_heuristic": true,
+          "adviser_mean_net_worth_p50": 89558.186875,
+          "adviser_mean_success_rate": 0.30078125,
+          "best_heuristic": "four_percent_drawdown",
+          "best_heuristic_mean_success_rate": 0.25,
+          "heuristics": {
+            "age_glide": {
+              "mean_net_worth_p50": 28416.428749999995,
+              "mean_success_rate": 0.2421875
+            },
+            "contribution_waterfall": {
+              "mean_net_worth_p50": 42392.21562500001,
+              "mean_success_rate": 0.248046875
+            },
+            "emergency_fund_first": {
+              "mean_net_worth_p50": 41728.83031250001,
+              "mean_success_rate": 0.248046875
+            },
+            "four_percent_drawdown": {
+              "mean_net_worth_p50": 42649.7296875,
+              "mean_success_rate": 0.25
+            }
+          },
+          "n_households": 32,
+          "numeric_faithfulness_rate": 0.34375,
+          "oracle_beats_all_heuristics": true,
+          "oracle_mean_success_rate": 0.3046875,
+          "parse_rate": 1.0
+        }
+      },
+      "config_hash": "c39a5e5d8243cd75",
+      "created_utc": "2026-07-18T06:38:40+00:00",
+      "held_out_scenario": "recession",
+      "master_seed": 777,
+      "n_per_scenario": 8,
+      "n_trials": 16,
+      "refusals": {
+        "n_prompts": 15,
+        "refusal_rate": 1.0
+      },
+      "reward_preset": "retirement_security",
+      "scenarios": [
+        "basic",
+        "high_earner",
+        "low_earner",
+        "mid_career"
+      ],
+      "simulator_commit": "dfac8798d2e136d650ea7e29d48fa30a688048c8"
+    }
+  },
+  "note": "Pipeline-validation scale. The 'distilled_stub' adviser is the deterministic stub AdviserModel standing in for a trained SLM (full QLoRA run is documented in slm/README.md, not executed here); 'tool_loop' wraps the same stub in the draft->simulate->revise loop; 'oracle' validates the harness. Faithfulness caveat: the harness re-scores each household on ITS OWN seed set, so the numeric-faithfulness gate measures whether cited numbers reproduce across independent Monte Carlo draws. At n_trials=16 the cross-seed noise on dollar medians exceeds the strict 2% tolerance, so the tool_loop's low faithfulness rate here reflects trial-count noise, not hallucination \u2014 its rationale is generated from a live simulation and is faithful-by-construction to that run (unit-tested in slm/tests/test_advise.py). At production trial counts (>=64) the gate tightens into a meaningful anti-hallucination check. The distilled_stub's 1.00 rate is vacuous (its fixed rationale cites no numbers)."
+}

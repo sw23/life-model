@@ -3,9 +3,9 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Regression tests for Plan 04 — core simulation engine correctness.
+"""Regression tests for core simulation engine correctness.
 
-Each test targets a specific money-flow bug catalogued in plans/04-core-engine-correctness.md.
+Each test targets a specific money-flow bug.
 Dollar assertions are derived from the library's own tax/housing helpers (not hardcoded
 constants) so they remain valid as financial data is refreshed.
 """
@@ -48,7 +48,7 @@ def _make_home(person, purchase_price=400000, mortgage_rate=4.5, appreciation=0.
 
 
 class TestDataCollectorTiming(unittest.TestCase):
-    """Bug 5 / D4: collect after stages; row Year=Y holds year-Y flows; final year collected."""
+    """Collect after stages; row Year=Y holds year-Y flows; final year collected."""
 
     def test_year_semantics_and_flows(self):
         model = LifeModel(start_year=2020, end_year=2022)
@@ -112,7 +112,7 @@ class TestRunningFlag(unittest.TestCase):
 
 
 class TestRetirementCrossing(unittest.TestCase):
-    """Bug 4: non-integer retirement age must still trigger retirement (crossing detection)."""
+    """Non-integer retirement age must still trigger retirement (crossing detection)."""
 
     def test_non_integer_retirement_age_triggers(self):
         model = LifeModel(start_year=2020, end_year=2030)
@@ -131,7 +131,7 @@ class TestRetirementCrossing(unittest.TestCase):
 
 
 class TestMarriedHousing(unittest.TestCase):
-    """Bug 1: married couples must actually pay housing; a mortgage only amortizes when cash is paid."""
+    """Married couples must actually pay housing; a mortgage only amortizes when cash is paid."""
 
     def test_married_couple_pays_housing_and_amortizes_with_cash(self):
         model = LifeModel(start_year=2020, end_year=2021)
@@ -162,7 +162,7 @@ class TestMarriedHousing(unittest.TestCase):
 
 
 class TestFamilyDebtPaidOnce(unittest.TestCase):
-    """Bug 2: a family member's debt must be paid exactly once, not doubled."""
+    """A family member's debt must be paid exactly once, not doubled."""
 
     def test_member_debt_paid_once(self):
         model = LifeModel(start_year=2020, end_year=2021)
@@ -181,7 +181,7 @@ class TestFamilyDebtPaidOnce(unittest.TestCase):
 
 
 class TestMixedFilingUnits(unittest.TestCase):
-    """Bug 6: a family with mixed filing statuses is taxed per filing unit (not zero / not double)."""
+    """A family with mixed filing statuses is taxed per filing unit (not zero / not double)."""
 
     def test_single_and_married_units_taxed_correctly(self):
         model = LifeModel(start_year=2020, end_year=2021)
@@ -221,7 +221,7 @@ class TestMixedFilingUnits(unittest.TestCase):
 
 
 class TestGetMarriedMergesFamilies(unittest.TestCase):
-    """Bug 6: marrying two people in different families merges them into one."""
+    """Marrying two people in different families merges them into one."""
 
     def test_marriage_merges_separate_families(self):
         model = LifeModel(start_year=2020, end_year=2021)

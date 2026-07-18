@@ -160,8 +160,9 @@ def test_disabled_person_yields_single_person_at_import_defaults():
 def test_param_spec_and_fallback_defaults_agree():
     """Each person's control spec default equals the fallback default (single source of truth).
 
-    Regression: previously the checkbox spec and the code default disagreed (e.g. Jane's enabled
-    flag and salary), so import-time and post-slider construction diverged.
+    This invariant keeps import-time and post-slider construction in agreement: they read the
+    control-spec default and the code fallback independently, so a mismatch (e.g. an ``enabled``
+    flag or salary) would make the two construction paths diverge.
     """
     for prefix, name in (("john", "John"), ("jane", "Jane")):
         specs = app._person_param_specs(prefix, name)
@@ -205,6 +206,36 @@ def test_scenario_default_label_uses_packaged_defaults():
     assert app._scenario_value(app.SCENARIO_DEFAULT_LABEL) is None
 
 
+def test_state_dropdown_maps_to_person_state():
+    """The state dropdown sets Person.state; DEFAULT maps to None (config default pack)."""
+    assert app.model_params["state"]["value"] == "DEFAULT"
+    assert "CA" in app.model_params["state"]["values"]
+    assert app._state_value("DEFAULT") is None
+    assert app._state_value("CA") == "CA"
+
+    from life_model.people.person import Person
+
+    model = DashboardLifeModel(start_year=2023, end_year=2024, jane_enabled=False, state="CA")
+    (person,) = [a for a in model.agents if isinstance(a, Person)]
+    assert person.state == "CA"
+
+    default_model = DashboardLifeModel(start_year=2023, end_year=2024, jane_enabled=False)
+    (default_person,) = [a for a in default_model.agents if isinstance(a, Person)]
+    assert default_person.state is None
+
+
+def test_state_selection_changes_state_tax():
+    """A no-income-tax state (TX) pays less total tax than the DEFAULT flat rate."""
+    common = dict(start_year=2023, end_year=2033, john_enabled=True, jane_enabled=False, john_salary=120000)
+    tx = DashboardLifeModel(state="TX", **common)
+    default = DashboardLifeModel(state="DEFAULT", **common)
+    tx.run()
+    default.run()
+    tx_balance = tx.datacollector.get_model_vars_dataframe()["Bank Balance"].iloc[-1]
+    default_balance = default.datacollector.get_model_vars_dataframe()["Bank Balance"].iloc[-1]
+    assert tx_balance > default_balance
+
+
 def test_start_year_slider_allows_2023():
     """The Start Year slider minimum permits reproducing documented 2023-based examples."""
     start_slider = app.model_params["start_year"]
@@ -219,3 +250,33 @@ def test_csv_export_matches_dataframe(single_person_model):
     assert list(df.columns) == header
     # One header line + one line per simulated year.
     assert len(csv.strip().splitlines()) == len(df) + 1
+
+
+def test_healthcare_toggle_default_off_and_opt_in():
+    """The healthcare toggle defaults off (no healthcare agents); enabling it attaches them."""
+
+    def build(**extra):
+        return DashboardLifeModel(
+            start_year=2023,
+            end_year=2024,
+            john_enabled=True,
+            jane_enabled=False,
+            john_age=64,
+            **extra,
+        )
+
+    # Default off: no healthcare agents anywhere, and the param spec's default is False.
+    assert app.model_params["healthcare_enabled"]["value"] is False
+    model_off = build()
+    assert model_off.registries.medical_costs.get_all_items() == []
+    assert model_off.registries.medicare.get_all_items() == []
+    assert model_off.registries.long_term_care.get_all_items() == []
+
+    # Toggled on: each enabled person gets the three healthcare agents.
+    model_on = build(healthcare_enabled=True)
+    assert len(model_on.registries.medical_costs.get_all_items()) == 1
+    assert len(model_on.registries.medicare.get_all_items()) == 1
+    assert len(model_on.registries.long_term_care.get_all_items()) == 1
+    model_on.run()
+    df = model_on.datacollector.get_model_vars_dataframe()
+    assert (df["Medical Costs"] > 0).all()

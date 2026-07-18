@@ -48,7 +48,7 @@ def required_min_distrib(
         balance: The pre-tax retirement balance subject to RMDs.
         config: Per-model config. Defaults to the global config.
         start_age: The age at which RMDs begin. When ``None``, RMDs begin at the first age in the
-            distribution-period table (legacy behavior). Callers should pass the SECURE 2.0 start
+            distribution-period table. Callers should pass the SECURE 2.0 start
             age via :func:`rmd_start_age`.
 
     Returns:

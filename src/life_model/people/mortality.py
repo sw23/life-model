@@ -169,7 +169,7 @@ def get_random_mortality(age: int, gender: GenderAtBirth, rng=None) -> bool:
         gender: Person's gender at birth.
         rng: Random source with a ``random()`` method (e.g. ``mesa.Model.random``). When provided,
             draws are reproducible under a seeded model. Falls back to the module-level ``random``
-            when omitted (back-compat).
+            when omitted.
     """
     draw = rng.random() if rng is not None else random.random()
     return draw <= get_chance_of_mortality(age, gender)

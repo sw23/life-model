@@ -1,0 +1,30 @@
+{
+  "config_hash": "c39a5e5d8243cd75",
+  "created_utc": "2026-07-18T06:24:20+00:00",
+  "decision_space": [
+    "contribution_waterfall",
+    "age_glide",
+    "emergency_fund_first",
+    "four_percent_drawdown",
+    "max_pretax_401k",
+    "max_roth_401k"
+  ],
+  "description": "Simulator-verified plan-level financial decisions with counterfactual rationales, plus out-of-scope refusals. Faithfulness-by-construction: every rationale number is a copy of a stored Monte Carlo score.",
+  "generation_seed": 20,
+  "household_scenarios": [
+    "basic",
+    "high_earner",
+    "low_earner",
+    "mid_career"
+  ],
+  "n_decision_examples": 160,
+  "n_examples": 175,
+  "n_refusal_examples": 15,
+  "n_trials_per_candidate": 16,
+  "name": "slm/data/sample_dataset.jsonl",
+  "reward_preset": "retirement_security",
+  "scale_note": "pipeline-validation scale (not a publishable adviser)",
+  "schema_version": 1,
+  "simulator_commit": "dfac8798d2e136d650ea7e29d48fa30a688048c8",
+  "teacher_gating": "DQN excluded (protocol report: verdict_intelligent=false, ci_does_not_overlap_best=false); candidates = heuristics + Roth/pre-tax levers, label = grid argmax."
+}

@@ -49,7 +49,7 @@ This package supports a comprehensive range of financial modeling components:
 
 ### Core Components
 - [x] **Family & Person Models** - Multi-person households with individual financial profiles
-- [ ] **Children** - Dependents with education and care costs
+- [x] **Children** - Dependents with education and care costs
 - [x] **Jobs** - Employment with salary progression and benefits
 
 ### Accounts & Investments
@@ -59,13 +59,13 @@ This package supports a comprehensive range of financial modeling components:
 - [x] **HSA** - Health Savings Accounts
 - [x] **529 Plans** - Education savings accounts
 - [x] **Brokerage Accounts** - Taxable investment accounts
-- [ ] **Pensions** - Defined benefit retirement plans
-- [ ] **Trust Accounts** - Revocable and irrevocable trusts for estate planning
+- [x] **Pensions** - Defined benefit retirement plans with COLA and survivor elections
+- [x] **Trust Accounts** - Revocable and irrevocable trusts for estate planning
 
 ### Insurance & Protection
 - [x] **Life Insurance** - Term and whole life policies with loans
 - [x] **General Insurance** - Health, auto, home, umbrella insurance
-- [ ] **Long Term Care Insurance** - Coverage for nursing home, assisted living, and in-home care
+- [x] **Long Term Care Insurance** - Coverage for nursing home, assisted living, and in-home care
 - [x] **Annuities** - Fixed and variable annuities with various payout options
 - [x] **Social Security** - Comprehensive benefit calculations with timing strategies
 
@@ -77,7 +77,7 @@ This package supports a comprehensive range of financial modeling components:
 
 ### Tax System
 - [x] **Federal Taxes** - Complete income tax calculations with brackets
-- [ ] **State Taxes** - Configurable state tax rates (basic flat rate only)
+- [x] **State Taxes** - Per-state tax packs (progressive brackets or flat rate, retirement/Social Security exemptions, SALT integration) with per-person residency
 - [x] **FICA Taxes** - Social Security and Medicare taxes
 - [x] **Required Minimum Distributions (RMDs)** - Retirement account distributions
 
@@ -87,24 +87,25 @@ This package supports a comprehensive range of financial modeling components:
 - [x] **Life Events** - Marriage, retirement, career changes, and mortality (stochastic or fixed-age death)
 
 ### Healthcare & Aging
-- [ ] **Medicare Coverage** - Parts A, B, C, D with premium calculations
-- [ ] **Long-Term Care Services** - Nursing homes, assisted living, home health aides
-- [ ] **Medical Expense Modeling** - Age-related healthcare cost increases
-- [ ] **Chronic Care Management** - Ongoing medical conditions and treatment costs
-- [ ] **Prescription Drug Coverage** - Medicare Part D and supplemental insurance
+- [x] **Medicare Coverage** - Part B and Part D premiums with IRMAA income surcharges (two-year MAGI lookback); Part A is premium-free
+- [x] **Long-Term Care Services** - Seeded care-need hazard with care episodes and annual costs, offset by LTC insurance
+- [x] **Medical Expense Modeling** - Age-related healthcare cost increases with medical inflation above CPI
+- [x] **Chronic Care Management** - Ongoing medical conditions and treatment costs (modeled via the age-band cost curve)
+- [x] **Prescription Drug Coverage** - Medicare Part D premium and IRMAA surcharge (modeled via Part D; supplemental plans not itemized)
 
 ### Giving & Legacy
 - [x] **Charitable Giving** - Tax-deductible donations with itemized deduction support
 - [x] **Donor Advised Funds** - Charitable investment accounts with growth, fees, and distributions
-- [~] **Estate Planning** - Mortality-driven death, spousal/beneficiary estate transfer, and estate tax (trusts and the 10-year inherited-account rule are not yet modeled)
-- [ ] **End of Life Care** - Long-term care facilities and medical expenses
-- [ ] **Funeral and Final Expenses** - End-of-life costs and pre-planning
+- [x] **Estate Planning** - Mortality-driven death, spousal/beneficiary estate transfer, per-account beneficiary designations, estate tax, revocable/irrevocable trusts, and the SECURE Act 10-year inherited-account rule (trust income is untaxed until distributed — no compressed trust brackets; annuity two-life survivor factor still backlog)
+- [x] **End of Life Care** - Long-term care facilities and a final-year medical expense spike charged to the estate
+- [x] **Funeral and Final Expenses** - Funeral cost charged against the estate before transfer and estate tax
 
 ### Advanced Features
 - [x] **Economic Scenarios** - Configurable market conditions (recession, inflation, etc.)
 - [x] **Payment Services** - Intelligent bill payment with account prioritization
 - [x] **Tax Optimization** - Strategic withdrawal and contribution planning
-- [x] **Deep Q-Learning** - AI-driven financial decision optimization
+- [x] **Deep Q-Learning** - A reinforcement-learning agent (`deepqlearning/`) that learns an in-episode financial policy, evaluated against planner heuristics with an outcome-based protocol
+- [x] **Simulation-Grounded Adviser** - A language-model adviser (`slm/`) that maps a household to a recommended plan-level strategy with a Monte-Carlo-certified rationale (educational decision support, not financial advice; see `slm/README.md`)
 
 ## Examples and Documentation
 

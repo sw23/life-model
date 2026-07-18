@@ -28,7 +28,7 @@ class BankAccount(FinancialAccount):
         self.company = company
         self.type = type
         bank_config = self.model.config.accounts.bank
-        # An explicit interest_rate overrides the economy (back-compat); None defers to the
+        # An explicit interest_rate overrides the economy; None defers to the
         # economy's cash yield, re-read each year.
         self._interest_rate_override = interest_rate
         self.compound_rate = bank_config.compound_rate

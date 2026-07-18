@@ -16,7 +16,10 @@ from mesa.visualization import Slider, SolaraViz, make_plot_component
 
 from life_model.account.bank import BankAccount
 from life_model.account.job401k import Job401kAccount
+from life_model.config.financial_config import FinancialConfig
+from life_model.config.models import DEFAULT_STATE_KEY
 from life_model.config.scenarios import list_scenarios
+from life_model.healthcare import LongTermCare, MedicalCosts, Medicare
 from life_model.housing.home import Home, HomeExpenses, Mortgage
 from life_model.model import LifeModel
 from life_model.people.family import Family
@@ -25,6 +28,12 @@ from life_model.work.job import Job, Salary
 
 # Label used in the scenario dropdown for "use the packaged defaults" (scenario=None).
 SCENARIO_DEFAULT_LABEL = "(default)"
+
+# State-of-residence choices for the state dropdown: the packs shipped in the packaged defaults.
+# DEFAULT (the legacy flat rate) stays first so it is the dropdown's default selection.
+STATE_CHOICES = [DEFAULT_STATE_KEY] + sorted(
+    code for code in FinancialConfig().tax.state.packs if code != DEFAULT_STATE_KEY
+)
 
 current_year = datetime.now().year
 
@@ -66,6 +75,7 @@ PERSON_DEFAULTS: Dict[str, Dict[str, Any]] = {
         "retirement_contrib": 6,
         "company_match": 3,
         "retirement_growth": 7.0,
+        "children": 0,
     },
     "jane": {
         "enabled": True,
@@ -83,6 +93,7 @@ PERSON_DEFAULTS: Dict[str, Dict[str, Any]] = {
         "retirement_contrib": 6,
         "company_match": 3,
         "retirement_growth": 7.0,
+        "children": 0,
     },
 }
 
@@ -96,6 +107,9 @@ SHARED_DEFAULTS: Dict[str, Any] = {
     "home_price": 400000,
     "mortgage_rate": 6.0,
     "mortgage_term": 30,
+    # Healthcare agents (medical cost curve, Medicare, long-term care) are opt-in and default
+    # off so existing dashboard runs keep producing the same numbers.
+    "healthcare_enabled": False,
 }
 
 
@@ -118,6 +132,7 @@ def _person_param_specs(prefix: str, name: str) -> Dict[str, Any]:
         f"{prefix}_retirement_balance": Slider(f"{name}'s 401k Balance ($)", d["retirement_balance"], 0, 500000, 5000),
         f"{prefix}_retirement_contrib": Slider(f"{name}'s 401k Contribution (%)", d["retirement_contrib"], 0, 50, 1),
         f"{prefix}_company_match": Slider(f"{name}'s 401k Company Match (%)", d["company_match"], 0, 20, 1),
+        f"{prefix}_children": Slider(f"{name}'s Children", d["children"], 0, 5, 1),
     }
 
 
@@ -146,6 +161,7 @@ def _add_person(model: LifeModel, family: Family, prefix: str, kwargs: Dict[str,
             base=g("spending"),
             yearly_increase=_get(kwargs, "spending_increase", SHARED_DEFAULTS["spending_increase"]),
         ),
+        state=_state_value(kwargs.get("state")),
     )
 
     BankAccount(
@@ -176,6 +192,11 @@ def _add_person(model: LifeModel, family: Family, prefix: str, kwargs: Dict[str,
             company_match_percent=g("company_match"),
             average_growth=g("retirement_growth"),
         )
+
+    for i in range(int(g("children"))):
+        # Children are born at the start of the simulation; costs and the Child Tax Credit
+        # then flow through the person's spending and tax unit automatically.
+        person.add_child(f"{prefix.capitalize()}'s Child {i + 1}", birth_year=model.start_year)
 
     return person
 
@@ -219,10 +240,34 @@ def _add_home(model: LifeModel, owner: Optional[Person], kwargs: Dict[str, Any])
     )
 
 
+def _add_healthcare(model: LifeModel, people: "tuple[Optional[Person], ...]", kwargs: Dict[str, Any]) -> None:
+    """Attach the opt-in healthcare agents to each enabled person when the toggle is on.
+
+    Adds the age-related medical cost curve, Medicare (premiums + IRMAA), and the long-term-care
+    hazard model. Opt-in; defaults off.
+    """
+    if not _get(kwargs, "healthcare_enabled", SHARED_DEFAULTS["healthcare_enabled"]):
+        return
+    for person in people:
+        if person is None:
+            continue
+        MedicalCosts(person)
+        Medicare(person)
+        LongTermCare(person)
+
+
 def _scenario_value(raw: Any) -> Optional[str]:
     """Map the scenario dropdown selection to a LifeModel scenario name (or None for defaults)."""
     value = param_value(raw)
     if value in (None, SCENARIO_DEFAULT_LABEL):
+        return None
+    return value
+
+
+def _state_value(raw: Any) -> Optional[str]:
+    """Map the state dropdown selection to a Person ``state`` (None for the DEFAULT pack)."""
+    value = param_value(raw)
+    if value in (None, DEFAULT_STATE_KEY):
         return None
     return value
 
@@ -242,6 +287,7 @@ class DashboardLifeModel(LifeModel):
         john = _add_person(self, family, "john", kwargs)
         jane = _add_person(self, family, "jane", kwargs)
         _add_home(self, john or jane, kwargs)
+        _add_healthcare(self, (john, jane), kwargs)
 
 
 # Model parameters for the dashboard (single source: SHARED_DEFAULTS + PERSON_DEFAULTS).
@@ -252,12 +298,23 @@ model_params = {
         "value": SCENARIO_DEFAULT_LABEL,
         "values": [SCENARIO_DEFAULT_LABEL] + list_scenarios(),
     },
+    "state": {
+        "label": "State of Residence",
+        "type": "Select",
+        "value": DEFAULT_STATE_KEY,
+        "values": STATE_CHOICES,
+    },
     "start_year": Slider("Start Year", SHARED_DEFAULTS["start_year"], 2000, current_year + 50, 1),
     "end_year": Slider("End Year", SHARED_DEFAULTS["end_year"], 2005, current_year + 150, 1),
     "salary_increase": Slider("Annual Salary Increase (%)", SHARED_DEFAULTS["salary_increase"], 0, 10, 0.5),
     "spending_increase": Slider("Annual Spending Increase (%)", SHARED_DEFAULTS["spending_increase"], 0, 10, 0.5),
     "bank_interest_rate": Slider("Bank Interest Rate (%)", SHARED_DEFAULTS["bank_interest_rate"], 0, 5, 0.1),
     "home_enabled": {"label": "Include a Home", "type": "Checkbox", "value": SHARED_DEFAULTS["home_enabled"]},
+    "healthcare_enabled": {
+        "label": "Model healthcare costs (medical curve, Medicare, LTC)",
+        "type": "Checkbox",
+        "value": SHARED_DEFAULTS["healthcare_enabled"],
+    },
     "home_price": Slider("Home Price ($)", SHARED_DEFAULTS["home_price"], 100000, 1000000, 25000),
     "mortgage_rate": Slider("Mortgage Rate (%)", SHARED_DEFAULTS["mortgage_rate"], 0, 12, 0.25),
     "mortgage_term": Slider("Mortgage Term (years)", SHARED_DEFAULTS["mortgage_term"], 10, 30, 5),

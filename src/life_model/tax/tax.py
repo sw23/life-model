@@ -19,17 +19,22 @@ if TYPE_CHECKING:
 
 
 class TaxesDue:
-    def __init__(self, federal: float = 0, state: float = 0, ss: float = 0, medicare: float = 0):
-        """Taxes due for the year, split up by type of tax."""
+    def __init__(self, federal: float = 0, state: float = 0, ss: float = 0, medicare: float = 0, credits: float = 0.0):
+        """Taxes due for the year, split up by type of tax.
+
+        ``credits`` holds tax credits (e.g. the Child Tax Credit) that reduce the total. A
+        refundable credit may exceed the federal liability, driving ``total`` negative (a refund).
+        """
         self.federal = federal
         self.state = state
         self.ss = ss
         self.medicare = medicare
+        self.credits = credits
 
     @property
     def total(self) -> float:
-        """Total taxes due for the year."""
-        return self.federal + self.state + self.ss + self.medicare
+        """Total taxes due for the year, net of credits (negative means a refund)."""
+        return self.federal + self.state + self.ss + self.medicare - self.credits
 
 
 def compute_taxes(
@@ -38,13 +43,17 @@ def compute_taxes(
     filing_status: FilingStatus,
     wage_incomes: "Sequence[float]",
     config: "Optional[FinancialConfig]" = None,
+    *,
+    credits: float = 0.0,
+    state_tax: "Optional[float]" = None,
 ) -> TaxesDue:
     """Compute income and payroll taxes for a tax unit.
 
     Income tax is levied on the unit's combined ordinary income; FICA is levied **per person**
-    on each worker's own wages. Keeping the two bases separate fixes three payroll-tax bugs:
+    on each worker's own wages. Keeping the two bases separate is what makes three payroll-tax
+    details come out right:
 
-    * FICA is no longer charged on 401k/IRA distributions (they are ordinary income, not wages).
+    * FICA is not charged on 401k/IRA distributions (they are ordinary income, not wages).
     * The Social Security wage cap is applied per worker, not to the couple's combined wages, so
       two earners each below the cap pay Social Security on both full salaries.
     * The FICA base already includes pre-tax 401k deferrals (recorded as wages by ``Job``).
@@ -55,11 +64,20 @@ def compute_taxes(
         filing_status: Filing status of the unit.
         wage_incomes: Each member's FICA-subject wages (payroll tax base), one entry per person.
         config: Per-model config. Defaults to the global config.
+        credits: Pre-computed tax credits (e.g. Child Tax Credit) recorded on the result and
+            subtracted from ``total``. Defaults to 0 (no credits).
+        state_tax: Precomputed state income tax for the unit. When ``None`` the ``DEFAULT`` flat
+            rate is applied to the federal AGI base. Callers that resolve a state pack compute
+            state tax from the state base and pass it here so it can also be folded into the SALT
+            itemized deduction without circularity.
     """
     adjusted_gross_income = max(ordinary_income - deductions, 0)
     tax_federal = federal_income_tax(adjusted_gross_income, filing_status, config)
-    # TODO - Currently using the same deductions for state and federal taxes.
-    tax_state = state_income_tax(adjusted_gross_income, config)
+    if state_tax is None:
+        # ``DEFAULT`` flat rate on the federal AGI base.
+        tax_state = state_income_tax(adjusted_gross_income, config)
+    else:
+        tax_state = state_tax
 
     # Social Security and base Medicare are per worker; the Additional Medicare surtax applies to
     # the unit's combined wages over the filing-status threshold.
@@ -71,7 +89,7 @@ def compute_taxes(
     if combined_wages > additional_threshold:
         tax_medicare += (combined_wages - additional_threshold) * get_medicare_additional_rate(config) / 100
 
-    return TaxesDue(tax_federal, tax_state, tax_ss, tax_medicare)
+    return TaxesDue(tax_federal, tax_state, tax_ss, tax_medicare, credits=credits)
 
 
 def get_income_taxes_due(

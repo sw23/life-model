@@ -13,12 +13,21 @@ if TYPE_CHECKING:
 
 
 class FinancialAccount(LifeModelAgent, ABC):
-    """Abstract base class for all financial accounts with balances"""
+    """Abstract base class for all financial accounts with balances.
 
-    def __init__(self, person: "Person", balance: float = 0):
+    ``beneficiary`` is an optional per-account designation: at the owner's death the account is
+    routed to that (surviving) beneficiary instead of the residual estate — the way real
+    retirement accounts and payable-on-death accounts pass by designation, not by will. A
+    predeceased beneficiary falls back to the residual-estate path. Designation changes *who*
+    receives the account, not the estate-tax base (see ``Person._transfer_estate``). Subclasses
+    that don't expose the keyword can have ``account.beneficiary`` assigned directly.
+    """
+
+    def __init__(self, person: "Person", balance: float = 0, *, beneficiary: Optional["Person"] = None):
         super().__init__(person.model)
         self.person = person
         self.balance = balance
+        self.beneficiary = beneficiary
         self.stat_balance_history = []
 
     @abstractmethod
@@ -196,10 +205,16 @@ class Investment(FinancialAccount, ABC):
     _ASSET_CLASS_RATES = {"equity": "equity_return", "bond": "bond_return", "cash": "cash_yield"}
 
     def __init__(
-        self, person: "Person", balance: float = 0, growth_rate: Optional[float] = None, asset_class: str = "equity"
+        self,
+        person: "Person",
+        balance: float = 0,
+        growth_rate: Optional[float] = None,
+        asset_class: str = "equity",
+        *,
+        beneficiary: Optional["Person"] = None,
     ):
-        super().__init__(person, balance)
-        # An explicit growth_rate overrides the economy (back-compat); None defers to the economy's
+        super().__init__(person, balance, beneficiary=beneficiary)
+        # An explicit growth_rate overrides the economy; None defers to the economy's
         # return for this account's asset class, re-read each year so path/stochastic economies flow
         # through to account growth.
         self._growth_rate_override = growth_rate
@@ -241,8 +256,8 @@ class Investment(FinancialAccount, ABC):
 class RetirementAccount(FinancialAccount, ABC):
     """Abstract base class for retirement accounts (401k, IRA, etc.)"""
 
-    def __init__(self, person: "Person", balance: float = 0):
-        super().__init__(person, balance)
+    def __init__(self, person: "Person", balance: float = 0, *, beneficiary: Optional["Person"] = None):
+        super().__init__(person, balance, beneficiary=beneficiary)
         self.stat_useable_balance = 0
 
     @property

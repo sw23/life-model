@@ -21,6 +21,7 @@ class InsuranceType(Enum):
     RENTERS = "Renters"
     FLOOD = "Flood"
     EARTHQUAKE = "Earthquake"
+    LONG_TERM_CARE = "Long Term Care"
 
 
 class ClaimStatus(Enum):
@@ -125,29 +126,39 @@ class Insurance(LifeModelAgent):
         return self.model.year - self.policy_start_year
 
     def pay_premium(self) -> bool:
-        """Attempt to pay the annual premium"""
+        """Charge the annual premium through the tax unit's bill path.
+
+        The premium is added to the person's spending (``spending.add_expense``) so it settles
+        through :meth:`TaxUnit.settle_year` alongside every other bill and participates in
+        withdrawal sizing — a cash-poor retiree sizes a 401k withdrawal to cover it, and it is
+        reflected in ``stat_money_spent``.
+
+        Solvency is resolved at settlement: a unit-wide shortfall becomes debt (as with any other
+        bill). A single missed payment does not lapse the policy — an always-paid-if-solvent
+        simplification (documented).
+
+        Returns True when the premium was charged (coverage active), else False.
+        """
         if not self.is_coverage_active:
             return False
 
-        # Try to pay from bank accounts
-        remaining_balance = self.person.deduct_from_bank_accounts(self.annual_premium)
-        amount_paid = self.annual_premium - remaining_balance
+        self.person.spending.add_expense(self.annual_premium)
+        self.stat_premiums_paid += self.annual_premium
+        return True
 
-        if amount_paid >= self.annual_premium:
-            self.stat_premiums_paid += self.annual_premium
-            return True
-        else:
-            # Partial payment - policy might lapse
-            if amount_paid > 0:
-                self.stat_premiums_paid += amount_paid
-            self.is_active = False
-            self.model.event_log.add(
-                Event(f"{self.person.name}'s {self.insurance_type.value} insurance lapsed due to non-payment")
-            )
-            return False
+    def file_claim(
+        self, claim_amount: float, description: str, *, charge_loss: bool = True
+    ) -> Optional[InsuranceClaim]:
+        """File an insurance claim.
 
-    def file_claim(self, claim_amount: float, description: str) -> Optional[InsuranceClaim]:
-        """File an insurance claim"""
+        Args:
+            claim_amount: The size of the covered loss being claimed.
+            description: Description of the claim.
+            charge_loss: When True (default) the person incurs the loss from their bank at claim
+                time (single-deductible convention). Pass False when the loss has already been
+                charged elsewhere (e.g. LTC care costs routed through the bill path)
+                so only the payout is credited.
+        """
         if not self.is_coverage_active:
             return None
 
@@ -172,15 +183,15 @@ class Insurance(LifeModelAgent):
         self.stat_claims_filed += 1
 
         # Process claim automatically (simplified)
-        self.process_claim(claim)
+        self.process_claim(claim, charge_loss=charge_loss)
 
         self.model.event_log.add(
             Event(f"{self.person.name} filed {self.insurance_type.value} claim for ${claim_amount:,.0f}")
         )
         return claim
 
-    def process_claim(self, claim: InsuranceClaim) -> bool:
-        """Process an insurance claim"""
+    def process_claim(self, claim: InsuranceClaim, *, charge_loss: bool = True) -> bool:
+        """Process an insurance claim (see :meth:`file_claim` for ``charge_loss``)."""
         if claim.status != ClaimStatus.PENDING:
             return False
 
@@ -198,8 +209,10 @@ class Insurance(LifeModelAgent):
 
             # Single-deductible convention: the person incurs the loss (the full claim amount)
             # and the insurer reimburses it net of the deductible. The net cash effect on the
-            # person is therefore exactly the deductible.
-            self.person.deduct_from_bank_accounts(claim.amount)
+            # person is therefore exactly the deductible. When the loss was already charged
+            # through another path (charge_loss=False), only the payout is credited.
+            if charge_loss:
+                self.person.deduct_from_bank_accounts(claim.amount)
             self.person.receive_cash(claim.payout_amount, source="insurance payout")
             self.stat_deductibles_paid += claim.deductible
             self.stat_claims_paid_out += claim.payout_amount

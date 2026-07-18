@@ -13,7 +13,16 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from actions import ActionType, build_action  # noqa: E402
+from actions import (  # noqa: E402
+    AMOUNT_BEARING_ACTIONS,
+    AMOUNT_BUCKETS,
+    SINGLETON_ACTIONS,
+    ActionType,
+    build_action,
+    decode_flat_action,
+    encode_flat_action,
+    flat_action_count,
+)
 from environment import FinancialLifeEnv  # noqa: E402
 
 
@@ -38,6 +47,74 @@ class TestActionSpaceHonesty(unittest.TestCase):
                 self.assertIsNotNone(action, f"{action_type} has no action builder")
 
 
+class TestFlatActionIndexer(unittest.TestCase):
+    """The flat index space is exactly (amount actions x buckets) + singletons and
+    the encoder/decoder are exact inverses."""
+
+    def test_flat_action_count(self):
+        self.assertEqual(flat_action_count(), len(AMOUNT_BEARING_ACTIONS) * len(AMOUNT_BUCKETS) + 4)
+        self.assertEqual(flat_action_count(), 52)
+
+    def test_round_trip_index_to_action_to_index(self):
+        # Exhaustive: every index decodes to an action that encodes back to the same index.
+        for index in range(flat_action_count()):
+            flat = decode_flat_action(index)
+            self.assertEqual(encode_flat_action(flat.action_type, flat.amount_fraction), index)
+
+    def test_round_trip_action_to_index_to_action(self):
+        for action_type in AMOUNT_BEARING_ACTIONS:
+            for bucket in AMOUNT_BUCKETS:
+                flat = decode_flat_action(encode_flat_action(action_type, bucket))
+                self.assertEqual(flat.action_type, action_type)
+                self.assertEqual(flat.amount_fraction, bucket)
+        for action_type in SINGLETON_ACTIONS:
+            flat = decode_flat_action(encode_flat_action(action_type))
+            self.assertEqual(flat.action_type, action_type)
+            self.assertIsNone(flat.amount_fraction)
+
+    def test_every_action_type_is_reachable(self):
+        reachable = {decode_flat_action(i).action_type for i in range(flat_action_count())}
+        self.assertEqual(reachable, set(ActionType))
+
+    def test_out_of_range_index_rejected(self):
+        with self.assertRaises(ValueError):
+            decode_flat_action(flat_action_count())
+        with self.assertRaises(ValueError):
+            decode_flat_action(-1)
+
+    def test_bad_bucket_rejected(self):
+        with self.assertRaises(ValueError):
+            encode_flat_action(ActionType.WITHDRAW_401K_PRETAX, 0.33)
+        with self.assertRaises(ValueError):
+            encode_flat_action(ActionType.NO_ACTION, 0.10)
+
+
+class TestBucketMasking(unittest.TestCase):
+    """The legality mask extends per composite (action, bucket): a bucket is illegal if it maps
+    to $0."""
+
+    def test_empty_account_masks_all_its_buckets(self):
+        env = FinancialLifeEnv()
+        env.reset(seed=0)
+        # The fresh 401k has no Roth balance: every Roth-withdrawal bucket must be illegal.
+        legal = set(env.get_legal_actions())
+        for bucket in AMOUNT_BUCKETS:
+            self.assertNotIn(encode_flat_action(ActionType.WITHDRAW_401K_ROTH, bucket), legal)
+
+    def test_funded_account_unmasks_buckets(self):
+        env = FinancialLifeEnv()
+        env.reset(seed=0)
+        env.job401k.roth_balance = 10000.0
+        legal = set(env.get_legal_actions())
+        for bucket in AMOUNT_BUCKETS:
+            self.assertIn(encode_flat_action(ActionType.WITHDRAW_401K_ROTH, bucket), legal)
+
+    def test_no_action_always_legal(self):
+        env = FinancialLifeEnv()
+        env.reset(seed=0)
+        self.assertIn(encode_flat_action(ActionType.NO_ACTION), env.get_legal_actions())
+
+
 class TestCanExecuteImpliesSuccess(unittest.TestCase):
     """The mask (can_execute) must never disagree with the executor (execute)."""
 
@@ -49,16 +126,18 @@ class TestCanExecuteImpliesSuccess(unittest.TestCase):
         legal = base.get_legal_actions()
         self.assertTrue(legal)
 
-        for idx in legal:
-            action_type = list(ActionType)[idx]
+        for index in legal:
+            flat = decode_flat_action(index)
             env = FinancialLifeEnv()
             env.reset(seed=0)
-            amount = env._calculate_action_amount(action_type, 0.1)
-            result = env.action_executor.execute_action(env.person, action_type, amount=amount, percentage_change=0.05)
-            self.assertTrue(result.success, f"legal action {action_type} failed to execute")
+            amount = env._calculate_action_amount(flat.action_type, flat.amount_fraction or 0.0)
+            result = env.action_executor.execute_action(
+                env.person, flat.action_type, amount=amount, percentage_change=env.SPENDING_STEP
+            )
+            self.assertTrue(result.success, f"legal action {flat} failed to execute")
 
     def test_property_legal_actions_execute_over_random_states(self):
-        # Over many random states, every action the mask reports as legal must execute
+        # Over many random states, every flat action the mask reports as legal must execute
         # successfully. Covers >= 500 (state, action) samples across diverse states.
         samples = 0
         for seed in range(60):
@@ -67,13 +146,12 @@ class TestCanExecuteImpliesSuccess(unittest.TestCase):
             rng = np.random.RandomState(seed)
             for _ in range(40):
                 legal = env.get_legal_actions()
-                idx = int(rng.choice(legal))
-                action_type = list(ActionType)[idx]
-                _, _, terminated, truncated, info = env.step(
-                    {"action_type": idx, "amount_percentage": np.array([0.1], dtype=np.float32)}
-                )
+                index = int(rng.choice(legal))
+                _, _, terminated, truncated, info = env.step(index)
                 result = info["action_result"]
-                self.assertTrue(result.success, f"legal action {action_type} reported failure at seed {seed}")
+                self.assertTrue(
+                    result.success, f"legal action {decode_flat_action(index)} reported failure at seed {seed}"
+                )
                 samples += 1
                 if terminated or truncated:
                     break
@@ -125,6 +203,50 @@ class TestActionEffects(unittest.TestCase):
         self.assertTrue(env.person.is_retired)
         # Retiring again is illegal (already retired).
         self.assertFalse(env.action_executor.can_execute_action(env.person, ActionType.RETIRE_EARLY))
+
+
+class TestWithdrawalTaxDifferential(unittest.TestCase):
+    """Headline criterion: pre-tax vs Roth withdrawals of the same gross amount must
+    produce measurably different multi-year net worth, because pre-tax withdrawals are taxed at
+    year-end settlement while Roth withdrawals are not."""
+
+    def _run_episode(self, action_type, seed=0, years=5):
+        env = FinancialLifeEnv()
+        env.reset(seed=seed)
+        # Same starting balances on both sides so the ONLY difference is which side is drawn.
+        env.job401k.pretax_balance = 500000.0
+        env.job401k.roth_balance = 500000.0
+        index = encode_flat_action(action_type, 0.10)
+        for _ in range(years):
+            _, _, terminated, truncated, info = env.step(index)
+            self.assertTrue(info["action_result"].success)
+            if terminated or truncated:
+                break
+        return env._calculate_net_worth()
+
+    def test_pretax_vs_roth_withdrawal_yields_different_net_worth(self):
+        pretax_net_worth = self._run_episode(ActionType.WITHDRAW_401K_PRETAX)
+        roth_net_worth = self._run_episode(ActionType.WITHDRAW_401K_ROTH)
+        # The pre-tax episode paid income tax on every withdrawal; Roth paid none.
+        self.assertGreater(roth_net_worth - pretax_net_worth, 1000.0)
+
+    def test_taxable_withdrawal_creates_ledger_income(self):
+        env = FinancialLifeEnv()
+        env.reset(seed=0)
+        env.job401k.pretax_balance = 100000.0
+        income_before = env.person.taxable_income
+        result = env.action_executor.execute_action(env.person, ActionType.WITHDRAW_401K_PRETAX, amount=10000.0)
+        self.assertTrue(result.success)
+        self.assertAlmostEqual(env.person.taxable_income - income_before, 10000.0)
+
+    def test_roth_withdrawal_creates_no_ledger_income(self):
+        env = FinancialLifeEnv()
+        env.reset(seed=0)
+        env.job401k.roth_balance = 100000.0
+        income_before = env.person.taxable_income
+        result = env.action_executor.execute_action(env.person, ActionType.WITHDRAW_401K_ROTH, amount=10000.0)
+        self.assertTrue(result.success)
+        self.assertAlmostEqual(env.person.taxable_income, income_before)
 
 
 if __name__ == "__main__":

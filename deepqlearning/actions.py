@@ -14,7 +14,7 @@ covered by a property test, which keeps the action mask and the executor from dr
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Optional, Type
+from typing import List, Optional, Tuple, Type
 
 from life_model.account.brokerage import BrokerageAccount
 from life_model.account.hsa import HealthSavingsAccount
@@ -77,8 +77,18 @@ _WITHDRAW_SOURCES = {
     ActionType.WITHDRAW_HSA: HealthSavingsAccount,
 }
 
-# Withdrawals from these account types are taxable ordinary income (pre-tax dollars).
-_TAXABLE_WITHDRAWALS = frozenset({ActionType.WITHDRAW_401K_PRETAX, ActionType.WITHDRAW_IRA_TRADITIONAL})
+# Person-level withdrawal helper for each withdrawal action. Every withdrawal goes
+# through the model's real money path: the helper deposits into the bank and records the correct
+# income-ledger entry (pre-tax 401k / traditional IRA distributions are ordinary income), so the
+# tax unit actually taxes the withdrawal when it settles the year inside ``model.step()``.
+_WITHDRAW_HELPERS = {
+    ActionType.WITHDRAW_401K_PRETAX: Person.withdraw_from_pretax_401ks,
+    ActionType.WITHDRAW_401K_ROTH: Person.withdraw_from_roth_401ks,
+    ActionType.WITHDRAW_IRA_TRADITIONAL: Person.withdraw_from_traditional_iras,
+    ActionType.WITHDRAW_IRA_ROTH: Person.withdraw_from_roth_iras,
+    ActionType.WITHDRAW_BROKERAGE: Person.withdraw_from_brokerage_accounts,
+    ActionType.WITHDRAW_HSA: Person.withdraw_from_hsas,
+}
 
 # Withdrawals from these account types incur a 10% early-withdrawal penalty before age 59.5.
 _PENALIZED_WITHDRAWALS = frozenset(
@@ -97,6 +107,76 @@ SPENDING_ACTIONS = frozenset({ActionType.INCREASE_SPENDING, ActionType.DECREASE_
 
 EARLY_WITHDRAWAL_AGE = 59.5
 EARLY_WITHDRAWAL_PENALTY = 0.10
+
+# ---------------------------------------------------------------------------
+# Flat (fully discrete) action space.
+#
+# DQN cannot output a continuous amount head, so "how much" is made part of the policy by
+# crossing every amount-bearing action with a small set of amount buckets (fractions of the
+# available balance). Singleton actions (spending +/-, retire, no-op) take no amount. The
+# resulting index space is: [amount-bearing type x bucket, type-major] then [singletons], and
+# ``decode_flat_action``/``encode_flat_action`` are exact inverses (round-trip tested).
+# ---------------------------------------------------------------------------
+
+AMOUNT_BUCKETS: Tuple[float, ...] = (0.10, 0.25, 0.50, 1.00)
+
+# Declaration order of ActionType is preserved in both groups so the layout is stable.
+AMOUNT_BEARING_ACTIONS: Tuple[ActionType, ...] = tuple(
+    a for a in ActionType if a in TRANSFER_ACTIONS or a in WITHDRAWAL_ACTIONS
+)
+SINGLETON_ACTIONS: Tuple[ActionType, ...] = tuple(
+    a for a in ActionType if a not in TRANSFER_ACTIONS and a not in WITHDRAWAL_ACTIONS
+)
+
+
+@dataclass(frozen=True)
+class FlatAction:
+    """A decoded flat action: the action type plus its amount fraction (None for singletons)."""
+
+    action_type: ActionType
+    amount_fraction: Optional[float]
+
+
+def flat_action_count() -> int:
+    """Total number of flat discrete actions (12 x 4 buckets + 4 singletons = 52)."""
+    return len(AMOUNT_BEARING_ACTIONS) * len(AMOUNT_BUCKETS) + len(SINGLETON_ACTIONS)
+
+
+def decode_flat_action(index: int) -> FlatAction:
+    """Decode a flat action index into ``(action_type, amount_fraction)``."""
+    index = int(index)
+    n_amount = len(AMOUNT_BEARING_ACTIONS) * len(AMOUNT_BUCKETS)
+    if not 0 <= index < flat_action_count():
+        raise ValueError(f"Flat action index {index} out of range [0, {flat_action_count()})")
+    if index < n_amount:
+        type_idx, bucket_idx = divmod(index, len(AMOUNT_BUCKETS))
+        return FlatAction(AMOUNT_BEARING_ACTIONS[type_idx], AMOUNT_BUCKETS[bucket_idx])
+    return FlatAction(SINGLETON_ACTIONS[index - n_amount], None)
+
+
+def encode_flat_action(action_type: ActionType, amount_fraction: Optional[float] = None) -> int:
+    """Encode ``(action_type, amount_fraction)`` into its flat action index.
+
+    ``amount_fraction`` must be exactly one of :data:`AMOUNT_BUCKETS` for amount-bearing
+    actions, and ``None`` for singleton actions.
+    """
+    if action_type in SINGLETON_ACTIONS:
+        if amount_fraction is not None:
+            raise ValueError(f"{action_type} takes no amount fraction")
+        return len(AMOUNT_BEARING_ACTIONS) * len(AMOUNT_BUCKETS) + SINGLETON_ACTIONS.index(action_type)
+    if amount_fraction not in AMOUNT_BUCKETS:
+        raise ValueError(f"amount_fraction {amount_fraction!r} is not one of {AMOUNT_BUCKETS}")
+    return AMOUNT_BEARING_ACTIONS.index(action_type) * len(AMOUNT_BUCKETS) + AMOUNT_BUCKETS.index(amount_fraction)
+
+
+def withdrawal_available(person: Person, action_type: ActionType) -> float:
+    """Balance available to the given withdrawal action across the person's accounts."""
+    accounts = owned_accounts(person, _WITHDRAW_SOURCES[action_type])
+    if action_type == ActionType.WITHDRAW_401K_PRETAX:
+        return sum(a.pretax_balance for a in accounts)
+    if action_type == ActionType.WITHDRAW_401K_ROTH:
+        return sum(a.roth_balance for a in accounts)
+    return sum(a.balance for a in accounts)
 
 
 def owned_accounts(person: Person, account_cls: Type[FinancialAccount]) -> List[FinancialAccount]:
@@ -126,12 +206,16 @@ def _remaining_contribution_room(account: FinancialAccount) -> float:
 
 @dataclass
 class ActionResult:
-    """Result of executing a financial action"""
+    """Result of executing a financial action.
+
+    There is deliberately no tax field here: taxable withdrawals are recorded on the person's
+    income ledger and settled by the tax unit at year end, so taxes flow through the model's
+    real money path rather than action-local bookkeeping.
+    """
 
     success: bool
     amount_transferred: float = 0.0
     fees_paid: float = 0.0
-    tax_implications: float = 0.0
     message: str = ""
 
 
@@ -191,20 +275,17 @@ class TransferAction(FinancialAction):
 
 
 class WithdrawalAction(FinancialAction):
-    """Withdraw money from a retirement/investment account back into the bank account."""
+    """Withdraw money from a retirement/investment account back into the bank account.
 
-    def _source(self) -> Optional[FinancialAccount]:
-        return _first_account(self.person, _WITHDRAW_SOURCES[self.action_type])
+    Execution goes through the person-level helpers (``_WITHDRAW_HELPERS``), so taxable
+    withdrawals create income-ledger entries and are taxed at year-end settlement inside
+    ``model.step()`` — not instantly. The early-withdrawal penalty stays at the action level
+    (deducted from the bank after the helper's deposit) until the core penalty backlog item
+    lands.
+    """
 
     def _available(self) -> float:
-        source = self._source()
-        if source is None:
-            return 0.0
-        if self.action_type == ActionType.WITHDRAW_401K_PRETAX:
-            return source.pretax_balance
-        if self.action_type == ActionType.WITHDRAW_401K_ROTH:
-            return source.roth_balance
-        return source.balance
+        return withdrawal_available(self.person, self.action_type)
 
     def can_execute(self) -> bool:
         return self.amount > 0 and self._available() > 0
@@ -215,23 +296,17 @@ class WithdrawalAction(FinancialAction):
         if amount <= 0:
             return ActionResult(success=False, message="Withdrawal cannot be executed")
 
-        source = self._source()
-        if self.action_type == ActionType.WITHDRAW_401K_PRETAX:
-            withdrawn = amount - self.person.deduct_from_pretax_401ks(amount)
-        elif self.action_type == ActionType.WITHDRAW_401K_ROTH:
-            withdrawn = amount - self.person.deduct_from_roth_401ks(amount)
-        else:
-            withdrawn = source.withdraw(amount)
+        # The model's real money path: moves the money into the bank and records any taxable
+        # income on the person's ledger for year-end settlement.
+        withdrawn = _WITHDRAW_HELPERS[self.action_type](self.person, amount)
 
         penalized = self.action_type in _PENALIZED_WITHDRAWALS and self.person.age < EARLY_WITHDRAWAL_AGE
         penalty = withdrawn * EARLY_WITHDRAWAL_PENALTY if penalized else 0.0
-        self.person.deposit_into_bank_account(withdrawn - penalty)
+        if penalty > 0:
+            # The helper deposited the gross amount; pull the penalty back out of the bank.
+            self.person.deduct_from_bank_accounts(penalty)
 
-        tax_implications = withdrawn if self.action_type in _TAXABLE_WITHDRAWALS else 0.0
-
-        return ActionResult(
-            success=True, amount_transferred=withdrawn, fees_paid=penalty, tax_implications=tax_implications
-        )
+        return ActionResult(success=True, amount_transferred=withdrawn, fees_paid=penalty)
 
 
 class SpendingAction(FinancialAction):

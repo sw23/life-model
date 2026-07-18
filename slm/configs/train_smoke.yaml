@@ -1,0 +1,20 @@
+# Smoke SFT config: a ~135M-parameter instruct model over ~50 examples, LoRA.
+# Marked slow/manual — proves the training code path end-to-end on tiny compute. The default SLM
+# config (train_default_qlora.yaml) fine-tunes from this SAME code path with only these values
+# changed, which is the LLM-readiness contract.
+model_id: HuggingFaceTB/SmolLM2-135M-Instruct   # Apache-2.0
+dataset_path: slm/data/sample_dataset.jsonl
+output_dir: slm/checkpoints/smoke
+max_examples: 50
+epochs: 1
+per_device_batch_size: 1
+grad_accum: 4
+learning_rate: 0.0002
+seq_len: 1024
+precision: fp32          # tiny model; fp32 keeps it CPU/MPS-friendly for the smoke test
+attn_implementation: eager
+lora:
+  rank: 8
+  alpha: 16
+  dropout: 0.05
+report_to: none
