@@ -17,6 +17,16 @@ tax:
       married_filing_jointly:
         - [0, 80000, 10]
         - [80001, .inf, 25]
+    # Preferential rates, also deliberately round: 0% to $40k/$80k, then 15%, then 20%.
+    capital_gains:
+      single:
+        - [0, 40000, 0]
+        - [40001, 400000, 15]
+        - [400001, .inf, 20]
+      married_filing_jointly:
+        - [0, 80000, 0]
+        - [80001, 500000, 15]
+        - [500001, .inf, 20]
   state:
     tax_rate: 5.0
   fica:

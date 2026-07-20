@@ -16,6 +16,7 @@ from .models import (
     DebtConfig,
     DependentsConfig,
     EconomyConfig,
+    EquityCompConfig,
     EstateConfig,
     FinancialConfigModel,
     HealthcareConfig,
@@ -122,6 +123,10 @@ class FinancialConfig(ScenarioConfig):
     def dependents(self) -> DependentsConfig:
         return self._model.dependents
 
+    @property
+    def equity_comp(self) -> EquityCompConfig:
+        return self._model.equity_comp
+
     def tax_year(self, year: int, inflation_factor: float = 1.0) -> YearlyTaxParameters:
         """Get the tax parameters applicable to a given calendar year.
 
@@ -217,6 +222,16 @@ class FinancialConfig(ScenarioConfig):
     def get_federal_tax_brackets(self, filing_status: "FilingStatus") -> list:
         """Get federal tax brackets for filing status (HEAD_OF_HOUSEHOLD falls back to single)."""
         brackets = self._model.tax.federal.tax_brackets
+        if filing_status.value == 2:
+            return brackets.married_filing_jointly
+        if filing_status.value == 3 and brackets.head_of_household is not None:
+            return brackets.head_of_household
+        return brackets.single
+
+    def get_capital_gains_brackets(self, filing_status: "FilingStatus") -> list:
+        """Get preferential capital-gains brackets for filing status (HEAD_OF_HOUSEHOLD falls back
+        to single)."""
+        brackets = self._model.tax.federal.capital_gains
         if filing_status.value == 2:
             return brackets.married_filing_jointly
         if filing_status.value == 3 and brackets.head_of_household is not None:

@@ -85,6 +85,10 @@ class Person(LifeModelAgent):
         # Per-year record of this member's share of the tax unit's AGI, stamped during
         # ``TaxUnit.settle_year``. Medicare/IRMAA reads this with a two-year lookback.
         self.agi_history: dict[int, float] = {}
+        # Capital losses beyond the year's $3,000 ordinary offset, carried to future years. The
+        # income ledger is cleared every post_step and tax units are rebuilt every year, so the
+        # person is the only durable home for it.
+        self.capital_loss_carryforward = 0.0
         self.filing_status = FilingStatus.SINGLE
         self.social_security: Optional[SocialSecurity] = None
         self.retirement_triggered = False
@@ -363,6 +367,11 @@ class Person(LifeModelAgent):
         return self.income.ordinary_taxable
 
     @property
+    def preferential_income(self) -> float:
+        """Long-term capital gains and qualified dividends accumulated this year."""
+        return self.income.preferential_income
+
+    @property
     def fica_wages(self) -> float:
         """Earned income subject to FICA this year (payroll tax base)."""
         return self.income.fica_wages
@@ -531,13 +540,19 @@ class Person(LifeModelAgent):
     def withdraw_from_brokerage_accounts(self, amount: float) -> float:
         """Withdraws money from brokerage accounts into the bank account.
 
-        Capital-gains taxation on the sale is not modeled (documented simplification); the
-        withdrawal itself is a nontaxable transfer of principal.
+        Accounts are looped explicitly rather than through ``_withdraw_sequence`` because each
+        account posts its own realized capital gains to the income ledger from its own tax lots;
+        a sequence of bound methods would discard the per-account identity that requires.
 
         Returns:
             float: Amount actually withdrawn.
         """
-        withdrawn = amount - self._withdraw_sequence((acct.withdraw for acct in self.brokerage_accounts), amount)
+        remaining = amount
+        for account in self.brokerage_accounts:
+            if remaining <= 0:
+                break
+            remaining -= account.withdraw(remaining)
+        withdrawn = amount - remaining
         self.receive_cash(withdrawn)
         return withdrawn
 
@@ -601,11 +616,19 @@ class Person(LifeModelAgent):
         # base and the federal deductions so sizing and settlement stay consistent.
         totals = self.income.totals_by_type()
         totals[IncomeType.PRETAX_DISTRIBUTION] = totals.get(IncomeType.PRETAX_DISTRIBUTION, 0.0) + additional_income
-        legacy_agi = max(ordinary_income - self.federal_deductions_with_state_tax(0.0, additional_income), 0)
+        total_income = ordinary_income + self.preferential_income
+        legacy_agi = max(total_income - self.federal_deductions_with_state_tax(0.0, additional_income), 0)
         state_tax = state_income_tax_for_unit(totals, self.filing_status, self.state, legacy_agi, self.model.config)
         deductions = self.federal_deductions_with_state_tax(state_tax, additional_income)
         return compute_taxes(
-            ordinary_income, deductions, self.filing_status, [self.fica_wages], self.model.config, state_tax=state_tax
+            ordinary_income,
+            deductions,
+            self.filing_status,
+            [self.fica_wages],
+            self.model.config,
+            state_tax=state_tax,
+            preferential_income=self.preferential_income,
+            net_investment_income=self.income.net_investment_income,
         )
 
     def get_married(self, spouse: "Person", link_spouse: bool = True):
@@ -867,6 +890,19 @@ class Person(LifeModelAgent):
 
         return [a for a in self.model.agents if isinstance(a, FinancialAccount) and getattr(a, "person", None) is self]
 
+    def _step_up_taxable_basis(self):
+        """Reset the basis of inherited taxable accounts to fair market value (IRC §1014).
+
+        Applied before either transfer path runs, so it covers designated and residual accounts
+        alike. Without it, heirs would be taxed on appreciation the tax code forgives. Gifts and
+        trust funding keep carryover basis and are unaffected — only the death transfer steps up.
+        """
+        from ..account.brokerage import BrokerageAccount
+
+        for acct in self._owned_financial_agents():
+            if isinstance(acct, BrokerageAccount):
+                acct.step_up_basis_at_death()
+
     def _transfer_estate(self, inheritor: "Person", is_spouse: bool):
         """Move the estate to ``inheritor``.
 
@@ -887,6 +923,7 @@ class Person(LifeModelAgent):
         gross_estate = self._gross_estate_value()
         taxable_base = max(0.0, gross_estate - self._marital_share(is_spouse))
 
+        self._step_up_taxable_basis()
         self._transfer_designated_accounts()
 
         if not is_spouse:

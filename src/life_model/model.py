@@ -123,6 +123,10 @@ class LifeModel(mesa.Model):
         MoneyStat("stat_medical_costs", "Medical Costs"),  # Healthcare/Medicare/LTC costs paid in a year
         MoneyStat("stat_dependent_costs", "Dependent Costs"),  # Child/dependent costs charged in a year
         MoneyStat("stat_pension_income", "Pension Income"),  # Defined-benefit pension income received in a year
+        MoneyStat("stat_taxes_paid_niit", "NIIT"),  # Net investment income surtax paid in a year
+        MoneyStat("stat_capital_gains", "Capital Gains"),  # Capital gains realized in a year
+        MoneyStat("stat_stock_vested", "Stock Vested"),  # Value of stock compensation vesting in a year
+        MoneyStat("stat_stock_unvested", "Stock Unvested"),  # Value of unvested stock grants at year end
     ]
 
     def __init__(
@@ -343,14 +347,14 @@ class LifeModel(mesa.Model):
         """
         # Get the list of columns to use
         if columns is None:
-            columns = ["Year"] + [x.name for x in self.STATS]
+            columns = ["Year"] + [x.title for x in self.STATS]
         if extra_columns is not None:
             for i, column in enumerate(extra_columns):
                 columns.insert(i + 1, column)
-        # Get the list of stats to use
+        # Get the list of stats to use (columns are the datacollector's title-keyed names)
         stats = []
         for column_name in columns:
-            stat = self.get_stat_by_name(column_name)
+            stat = self.get_stat_by_title(column_name)
             if stat is not None:
                 stats.append(stat)
         # Create a dataframe from the data

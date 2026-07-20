@@ -5,7 +5,7 @@
 
 from typing import TYPE_CHECKING, Optional, Sequence
 
-from .federal import FilingStatus, federal_income_tax
+from .federal import FilingStatus, capital_gains_tax, federal_income_tax, net_investment_income_tax
 from .fica import (
     get_medicare_additional_rate,
     get_medicare_additional_rate_threshold,
@@ -19,22 +19,33 @@ if TYPE_CHECKING:
 
 
 class TaxesDue:
-    def __init__(self, federal: float = 0, state: float = 0, ss: float = 0, medicare: float = 0, credits: float = 0.0):
+    def __init__(
+        self,
+        federal: float = 0,
+        state: float = 0,
+        ss: float = 0,
+        medicare: float = 0,
+        credits: float = 0.0,
+        niit: float = 0.0,
+    ):
         """Taxes due for the year, split up by type of tax.
 
         ``credits`` holds tax credits (e.g. the Child Tax Credit) that reduce the total. A
         refundable credit may exceed the federal liability, driving ``total`` negative (a refund).
+        ``niit`` is the §1411 net investment income surtax, tracked separately from ``federal``
+        because it has its own base and its own unindexed thresholds.
         """
         self.federal = federal
         self.state = state
         self.ss = ss
         self.medicare = medicare
         self.credits = credits
+        self.niit = niit
 
     @property
     def total(self) -> float:
         """Total taxes due for the year, net of credits (negative means a refund)."""
-        return self.federal + self.state + self.ss + self.medicare - self.credits
+        return self.federal + self.state + self.ss + self.medicare + self.niit - self.credits
 
 
 def compute_taxes(
@@ -46,6 +57,8 @@ def compute_taxes(
     *,
     credits: float = 0.0,
     state_tax: "Optional[float]" = None,
+    preferential_income: float = 0.0,
+    net_investment_income: float = 0.0,
 ) -> TaxesDue:
     """Compute income and payroll taxes for a tax unit.
 
@@ -70,9 +83,26 @@ def compute_taxes(
             rate is applied to the federal AGI base. Callers that resolve a state pack compute
             state tax from the state base and pass it here so it can also be folded into the SALT
             itemized deduction without circularity.
+        preferential_income: Long-term capital gains and qualified dividends, taxed on the
+            preferential schedule stacked above ordinary income. Defaults to 0.
+        net_investment_income: Investment income subject to the §1411 surtax. Defaults to 0.
     """
-    adjusted_gross_income = max(ordinary_income - deductions, 0)
-    tax_federal = federal_income_tax(adjusted_gross_income, filing_status, config)
+    # Deductions are applied to ordinary income first and spill onto the gain only once ordinary
+    # income is exhausted — the clamp below is what makes a retiree living on gains alone come out
+    # at $0 federal tax.
+    total_income = ordinary_income + preferential_income
+    taxable_income = max(total_income - deductions, 0)
+    taxable_gains = max(0.0, min(preferential_income, taxable_income))
+    taxable_ordinary = taxable_income - taxable_gains
+
+    tax_federal = federal_income_tax(taxable_ordinary, filing_status, config)
+    tax_federal += capital_gains_tax(taxable_ordinary, taxable_gains, filing_status, config)
+
+    # The surtax is levied on the lesser of net investment income and the amount by which MAGI
+    # exceeds the threshold. MAGI is a pre-deduction figure, unlike the taxable-income base above.
+    tax_niit = net_investment_income_tax(net_investment_income, total_income, filing_status, config)
+
+    adjusted_gross_income = taxable_income
     if state_tax is None:
         # ``DEFAULT`` flat rate on the federal AGI base.
         tax_state = state_income_tax(adjusted_gross_income, config)
@@ -89,7 +119,7 @@ def compute_taxes(
     if combined_wages > additional_threshold:
         tax_medicare += (combined_wages - additional_threshold) * get_medicare_additional_rate(config) / 100
 
-    return TaxesDue(tax_federal, tax_state, tax_ss, tax_medicare, credits=credits)
+    return TaxesDue(tax_federal, tax_state, tax_ss, tax_medicare, credits=credits, niit=tax_niit)
 
 
 def get_income_taxes_due(

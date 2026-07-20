@@ -52,6 +52,7 @@ Prefer the typed properties on `FinancialConfig`:
 | `config.accounts` | bank / brokerage / HSA / 529 defaults |
 | `config.insurance` | life insurance defaults |
 | `config.debt` | credit card defaults |
+| `config.equity_comp` | stock compensation vesting defaults |
 
 The dot-notation accessor `config.get("tax.state.tax_rate")` still works
 but emits a `DeprecationWarning`; prefer the typed properties above.
@@ -164,6 +165,40 @@ model.tax_params_for_year(2050).standard_deduction.single  # inflation-projected
 
 Always verify new published values against IRS Revenue Procedures and SSA fact
 sheets before extending the table.
+
+### Parameters deliberately outside the projection path
+
+Some thresholds are written into the statute and have never been inflation-indexed.
+Sweeping them into `tax_years` would silently erase the real fiscal drag they
+create, so they live under `tax.federal` and stay fixed:
+
+- `tax.federal.niit` — the §1411 surtax rate and its $200k/$250k MAGI thresholds.
+- `tax.federal.capital_loss_ordinary_offset` — the $3,000 annual capital-loss
+  deduction against ordinary income, unchanged since 1978.
+
+## Capital gains and dividends
+
+`tax.federal.capital_gains` holds the preferential rate schedule for long-term
+capital gains and qualified dividends, in the same `[lower, upper, rate]` shape as
+the ordinary brackets. The gain is stacked *above* ordinary income: ordinary income
+fills the 0% and 15% bands first, and the gain is taxed only in the band space that
+remains.
+
+`accounts.brokerage.dividend_yield` splits a brokerage account's return into untaxed
+price appreciation and a taxable qualified dividend that is reinvested at full basis.
+The yield is carved *out of* `default_growth_rate` rather than added on top, so total
+return is unchanged — only the tax character of that slice moves. It defaults to `0`,
+which keeps accounts pure-appreciation.
+
+States tax capital gains as ordinary income by default; set `capital_gains_taxable:
+false` on a state pack for the exceptions.
+
+## Stock compensation
+
+`equity_comp.default_schedule` names the vesting preset a `StockPlan` uses when it is
+given no explicit schedule (`four_year`, `three_year`, `front_loaded`, `back_loaded`,
+or `even`, which spans `equity_comp.default_vesting_years`). These are modeling
+conventions rather than published figures, so they carry no `vintage` stamp.
 
 ## Economy (inflation & returns)
 

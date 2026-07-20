@@ -147,9 +147,9 @@ class Home(LifeModelAgent):
             exclusion = housing.section_121_exclusion.single
         taxable_gain = max(0.0, gain - exclusion)
         if taxable_gain > 0:
-            # No dedicated long-term-capital-gains schedule exists yet; the taxable
-            # excess is recognized as ordinary income as an approximation.
-            self.person.income.add(IncomeType.ORDINARY, taxable_gain)
+            # A residence held long enough to qualify for §121 is by definition held over a year,
+            # so the excess above the exclusion is always a long-term gain.
+            self.person.income.add(IncomeType.LONG_TERM_CAPITAL_GAIN, taxable_gain)
 
         net_proceeds = sale_price - selling_costs - mortgage_payoff
         if self.mortgage is not None:

@@ -32,6 +32,31 @@ class IncomeType(Enum):
     PENSION = "pension"  # Defined-benefit pension income: ordinary, no FICA (retirees pay no payroll tax).
     INTEREST = "interest"  # Interest income: ordinary, no FICA.
     ORDINARY = "ordinary"  # Generic ordinary income: no FICA.
+    # Gains on assets held one year or less are taxed at ordinary rates; the separate member exists
+    # so reporting and loss-character tracking can tell them apart from other ordinary income.
+    SHORT_TERM_CAPITAL_GAIN = "short_term_capital_gain"
+    LONG_TERM_CAPITAL_GAIN = "long_term_capital_gain"  # Held over a year: preferential 0/15/20% rates.
+    QUALIFIED_DIVIDEND = "qualified_dividend"  # Taxed at the same preferential rates as long-term gains.
+
+
+#: Income types taxed under the preferential capital-gains rate schedule rather than the ordinary
+#: brackets. These are excluded from :attr:`IncomeLedger.ordinary_taxable` and surfaced separately
+#: as :attr:`IncomeLedger.preferential_income` so the stacking computation can see both bases.
+#: Short-term gains are deliberately absent — they are taxed at ordinary rates.
+PREFERENTIAL_TYPES = frozenset({IncomeType.LONG_TERM_CAPITAL_GAIN, IncomeType.QUALIFIED_DIVIDEND})
+
+#: Income types that make up net investment income for the §1411 surtax: interest, dividends, and
+#: capital gains. Defined by inclusion rather than by subtracting excluded categories, so a new
+#: income type is outside the NIIT base until it is deliberately added here. Wages, Social Security,
+#: and retirement-plan distributions are statutorily excluded.
+NET_INVESTMENT_TYPES = frozenset(
+    {
+        IncomeType.INTEREST,
+        IncomeType.QUALIFIED_DIVIDEND,
+        IncomeType.SHORT_TERM_CAPITAL_GAIN,
+        IncomeType.LONG_TERM_CAPITAL_GAIN,
+    }
+)
 
 
 @dataclass
@@ -73,8 +98,27 @@ class IncomeLedger:
 
     @property
     def ordinary_taxable(self) -> float:
-        """Total ordinary taxable income (income tax base)."""
-        return sum(e.amount for e in self.entries)
+        """Total ordinary taxable income (the ordinary-rate tax base).
+
+        Preferential income (long-term gains, qualified dividends) is excluded — it is taxed on its
+        own rate schedule and is reported by :attr:`preferential_income`. Callers that want the full
+        income tax base must add the two together.
+        """
+        return sum(e.amount for e in self.entries if e.income_type not in PREFERENTIAL_TYPES)
+
+    @property
+    def preferential_income(self) -> float:
+        """Net long-term capital gains plus qualified dividends (the preferential-rate base).
+
+        May be negative in a net capital-loss year; loss netting and the $3,000 ordinary offset are
+        applied at settlement, so this is a raw figure rather than a clamped one.
+        """
+        return sum(e.amount for e in self.entries if e.income_type in PREFERENTIAL_TYPES)
+
+    @property
+    def net_investment_income(self) -> float:
+        """Net investment income for the §1411 surtax base (never negative)."""
+        return max(0.0, sum(e.amount for e in self.entries if e.income_type in NET_INVESTMENT_TYPES))
 
     @property
     def fica_wages(self) -> float:
@@ -82,11 +126,13 @@ class IncomeLedger:
         return sum(e.fica_wages for e in self.entries)
 
     def totals_by_type(self) -> "Dict[IncomeType, float]":
-        """Ordinary-taxable amount contributed by each income type.
+        """Taxable amount contributed by each income type, preferential types included.
 
         Every :class:`IncomeType` is present in the result (0.0 when absent) so callers can index
         any type unconditionally. Used by the state tax base to subtract categories a state exempts
-        (pre-tax distributions, Social Security) from ordinary income.
+        (pre-tax distributions, Social Security) from total income. Capital gains are *not* split
+        out by default because the large majority of states tax them as ordinary income; states
+        that exempt them set ``capital_gains_taxable: false`` on their pack.
         """
         totals: Dict[IncomeType, float] = {income_type: 0.0 for income_type in IncomeType}
         for entry in self.entries:

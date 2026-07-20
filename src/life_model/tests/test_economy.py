@@ -167,6 +167,36 @@ class TestRealDollarReporting(unittest.TestCase):
         styler = model.get_yearly_stat_df(columns=["Year", "Bank Balance"], real_dollars=True)
         self.assertIsNotNone(styler)
 
+    def test_get_yearly_stat_df_default_columns_use_titles(self):
+        # The no-argument call must select the datacollector's title-keyed columns (e.g.
+        # "Income", "Bank Balance"), not the raw ``stat_*`` attribute names, which are not
+        # columns of the collected frame.
+        model = LifeModel(start_year=2026, end_year=2028, config=_config(mode="fixed", inflation=0.0))
+        family = Family(model)
+        person = Person(family, "A", 30, 65, Spending(model, base=0))
+        BankAccount(person, "Bank", balance=1000, interest_rate=0.0)
+        model.run()
+        styler = model.get_yearly_stat_df()
+        data = styler.data
+        self.assertIn("Year", data.columns)
+        self.assertIn("Bank Balance", data.columns)
+        for title in [s.title for s in LifeModel.STATS]:
+            self.assertIn(title, data.columns)
+        # No raw attribute names leak into the result.
+        for stat in LifeModel.STATS:
+            self.assertNotIn(stat.name, data.columns)
+
+    def test_get_yearly_stat_df_formats_resolve_by_title(self):
+        # Money columns must pick up their currency format via title-based stat lookup, so a
+        # rendered cell shows a "$" rather than a bare number.
+        model = LifeModel(start_year=2026, end_year=2027, config=_config(mode="fixed", inflation=0.0))
+        family = Family(model)
+        person = Person(family, "A", 30, 65, Spending(model, base=0))
+        BankAccount(person, "Bank", balance=1234, interest_rate=0.0)
+        model.run()
+        rendered = model.get_yearly_stat_df(columns=["Year", "Bank Balance"]).to_html()
+        self.assertIn("$1,234", rendered)
+
 
 class TestTaxIndexation(unittest.TestCase):
     def test_projection_default_is_frozen(self):

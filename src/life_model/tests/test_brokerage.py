@@ -18,6 +18,10 @@ class TestBrokerage(unittest.TestCase):
         self.mock_person.model = Mock()
         # A brokerage with no explicit growth_rate now defers to the economy's equity return.
         self.mock_person.model.economy.rate.return_value = 7.0
+        # Lots record the acquisition year, and growth splits out a dividend slice — both need
+        # real numbers rather than Mocks.
+        self.mock_person.model.year = 2020
+        self.mock_person.model.config.accounts.brokerage.dividend_yield = 0.0
 
         # Create a brokerage account for testing
         self.brokerage = BrokerageAccount(
