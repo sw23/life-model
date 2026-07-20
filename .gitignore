@@ -135,6 +135,9 @@ dmypy.json
 # General files
 .DS_Store
 
+# Personal life-model scenarios
+my-models/
+
 # ML Models/Results/Plots
 deepqlearning/models/
 deepqlearning/plots/

@@ -51,6 +51,7 @@ This package supports a comprehensive range of financial modeling components:
 - [x] **Family & Person Models** - Multi-person households with individual financial profiles
 - [x] **Children** - Dependents with education and care costs
 - [x] **Jobs** - Employment with salary progression and benefits
+- [x] **Stock Compensation** - RSU grants with multi-year vesting schedules
 
 ### Accounts & Investments
 - [x] **Bank Accounts** - Checking/savings with interest
@@ -79,6 +80,7 @@ This package supports a comprehensive range of financial modeling components:
 - [x] **Federal Taxes** - Complete income tax calculations with brackets
 - [x] **State Taxes** - Per-state tax packs (progressive brackets or flat rate, retirement/Social Security exemptions, SALT integration) with per-person residency
 - [x] **FICA Taxes** - Social Security and Medicare taxes
+- [x] **Capital Gains** - Short-term and long-term capital gains
 - [x] **Required Minimum Distributions (RMDs)** - Retirement account distributions
 
 ### Housing & Lifestyle

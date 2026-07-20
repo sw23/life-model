@@ -34,9 +34,53 @@ class TaxBracketsConfig(StrictModel):
     head_of_household: Optional[List[List[Union[int, float]]]] = None
 
 
+class NIITConfig(StrictModel):
+    """Net investment income surtax (IRC §1411).
+
+    The thresholds are written into the statute and have never been inflation-indexed, so they are
+    deliberately kept out of the yearly ``tax_years`` projection path — indexing them would erase
+    the real fiscal drag the statute produces.
+    """
+
+    # vintage: statutory, source: IRC §1411 (rate and thresholds; not inflation-indexed)
+    rate: float = Field(default=3.8, ge=0, le=100)
+    single: int = Field(default=200000, ge=0)
+    married_filing_jointly: int = Field(default=250000, ge=0)
+    head_of_household: int = Field(default=200000, ge=0)
+
+    def threshold_for(self, filing_status) -> int:
+        """MAGI threshold above which the surtax applies, for a filing status."""
+        if filing_status.value == 2:
+            return self.married_filing_jointly
+        if filing_status.value == 3:
+            return self.head_of_household
+        return self.single
+
+
+def _default_capital_gains_brackets() -> "TaxBracketsConfig":
+    """Long-term capital gains / qualified dividend brackets, used when a config omits them.
+
+    Keeping these as a default (rather than a required key) is what lets every existing config
+    file and scenario continue to load unchanged.
+    """
+    # vintage: 2026, source: IRS Rev. Proc. 2025-32 §3.03
+    return TaxBracketsConfig(
+        single=[[0, 49450, 0], [49451, 545500, 15], [545501, float("inf"), 20]],
+        married_filing_jointly=[[0, 98900, 0], [98901, 613700, 15], [613701, float("inf"), 20]],
+        head_of_household=[[0, 66200, 0], [66201, 579600, 15], [579601, float("inf"), 20]],
+    )
+
+
 class FederalTaxConfig(StrictModel):
     standard_deduction: StandardDeductionConfig
     tax_brackets: TaxBracketsConfig
+    # Preferential rate schedule for long-term capital gains and qualified dividends. Shares the
+    # ordinary ``[lower, upper, rate]`` bracket shape so the same marginal engine applies.
+    capital_gains: TaxBracketsConfig = Field(default_factory=_default_capital_gains_brackets)
+    niit: NIITConfig = Field(default_factory=NIITConfig)
+    # Capital loss deductible against ordinary income each year; the remainder carries forward.
+    # vintage: statutory, source: IRC §1211(b) / IRS Topic 409 (not inflation-indexed since 1978)
+    capital_loss_ordinary_offset: int = Field(default=3000, ge=0)
     # Itemized-deduction limits (defaults let existing configs load without these keys).
     # vintage: 2026, source: IRC §163(h)(3) TCJA acquisition-debt limit; §164(b)(6) SALT cap (OBBBA).
     mortgage_interest_debt_limit: int = Field(default=750000, ge=0)
@@ -133,6 +177,9 @@ class StateTaxPack(StrictModel):
     retirement_income_taxable: bool = True
     # Whether Social Security benefits are taxed by the state. Most states exempt them.
     ss_taxable: bool = False
+    # Whether capital gains and qualified dividends are taxed by the state. The large majority of
+    # states tax them as ordinary income, so this defaults to True and only the exceptions set it.
+    capital_gains_taxable: bool = True
 
     @model_validator(mode="after")
     def _validate_pack(self) -> "StateTaxPack":
@@ -316,6 +363,9 @@ class BankAccountConfig(StrictModel):
 
 class BrokerageAccountConfig(StrictModel):
     default_growth_rate: float
+    # Share of the growth rate paid out as qualified dividends rather than accruing as untaxed
+    # price appreciation. Defaults to 0 so accounts are pure-appreciation unless opted in.
+    dividend_yield: float = Field(default=0.0, ge=0)
 
 
 class HSAAccountConfig(StrictModel):
@@ -674,6 +724,19 @@ class HealthcareConfig(StrictModel):
     medical_deduction_agi_floor: float = Field(default=7.5, ge=0, le=100)
 
 
+class EquityCompConfig(StrictModel):
+    """Defaults for stock compensation.
+
+    These are modeling conventions rather than published figures, so they carry no ``vintage``
+    stamp. Every field is defaulted so configs that omit the section still load.
+    """
+
+    # Named preset used when a stock plan does not specify a vesting schedule.
+    default_schedule: str = "four_year"
+    # Vesting length used to build an even schedule when ``default_schedule`` is "even".
+    default_vesting_years: int = Field(default=4, ge=1)
+
+
 class FinancialConfigModel(StrictModel):
     """Complete financial configuration model with validation"""
 
@@ -688,4 +751,5 @@ class FinancialConfigModel(StrictModel):
     economy: EconomyConfig = Field(default_factory=EconomyConfig)
     healthcare: HealthcareConfig = Field(default_factory=HealthcareConfig)
     dependents: DependentsConfig = Field(default_factory=DependentsConfig)
+    equity_comp: EquityCompConfig = Field(default_factory=EquityCompConfig)
     tax_years: Dict[int, YearlyTaxParameters]

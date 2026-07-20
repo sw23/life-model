@@ -42,6 +42,33 @@ tax:
         - [201776, 256200, 32]
         - [256201, 640600, 35]
         - [640601, .inf, 37]
+    # Preferential rates for long-term capital gains and qualified dividends. Same
+    # [lower, upper, rate] shape as the ordinary brackets; the gain is stacked on top of ordinary
+    # income, so ordinary income fills the 0%/15% bands first.
+    # vintage: 2026, source: IRS Rev. Proc. 2025-32 §3.03
+    capital_gains:
+      single:
+        - [0, 49450, 0]
+        - [49451, 545500, 15]
+        - [545501, .inf, 20]
+      married_filing_jointly:
+        - [0, 98900, 0]
+        - [98901, 613700, 15]
+        - [613701, .inf, 20]
+      head_of_household:
+        - [0, 66200, 0]
+        - [66201, 579600, 15]
+        - [579601, .inf, 20]
+    # Net investment income surtax. Thresholds are statutory and have never been indexed, so they
+    # are deliberately excluded from the tax_years projection path below.
+    # vintage: statutory, source: IRC §1411 (not inflation-indexed)
+    niit:
+      rate: 3.8  # percentage
+      single: 200000
+      married_filing_jointly: 250000
+      head_of_household: 200000
+    # vintage: statutory, source: IRC §1211(b) / IRS Topic 409 (not inflation-indexed since 1978)
+    capital_loss_ordinary_offset: 3000
     # vintage: 2026, source: IRC §163(h)(3) (TCJA acquisition-debt limit); §164(b)(6) SALT cap (OBBBA)
     mortgage_interest_debt_limit: 750000
     salt_deduction_cap: 40000
@@ -473,6 +500,9 @@ accounts:
     compound_rate: 12  # monthly compounding
   brokerage:
     default_growth_rate: 7.0  # percentage
+    # Slice of default_growth_rate paid out as qualified dividends instead of accruing as untaxed
+    # price appreciation. 0 keeps accounts pure-appreciation; total return is unaffected either way.
+    dividend_yield: 0.0  # percentage
   hsa:
     # vintage: 2026, source: IRS Rev. Proc. 2025-19
     contribution_limit: 4400  # self-only
@@ -553,6 +583,14 @@ dependents:
     married_filing_jointly: 400000
     head_of_household: 200000
   ctc_phaseout_rate: 5.0          # percent of modified AGI over threshold ($50 per $1,000)
+
+# Stock compensation defaults. These are modeling conventions rather than published figures, so
+# they carry no vintage stamp. A stock plan that names no schedule uses default_schedule; the
+# "even" preset spreads a grant evenly over default_vesting_years.
+equity_comp:
+  default_schedule: four_year   # four_year | three_year | front_loaded | back_loaded | even
+  default_vesting_years: 4
+
 # Estate settlement. inherited_pretax_mode controls how a non-spouse beneficiary receives an
 # inherited pre-tax retirement balance: "ten_year" applies the SECURE Act 10-year rule (the
 # balance keeps growing and pays out an even slice each year over ten years), while "lump_sum"

@@ -114,6 +114,16 @@ class TaxUnit:
         return sum(m.taxable_income for m in self.members)
 
     @property
+    def preferential_income(self) -> float:
+        """Combined long-term capital gains and qualified dividends for the unit."""
+        return sum(m.preferential_income for m in self.members)
+
+    @property
+    def net_investment_income(self) -> float:
+        """Combined §1411 net investment income for the unit."""
+        return sum(m.income.net_investment_income for m in self.members)
+
+    @property
     def bank_account_balance(self) -> float:
         return sum(m.bank_account_balance for m in self.members)
 
@@ -198,8 +208,10 @@ class TaxUnit:
         thus the flat state tax, would differ between the two and leave phantom year-end debt.
         ``DEFAULT`` residents get the flat-rate number exactly when there is no medical deduction.
         """
-        ordinary_income = self.taxable_income + additional_income
-        legacy_agi = max(ordinary_income - self.federal_deductions_combined(additional_income, 0.0), 0)
+        # Gains are part of the state base as much as the federal one, so the legacy flat-rate AGI
+        # includes preferential income; the pack path picks it up through totals_by_type.
+        total_income = self.taxable_income + self.preferential_income + additional_income
+        legacy_agi = max(total_income - self.federal_deductions_combined(additional_income, 0.0), 0)
         return state_income_tax_for_unit(
             self._state_income_totals(additional_income), self.filing_status, self.state, legacy_agi, self.config
         )
@@ -214,7 +226,14 @@ class TaxUnit:
         state_tax = self.state_income_tax_due(additional_income)
         deductions = self.federal_deductions_combined(additional_income, state_tax)
         taxes = compute_taxes(
-            ordinary_income, deductions, self.filing_status, wage_incomes, self.config, state_tax=state_tax
+            ordinary_income,
+            deductions,
+            self.filing_status,
+            wage_incomes,
+            self.config,
+            state_tax=state_tax,
+            preferential_income=self.preferential_income,
+            net_investment_income=self.net_investment_income,
         )
         # Child Tax Credit: computed here (the only place with members, filing status, and AGI in
         # scope) and recorded on the credits stage. Because the withdrawal-sizing fixed point
@@ -242,8 +261,107 @@ class TaxUnit:
             amount = member.pay_bills(amount)
         return amount
 
+    def _capital_gain_totals(self, member: "Person") -> "Dict[IncomeType, float]":
+        """Short- and long-term realized capital gains for ``member`` this year.
+
+        Qualified dividends are excluded: they are taxed at the same preferential rates but are not
+        capital gains, so capital losses cannot offset them beyond the ordinary-income allowance.
+        """
+        totals = member.income.totals_by_type()
+        return {
+            IncomeType.SHORT_TERM_CAPITAL_GAIN: totals[IncomeType.SHORT_TERM_CAPITAL_GAIN],
+            IncomeType.LONG_TERM_CAPITAL_GAIN: totals[IncomeType.LONG_TERM_CAPITAL_GAIN],
+        }
+
+    def _apply_capital_loss_netting(self) -> None:
+        """Net capital gains and losses for the unit, then offset and carry forward the remainder.
+
+        Losses first cancel the year's gains. Whatever loss remains offsets ordinary income up to
+        the statutory annual limit, and anything still left carries forward on the members.
+
+        Both members' carryforwards are applied to the joint netting, but a *new* carryforward is
+        attributed to members in proportion to the loss each of them personally realized. That
+        attribution is what makes the spouse-death case come out right without a special case: the
+        survivor keeps only the share they generated, and the decedent's share dies with them.
+
+        **v1 simplification:** a carryforward is a single netted figure with no short/long
+        character, and it is applied against short-term (ordinary-rate) gains before long-term
+        ones. Character only changes the answer when a carryforward meets a same-year gain of the
+        opposite character.
+        """
+        gains_by_member = {m.unique_id: self._capital_gain_totals(m) for m in self.members}
+        raw_net = sum(sum(g.values()) for g in gains_by_member.values())
+        carryforward = sum(m.capital_loss_carryforward for m in self.members)
+
+        # The overwhelmingly common case: no prior losses and no losses this year. Leaving the
+        # ledger untouched here is what keeps gain-free simulations byte-identical.
+        if carryforward == 0 and raw_net >= 0:
+            return
+
+        for member in self.members:
+            member.capital_loss_carryforward = 0.0
+
+        net = raw_net - carryforward
+        if net >= 0:
+            # The carryforward is fully absorbed by this year's gains; reduce them by that amount.
+            self._reduce_gains(gains_by_member, carryforward)
+            return
+
+        # Everything nets to a loss. Every capital entry leaves the gain bases — the gains are
+        # consumed by the loss and the loss itself is recognized only through the allowance below.
+        self._zero_out_capital_gains(gains_by_member)
+        loss = -net
+        offset = min(loss, self.config.tax.federal.capital_loss_ordinary_offset)
+        if offset > 0:
+            self.members[0].income.add(IncomeType.ORDINARY, -offset)
+
+        remaining = loss - offset
+        if remaining <= 0:
+            return
+        member_losses = {m.unique_id: max(0.0, -sum(gains_by_member[m.unique_id].values())) for m in self.members}
+        total_member_loss = sum(member_losses.values())
+        for member in self.members:
+            if total_member_loss > 0:
+                share = member_losses[member.unique_id] / total_member_loss
+            else:
+                # Only reachable when the whole remaining loss came from prior-year carryforwards
+                # that nobody realized this year; keep it with the head.
+                share = 1.0 if member is self.members[0] else 0.0
+            member.capital_loss_carryforward = remaining * share
+
+    def _zero_out_capital_gains(self, gains_by_member: "Dict[int, Dict[IncomeType, float]]") -> None:
+        """Remove every realized capital gain and loss from the members' tax bases."""
+        for member in self.members:
+            for income_type, amount in gains_by_member[member.unique_id].items():
+                if amount != 0:
+                    member.income.add(income_type, -amount)
+
+    def _reduce_gains(self, gains_by_member: "Dict[int, Dict[IncomeType, float]]", amount: float) -> None:
+        """Post negative ledger entries cancelling ``amount`` of the unit's realized gains.
+
+        Short-term gains are cancelled first because they are taxed at ordinary rates, so a
+        taxpayer applying a character-less carryforward would spend it there. The reduction is
+        posted as negative entries — the same mechanism the student-loan interest deduction uses —
+        rather than by editing entries in place.
+        """
+        remaining = amount
+        for income_type in (IncomeType.SHORT_TERM_CAPITAL_GAIN, IncomeType.LONG_TERM_CAPITAL_GAIN):
+            for member in self.members:
+                if remaining <= 0:
+                    return
+                available = gains_by_member[member.unique_id][income_type]
+                if available <= 0:
+                    continue
+                take = min(remaining, available)
+                member.income.add(income_type, -take)
+                remaining -= take
+
     def settle_year(self):
         """Settle the tax year for this unit: taxes, spending, housing, and debt."""
+        # Capital gains and losses net once, before anything reads the tax bases. Doing this
+        # up front keeps the withdrawal-sizing fixed point iterating against a stable ledger.
+        self._apply_capital_loss_netting()
+
         spending_by_member: Dict[int, float] = {}
         housing_by_member: Dict[int, float] = {}
         interest_by_member: Dict[int, float] = {}
@@ -299,7 +417,10 @@ class TaxUnit:
         # return they filed — the unit's full AGI, not a per-member split — because Medicare/IRMAA
         # later compares the return's MAGI against filing-status thresholds with a two-year
         # lookback. Recorded after withdrawal solving so 401k distributions are included.
-        agi = max(self.taxable_income - self.federal_deductions, 0.0)
+        # Preferential income is excluded from ``taxable_income`` (it has its own rate schedule) but
+        # is fully part of AGI — leaving it out here would understate MAGI and silently under-charge
+        # the IRMAA surcharges Medicare reads off this history.
+        agi = max(self.taxable_income + self.preferential_income - self.federal_deductions, 0.0)
         year = self.members[0].model.year
         for member in self.members:
             member.agi_history[year] = agi
@@ -365,6 +486,14 @@ class TaxUnit:
             member.stat_taxes_paid_state = 0.0
             member.stat_taxes_paid_ss = 0.0
             member.stat_taxes_paid_medicare = 0.0
+            member.stat_taxes_paid_niit = 0.0
+            member.stat_capital_gains = 0.0
+
+        for member in self.members:
+            totals = member.income.totals_by_type()
+            member.stat_capital_gains = (
+                totals[IncomeType.SHORT_TERM_CAPITAL_GAIN] + totals[IncomeType.LONG_TERM_CAPITAL_GAIN]
+            )
 
         head = self.members[0]
         head.stat_taxes_paid = taxes.total
@@ -372,3 +501,4 @@ class TaxUnit:
         head.stat_taxes_paid_state = taxes.state
         head.stat_taxes_paid_ss = taxes.ss
         head.stat_taxes_paid_medicare = taxes.medicare
+        head.stat_taxes_paid_niit = taxes.niit

@@ -101,6 +101,13 @@ def state_income_tax_for_unit(
         base -= totals_by_type.get(IncomeType.PRETAX_DISTRIBUTION, 0.0)
     if not pack.ss_taxable:
         base -= totals_by_type.get(IncomeType.SS_BENEFIT, 0.0)
+    if not pack.capital_gains_taxable:
+        for gain_type in (
+            IncomeType.SHORT_TERM_CAPITAL_GAIN,
+            IncomeType.LONG_TERM_CAPITAL_GAIN,
+            IncomeType.QUALIFIED_DIVIDEND,
+        ):
+            base -= totals_by_type.get(gain_type, 0.0)
     base -= _state_standard_deduction(pack, filing_status)
     base = max(base, 0.0)
 

@@ -12,6 +12,7 @@ from ..people.person import Person
 
 if TYPE_CHECKING:
     from ..account.job401k import Job401kAccount
+    from .stock import StockPlan
 
 
 class Job(LifeModelAgent):
@@ -30,6 +31,9 @@ class Job(LifeModelAgent):
         self.role = role
         self.salary = salary
         self.retirement_account: Optional["Job401kAccount"] = None
+        # Set by StockPlan when one attaches to this job. Vest income is deliberately excluded from
+        # the 401(k)-eligible compensation computed below, matching the usual plan-document rule.
+        self.stock_plan: Optional["StockPlan"] = None
         self.retired = False
 
         self.stat_gross_income = 0

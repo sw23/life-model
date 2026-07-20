@@ -160,7 +160,10 @@ class TestHomeSale(unittest.TestCase):
         )
         home.home_value = 800000  # $600k gain MFJ, $500k exclusion -> $100k taxable
         home.sell(selling_cost_percent=0.0)
-        self.assertAlmostEqual(a.income.ordinary_taxable, 100000.0, places=2)
+        # The excess above the exclusion is a long-term capital gain, taxed on the preferential
+        # schedule rather than at ordinary rates.
+        self.assertAlmostEqual(a.income.preferential_income, 100000.0, places=2)
+        self.assertEqual(a.income.ordinary_taxable, 0.0)
 
 
 class TestPMI(unittest.TestCase):
