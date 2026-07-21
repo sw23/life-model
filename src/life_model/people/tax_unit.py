@@ -350,9 +350,7 @@ class TaxUnit:
         gross = 0.0
         for _ in range(100):
             long_term, short_term = self._preview_brokerage_gain(gross)
-            taxes = self.get_income_taxes_due(
-                additional_preferential=long_term, additional_short_term=short_term
-            ).total
+            taxes = self.get_income_taxes_due(additional_preferential=long_term, additional_short_term=short_term).total
             needed = min(available, max(0.0, bills + taxes - bank))
             if abs(needed - gross) < 0.001:
                 gross = needed
