@@ -98,6 +98,7 @@ class LifeModel(mesa.Model):
     STATS = [
         MoneyStat("stat_gross_income", "Income"),  # Gross income made in a year
         MoneyStat("stat_bank_balance", "Bank Balance"),  # Bank account balance at the end of each year
+        MoneyStat("stat_brokerage_balance", "Brokerage Balance"),  # Taxable brokerage balance at year end
         MoneyStat("stat_401k_balance", "401k Balance"),  # Total 401k balance at the end of each year
         MoneyStat("stat_useable_balance", "Useable Balance"),  # Balance available for use in a year
         MoneyStat("stat_debt", "Debt"),  # Total debt balance in each year
