@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, List, Optional, Tuple
 
 from ..account.job401k import Job401kAccount
 from ..limits import federal_retirement_age
@@ -555,6 +555,31 @@ class Person(LifeModelAgent):
         withdrawn = amount - remaining
         self.receive_cash(withdrawn)
         return withdrawn
+
+    @property
+    def brokerage_balance(self) -> float:
+        """Total balance across this person's taxable brokerage accounts."""
+        return sum(account.balance for account in self.brokerage_accounts)
+
+    def preview_brokerage_gain(self, amount: float) -> Tuple[float, float]:
+        """Preview the ``(long_term, short_term)`` gains withdrawing ``amount`` would realize.
+
+        Mirrors ``withdraw_from_brokerage_accounts``' account order exactly but mutates nothing,
+        so the settlement solver can size a brokerage draw (and its capital-gains tax) before
+        committing the sale.
+        """
+        remaining = amount
+        long_term = 0.0
+        short_term = 0.0
+        for account in self.brokerage_accounts:
+            if remaining <= 0:
+                break
+            take = min(remaining, account.balance)
+            lot_long, lot_short = account.preview_gain(take)
+            long_term += lot_long
+            short_term += lot_short
+            remaining -= take
+        return long_term, short_term
 
     def receive_cash(self, amount: float, source: str = "income"):
         """Receive cash into the person's primary bank account.

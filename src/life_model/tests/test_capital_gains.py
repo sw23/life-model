@@ -417,5 +417,70 @@ class TestWithdrawalSolverWithGains(unittest.TestCase):
         self.assertGreater(sum(a.pretax_balance for a in person.all_retirement_accounts), 0)
 
 
+class TestBrokerageFundsSpending(unittest.TestCase):
+    """Brokerage accounts are tapped for spending after the bank but before retirement accounts,
+    realizing capital-gains tax on the way (settlement approach B: preview-sized draw)."""
+
+    def _retiree_with_brokerage(self, *, bank, spending, broker_value, broker_basis, pretax=0.0):
+        from ..account.job401k import Job401kAccount
+        from ..work.job import Job, Salary
+
+        model = LifeModel(start_year=2020, end_year=2020, config=_fixture_config())
+        person = _person(model, bank_balance=bank, spending=spending)
+        job = Job(person, "Old Co", "Retiree", Salary(model=model, base=0))
+        acct401k = Job401kAccount(job=job, pretax_balance=pretax, average_growth=0)
+        job.retired = True
+        account = BrokerageAccount(person, "B", balance=0, growth_rate=0)
+        account.lots.append(TaxLot(value=broker_value, cost_basis=broker_basis, acquired_year=2000))
+        account.balance = broker_value
+        return model, person, account, acct401k
+
+    def test_brokerage_is_drained_before_pretax_401k(self):
+        # $60k of bills, no bank, a brokerage that can cover them, and a large 401k. The 401k must
+        # be left untouched: brokerage beats retirement accounts.
+        _, person, account, acct401k = self._retiree_with_brokerage(
+            bank=0.0, spending=60000, broker_value=200000, broker_basis=50000, pretax=1000000
+        )
+        TaxUnit([person]).settle_year()
+
+        self.assertEqual(person.debt, 0)
+        self.assertEqual(acct401k.pretax_balance, 1000000)  # 401k never touched
+        self.assertLess(account.balance, 200000)  # brokerage funded the year
+
+    def test_brokerage_sale_realizes_capital_gains_tax(self):
+        # Basis is 25% of value, so every dollar sold is 75% long-term gain. Selling to cover
+        # $60k of bills realizes gain and pays preferential-rate tax on it.
+        _, person, account, _ = self._retiree_with_brokerage(
+            bank=0.0, spending=60000, broker_value=200000, broker_basis=50000
+        )
+        TaxUnit([person]).settle_year()
+
+        self.assertGreater(person.income.preferential_income, 0)
+        self.assertGreater(person.stat_taxes_paid, 0)
+        # Solvent: the preview-sized draw covered bills plus the tax the sale itself triggered.
+        self.assertEqual(person.debt, 0)
+
+    def test_bank_covers_bills_leaves_brokerage_untouched(self):
+        # Bank alone covers the year: no brokerage sale, no realized gain.
+        _, person, account, _ = self._retiree_with_brokerage(
+            bank=100000, spending=60000, broker_value=200000, broker_basis=50000
+        )
+        TaxUnit([person]).settle_year()
+
+        self.assertEqual(account.balance, 200000)
+        self.assertEqual(person.income.preferential_income, 0)
+
+    def test_brokerage_then_pretax_401k_when_brokerage_insufficient(self):
+        # Bills exceed the brokerage; brokerage is fully drained and the 401k covers the rest.
+        _, person, account, acct401k = self._retiree_with_brokerage(
+            bank=0.0, spending=120000, broker_value=50000, broker_basis=50000, pretax=1000000
+        )
+        TaxUnit([person]).settle_year()
+
+        self.assertEqual(person.debt, 0)
+        self.assertEqual(account.balance, 0)  # brokerage exhausted first
+        self.assertLess(acct401k.pretax_balance, 1000000)  # then the 401k
+
+
 if __name__ == "__main__":
     unittest.main()

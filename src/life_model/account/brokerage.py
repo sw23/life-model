@@ -219,6 +219,32 @@ class BrokerageAccount(Investment):
 
         return actual_withdrawal, long_term_gain, short_term_gain
 
+    def preview_gain(self, amount: float) -> Tuple[float, float]:
+        """Preview the gains selling ``amount`` would realize, WITHOUT mutating any lots.
+
+        Walks the same FIFO path as :meth:`sell` but consumes nothing, returning
+        ``(long_term_gain, short_term_gain)``. The settlement solver uses this to size a
+        brokerage draw — and the capital-gains tax that draw itself triggers — before committing
+        the sale, so the account is sold exactly once.
+        """
+        if amount <= 0:
+            return 0.0, 0.0
+        remaining = min(amount, self.balance)
+        long_term_gain = 0.0
+        short_term_gain = 0.0
+        for lot in self.lots:
+            if remaining <= 0:
+                break
+            take = min(remaining, lot.value)
+            basis_used = lot.cost_basis * (take / lot.value) if lot.value > 0 else lot.cost_basis
+            gain = take - basis_used
+            if self.model.year - lot.acquired_year >= 1:
+                long_term_gain += gain
+            else:
+                short_term_gain += gain
+            remaining -= take
+        return long_term_gain, short_term_gain
+
     def step_up_basis_at_death(self) -> None:
         """Reset basis to fair market value at the owner's death (IRC §1014).
 

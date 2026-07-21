@@ -3,6 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
+import math
 import warnings
 from typing import TYPE_CHECKING, Dict, List
 
@@ -198,7 +199,13 @@ class TaxUnit:
         totals[IncomeType.PRETAX_DISTRIBUTION] += additional_income
         return totals
 
-    def state_income_tax_due(self, additional_income: float = 0) -> float:
+    def state_income_tax_due(
+        self,
+        additional_income: float = 0,
+        *,
+        additional_preferential: float = 0.0,
+        additional_short_term: float = 0.0,
+    ) -> float:
         """State income tax for the unit, resolving the head's state pack.
 
         Computed against the property-only AGI base (``state_income_tax_paid=0``) so it does not
@@ -207,24 +214,53 @@ class TaxUnit:
         consistent between withdrawal sizing and settlement — otherwise the DEFAULT AGI, and
         thus the flat state tax, would differ between the two and leave phantom year-end debt.
         ``DEFAULT`` residents get the flat-rate number exactly when there is no medical deduction.
+
+        ``additional_preferential`` and ``additional_short_term`` are previewed capital gains a
+        prospective brokerage sale would realize (long- and short-term); they enter the state base
+        the same way the federal one sees them, so a brokerage draw is sized against the state tax
+        it triggers too.
         """
         # Gains are part of the state base as much as the federal one, so the legacy flat-rate AGI
         # includes preferential income; the pack path picks it up through totals_by_type.
-        total_income = self.taxable_income + self.preferential_income + additional_income
-        legacy_agi = max(total_income - self.federal_deductions_combined(additional_income, 0.0), 0)
-        return state_income_tax_for_unit(
-            self._state_income_totals(additional_income), self.filing_status, self.state, legacy_agi, self.config
+        ordinary_bump = additional_income + additional_short_term
+        total_income = (
+            self.taxable_income
+            + self.preferential_income
+            + additional_income
+            + additional_preferential
+            + additional_short_term
         )
+        legacy_agi = max(total_income - self.federal_deductions_combined(ordinary_bump, 0.0), 0)
+        totals = self._state_income_totals(additional_income)
+        totals[IncomeType.LONG_TERM_CAPITAL_GAIN] += additional_preferential
+        totals[IncomeType.SHORT_TERM_CAPITAL_GAIN] += additional_short_term
+        return state_income_tax_for_unit(totals, self.filing_status, self.state, legacy_agi, self.config)
 
-    def get_income_taxes_due(self, additional_income: float = 0) -> TaxesDue:
+    def get_income_taxes_due(
+        self,
+        additional_income: float = 0,
+        *,
+        additional_preferential: float = 0.0,
+        additional_short_term: float = 0.0,
+    ) -> TaxesDue:
         # ``additional_income`` models a prospective pre-tax 401k withdrawal: it is ordinary
         # income but not FICA wages, so it is not added to the per-member wage bases. It does
         # enter the deduction computation — the medical floor is income-dependent
         # and the state income tax it triggers enters SALT.
-        ordinary_income = self.taxable_income + additional_income
+        #
+        # ``additional_preferential`` / ``additional_short_term`` model previewed capital gains a
+        # prospective brokerage sale would realize (long- and short-term). Long-term gains and
+        # qualified dividends are taxed on the preferential schedule; short-term gains are ordinary
+        # income. Both are net investment income for the §1411 surtax. Neither is FICA wages. This
+        # lets the settlement solver size a brokerage draw against the tax the sale itself creates.
+        ordinary_income = self.taxable_income + additional_income + additional_short_term
         wage_incomes = [m.fica_wages for m in self.members]
-        state_tax = self.state_income_tax_due(additional_income)
-        deductions = self.federal_deductions_combined(additional_income, state_tax)
+        state_tax = self.state_income_tax_due(
+            additional_income,
+            additional_preferential=additional_preferential,
+            additional_short_term=additional_short_term,
+        )
+        deductions = self.federal_deductions_combined(additional_income + additional_short_term, state_tax)
         taxes = compute_taxes(
             ordinary_income,
             deductions,
@@ -232,8 +268,8 @@ class TaxUnit:
             wage_incomes,
             self.config,
             state_tax=state_tax,
-            preferential_income=self.preferential_income,
-            net_investment_income=self.net_investment_income,
+            preferential_income=self.preferential_income + additional_preferential,
+            net_investment_income=self.net_investment_income + additional_preferential + additional_short_term,
         )
         # Child Tax Credit: computed here (the only place with members, filing status, and AGI in
         # scope) and recorded on the credits stage. Because the withdrawal-sizing fixed point
@@ -260,6 +296,74 @@ class TaxUnit:
                 return 0
             amount = member.pay_bills(amount)
         return amount
+
+    @property
+    def brokerage_balance(self) -> float:
+        """Combined taxable brokerage balance across the unit's members."""
+        return sum(m.brokerage_balance for m in self.members)
+
+    def withdraw_from_brokerage_accounts(self, amount: float) -> float:
+        """Sell ``amount`` from members' brokerage accounts (into the bank). Returns the unfilled
+        remainder. Members are drained in order, mirroring the pre-tax 401k helper."""
+        for member in self.members:
+            if amount <= 0:
+                break
+            amount -= member.withdraw_from_brokerage_accounts(amount)
+        return amount
+
+    def _preview_brokerage_gain(self, amount: float) -> "tuple[float, float]":
+        """Preview the ``(long_term, short_term)`` gains selling ``amount`` across the unit would
+        realize, mirroring ``withdraw_from_brokerage_accounts``' member order without mutating."""
+        remaining = amount
+        long_term = 0.0
+        short_term = 0.0
+        for member in self.members:
+            if remaining <= 0:
+                break
+            take = min(remaining, member.brokerage_balance)
+            member_long, member_short = member.preview_brokerage_gain(take)
+            long_term += member_long
+            short_term += member_short
+            remaining -= take
+        return long_term, short_term
+
+    def _draw_from_brokerage(self, bills: float) -> None:
+        """Sell taxable brokerage to cover ``bills`` + the tax the sale triggers, before any
+        retirement account is touched.
+
+        The gross to sell is fixed-point sized against a *preview* of the capital gains the sale
+        would realize (approach B), so the account is sold exactly once: ``gross = bills +
+        taxes(gains(gross)) - bank``, capped at the available brokerage balance. Because the
+        marginal rate is below 100% the map is a contraction and converges quickly. When the
+        brokerage can't cover the whole shortfall it is fully drained and the residual is left for
+        the pre-tax 401k solve that follows.
+
+        The tax estimate reads the not-yet-netted ledger, so a rare in-year capital-loss
+        carryforward makes the sizing slightly conservative (sells marginally more than needed;
+        the excess simply lands in the bank). Settled taxes are always computed from the real
+        post-sale ledger, so they are exact regardless.
+        """
+        available = self.brokerage_balance
+        if available <= 0:
+            return
+        bank = self.bank_account_balance
+        gross = 0.0
+        for _ in range(100):
+            long_term, short_term = self._preview_brokerage_gain(gross)
+            taxes = self.get_income_taxes_due(
+                additional_preferential=long_term, additional_short_term=short_term
+            ).total
+            needed = min(available, max(0.0, bills + taxes - bank))
+            if abs(needed - gross) < 0.001:
+                gross = needed
+                break
+            gross = needed
+        if gross > 0:
+            # Round the draw up to the cent (capped at the balance) so floating-point residue in
+            # the tax fixed point can't leak a sub-cent shortfall into the 401k when the brokerage
+            # alone can cover the year. The at-most-one-cent over-draw simply stays in the bank.
+            gross = min(available, math.ceil(gross * 100) / 100)
+            self.withdraw_from_brokerage_accounts(gross)
 
     def _capital_gain_totals(self, member: "Person") -> "Dict[IncomeType, float]":
         """Short- and long-term realized capital gains for ``member`` this year.
@@ -358,10 +462,6 @@ class TaxUnit:
 
     def settle_year(self):
         """Settle the tax year for this unit: taxes, spending, housing, and debt."""
-        # Capital gains and losses net once, before anything reads the tax bases. Doing this
-        # up front keeps the withdrawal-sizing fixed point iterating against a stable ledger.
-        self._apply_capital_loss_netting()
-
         spending_by_member: Dict[int, float] = {}
         housing_by_member: Dict[int, float] = {}
         interest_by_member: Dict[int, float] = {}
@@ -409,6 +509,17 @@ class TaxUnit:
         total_housing = sum(housing_by_member.values())
         total_debt_payments = sum(debt_payment_by_member.values())
         bills = total_spending + total_housing + total_debt_payments + existing_debt
+
+        # Spending priority: bank first, then taxable brokerage, then retirement accounts. Draw
+        # any brokerage needed to cover bills + the capital-gains tax the sale triggers before the
+        # pre-tax 401k is considered. Proceeds land in the bank, so the 401k solve below naturally
+        # sizes against the topped-up balance (and does nothing when brokerage already covered it).
+        self._draw_from_brokerage(bills)
+
+        # Net capital gains and losses once — after the brokerage sale — so brokerage gains net
+        # with RSU vests and any loss carryforward before the tax bases are read for the 401k
+        # solve. (Doing it here rather than up front keeps a single, all-in netting pass.)
+        self._apply_capital_loss_netting()
 
         # Size and perform any pre-tax 401k withdrawal, then get the final taxes owed.
         taxes = self._solve_withdrawals_and_taxes(bills)
@@ -479,6 +590,7 @@ class TaxUnit:
             member.stat_housing_costs = housing_by_member[member.unique_id]
             member.stat_interest_paid = interest_by_member[member.unique_id]
             member.stat_bank_balance = member.bank_account_balance
+            member.stat_brokerage_balance = member.brokerage_balance
             # Clear tax stats on every member; the unit's taxes are attributed to the head only
             # (below) so the model's per-agent sum counts them exactly once.
             member.stat_taxes_paid = 0.0
