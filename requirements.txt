@@ -1,4 +1,4 @@
-pandas==3.0.3
+pandas==3.0.5
 matplotlib==3.11.1
 mesa==3.3.1
 networkx==3.6.1

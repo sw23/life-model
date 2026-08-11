@@ -1,6 +1,6 @@
 pytest-cov==7.1.0
-hypothesis>=6.158.0
-nbformat>=5.10.4
+hypothesis>=6.165.2
+nbformat>=5.11.0
 nbconvert>=7.17.1
 ipykernel>=7.3.0
 jupyter_client>=8.9.1
