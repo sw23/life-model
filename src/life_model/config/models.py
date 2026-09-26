@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-from typing import Dict, List, Literal, Optional, Union
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -24,14 +24,14 @@ class StandardDeductionConfig(StrictModel):
     married_filing_jointly: int = Field(ge=0)
     # Optional: HEAD_OF_HOUSEHOLD falls back to `single` when absent, so existing scenarios and
     # the frozen test fixture load unchanged.
-    head_of_household: Optional[int] = Field(default=None, ge=0)
+    head_of_household: int | None = Field(default=None, ge=0)
 
 
 class TaxBracketsConfig(StrictModel):
-    single: List[List[Union[int, float]]]
-    married_filing_jointly: List[List[Union[int, float]]]
+    single: list[list[int | float]]
+    married_filing_jointly: list[list[int | float]]
     # Optional: HEAD_OF_HOUSEHOLD falls back to `single` when absent.
-    head_of_household: Optional[List[List[Union[int, float]]]] = None
+    head_of_household: list[list[int | float]] | None = None
 
 
 class NIITConfig(StrictModel):
@@ -169,8 +169,8 @@ class StateTaxPack(StrictModel):
     keyed by filing status (``single`` required; other statuses fall back to ``single``).
     """
 
-    flat_rate: Optional[float] = Field(default=None, ge=0, le=100)
-    brackets: Optional[Dict[str, List[List[Union[int, float]]]]] = None
+    flat_rate: float | None = Field(default=None, ge=0, le=100)
+    brackets: dict[str, list[list[int | float]]] | None = None
     standard_deduction: StateStandardDeductionConfig = Field(default_factory=StateStandardDeductionConfig)
     # Whether pre-tax retirement distributions (401k/IRA withdrawals, RMDs) are taxed by the state.
     # PA and IL exempt them.
@@ -198,7 +198,7 @@ class StateTaxPack(StrictModel):
         return self
 
     @staticmethod
-    def _validate_brackets(status: str, rows: "List[List[Union[int, float]]]") -> None:
+    def _validate_brackets(status: str, rows: "list[list[int | float]]") -> None:
         """Reject malformed or gapped brackets.
 
         Rows follow the federal ``[lower, upper, rate]`` convention where each row's ``lower`` is
@@ -207,7 +207,7 @@ class StateTaxPack(StrictModel):
         """
         if not rows:
             raise ValueError(f"StateTaxPack.brackets['{status}'] must have at least one row")
-        prev_upper: Optional[float] = None
+        prev_upper: float | None = None
         for row in rows:
             if len(row) != 3:
                 raise ValueError(f"StateTaxPack.brackets['{status}'] rows must be [lower, upper, rate]")
@@ -234,9 +234,9 @@ class StateTaxConfig(StrictModel):
     ``tax_rate`` remains readable for callers that want the flat rate directly.
     """
 
-    tax_rate: Optional[float] = Field(default=6.0, ge=0, le=100)
+    tax_rate: float | None = Field(default=6.0, ge=0, le=100)
     default_state: str = DEFAULT_STATE_KEY
-    packs: Dict[str, StateTaxPack] = Field(default_factory=dict)
+    packs: dict[str, StateTaxPack] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _synthesize_and_validate(self) -> "StateTaxConfig":
@@ -253,7 +253,7 @@ class StateTaxConfig(StrictModel):
             )
         return self
 
-    def get_pack(self, state: Optional[str]) -> "StateTaxPack":
+    def get_pack(self, state: str | None) -> "StateTaxPack":
         """Resolve the pack for a resident.
 
         Uses the resident's ``state`` when a matching pack exists, otherwise ``default_state``,
@@ -265,7 +265,7 @@ class StateTaxConfig(StrictModel):
             return self.packs[self.default_state]
         return self.packs[DEFAULT_STATE_KEY]
 
-    def resolve_state_code(self, state: Optional[str]) -> str:
+    def resolve_state_code(self, state: str | None) -> str:
         """Return the pack key a resident resolves to (see :meth:`get_pack`)."""
         if state and state in self.packs:
             return state
@@ -308,7 +308,7 @@ class RetirementConfig(StrictModel):
     federal_retirement_age: float = Field(ge=0)
     job_401k_contrib_limit: Job401kContribLimitConfig
     ira: IRAConfig
-    rmd_distribution_periods: List[List[float]]
+    rmd_distribution_periods: list[list[float]]
 
 
 class SocialSecurityBenefitTaxationConfig(StrictModel):
@@ -348,9 +348,9 @@ class SocialSecurityConfig(StrictModel):
     long_run_bend_point_increase: float = Field(ge=0)
 
     # Historical data tables
-    avg_wage_index: Dict[int, float]
-    cost_of_living_adj: Dict[int, float]
-    bend_points: Dict[int, List[int]]
+    avg_wage_index: dict[int, float]
+    cost_of_living_adj: dict[int, float]
+    bend_points: dict[int, list[int]]
 
     # Provisional-income taxation of benefits
     benefit_taxation: SocialSecurityBenefitTaxationConfig
@@ -592,7 +592,7 @@ class EconomyConfig(StrictModel):
     home_appreciation: float = 4.0
     # PATH mode: per-rate, per-year overrides, e.g. {"equity_return": {2027: -10.0, 2028: -4.0}}.
     # Years absent from a rate's table fall back to that rate's fixed constant above.
-    paths: Dict[str, Dict[int, float]] = Field(default_factory=dict)
+    paths: dict[str, dict[int, float]] = Field(default_factory=dict)
     stochastic: StochasticEconomyConfig = Field(default_factory=StochasticEconomyConfig)
 
 
@@ -626,7 +626,7 @@ class MedicareConfig(StrictModel):
     # Part A is premium-free for people with sufficient work history (documented simplification).
     part_b_base_monthly_premium: float = Field(default=202.90, ge=0)
     part_d_base_monthly_premium: float = Field(default=34.50, ge=0)
-    irmaa_tiers: List[MedicareIRMAATierConfig] = Field(
+    irmaa_tiers: list[MedicareIRMAATierConfig] = Field(
         default_factory=lambda: [
             # vintage: 2026, source: CMS 2026 Parts B Premiums fact sheet; Part D IRMAA (SSA).
             MedicareIRMAATierConfig(
@@ -680,7 +680,7 @@ class LongTermCareConfig(StrictModel):
     start_age: int = Field(default=65, ge=0)
     # Annual hazard of entering a care episode, by age band (TODO(verify): calibrated to ASPE
     # lifetime-risk data, not a published annual-incidence table).
-    hazard_bands: List[LTCHazardBandConfig] = Field(
+    hazard_bands: list[LTCHazardBandConfig] = Field(
         default_factory=lambda: [
             LTCHazardBandConfig(max_age=74, annual_hazard=0.005),
             LTCHazardBandConfig(max_age=84, annual_hazard=0.02),
@@ -701,7 +701,7 @@ class HealthcareConfig(StrictModel):
 
     # Age-banded out-of-pocket medical-cost curve (real start-year dollars).
     # vintage: 2024, source: CMS NHE / MEPS out-of-pocket by age — TODO(verify) exact per-band OOP.
-    medical_cost_bands: List[MedicalCostBandConfig] = Field(
+    medical_cost_bands: list[MedicalCostBandConfig] = Field(
         default_factory=lambda: [
             MedicalCostBandConfig(max_age=39, annual_cost=1500),
             MedicalCostBandConfig(max_age=64, annual_cost=3000),
@@ -752,4 +752,4 @@ class FinancialConfigModel(StrictModel):
     healthcare: HealthcareConfig = Field(default_factory=HealthcareConfig)
     dependents: DependentsConfig = Field(default_factory=DependentsConfig)
     equity_comp: EquityCompConfig = Field(default_factory=EquityCompConfig)
-    tax_years: Dict[int, YearlyTaxParameters]
+    tax_years: dict[int, YearlyTaxParameters]

@@ -11,7 +11,7 @@ into the settlement pipeline.
 """
 
 import math
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from ..config.config_manager import config as _global_config
 from .federal import FilingStatus
@@ -20,12 +20,12 @@ if TYPE_CHECKING:
     from ..config.financial_config import FinancialConfig
 
 
-def _fin(config: "Optional[FinancialConfig]") -> "FinancialConfig":
+def _fin(config: "FinancialConfig | None") -> "FinancialConfig":
     """Resolve the financial config to use (per-model if given, else global)."""
     return config if config is not None else _global_config.financial
 
 
-def _phaseout_threshold(filing_status: FilingStatus, config: "Optional[FinancialConfig]") -> float:
+def _phaseout_threshold(filing_status: FilingStatus, config: "FinancialConfig | None") -> float:
     """MAGI threshold at which the CTC begins to phase out for ``filing_status``.
 
     Statuses without their own configured threshold (e.g. HEAD_OF_HOUSEHOLD sharing the single
@@ -40,7 +40,7 @@ def child_tax_credit(
     magi: float,
     federal_tax: float,
     filing_status: FilingStatus,
-    config: "Optional[FinancialConfig]" = None,
+    config: "FinancialConfig | None" = None,
 ) -> float:
     """Child Tax Credit usable this year (nonrefundable portion plus refundable portion).
 

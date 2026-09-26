@@ -4,7 +4,7 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Dict, Generic, List, TypeVar
+from typing import TYPE_CHECKING, Generic, TypeVar
 
 if TYPE_CHECKING:
     from .people.person import Person
@@ -12,16 +12,15 @@ if TYPE_CHECKING:
 T = TypeVar("T")
 
 
-class Registry(Generic[T], ABC):
+class Registry(ABC, Generic[T]):
     """Abstract base class for registries that manage relationships between entities"""
 
     def __init__(self):
-        self._items: Dict[str, List[T]] = {}
+        self._items: dict[str, list[T]] = {}
 
     @abstractmethod
     def _get_key(self, owner: "Person") -> str:
         """Get the unique key for an owner"""
-        pass
 
     def register(self, owner: "Person", item: T) -> None:
         """Register an item for an owner"""
@@ -40,7 +39,7 @@ class Registry(Generic[T], ABC):
             return True
         return False
 
-    def get_items(self, owner: "Person") -> List[T]:
+    def get_items(self, owner: "Person") -> list[T]:
         """Get all items for an owner"""
         key = self._get_key(owner)
         return self._items.get(key, [])
@@ -51,7 +50,7 @@ class Registry(Generic[T], ABC):
         if key in self._items:
             del self._items[key]
 
-    def get_all_items(self) -> List[T]:
+    def get_all_items(self) -> list[T]:
         """Get all items across all owners"""
         all_items = []
         for items in self._items.values():
@@ -69,121 +68,81 @@ class PersonRegistry(Registry[T]):
 class BankAccountRegistry(PersonRegistry["BankAccount"]):
     """Registry for managing BankAccount relationships"""
 
-    pass
-
 
 class JobRegistry(PersonRegistry["Job"]):
     """Registry for managing Job relationships"""
-
-    pass
 
 
 class HomeRegistry(PersonRegistry["Home"]):
     """Registry for managing Home relationships"""
 
-    pass
-
 
 class ApartmentRegistry(PersonRegistry["Apartment"]):
     """Registry for managing Apartment relationships"""
-
-    pass
 
 
 class LifeInsuranceRegistry(PersonRegistry["LifeInsurance"]):
     """Registry for managing LifeInsurance policy relationships"""
 
-    pass
-
 
 class GeneralInsuranceRegistry(PersonRegistry["Insurance"]):
     """Registry for managing general Insurance policy relationships"""
-
-    pass
 
 
 class AnnuityRegistry(PersonRegistry["Annuity"]):
     """Registry for managing Annuity relationships"""
 
-    pass
-
 
 class Plan529Registry(PersonRegistry["Plan529"]):
     """Registry for managing 529 Plan relationships"""
-
-    pass
 
 
 class DonationRegistry(PersonRegistry["Donation"]):
     """Registry for managing Donation relationships"""
 
-    pass
-
 
 class DonorAdvisedFundRegistry(PersonRegistry["DonorAdvisedFund"]):
     """Registry for managing DonorAdvisedFund relationships"""
-
-    pass
 
 
 class CarLoanRegistry(PersonRegistry["CarLoan"]):
     """Registry for managing CarLoan relationships"""
 
-    pass
-
 
 class CreditCardRegistry(PersonRegistry["RevolvingDebt"]):
     """Registry for managing credit-card / revolving-debt relationships"""
-
-    pass
 
 
 class StudentLoanRegistry(PersonRegistry["StudentLoan"]):
     """Registry for managing StudentLoan relationships"""
 
-    pass
-
 
 class MortgageRegistry(PersonRegistry["Mortgage"]):
     """Registry for managing Mortgage relationships"""
-
-    pass
 
 
 class MedicalCostsRegistry(PersonRegistry["MedicalCosts"]):
     """Registry for managing per-person MedicalCosts agents"""
 
-    pass
-
 
 class MedicareRegistry(PersonRegistry["Medicare"]):
     """Registry for managing per-person Medicare agents"""
-
-    pass
 
 
 class LongTermCareRegistry(PersonRegistry["LongTermCare"]):
     """Registry for managing per-person LongTermCare agents"""
 
-    pass
-
 
 class ChildRegistry(PersonRegistry["Child"]):
     """Registry for managing Child (dependent) relationships"""
-
-    pass
 
 
 class PensionRegistry(PersonRegistry["Pension"]):
     """Registry for managing Pension (defined-benefit) relationships"""
 
-    pass
-
 
 class TrustRegistry(PersonRegistry["Trust"]):
     """Registry for managing Trust relationships (keyed by the grantor)"""
-
-    pass
 
 
 class ModelRegistries:
@@ -237,7 +196,7 @@ class ModelRegistries:
         self.pensions.clear(owner)
         self.trusts.clear(owner)
 
-    def iter_registries(self) -> List[Registry]:
+    def iter_registries(self) -> list[Registry]:
         """All registries in the container, for owner-agnostic bulk operations."""
         return [
             self.bank_accounts,

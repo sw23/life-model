@@ -116,7 +116,7 @@ class TestPersonWithdrawalHelpers(unittest.TestCase):
     def test_withdraw_from_traditional_iras_is_taxable_income(self):
         from ..account.traditional_IRA import TraditionalIRA
 
-        model, person = self._make_person()
+        _model, person = self._make_person()
         TraditionalIRA(person=person, balance=50000)
         withdrawn = person.withdraw_from_traditional_iras(20000)
         self.assertEqual(withdrawn, 20000)
@@ -127,7 +127,7 @@ class TestPersonWithdrawalHelpers(unittest.TestCase):
     def test_withdraw_from_roth_iras_is_tax_free(self):
         from ..account.roth_IRA import RothIRA
 
-        model, person = self._make_person()
+        _model, person = self._make_person()
         RothIRA(person=person, balance=50000)
         withdrawn = person.withdraw_from_roth_iras(20000)
         self.assertEqual(withdrawn, 20000)
@@ -149,7 +149,7 @@ class TestPersonWithdrawalHelpers(unittest.TestCase):
         from ..account.brokerage import BrokerageAccount
         from ..account.hsa import HealthSavingsAccount, HSAType
 
-        model, person = self._make_person()
+        _model, person = self._make_person()
         HealthSavingsAccount(person=person, hsa_type=HSAType.INDIVIDUAL, balance=5000)
         BrokerageAccount(person=person, company="Broker", balance=8000)
         self.assertEqual(person.withdraw_from_hsas(2000), 2000)
@@ -160,7 +160,7 @@ class TestPersonWithdrawalHelpers(unittest.TestCase):
     def test_withdrawals_are_capped_at_available_balance(self):
         from ..account.traditional_IRA import TraditionalIRA
 
-        model, person = self._make_person()
+        _model, person = self._make_person()
         TraditionalIRA(person=person, balance=1500)
         withdrawn = person.withdraw_from_traditional_iras(10000)
         self.assertEqual(withdrawn, 1500)

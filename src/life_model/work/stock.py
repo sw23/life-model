@@ -13,8 +13,9 @@ because the model has no share price to quote them against.
 """
 
 import html
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, List, Optional, Sequence
+from typing import TYPE_CHECKING, ClassVar
 
 from ..model import LifeModelAgent
 
@@ -90,7 +91,7 @@ class VestingSchedule:
         return cls((0.05, 0.15, 0.40, 0.40))
 
     #: Presets addressable by name from configuration.
-    PRESETS = {
+    PRESETS: ClassVar[dict[str, str]] = {
         "four_year": "four_year",
         "three_year": "three_year",
         "front_loaded": "front_loaded",
@@ -161,7 +162,7 @@ class StockPlan(LifeModelAgent):
 
     # Runs after Job.pre_step (priority 0) so wages are already on the ledger, and well before the
     # step stage where the tax unit reads it.
-    STEP_PRIORITY = {"pre_step": 5}
+    STEP_PRIORITY: ClassVar[dict[str, int]] = {"pre_step": 5}
 
     def __init__(
         self,
@@ -171,11 +172,11 @@ class StockPlan(LifeModelAgent):
         refresher_value: float = 0.0,
         refresher_start_year: int = 1,
         refresher_growth_percent: float = 0.0,
-        schedule: Optional[VestingSchedule] = None,
-        signon_schedule: Optional[VestingSchedule] = None,
+        schedule: VestingSchedule | None = None,
+        signon_schedule: VestingSchedule | None = None,
         disposition: str = "sell",
-        growth_rate: Optional[float] = None,
-        brokerage_account: "Optional[BrokerageAccount]" = None,
+        growth_rate: float | None = None,
+        brokerage_account: "BrokerageAccount | None" = None,
     ):
         """Stock compensation plan attached to a job.
 
@@ -223,7 +224,7 @@ class StockPlan(LifeModelAgent):
         # Compounds at the stock's return each year; a vest slice is revalued by how far the index
         # has moved since its grant.
         self.price_index = 1.0
-        self.grants: List[StockGrant] = []
+        self.grants: list[StockGrant] = []
 
         self.stat_stock_vested = 0.0
         self.stat_stock_unvested = 0.0
@@ -249,7 +250,7 @@ class StockPlan(LifeModelAgent):
         return self.model.economy.equity_return(self.model.year)
 
     @growth_rate.setter
-    def growth_rate(self, value: Optional[float]) -> None:
+    def growth_rate(self, value: float | None) -> None:
         self._growth_rate_override = value
 
     @property
@@ -260,7 +261,7 @@ class StockPlan(LifeModelAgent):
             for grant in self.grants
         )
 
-    def grant(self, value: float, schedule: Optional[VestingSchedule] = None) -> StockGrant:
+    def grant(self, value: float, schedule: VestingSchedule | None = None) -> StockGrant:
         """Issue a grant of ``value`` dollars at the current price index."""
         new_grant = StockGrant(
             value_at_grant=value,

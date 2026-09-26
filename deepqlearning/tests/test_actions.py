@@ -13,7 +13,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from actions import (  # noqa: E402
+from actions import (
     AMOUNT_BEARING_ACTIONS,
     AMOUNT_BUCKETS,
     SINGLETON_ACTIONS,
@@ -23,7 +23,7 @@ from actions import (  # noqa: E402
     encode_flat_action,
     flat_action_count,
 )
-from environment import FinancialLifeEnv  # noqa: E402
+from environment import FinancialLifeEnv
 
 
 class TestActionSpaceHonesty(unittest.TestCase):
@@ -142,7 +142,7 @@ class TestCanExecuteImpliesSuccess(unittest.TestCase):
         samples = 0
         for seed in range(60):
             env = FinancialLifeEnv()
-            state, _ = env.reset(seed=seed)
+            _state, _ = env.reset(seed=seed)
             rng = np.random.RandomState(seed)
             for _ in range(40):
                 legal = env.get_legal_actions()

@@ -37,9 +37,9 @@ import torch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from agent import FinancialDQNAgent, FinancialDQNTrainer, rollout  # noqa: E402
-from baselines import BASELINES, evaluate_baseline  # noqa: E402
-from environment import FinancialLifeEnv  # noqa: E402
+from agent import FinancialDQNAgent, FinancialDQNTrainer, rollout
+from baselines import BASELINES, evaluate_baseline
+from environment import FinancialLifeEnv
 
 
 @pytest.mark.slow

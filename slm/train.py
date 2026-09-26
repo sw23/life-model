@@ -22,7 +22,7 @@ is *validated, not executed*, in CI.
 
 import argparse
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import yaml
 from pydantic import Field, model_validator
@@ -39,7 +39,7 @@ class LoraSettings(StrictModel):
     alpha: int = Field(default=32, ge=1)
     dropout: float = Field(default=0.05, ge=0.0, le=1.0)
     # Attention/MLP projection names common to Llama/Qwen/Mistral-family models.
-    target_modules: List[str] = Field(
+    target_modules: list[str] = Field(
         default_factory=lambda: ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
     )
 
@@ -55,7 +55,7 @@ class TrainConfig(StrictModel):
     output_dir: str = "slm/checkpoints/run"
 
     # Fine-tuning mode — exactly one of these (validated below).
-    lora: Optional[LoraSettings] = LoraSettings()
+    lora: LoraSettings | None = LoraSettings()
     full_finetune: bool = False
 
     # Optimization.
@@ -69,17 +69,17 @@ class TrainConfig(StrictModel):
     gradient_checkpointing: bool = False
     packing: bool = False
     seed: int = 0
-    max_examples: Optional[int] = Field(default=None, ge=1)
+    max_examples: int | None = Field(default=None, ge=1)
 
     # Precision / attention / quantization.
     precision: str = Field(default="bf16", pattern="^(bf16|fp16|fp32)$")
     attn_implementation: str = "eager"
-    quantization: Optional[str] = Field(default=None, pattern="^(4bit|8bit)$")
+    quantization: str | None = Field(default=None, pattern="^(4bit|8bit)$")
 
     # Opaque passthrough blocks handed to accelerate / FSDP unchanged (the LLM-readiness knob).
     # Validated only as free-form mappings; never introspected by this module.
-    fsdp: Dict[str, Any] = Field(default_factory=dict)
-    accelerate: Dict[str, Any] = Field(default_factory=dict)
+    fsdp: dict[str, Any] = Field(default_factory=dict)
+    accelerate: dict[str, Any] = Field(default_factory=dict)
     report_to: str = "none"
 
     @model_validator(mode="after")
@@ -102,14 +102,14 @@ class TrainConfig(StrictModel):
 # ---------------------------------------------------------------------------
 
 
-def load_chat_examples(path: str, max_examples: Optional[int] = None) -> List[List[Dict[str, str]]]:
+def load_chat_examples(path: str, max_examples: int | None = None) -> list[list[dict[str, str]]]:
     """Load a dataset JSONL into per-example chat message lists (schema-validated).
 
     Each row is validated against :class:`~slm.schema.AdviceExample`, then reduced to its
     ``messages`` (list of ``{"role", "content"}``) — the tokenizer applies the chat template at
     train time. Both decision and refusal rows are included, so scope discipline is trained.
     """
-    out: List[List[Dict[str, str]]] = []
+    out: list[list[dict[str, str]]] = []
     with open(path) as fh:
         for line in fh:
             line = line.strip()
@@ -122,7 +122,7 @@ def load_chat_examples(path: str, max_examples: Optional[int] = None) -> List[Li
     return out
 
 
-def render_chat_texts(examples: List[List[Dict[str, str]]], apply_chat_template) -> List[str]:
+def render_chat_texts(examples: list[list[dict[str, str]]], apply_chat_template) -> list[str]:
     """Render each example's messages to a single training string via a chat-template callable.
 
     ``apply_chat_template`` has the ``tokenizer.apply_chat_template`` signature
@@ -163,7 +163,7 @@ def train(config: TrainConfig):
     texts = render_chat_texts(examples, tokenizer.apply_chat_template)
     dataset = Dataset.from_dict({"text": texts})
 
-    model_kwargs: Dict[str, Any] = {
+    model_kwargs: dict[str, Any] = {
         "attn_implementation": config.attn_implementation,
         "torch_dtype": _torch_dtype(config.precision),
     }
@@ -195,20 +195,20 @@ def train(config: TrainConfig):
 
     from trl import SFTConfig, SFTTrainer
 
-    sft_kwargs: Dict[str, Any] = dict(
-        output_dir=config.output_dir,
-        num_train_epochs=config.epochs,
-        per_device_train_batch_size=config.per_device_batch_size,
-        gradient_accumulation_steps=config.grad_accum,
-        learning_rate=config.learning_rate,
-        warmup_ratio=config.warmup_ratio,
-        weight_decay=config.weight_decay,
-        gradient_checkpointing=config.gradient_checkpointing,
-        packing=config.packing,
-        seed=config.seed,
-        report_to=config.report_to,
-        dataset_text_field="text",
-    )
+    sft_kwargs: dict[str, Any] = {
+        "output_dir": config.output_dir,
+        "num_train_epochs": config.epochs,
+        "per_device_train_batch_size": config.per_device_batch_size,
+        "gradient_accumulation_steps": config.grad_accum,
+        "learning_rate": config.learning_rate,
+        "warmup_ratio": config.warmup_ratio,
+        "weight_decay": config.weight_decay,
+        "gradient_checkpointing": config.gradient_checkpointing,
+        "packing": config.packing,
+        "seed": config.seed,
+        "report_to": config.report_to,
+        "dataset_text_field": "text",
+    }
     # trl renamed max_seq_length -> max_length in newer releases; support both so the same code
     # path runs across the version range in requirements-slm.txt.
     sft_params = set(inspect.signature(SFTConfig.__init__).parameters)
@@ -225,7 +225,7 @@ def train(config: TrainConfig):
     return config.output_dir
 
 
-def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Fine-tune the SLM adviser.")
     parser.add_argument("config", help="Path to the TrainConfig YAML.")
     parser.add_argument(
@@ -234,7 +234,7 @@ def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def main(argv: Optional[List[str]] = None) -> None:
+def main(argv: list[str] | None = None) -> None:
     args = _parse_args(argv)
     config = TrainConfig.from_yaml(args.config)
     print(

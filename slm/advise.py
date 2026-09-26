@@ -23,7 +23,6 @@ always yields the same tool-loop answer (deterministic end-to-end, including und
 
 import zlib
 from dataclasses import dataclass
-from typing import Dict, List, Optional
 
 import numpy as np
 
@@ -63,10 +62,10 @@ def _user_text(messages: Messages) -> str:
     return "\n".join(m["content"] for m in messages if m.get("role") == "user")
 
 
-def _household_from_text(text: str) -> Dict:
+def _household_from_text(text: str) -> dict:
     """Reconstruct a scoring-ready household config from rendered household text."""
     parsed = parse_household(text)
-    household: Dict = {
+    household: dict = {
         "person_start_age": parsed["person_start_age"],
         "person_retirement_age": parsed["person_retirement_age"],
         "person_gender": _GENDER_BY_NAME[parsed["person_gender"].lower()],
@@ -84,18 +83,18 @@ def _household_from_text(text: str) -> Dict:
 class ToolLoopAdviser:
     """An ``AdviserModel`` that grounds a wrapped model's advice in a live Monte Carlo run."""
 
-    def __init__(self, model: AdviserModel, config: Optional[ToolLoopConfig] = None):
+    def __init__(self, model: AdviserModel, config: ToolLoopConfig | None = None):
         self.model = model
         self.config = config or ToolLoopConfig()
 
-    def _trial_seeds(self, household_text: str) -> List[int]:
+    def _trial_seeds(self, household_text: str) -> list[int]:
         # Seeds derived from the household text (stable) so the tool's scoring is deterministic and
         # independent of any eval seed the household is later re-scored under.
         base = (self.config.seed ^ zlib.crc32(household_text.encode())) & 0x7FFFFFFF
         seq = np.random.SeedSequence(base)
         return [int(child.generate_state(1)[0]) for child in seq.spawn(self.config.n_trials)]
 
-    def _scoreboard_message(self, scored) -> Dict[str, str]:
+    def _scoreboard_message(self, scored) -> dict[str, str]:
         lines = ["Simulator Monte Carlo results (success rate, median terminal net worth):"]
         for c in sorted(scored, key=lambda s: s.success_rate, reverse=True):
             title = STRATEGY_BY_NAME[c.decision].title
@@ -116,7 +115,7 @@ class ToolLoopAdviser:
         argmax = argmax_candidate(scored).decision
 
         # Draft, then revise up to the iteration budget, feeding the scoreboard back each round.
-        convo: List[Dict[str, str]] = list(messages)
+        convo: list[dict[str, str]] = list(messages)
         decision = parse_decision(self.model.generate(convo))
         for _ in range(self.config.max_iters):
             board = self._scoreboard_message(scored)
@@ -128,9 +127,11 @@ class ToolLoopAdviser:
         # Simulator-grounded correction: never ship a decision the simulator shows is dominated by
         # more than the margin; fall back to the simulated best.
         if self.config.trust_simulation:
-            if decision is None or decision not in by_name:
-                decision = argmax
-            elif by_name[decision].success_rate < by_name[argmax].success_rate - self.config.dominance_margin:
+            if (
+                decision is None
+                or decision not in by_name
+                or by_name[decision].success_rate < by_name[argmax].success_rate - self.config.dominance_margin
+            ):
                 decision = argmax
         elif decision is None:
             decision = argmax

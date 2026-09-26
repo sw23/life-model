@@ -11,12 +11,12 @@ single helper is the one place that logic lives so federal and state can never s
 call it; they are property-tested against each other.
 """
 
-from typing import List, Sequence, Union
+from collections.abc import Sequence
 
-Bracket = Sequence[Union[int, float]]
+Bracket = Sequence[int | float]
 
 
-def apply_brackets(income: float, brackets: "List[Bracket]") -> float:
+def apply_brackets(income: float, brackets: "list[Bracket]") -> float:
     """Apply progressive tax brackets to ``income``.
 
     Brackets are treated as half-open marginal segments ``[prev_upper, upper)`` where ``upper`` is

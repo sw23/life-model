@@ -14,7 +14,6 @@ covered by a property test, which keeps the action mask and the executor from dr
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Optional, Tuple, Type
 
 from life_model.account.brokerage import BrokerageAccount
 from life_model.account.hsa import HealthSavingsAccount
@@ -118,13 +117,13 @@ EARLY_WITHDRAWAL_PENALTY = 0.10
 # ``decode_flat_action``/``encode_flat_action`` are exact inverses (round-trip tested).
 # ---------------------------------------------------------------------------
 
-AMOUNT_BUCKETS: Tuple[float, ...] = (0.10, 0.25, 0.50, 1.00)
+AMOUNT_BUCKETS: tuple[float, ...] = (0.10, 0.25, 0.50, 1.00)
 
 # Declaration order of ActionType is preserved in both groups so the layout is stable.
-AMOUNT_BEARING_ACTIONS: Tuple[ActionType, ...] = tuple(
+AMOUNT_BEARING_ACTIONS: tuple[ActionType, ...] = tuple(
     a for a in ActionType if a in TRANSFER_ACTIONS or a in WITHDRAWAL_ACTIONS
 )
-SINGLETON_ACTIONS: Tuple[ActionType, ...] = tuple(
+SINGLETON_ACTIONS: tuple[ActionType, ...] = tuple(
     a for a in ActionType if a not in TRANSFER_ACTIONS and a not in WITHDRAWAL_ACTIONS
 )
 
@@ -134,7 +133,7 @@ class FlatAction:
     """A decoded flat action: the action type plus its amount fraction (None for singletons)."""
 
     action_type: ActionType
-    amount_fraction: Optional[float]
+    amount_fraction: float | None
 
 
 def flat_action_count() -> int:
@@ -154,7 +153,7 @@ def decode_flat_action(index: int) -> FlatAction:
     return FlatAction(SINGLETON_ACTIONS[index - n_amount], None)
 
 
-def encode_flat_action(action_type: ActionType, amount_fraction: Optional[float] = None) -> int:
+def encode_flat_action(action_type: ActionType, amount_fraction: float | None = None) -> int:
     """Encode ``(action_type, amount_fraction)`` into its flat action index.
 
     ``amount_fraction`` must be exactly one of :data:`AMOUNT_BUCKETS` for amount-bearing
@@ -179,7 +178,7 @@ def withdrawal_available(person: Person, action_type: ActionType) -> float:
     return sum(a.balance for a in accounts)
 
 
-def owned_accounts(person: Person, account_cls: Type[FinancialAccount]) -> List[FinancialAccount]:
+def owned_accounts(person: Person, account_cls: type[FinancialAccount]) -> list[FinancialAccount]:
     """Return this person's accounts of ``account_cls``.
 
     Brokerage/IRA/HSA accounts are not registry-backed (they reference ``person`` directly), so
@@ -190,7 +189,7 @@ def owned_accounts(person: Person, account_cls: Type[FinancialAccount]) -> List[
     return [a for a in person.model.agents if isinstance(a, account_cls) and getattr(a, "person", None) is person]
 
 
-def _first_account(person: Person, account_cls: Type[FinancialAccount]) -> Optional[FinancialAccount]:
+def _first_account(person: Person, account_cls: type[FinancialAccount]) -> FinancialAccount | None:
     accounts = owned_accounts(person, account_cls)
     return accounts[0] if accounts else None
 
@@ -222,7 +221,7 @@ class ActionResult:
 class FinancialAction(ABC):
     """Abstract base class for financial actions"""
 
-    def __init__(self, action_type: ActionType, person: Person, amount: Optional[float] = None):
+    def __init__(self, action_type: ActionType, person: Person, amount: float | None = None):
         self.action_type = action_type
         self.person = person
         self.amount = amount or 0.0
@@ -243,7 +242,7 @@ class FinancialAction(ABC):
 class TransferAction(FinancialAction):
     """Move money from the bank account into a retirement/investment account."""
 
-    def _target(self) -> Optional[FinancialAccount]:
+    def _target(self) -> FinancialAccount | None:
         return _first_account(self.person, _TRANSFER_TARGETS[self.action_type])
 
     def _transferable(self) -> float:
@@ -343,8 +342,8 @@ class RetirementAction(FinancialAction):
 
 
 def build_action(
-    action_type: ActionType, person: Person, amount: Optional[float] = None, percentage_change: float = 0.05
-) -> Optional[FinancialAction]:
+    action_type: ActionType, person: Person, amount: float | None = None, percentage_change: float = 0.05
+) -> FinancialAction | None:
     """Construct the :class:`FinancialAction` for ``action_type`` (``None`` for NO_ACTION)."""
     if action_type in TRANSFER_ACTIONS:
         return TransferAction(action_type, person, amount if amount is not None else 1000.0)
@@ -364,7 +363,7 @@ class ActionExecutor:
         self.model = model
 
     def execute_action(
-        self, person: Person, action_type: ActionType, amount: Optional[float] = None, **kwargs
+        self, person: Person, action_type: ActionType, amount: float | None = None, **kwargs
     ) -> ActionResult:
         """Execute a financial action."""
         if action_type == ActionType.NO_ACTION:
@@ -375,7 +374,7 @@ class ActionExecutor:
         return action.execute()
 
     def can_execute_action(
-        self, person: Person, action_type: ActionType, amount: Optional[float] = None, **kwargs
+        self, person: Person, action_type: ActionType, amount: float | None = None, **kwargs
     ) -> bool:
         """Check if an action can be executed."""
         if action_type == ActionType.NO_ACTION:

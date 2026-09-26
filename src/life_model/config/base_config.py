@@ -4,20 +4,19 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional
+from typing import Any
 
 
 class ConfigurationManager(ABC):
     """Abstract base class for configuration management"""
 
     def __init__(self):
-        self._config_data: Dict[str, Any] = {}
+        self._config_data: dict[str, Any] = {}
         self._initialize_defaults()
 
     @abstractmethod
     def _initialize_defaults(self) -> None:
         """Initialize default configuration values"""
-        pass
 
     def get(self, key: str, default: Any = None) -> Any:
         """Get a configuration value by key
@@ -59,7 +58,7 @@ class ConfigurationManager(ABC):
         # Set the final key
         current[keys[-1]] = value
 
-    def update(self, config_dict: Dict[str, Any]) -> None:
+    def update(self, config_dict: dict[str, Any]) -> None:
         """Update configuration with values from a dictionary
 
         Args:
@@ -67,7 +66,7 @@ class ConfigurationManager(ABC):
         """
         self._merge_config(self._config_data, config_dict)
 
-    def _merge_config(self, base: Dict[str, Any], update: Dict[str, Any]) -> None:
+    def _merge_config(self, base: dict[str, Any], update: dict[str, Any]) -> None:
         """Recursively merge configuration dictionaries"""
         for key, value in update.items():
             if key in base and isinstance(base[key], dict) and isinstance(value, dict):
@@ -75,7 +74,7 @@ class ConfigurationManager(ABC):
             else:
                 base[key] = value
 
-    def get_all(self) -> Dict[str, Any]:
+    def get_all(self) -> dict[str, Any]:
         """Get all configuration data"""
         return self._config_data.copy()
 
@@ -88,15 +87,15 @@ class ConfigurationManager(ABC):
 class ScenarioConfig(ConfigurationManager):
     """Configuration manager that supports scenario-specific overrides"""
 
-    def __init__(self, scenario: Optional[str] = None):
+    def __init__(self, scenario: str | None = None):
         self.scenario = scenario
         super().__init__()
 
     def _initialize_defaults(self) -> None:
         """Initialize with base defaults"""
-        pass  # Will be overridden by specific config classes
+        # Will be overridden by specific config classes
 
-    def apply_scenario(self, scenario: str, overrides: Dict[str, Any]) -> None:
+    def apply_scenario(self, scenario: str, overrides: dict[str, Any]) -> None:
         """Apply scenario-specific configuration overrides
 
         Args:

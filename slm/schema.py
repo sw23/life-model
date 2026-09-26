@@ -19,7 +19,7 @@ Every rationale figure is a copy of a number in ``scored_alternatives``, so fait
 established at data-generation time, by construction.
 """
 
-from typing import List, Literal, Optional
+from typing import Literal
 
 from pydantic import Field
 
@@ -45,11 +45,11 @@ class HouseholdProfile(StrictModel):
     initial_salary: float = Field(ge=0)
     initial_bank_balance: float
     initial_spending: float = Field(ge=0)
-    economy_scenario: Optional[str] = None
+    economy_scenario: str | None = None
     # Household composition. ``children_ages`` are the ages (at the start year) of modeled child
     # dependents; ``models_healthcare`` marks that age-banded medical costs and Medicare premiums
     # are priced for the person. Defaults keep older/simple households unchanged.
-    children_ages: List[int] = Field(default_factory=list)
+    children_ages: list[int] = Field(default_factory=list)
     models_healthcare: bool = False
 
 
@@ -87,17 +87,17 @@ class AdviceExample(StrictModel):
     kind: Literal["decision", "refusal"]
 
     # In-scope decision examples carry the household + scoring; refusals leave them empty.
-    household: Optional[HouseholdProfile] = None
-    household_text: Optional[str] = None
+    household: HouseholdProfile | None = None
+    household_text: str | None = None
     question: str
-    decision_space: List[str] = Field(default_factory=list)
-    chosen_decision: Optional[str] = None
-    scored_alternatives: List[ScoredCandidate] = Field(default_factory=list)
+    decision_space: list[str] = Field(default_factory=list)
+    chosen_decision: str | None = None
+    scored_alternatives: list[ScoredCandidate] = Field(default_factory=list)
 
     rationale: str
     out_of_scope: bool = False
-    messages: List[ChatMessage]
-    provenance: Optional[Provenance] = None
+    messages: list[ChatMessage]
+    provenance: Provenance | None = None
 
 
 class Datasheet(StrictModel):
@@ -119,8 +119,8 @@ class Datasheet(StrictModel):
     n_examples: int
     n_decision_examples: int
     n_refusal_examples: int
-    household_scenarios: List[str]
-    decision_space: List[str]
+    household_scenarios: list[str]
+    decision_space: list[str]
     teacher_gating: str
     scale_note: str
     created_utc: str

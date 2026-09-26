@@ -23,7 +23,6 @@ Per-env seeds are derived from a base seed, so a collection run is reproducible.
 """
 
 import time
-from typing import Dict, List, Optional
 
 import gymnasium as gym
 import numpy as np
@@ -35,14 +34,14 @@ from environment import FinancialLifeEnv
 class _EnvFactory:
     """Picklable env factory (needed for the Async/spawn backend)."""
 
-    def __init__(self, config: Optional[Dict]):
+    def __init__(self, config: dict | None):
         self.config = dict(config or {})
 
     def __call__(self) -> FinancialLifeEnv:
         return FinancialLifeEnv(self.config)
 
 
-def make_vector_env(env_config: Optional[Dict], num_envs: int, backend: str = "sync") -> gym.vector.VectorEnv:
+def make_vector_env(env_config: dict | None, num_envs: int, backend: str = "sync") -> gym.vector.VectorEnv:
     """Build a gymnasium vector env of ``num_envs`` ``FinancialLifeEnv`` instances."""
     fns = [_EnvFactory(env_config) for _ in range(num_envs)]
     if backend == "async":
@@ -50,10 +49,10 @@ def make_vector_env(env_config: Optional[Dict], num_envs: int, backend: str = "s
     return gym.vector.SyncVectorEnv(fns)
 
 
-def _masks_from_info(info: Dict, num_envs: int, action_size: int) -> List[List[int]]:
+def _masks_from_info(info: dict, num_envs: int, action_size: int) -> list[list[int]]:
     """Extract per-env legal-action lists from the vector info's ``legal_mask`` array."""
     masks = info.get("legal_mask")
-    result: List[List[int]] = []
+    result: list[list[int]] = []
     for i in range(num_envs):
         row = masks[i] if masks is not None and masks[i] is not None else None
         if row is None:
@@ -66,7 +65,7 @@ def _masks_from_info(info: Dict, num_envs: int, action_size: int) -> List[List[i
 class VectorizedTrainer:
     """Trains a :class:`FinancialDQNAgent` from vectorized collection with the vectorized upgrades."""
 
-    def __init__(self, agent: FinancialDQNAgent, env_config: Optional[Dict] = None, config: Optional[Dict] = None):
+    def __init__(self, agent: FinancialDQNAgent, env_config: dict | None = None, config: dict | None = None):
         self.agent = agent
         self.env_config = dict(env_config or {})
 
@@ -94,8 +93,8 @@ class VectorizedTrainer:
 
         self.writer = self._make_tensorboard_writer()
         self.scheduler = self._make_scheduler()
-        self.episode_rewards: List[float] = []
-        self.eval_rewards: List[float] = []
+        self.episode_rewards: list[float] = []
+        self.eval_rewards: list[float] = []
         self.best_eval = -float("inf")
         self._collected_steps = 0
 
@@ -142,7 +141,7 @@ class VectorizedTrainer:
         progress = min(1.0, frac / decay)
         self.agent.epsilon = start + (end - start) * progress
 
-    def train(self) -> Dict:
+    def train(self) -> dict:
         """Run vectorized collection + training until the step budget or early stop. Returns stats."""
         num_envs = self.config["num_envs"]
         action_size = self.agent.action_size

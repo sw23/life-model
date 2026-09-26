@@ -17,7 +17,7 @@ scenarios (see ``life_model.config.scenarios``) to sample per episode as a curri
 """
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 import numpy as np
 
@@ -29,28 +29,28 @@ class HouseholdScenario:
     """A named household scenario: a fixed point household plus randomization spreads."""
 
     #: The exact household used when randomization is off (the fixed point scenario).
-    point: Dict[str, Any]
+    point: dict[str, Any]
     #: Genders drawn from (uniformly) when randomizing.
-    genders: Tuple[GenderAtBirth, ...] = (GenderAtBirth.MALE, GenderAtBirth.FEMALE)
+    genders: tuple[GenderAtBirth, ...] = (GenderAtBirth.MALE, GenderAtBirth.FEMALE)
     #: +/- years around the point start age (inclusive uniform integer draw).
     start_age_spread: int = 3
     #: +/- years around the point retirement age (inclusive uniform integer draw).
     retirement_age_spread: int = 3
     #: Multiplicative uniform range applied to the point salary.
-    salary_factor_range: Tuple[float, float] = (0.7, 1.3)
+    salary_factor_range: tuple[float, float] = (0.7, 1.3)
     #: Multiplicative uniform range applied to the point bank balance.
-    bank_factor_range: Tuple[float, float] = (0.25, 1.75)
+    bank_factor_range: tuple[float, float] = (0.25, 1.75)
     #: Multiplicative uniform range applied to the point spending/salary fraction.
-    spending_factor_range: Tuple[float, float] = (0.85, 1.15)
+    spending_factor_range: tuple[float, float] = (0.85, 1.15)
     #: Named economy scenarios to draw from per episode (None = the env's configured economy).
     #: Empty means the economy is never sampled here.
-    economy_scenarios: Tuple[Optional[str], ...] = field(default=())
+    economy_scenarios: tuple[str | None, ...] = field(default=())
 
 
 # The four point household scenarios that anchor the randomization distributions. With
 # randomization off, ``randomize=False`` reproduces these exact point households, so the point
 # values are the fixed, deterministic configurations.
-HOUSEHOLD_SCENARIOS: Dict[str, HouseholdScenario] = {
+HOUSEHOLD_SCENARIOS: dict[str, HouseholdScenario] = {
     "basic": HouseholdScenario(
         point={
             "person_start_age": 25,
@@ -107,11 +107,11 @@ class EpisodeSampler:
         self.scenario_name = scenario
         self.scenario = HOUSEHOLD_SCENARIOS[scenario]
 
-    def point_household(self) -> Dict[str, Any]:
+    def point_household(self) -> dict[str, Any]:
         """The scenario's exact fixed point household (used when randomization is off)."""
         return dict(self.scenario.point)
 
-    def sample(self, rng: np.random.Generator) -> Dict[str, Any]:
+    def sample(self, rng: np.random.Generator) -> dict[str, Any]:
         """Draw one randomized household around the scenario's point values."""
         s = self.scenario
         p = s.point
@@ -134,7 +134,7 @@ class EpisodeSampler:
         spending = float(salary * spending_fraction)
         gender = s.genders[int(rng.integers(0, len(s.genders)))]
 
-        household: Dict[str, Any] = {
+        household: dict[str, Any] = {
             "person_start_age": start_age,
             "person_retirement_age": retirement_age,
             "person_gender": gender,

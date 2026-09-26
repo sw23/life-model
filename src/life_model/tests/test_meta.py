@@ -28,8 +28,7 @@ PACKAGE_ROOT = Path(life_model.__file__).parent
 
 def _iter_test_modules():
     """Yield every ``test_*.py`` file in the tests directory."""
-    for path in sorted(TESTS_DIR.glob("test_*.py")):
-        yield path
+    yield from sorted(TESTS_DIR.glob("test_*.py"))
 
 
 def _has_test_function(source: str) -> bool:
@@ -71,7 +70,7 @@ class TestAllModulesImported(unittest.TestCase):
         for name in _iter_package_modules():
             try:
                 importlib.import_module(name)
-            except Exception as exc:  # pragma: no cover - only hit on genuine breakage
+            except Exception as exc:  # noqa: BLE001  # pragma: no cover - only hit on genuine breakage
                 failures[name] = repr(exc)
         self.assertEqual(failures, {}, msg=f"Modules that failed to import: {failures}")
 

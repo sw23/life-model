@@ -40,7 +40,6 @@ constants):
 
 from dataclasses import dataclass
 from math import log
-from typing import Dict
 
 
 @dataclass(frozen=True)
@@ -160,7 +159,7 @@ def step_reward(
 
 # Presets pin the parameters that materially change conclusions (risk aversion, bequest weight,
 # ruin penalty). The eval report records which preset produced it.
-REWARD_PRESETS: Dict[str, RewardConfig] = {
+REWARD_PRESETS: dict[str, RewardConfig] = {
     # Bequest-dominant: per-year consumption barely matters and terminal (log) wealth dominates,
     # so the optimal policy accumulates — a wealth-accumulation objective, useful as a comparison
     # point against the consumption-based presets.

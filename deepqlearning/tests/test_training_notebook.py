@@ -13,7 +13,7 @@ import unittest
 # Add the src directory to the path to import the base test class
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from life_model.tests.notebook_test_base import JupyterNotebookTestBase, get_repo_root  # noqa: E402
+from life_model.tests.notebook_test_base import JupyterNotebookTestBase, get_repo_root
 
 
 class TestTrainingExampleNotebook(JupyterNotebookTestBase):

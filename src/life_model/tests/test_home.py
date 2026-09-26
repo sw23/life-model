@@ -15,17 +15,17 @@ from ..people.person import Person, Spending
 
 
 def _expenses(model, **overrides):
-    kwargs = dict(
-        model=model,
-        property_tax_percent=0.0,
-        home_insurance_percent=0.0,
-        maintenance_amount=0.0,
-        maintenance_increase=0.0,
-        improvement_amount=0.0,
-        improvement_increase=0.0,
-        hoa_amount=0.0,
-        hoa_increase=0.0,
-    )
+    kwargs = {
+        "model": model,
+        "property_tax_percent": 0.0,
+        "home_insurance_percent": 0.0,
+        "maintenance_amount": 0.0,
+        "maintenance_increase": 0.0,
+        "improvement_amount": 0.0,
+        "improvement_increase": 0.0,
+        "hoa_amount": 0.0,
+        "hoa_increase": 0.0,
+    }
     kwargs.update(overrides)
     return HomeExpenses(**kwargs)
 

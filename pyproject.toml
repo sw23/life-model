@@ -64,9 +64,14 @@ line-length = 120
 extend-exclude = ["*.ipynb"]
 
 [tool.ruff.lint]
-# Explicit rule set: ruff 0.15's defaults (E4/E7/E9, F) plus isort import sorting. Pinned rather than
-# `extend-select` so that ruff changing its default rules (as 0.16 did) doesn't silently widen lint.
-select = ["E4", "E7", "E9", "F", "I"]
+# Ruff's default rules plus isort import sorting. The defaults move with the ruff version, which is
+# pinned in tox.ini and .pre-commit-config.yaml; bump those together and fix any new violations.
+extend-select = ["I"]
+
+[tool.ruff.lint.per-file-ignores]
+# Public import paths (life_model.account.roth_IRA / traditional_IRA); renaming would break callers.
+"src/life_model/account/roth_IRA.py" = ["N999"]
+"src/life_model/account/traditional_IRA.py" = ["N999"]
 
 [tool.mypy]
 ignore_missing_imports = true

@@ -4,7 +4,7 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 from enum import Enum
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from ..config.config_manager import config as _global_config
 from .brackets import apply_brackets
@@ -21,22 +21,22 @@ class FilingStatus(Enum):
     HEAD_OF_HOUSEHOLD = 3
 
 
-def _fin(config: "Optional[FinancialConfig]") -> "FinancialConfig":
+def _fin(config: "FinancialConfig | None") -> "FinancialConfig":
     """Resolve the financial config to use (per-model if given, else global)."""
     return config if config is not None else _global_config.financial
 
 
-def get_federal_standard_deduction(filing_status: FilingStatus, config: "Optional[FinancialConfig]" = None) -> float:
+def get_federal_standard_deduction(filing_status: FilingStatus, config: "FinancialConfig | None" = None) -> float:
     """Get federal standard deduction for filing status"""
     return _fin(config).get_federal_standard_deduction(filing_status)
 
 
-def get_federal_tax_brackets(filing_status: FilingStatus, config: "Optional[FinancialConfig]" = None) -> list:
+def get_federal_tax_brackets(filing_status: FilingStatus, config: "FinancialConfig | None" = None) -> list:
     """Get federal tax brackets for filing status"""
     return _fin(config).get_federal_tax_brackets(filing_status)
 
 
-def federal_income_tax(income: float, filing_status: FilingStatus, config: "Optional[FinancialConfig]" = None) -> float:
+def federal_income_tax(income: float, filing_status: FilingStatus, config: "FinancialConfig | None" = None) -> float:
     """Calculates federal income tax due.
 
     Brackets are treated as half-open marginal segments ``[prev_upper, upper)`` where ``upper``
@@ -57,7 +57,7 @@ def federal_income_tax(income: float, filing_status: FilingStatus, config: "Opti
     return apply_brackets(income, brackets)
 
 
-def get_capital_gains_brackets(filing_status: FilingStatus, config: "Optional[FinancialConfig]" = None) -> list:
+def get_capital_gains_brackets(filing_status: FilingStatus, config: "FinancialConfig | None" = None) -> list:
     """Get the preferential long-term capital gains / qualified dividend brackets."""
     return _fin(config).get_capital_gains_brackets(filing_status)
 
@@ -66,7 +66,7 @@ def capital_gains_tax(
     ordinary_income: float,
     preferential_income: float,
     filing_status: FilingStatus,
-    config: "Optional[FinancialConfig]" = None,
+    config: "FinancialConfig | None" = None,
 ) -> float:
     """Tax on preferential income, stacked on top of ordinary income.
 
@@ -97,7 +97,7 @@ def net_investment_income_tax(
     net_investment_income: float,
     magi: float,
     filing_status: FilingStatus,
-    config: "Optional[FinancialConfig]" = None,
+    config: "FinancialConfig | None" = None,
 ) -> float:
     """Net investment income surtax (IRC §1411).
 
@@ -120,6 +120,6 @@ def net_investment_income_tax(
     return min(net_investment_income, excess) * (niit.rate / 100)
 
 
-def max_tax_rate(filing_status: FilingStatus, config: "Optional[FinancialConfig]" = None) -> float:
+def max_tax_rate(filing_status: FilingStatus, config: "FinancialConfig | None" = None) -> float:
     """Get maximum tax rate for filing status"""
     return _fin(config).get_max_tax_rate(filing_status)

@@ -17,7 +17,6 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Optional
 
 import matplotlib
 
@@ -26,14 +25,14 @@ import matplotlib
 if not os.environ.get("DISPLAY") and not sys.platform.startswith("darwin"):
     matplotlib.use("Agg")
 
-import matplotlib.pyplot as plt  # noqa: E402
-import numpy as np  # noqa: E402
-from agent import FinancialDQNAgent, FinancialDQNTrainer, rollout  # noqa: E402
-from baselines import evaluate_all_baselines  # noqa: E402
-from environment import FinancialLifeEnv, FinancialLifeEnvGenerator  # noqa: E402
-from evaluation import EvalProtocol, format_comparison_table  # noqa: E402
-from rewards import DEFAULT_PRESET, REWARD_PRESETS  # noqa: E402
-from vector_trainer import VectorizedTrainer  # noqa: E402
+import matplotlib.pyplot as plt
+import numpy as np
+from agent import FinancialDQNAgent, FinancialDQNTrainer, rollout
+from baselines import evaluate_all_baselines
+from environment import FinancialLifeEnv, FinancialLifeEnvGenerator
+from evaluation import EvalProtocol, format_comparison_table
+from rewards import DEFAULT_PRESET, REWARD_PRESETS
+from vector_trainer import VectorizedTrainer
 
 # set base path to be the root of this file
 BASE_PATH = Path(__file__).resolve().parent
@@ -108,7 +107,7 @@ def create_agent_config(scenario: str = "basic") -> dict:
         return base_config
 
 
-def plot_training_results(trainer: FinancialDQNTrainer, save_path: Optional[str] = None, show: bool = False):
+def plot_training_results(trainer: FinancialDQNTrainer, save_path: str | None = None, show: bool = False):
     """Plot training results.
 
     Args:

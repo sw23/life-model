@@ -4,7 +4,6 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 import html
 from enum import Enum
-from typing import Optional
 
 from ..model import LifeModelAgent
 from ..people.person import Person
@@ -44,9 +43,9 @@ class RevolvingDebt(LifeModelAgent):
         name: str,
         credit_limit: float,
         balance: float = 0,
-        yearly_interest_rate: Optional[float] = None,
-        minimum_payment_percent: Optional[float] = None,
-        minimum_payment_floor: Optional[float] = None,
+        yearly_interest_rate: float | None = None,
+        minimum_payment_percent: float | None = None,
+        minimum_payment_floor: float | None = None,
         payment_strategy: "PaymentStrategy" = PaymentStrategy.MINIMUM,
         fixed_payment: float = 0.0,
     ):
@@ -218,9 +217,9 @@ class CreditCard(RevolvingDebt):
         card_name: str,
         credit_limit: float,
         current_balance: float = 0,
-        yearly_interest_rate: Optional[float] = None,
-        minimum_payment_percent: Optional[float] = None,
-        card_type: Optional[CreditCardType] = None,
+        yearly_interest_rate: float | None = None,
+        minimum_payment_percent: float | None = None,
+        card_type: CreditCardType | None = None,
         payment_strategy: "PaymentStrategy" = PaymentStrategy.MINIMUM,
         fixed_payment: float = 0.0,
     ):

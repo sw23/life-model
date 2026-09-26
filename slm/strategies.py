@@ -17,7 +17,6 @@ prompts and serialized examples, so datasets stay comparable across runs.
 """
 
 from dataclasses import dataclass
-from typing import Dict, List, Tuple
 
 
 @dataclass(frozen=True)
@@ -37,7 +36,7 @@ class Strategy:
 # Roth/pre-tax split (max_pretax_401k vs max_roth_401k), emergency-fund ordering
 # (emergency_fund_first), a tax-advantaged waterfall (contribution_waterfall), and drawdown
 # ordering (four_percent_drawdown).
-STRATEGIES: Tuple[Strategy, ...] = (
+STRATEGIES: tuple[Strategy, ...] = (
     Strategy(
         "contribution_waterfall",
         "Tax-advantaged contribution waterfall",
@@ -75,13 +74,13 @@ STRATEGIES: Tuple[Strategy, ...] = (
 )
 
 #: Ordered strategy names — the canonical decision-space ordering.
-STRATEGY_NAMES: Tuple[str, ...] = tuple(s.name for s in STRATEGIES)
+STRATEGY_NAMES: tuple[str, ...] = tuple(s.name for s in STRATEGIES)
 
 #: name -> Strategy lookup.
-STRATEGY_BY_NAME: Dict[str, Strategy] = {s.name: s for s in STRATEGIES}
+STRATEGY_BY_NAME: dict[str, Strategy] = {s.name: s for s in STRATEGIES}
 
 
-def decision_space() -> List[str]:
+def decision_space() -> list[str]:
     """The canonical ordered list of recommendable strategy names."""
     return list(STRATEGY_NAMES)
 

@@ -16,16 +16,16 @@ import torch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from actions import ActionType, encode_flat_action  # noqa: E402
-from agent import FinancialDQNAgent, FinancialDQNTrainer, rollout  # noqa: E402
-from baselines import (  # noqa: E402
+from actions import ActionType, encode_flat_action
+from agent import FinancialDQNAgent, FinancialDQNTrainer, rollout
+from baselines import (
     BASELINES,
     PLANNER_BASELINES,
     collect_teacher_experiences,
     evaluate_all_baselines,
     evaluate_baseline,
 )
-from environment import FinancialLifeEnv  # noqa: E402
+from environment import FinancialLifeEnv
 
 _NO_ACTION = encode_flat_action(ActionType.NO_ACTION)
 
@@ -92,7 +92,7 @@ class TestPlannerBaselines(unittest.TestCase):
         env = FinancialLifeEnv()
         transitions = collect_teacher_experiences(env, BASELINES["contribution_waterfall"], seeds=[1, 2])
         self.assertGreater(len(transitions), 0)
-        state, action, reward, next_state, done, legal, next_legal = transitions[0]
+        state, action, reward, _next_state, done, legal, next_legal = transitions[0]
         self.assertEqual(state.shape, (env.observation_space.shape[0],))
         self.assertIn(action, range(env.action_space.n))
         self.assertIs(type(reward), float)

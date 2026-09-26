@@ -104,10 +104,13 @@ class LongTermCare(LifeModelAgent):
         if self.person.is_deceased:
             return
 
-        if not self.in_care and self.person.age >= self.config.start_age:
-            # Seeded hazard draw (same RNG pattern as stochastic mortality).
-            if self.model.random.random() <= self._annual_hazard(self.person.age):
-                self._start_episode()
+        # Seeded hazard draw (same RNG pattern as stochastic mortality).
+        if (
+            not self.in_care
+            and self.person.age >= self.config.start_age
+            and self.model.random.random() <= self._annual_hazard(self.person.age)
+        ):
+            self._start_episode()
 
         if self.in_care:
             self._charge_care_year()

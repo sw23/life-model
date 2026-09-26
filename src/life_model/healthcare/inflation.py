@@ -11,7 +11,7 @@ cached per model and per year so that N agents over Y years cost O(Y) factor com
 instead of O(N * Y^2).
 """
 
-from typing import TYPE_CHECKING, Dict
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ..model import LifeModel
@@ -27,7 +27,7 @@ def medical_inflation_factor(model: "LifeModel", year: int) -> float:
     the economy also caches each year's inflation on first read, so the factor for a given
     year never changes within a run).
     """
-    cache: Dict[int, float] = getattr(model, _CACHE_ATTR, None)  # type: ignore[assignment]
+    cache: dict[int, float] = getattr(model, _CACHE_ATTR, None)  # type: ignore[assignment]
     if cache is None:
         cache = {}
         setattr(model, _CACHE_ATTR, cache)

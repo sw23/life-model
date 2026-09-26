@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from ..config.config_manager import config as _global_config
 from .federal import FilingStatus
@@ -12,33 +12,33 @@ if TYPE_CHECKING:
     from ..config.financial_config import FinancialConfig
 
 
-def _fin(config: "Optional[FinancialConfig]") -> "FinancialConfig":
+def _fin(config: "FinancialConfig | None") -> "FinancialConfig":
     """Resolve the financial config to use (per-model if given, else global)."""
     return config if config is not None else _global_config.financial
 
 
-def get_social_security_rate(config: "Optional[FinancialConfig]" = None) -> float:
+def get_social_security_rate(config: "FinancialConfig | None" = None) -> float:
     """Get the configured social security tax rate"""
     return _fin(config).tax.fica.social_security_rate
 
 
-def get_social_security_max_income(config: "Optional[FinancialConfig]" = None) -> float:
+def get_social_security_max_income(config: "FinancialConfig | None" = None) -> float:
     """Get the configured social security maximum income"""
     return _fin(config).tax.fica.social_security_max_income
 
 
-def get_medicare_rate(config: "Optional[FinancialConfig]" = None) -> float:
+def get_medicare_rate(config: "FinancialConfig | None" = None) -> float:
     """Get the configured medicare tax rate"""
     return _fin(config).tax.fica.medicare_rate
 
 
-def get_medicare_additional_rate(config: "Optional[FinancialConfig]" = None) -> float:
+def get_medicare_additional_rate(config: "FinancialConfig | None" = None) -> float:
     """Get the configured additional medicare tax rate"""
     return _fin(config).tax.fica.medicare_additional_rate
 
 
 def get_medicare_additional_rate_threshold(
-    filing_status: FilingStatus, config: "Optional[FinancialConfig]" = None
+    filing_status: FilingStatus, config: "FinancialConfig | None" = None
 ) -> float:
     """Get the configured medicare additional rate threshold for filing status.
 
@@ -53,7 +53,7 @@ def get_medicare_additional_rate_threshold(
 # https://www.ssa.gov/oact/cola/cbb.html
 # https://www.irs.gov/taxtopics/tc751
 # https://smartasset.com/taxes/all-about-the-fica-tax
-def social_security_tax(income: float, config: "Optional[FinancialConfig]" = None) -> float:
+def social_security_tax(income: float, config: "FinancialConfig | None" = None) -> float:
     """Calculates FICA taxes due
     This includes Social Security and Medicare taxes."""
 
@@ -73,7 +73,7 @@ def social_security_tax(income: float, config: "Optional[FinancialConfig]" = Non
     return tax_amount
 
 
-def medicare_tax(income: float, filing_status: FilingStatus, config: "Optional[FinancialConfig]" = None) -> float:
+def medicare_tax(income: float, filing_status: FilingStatus, config: "FinancialConfig | None" = None) -> float:
     """Calculates FICA taxes due
     This includes Social Security and Medicare taxes."""
 

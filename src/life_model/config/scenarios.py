@@ -11,16 +11,16 @@ to model different economic environments without manually changing individual va
 
 from importlib.resources import files
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 import yaml
 
 # Optional user-supplied scenario directory. When set, it takes precedence over
 # the scenarios packaged with life-model.
-_user_scenario_dir: Optional[Path] = None
+_user_scenario_dir: Path | None = None
 
 
-def set_scenario_directory(directory: Optional[str]) -> None:
+def set_scenario_directory(directory: str | None) -> None:
     """Set a user-supplied directory to search for scenario YAML files.
 
     Scenarios found here take precedence over the ones packaged with life-model.
@@ -33,7 +33,7 @@ def set_scenario_directory(directory: Optional[str]) -> None:
     _user_scenario_dir = Path(directory) if directory is not None else None
 
 
-def _load_scenario_from_yaml(filename: str) -> Dict[str, Any]:
+def _load_scenario_from_yaml(filename: str) -> dict[str, Any]:
     """Load a scenario configuration from a YAML file
 
     Args:
@@ -59,7 +59,7 @@ def _load_scenario_from_yaml(filename: str) -> Dict[str, Any]:
     raise FileNotFoundError(f"Scenario file '{filename}' not found in any of the expected locations")
 
 
-def get_scenario(name: str) -> Dict[str, Any]:
+def get_scenario(name: str) -> dict[str, Any]:
     """Get a predefined scenario by name
 
     Args:

@@ -17,8 +17,6 @@ stability), they are not tight confidence intervals, and the datasheet records t
 precision claims stay honest.
 """
 
-from typing import Dict, List, Optional
-
 import numpy as np
 from environment import FinancialLifeEnv
 from evaluation import run_policy_episode
@@ -31,7 +29,7 @@ from .strategies import STRATEGY_NAMES
 _DEFAULT_ECONOMY_MODE = "stochastic"
 
 
-def make_scoring_env(household: Dict, reward_preset: str) -> FinancialLifeEnv:
+def make_scoring_env(household: dict, reward_preset: str) -> FinancialLifeEnv:
     """Build a fixed-household env for scoring (the household is the env's point configuration)."""
     config = dict(household)
     config.setdefault("economy_mode", _DEFAULT_ECONOMY_MODE)
@@ -47,7 +45,7 @@ def _round_money(x: float) -> float:
     return round(float(x), 2)
 
 
-def score_candidate(env: FinancialLifeEnv, name: str, seeds: List[int]) -> ScoredCandidate:
+def score_candidate(env: FinancialLifeEnv, name: str, seeds: list[int]) -> ScoredCandidate:
     """Score a single candidate strategy on ``env`` over the shared ``seeds``."""
     policy = CANDIDATE_POLICIES[name]
     outcomes = [run_policy_episode(env, policy, seed) for seed in seeds]
@@ -65,11 +63,11 @@ def score_candidate(env: FinancialLifeEnv, name: str, seeds: List[int]) -> Score
 
 
 def score_household(
-    household: Dict,
-    seeds: List[int],
+    household: dict,
+    seeds: list[int],
     reward_preset: str,
-    candidate_names: Optional[List[str]] = None,
-) -> List[ScoredCandidate]:
+    candidate_names: list[str] | None = None,
+) -> list[ScoredCandidate]:
     """Score every candidate strategy on one household over shared trial seeds.
 
     Returns the scored candidates in the canonical strategy order (not sorted by score), so the
@@ -80,7 +78,7 @@ def score_household(
     return [score_candidate(env, name, seeds) for name in names]
 
 
-def argmax_candidate(scored: List[ScoredCandidate]) -> ScoredCandidate:
+def argmax_candidate(scored: list[ScoredCandidate]) -> ScoredCandidate:
     """The winning candidate: highest success rate, breaking ties by median terminal wealth then
     by name (fully deterministic)."""
     return max(scored, key=lambda c: (c.success_rate, c.net_worth_p50, _neg_name(c.decision)))

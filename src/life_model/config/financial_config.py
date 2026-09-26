@@ -5,7 +5,7 @@
 
 import warnings
 from importlib.resources import files
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any
 
 import yaml
 from pydantic import ValidationError
@@ -41,7 +41,7 @@ class FinancialConfig(ScenarioConfig):
     accessor is deprecated and emits a ``DeprecationWarning``.
     """
 
-    def __init__(self, config_file: Optional[str] = None, scenario: Optional[str] = None):
+    def __init__(self, config_file: str | None = None, scenario: str | None = None):
         """Initialize financial configuration from YAML file
 
         Args:
@@ -251,7 +251,7 @@ class FinancialConfig(ScenarioConfig):
     # ------------------------------------------------------------------
     # Scenario application (re-validated through Pydantic)
     # ------------------------------------------------------------------
-    def apply_scenario(self, scenario: str, overrides: Dict[str, Any]) -> None:
+    def apply_scenario(self, scenario: str, overrides: dict[str, Any]) -> None:
         """Apply scenario overrides, re-validating the merged config.
 
         Overrides are deep-merged into the current configuration and re-validated
@@ -267,7 +267,7 @@ class FinancialConfig(ScenarioConfig):
         self.scenario = scenario
 
     @staticmethod
-    def _deep_merge(base: Dict[str, Any], overrides: Dict[str, Any]) -> Dict[str, Any]:
+    def _deep_merge(base: dict[str, Any], overrides: dict[str, Any]) -> dict[str, Any]:
         """Recursively merge ``overrides`` into a copy of ``base`` (dicts only)."""
         result = dict(base)
         for key, value in overrides.items():
@@ -310,14 +310,14 @@ class FinancialConfig(ScenarioConfig):
         return current
 
     # Social Security historical tables (typed helpers) -----------------
-    def get_avg_wage_index_table(self) -> Dict[int, float]:
+    def get_avg_wage_index_table(self) -> dict[int, float]:
         """Get the full average wage index table."""
         return self._model.social_security.avg_wage_index
 
-    def get_cost_of_living_adj_table(self) -> Dict[int, float]:
+    def get_cost_of_living_adj_table(self) -> dict[int, float]:
         """Get the full cost-of-living adjustment table."""
         return self._model.social_security.cost_of_living_adj
 
-    def get_bend_points_table(self) -> Dict[int, List[int]]:
+    def get_bend_points_table(self) -> dict[int, list[int]]:
         """Get the full bend-points table."""
         return self._model.social_security.bend_points

@@ -38,7 +38,6 @@
 # https://www.ssa.gov/oact/cola/latestCOLA.html
 # https://www.ssa.gov/OACT/COLA/awiseries.html
 
-from typing import List, Optional, Tuple, Union
 
 from ..config.config_manager import config
 from ..model import LifeModelAgent
@@ -104,7 +103,7 @@ def get_cost_of_living_adj(year: int) -> float:
         return ss_config.long_run_cost_of_living_adj
 
 
-def get_bend_points(year: int) -> Tuple[float, float]:
+def get_bend_points(year: int) -> tuple[float, float]:
     """Get the bend points for a given year
 
     Args:
@@ -250,8 +249,8 @@ class SocialSecurity(LifeModelAgent):
     def __init__(
         self,
         person: Person,
-        withdrawal_start_age: Optional[float] = None,
-        income_history: Optional[Union[List[Income], List[Tuple[int, float]]]] = None,
+        withdrawal_start_age: float | None = None,
+        income_history: list[Income] | list[tuple[int, float]] | None = None,
     ):
         """Models Social Security benefits for a person
 
@@ -292,7 +291,7 @@ class SocialSecurity(LifeModelAgent):
         desc += "</ul>"
         return desc
 
-    def add_income_for_year(self, amount: float, year: Optional[int] = None):
+    def add_income_for_year(self, amount: float, year: int | None = None):
         """Add income to the person's income history
 
         Args:
@@ -311,15 +310,14 @@ class SocialSecurity(LifeModelAgent):
         # Cap income at THAT year's Social Security wage base, not a single frozen value applied
         # to every year.
         max_income = self.model.config.tax_year(income_obj.year).ss_wage_base
-        if income_obj.amount > max_income:
-            income_obj.amount = max_income
+        income_obj.amount = min(income_obj.amount, max_income)
 
     @property
     def withdrawal_start_year(self) -> int:
         """Returns the year in which the person starts withdrawing Social Security benefits"""
         return self.person.get_year_at_age(int(self.withdrawal_start_age))
 
-    def get_indexed_income_history(self) -> List[float]:
+    def get_indexed_income_history(self) -> list[float]:
         """Computes indexed earnings for a person"""
         return [x.get_indexed_amount(self.person.get_year_at_age(60)) for x in self.income_history]
 
@@ -367,7 +365,7 @@ class SocialSecurity(LifeModelAgent):
             pia *= 1 + increase_pct
         return pia
 
-    def get_pia(self, current_year: Optional[int] = None) -> float:
+    def get_pia(self, current_year: int | None = None) -> float:
         """Computes Primary Insurance Amount (PIA) for a person
             Note: PIA is a monthly amount, so should be multiplied by 12 to get annual amount
 

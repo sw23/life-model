@@ -12,7 +12,6 @@ not merely requested at inference time. The model answers with a small structure
 """
 
 import re
-from typing import Dict, List, Optional
 
 from .strategies import STRATEGIES, decision_space
 
@@ -48,7 +47,7 @@ SYSTEM_PROMPT = (
 
 # Out-of-scope domains the refusal examples are drawn from. Each is something the simulator
 # does not price, so an adviser distilled from it has no verified ground truth to stand on.
-OUT_OF_SCOPE_DOMAINS: Dict[str, str] = {
+OUT_OF_SCOPE_DOMAINS: dict[str, str] = {
     "crypto": "whether to buy Bitcoin, Ethereum, or other cryptocurrency",
     "individual_securities": "whether to buy shares of a specific company or a specific stock",
     "options": "trading options, futures, or other derivatives",
@@ -65,7 +64,7 @@ def format_decision_menu() -> str:
     return "\n".join(f"- {s.name}: {s.title} — {s.description}" for s in STRATEGIES)
 
 
-def build_decision_question(household_text: str, question: Optional[str] = None) -> str:
+def build_decision_question(household_text: str, question: str | None = None) -> str:
     """Assemble the user turn: the rendered household, the menu, and the ask."""
     ask = question or (
         "Given this household's situation, which single strategy from the menu should they follow, and why?"
@@ -73,7 +72,7 @@ def build_decision_question(household_text: str, question: Optional[str] = None)
     return f"{household_text}\n\nDecision menu (choose exactly one by machine name):\n{format_decision_menu()}\n\n{ask}"
 
 
-def build_messages(household_text: str, question: Optional[str] = None) -> List[Dict[str, str]]:
+def build_messages(household_text: str, question: str | None = None) -> list[dict[str, str]]:
     """Build the chat messages (system + user) for an in-scope advice request."""
     return [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -81,7 +80,7 @@ def build_messages(household_text: str, question: Optional[str] = None) -> List[
     ]
 
 
-def build_refusal_messages(question: str) -> List[Dict[str, str]]:
+def build_refusal_messages(question: str) -> list[dict[str, str]]:
     """Build the chat messages (system + user) for an out-of-scope request."""
     return [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -99,7 +98,7 @@ def format_refusal_answer(reason: str) -> str:
     return f"REFUSE: {reason}"
 
 
-def parse_decision(text: str) -> Optional[str]:
+def parse_decision(text: str) -> str | None:
     """Extract the recommended strategy machine name from an assistant answer.
 
     Returns the first strategy name that both matches the ``DECISION:`` line and is a known

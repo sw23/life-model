@@ -5,7 +5,7 @@
 
 import math
 import warnings
-from typing import TYPE_CHECKING, Dict, List
+from typing import TYPE_CHECKING
 
 from ..model import round_money
 from ..tax.credits import child_tax_credit
@@ -44,7 +44,7 @@ class TaxUnit:
     unit members declare differing states so the order-dependence is visible rather than silent.
     """
 
-    def __init__(self, members: List["Person"]):
+    def __init__(self, members: list["Person"]):
         if not members:
             raise ValueError("TaxUnit requires at least one member")
         self.members = members
@@ -73,7 +73,7 @@ class TaxUnit:
             )
 
     @classmethod
-    def build_units(cls, family: "Family") -> List["TaxUnit"]:
+    def build_units(cls, family: "Family") -> list["TaxUnit"]:
         """Group a family's members into filing units.
 
         A married-filing-jointly member and their spouse (when both are in the family) form one
@@ -82,7 +82,7 @@ class TaxUnit:
         ``filing_status`` is untouched); when the config carries no head_of_household data the
         deduction/brackets fall back to single.
         """
-        units: List["TaxUnit"] = []
+        units: list[TaxUnit] = []
         seen = set()
         for member in family.members:
             if member.unique_id in seen:
@@ -137,14 +137,14 @@ class TaxUnit:
         """Greater of the standard deduction for the filing status or combined itemized."""
         return self.federal_deductions_combined(0.0, 0.0)
 
-    def _prospective_withdrawal_allocation(self, amount: float) -> Dict[int, float]:
+    def _prospective_withdrawal_allocation(self, amount: float) -> dict[int, float]:
         """Predict how ``withdraw_from_pretax_401ks`` would split ``amount`` across members.
 
         Mirrors the withdrawal order exactly (members in sequence, each up to their combined
         pre-tax balance) without moving any money, so income-dependent deductions can be
         evaluated during sizing against the same per-member incomes settlement will see.
         """
-        allocation: Dict[int, float] = {}
+        allocation: dict[int, float] = {}
         remaining = amount
         for member in self.members:
             available = sum(acct.pretax_balance for acct in member.all_retirement_accounts)
@@ -186,13 +186,13 @@ class TaxUnit:
         max_age = self.config.dependents.ctc_qualifying_age_max
         return sum(1 for member in self.members for child in member.children if 0 <= child.age <= max_age)
 
-    def _state_income_totals(self, additional_income: float) -> "Dict[IncomeType, float]":
+    def _state_income_totals(self, additional_income: float) -> "dict[IncomeType, float]":
         """Combined ordinary-taxable amount per income type across members.
 
         ``additional_income`` (a prospective pre-tax 401k withdrawal) is ordinary income taxed as a
         pre-tax distribution, so states that exempt retirement income exempt it too.
         """
-        totals: Dict[IncomeType, float] = {income_type: 0.0 for income_type in IncomeType}
+        totals: dict[IncomeType, float] = {income_type: 0.0 for income_type in IncomeType}
         for member in self.members:
             for income_type, amount in member.income.totals_by_type().items():
                 totals[income_type] += amount
@@ -363,7 +363,7 @@ class TaxUnit:
             gross = min(available, math.ceil(gross * 100) / 100)
             self.withdraw_from_brokerage_accounts(gross)
 
-    def _capital_gain_totals(self, member: "Person") -> "Dict[IncomeType, float]":
+    def _capital_gain_totals(self, member: "Person") -> "dict[IncomeType, float]":
         """Short- and long-term realized capital gains for ``member`` this year.
 
         Qualified dividends are excluded: they are taxed at the same preferential rates but are not
@@ -431,14 +431,14 @@ class TaxUnit:
                 share = 1.0 if member is self.members[0] else 0.0
             member.capital_loss_carryforward = remaining * share
 
-    def _zero_out_capital_gains(self, gains_by_member: "Dict[int, Dict[IncomeType, float]]") -> None:
+    def _zero_out_capital_gains(self, gains_by_member: "dict[int, dict[IncomeType, float]]") -> None:
         """Remove every realized capital gain and loss from the members' tax bases."""
         for member in self.members:
             for income_type, amount in gains_by_member[member.unique_id].items():
                 if amount != 0:
                     member.income.add(income_type, -amount)
 
-    def _reduce_gains(self, gains_by_member: "Dict[int, Dict[IncomeType, float]]", amount: float) -> None:
+    def _reduce_gains(self, gains_by_member: "dict[int, dict[IncomeType, float]]", amount: float) -> None:
         """Post negative ledger entries cancelling ``amount`` of the unit's realized gains.
 
         Short-term gains are cancelled first because they are taxed at ordinary rates, so a
@@ -460,10 +460,10 @@ class TaxUnit:
 
     def settle_year(self):
         """Settle the tax year for this unit: taxes, spending, housing, and debt."""
-        spending_by_member: Dict[int, float] = {}
-        housing_by_member: Dict[int, float] = {}
-        interest_by_member: Dict[int, float] = {}
-        debt_payment_by_member: Dict[int, float] = {}
+        spending_by_member: dict[int, float] = {}
+        housing_by_member: dict[int, float] = {}
+        interest_by_member: dict[int, float] = {}
+        debt_payment_by_member: dict[int, float] = {}
 
         # Personal debt carried by members is settled exactly once (fixes double-pay / phantom
         # debt): zero it here and fold it into this year's bills.
@@ -579,9 +579,9 @@ class TaxUnit:
     def _record_stats(
         self,
         taxes: TaxesDue,
-        spending_by_member: Dict[int, float],
-        housing_by_member: Dict[int, float],
-        interest_by_member: Dict[int, float],
+        spending_by_member: dict[int, float],
+        housing_by_member: dict[int, float],
+        interest_by_member: dict[int, float],
     ):
         for member in self.members:
             member.stat_money_spent = spending_by_member[member.unique_id]

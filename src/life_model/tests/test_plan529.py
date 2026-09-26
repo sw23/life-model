@@ -144,7 +144,7 @@ class TestPlan529(unittest.TestCase):
         """Test non-qualified withdrawal exceeding balance."""
         initial_balance = self.plan.balance
 
-        withdrawn, penalty = self.plan.withdraw_non_qualified(20000.0)
+        withdrawn, _penalty = self.plan.withdraw_non_qualified(20000.0)
         self.assertEqual(withdrawn, initial_balance)
         self.assertEqual(self.plan.balance, 0)
 

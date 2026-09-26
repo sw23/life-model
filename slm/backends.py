@@ -19,8 +19,6 @@ the same dataset and eval harness drive every model family. CI uses the determin
 :mod:`slm.adviser`; these are exercised only in manual/local runs.
 """
 
-from typing import Dict, List, Optional
-
 from .adviser import Messages
 
 # Anthropic model used for the hosted upper-bound baseline (see slm/README.md; opus is the
@@ -34,7 +32,7 @@ class HFAdviserModel:
     def __init__(
         self,
         model_id: str,
-        adapter_path: Optional[str] = None,
+        adapter_path: str | None = None,
         max_new_tokens: int = 256,
         device_map: str = "auto",
         torch_dtype: str = "auto",
@@ -68,7 +66,7 @@ class HFAdviserModel:
 class MLXAdviserModel:
     """Local Apple-silicon adviser via ``mlx-lm`` (optional; not load-bearing)."""
 
-    def __init__(self, model_id: str, adapter_path: Optional[str] = None, max_new_tokens: int = 256):
+    def __init__(self, model_id: str, adapter_path: str | None = None, max_new_tokens: int = 256):
         from mlx_lm import load
 
         self.model, self.tokenizer = load(model_id, adapter_path=adapter_path)
@@ -100,7 +98,7 @@ class APIAdviserModel:
 
     def generate(self, messages: Messages) -> str:
         system = "\n\n".join(m["content"] for m in messages if m["role"] == "system")
-        turns: List[Dict[str, str]] = [
+        turns: list[dict[str, str]] = [
             {"role": m["role"], "content": m["content"]} for m in messages if m["role"] != "system"
         ]
         response = self.client.messages.create(

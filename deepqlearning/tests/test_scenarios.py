@@ -13,8 +13,8 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from environment import FinancialLifeEnv, FinancialLifeEnvGenerator  # noqa: E402
-from scenarios import HOUSEHOLD_SCENARIOS, EpisodeSampler  # noqa: E402
+from environment import FinancialLifeEnv, FinancialLifeEnvGenerator
+from scenarios import HOUSEHOLD_SCENARIOS, EpisodeSampler
 
 
 def _trajectory(env, seed, options=None, steps=20):

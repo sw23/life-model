@@ -20,7 +20,6 @@ base) off the ledger, so income tax and payroll tax each see the correct base.
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, List
 
 
 class IncomeType(Enum):
@@ -77,7 +76,7 @@ class IncomeLedger:
     """Accumulates a person's income entries for the current simulated year."""
 
     def __init__(self):
-        self.entries: List[IncomeEntry] = []
+        self.entries: list[IncomeEntry] = []
 
     def add(self, income_type: IncomeType, amount: float, fica_wages: float = 0.0) -> None:
         """Append an income entry."""
@@ -125,7 +124,7 @@ class IncomeLedger:
         """Total FICA-subject wages (payroll tax base)."""
         return sum(e.fica_wages for e in self.entries)
 
-    def totals_by_type(self) -> "Dict[IncomeType, float]":
+    def totals_by_type(self) -> "dict[IncomeType, float]":
         """Taxable amount contributed by each income type, preferential types included.
 
         Every :class:`IncomeType` is present in the result (0.0 when absent) so callers can index
@@ -134,7 +133,7 @@ class IncomeLedger:
         out by default because the large majority of states tax them as ordinary income; states
         that exempt them set ``capital_gains_taxable: false`` on their pack.
         """
-        totals: Dict[IncomeType, float] = {income_type: 0.0 for income_type in IncomeType}
+        totals: dict[IncomeType, float] = {income_type: 0.0 for income_type in IncomeType}
         for entry in self.entries:
             totals[entry.income_type] += entry.amount
         return totals

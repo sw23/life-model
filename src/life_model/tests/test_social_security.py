@@ -242,7 +242,7 @@ class TestSocialSecurityBenefitsAndWageBase(unittest.TestCase):
         """Benefits deposit as cash and record an SS_BENEFIT ledger entry."""
         from ..tax.income import IncomeType
 
-        model, person = self._person(start_year=2030, age=67)
+        _model, person = self._person(start_year=2030, age=67)
         income_history = [(y, 60000) for y in range(1985, 2025)]
         ss = SocialSecurity(person=person, withdrawal_start_age=67, income_history=income_history)
         bank_before = person.bank_account_balance

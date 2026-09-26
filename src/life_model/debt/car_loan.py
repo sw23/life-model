@@ -3,7 +3,6 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 import html
-from typing import Optional
 
 from ..base_classes import Loan
 from ..people.person import Person
@@ -17,8 +16,8 @@ class CarLoan(Loan):
         length_years: int,
         yearly_interest_rate: float,
         name: str,
-        principal: Optional[float] = None,
-        monthly_payment: Optional[float] = None,
+        principal: float | None = None,
+        monthly_payment: float | None = None,
     ):
         """Models a car loan for a person
 

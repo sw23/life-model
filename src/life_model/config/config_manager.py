@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 from .financial_config import FinancialConfig
 from .scenarios import get_scenario, list_scenarios
@@ -13,9 +13,10 @@ class GlobalConfigManager:
     """Global configuration manager for the life-model package"""
 
     _instance: Optional["GlobalConfigManager"] = None
-    _financial_config: Optional[FinancialConfig] = None
+    _financial_config: FinancialConfig | None = None
 
-    def __new__(cls) -> "GlobalConfigManager":
+    # Singleton: always returns the one shared instance, even when called on a subclass.
+    def __new__(cls) -> "GlobalConfigManager":  # noqa: PYI034
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
@@ -32,7 +33,7 @@ class GlobalConfigManager:
             self._financial_config = FinancialConfig()
         return self._financial_config
 
-    def apply_scenario(self, scenario_name: str, overrides: Optional[Dict[str, Any]] = None) -> None:
+    def apply_scenario(self, scenario_name: str, overrides: dict[str, Any] | None = None) -> None:
         """Apply scenario-specific configuration overrides
 
         Args:
@@ -62,7 +63,7 @@ class GlobalConfigManager:
         """Reset all configurations to their default values"""
         self.financial.reset_to_defaults()
 
-    def get_current_scenario(self) -> Optional[str]:
+    def get_current_scenario(self) -> str | None:
         """Get the currently applied scenario name"""
         return self.financial.scenario
 

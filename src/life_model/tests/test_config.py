@@ -363,7 +363,7 @@ class TestNoImportTimeFileIO(unittest.TestCase):
             "from life_model.config.config_manager import config\n"
             "assert config._financial_config is None, 'config loaded at import time'\n"
         )
-        result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+        result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=False)
         self.assertEqual(result.returncode, 0, msg=result.stderr)
 
 

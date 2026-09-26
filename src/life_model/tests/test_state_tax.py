@@ -365,7 +365,7 @@ class TestMixedStateUnit(unittest.TestCase):
     def test_mixed_states_warn_once_and_use_head_state(self):
         from ..people.tax_unit import TaxUnit
 
-        family, head = self._couple("CA", "TX")
+        family, _head = self._couple("CA", "TX")
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
             (unit,) = TaxUnit.build_units(family)

@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, ClassVar
 
 from ..base_classes import RetirementAccount
 from ..limits import federal_retirement_age, required_min_distrib, rmd_start_age
@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 class Job401kAccount(RetirementAccount):
     # Grow (and take RMDs) before the job deposits this year's contributions, so contributions
     # are not counted in this year's growth (matches the documented, slightly-pessimistic model).
-    STEP_PRIORITY = {"pre_step": -10}
+    STEP_PRIORITY: ClassVar[dict[str, int]] = {"pre_step": -10}
 
     def __init__(
         self,
@@ -41,7 +41,7 @@ class Job401kAccount(RetirementAccount):
             company_match_percent (float, optional): Percentage that company matches contributions. Defaults to 0.
         """
         super().__init__(job.owner, 0)  # Initialize with 0, we'll handle balance ourselves
-        self.job: Optional["Job"] = job
+        self.job: Job | None = job
         self.pretax_balance = pretax_balance
         self.pretax_contrib_percent = pretax_contrib_percent
         self.roth_balance = roth_balance

@@ -5,6 +5,7 @@
 
 """Tests for the ``healthcare`` config section."""
 
+import itertools
 import unittest
 from pathlib import Path
 
@@ -37,7 +38,7 @@ class TestHealthcareConfig(unittest.TestCase):
     def test_irmaa_tiers_are_monotonic(self):
         """IRMAA MAGI thresholds and premiums increase tier over tier."""
         tiers = FinancialConfig().healthcare.medicare.irmaa_tiers
-        for lower, higher in zip(tiers, tiers[1:]):
+        for lower, higher in itertools.pairwise(tiers):
             self.assertLess(lower.magi_min_single, higher.magi_min_single)
             self.assertLess(lower.magi_min_married_filing_jointly, higher.magi_min_married_filing_jointly)
             self.assertLessEqual(lower.part_b_monthly, higher.part_b_monthly)

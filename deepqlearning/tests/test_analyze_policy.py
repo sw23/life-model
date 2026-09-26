@@ -14,9 +14,9 @@ import matplotlib
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from agent import FinancialDQNAgent  # noqa: E402
-from analyze_policy import analyze  # noqa: E402
-from environment import FinancialLifeEnv  # noqa: E402
+from agent import FinancialDQNAgent
+from analyze_policy import analyze
+from environment import FinancialLifeEnv
 
 
 class TestAnalyzePolicy(unittest.TestCase):

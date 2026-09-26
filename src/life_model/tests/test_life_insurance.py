@@ -500,12 +500,12 @@ class TestLifeInsuranceLoansAndSurrender(unittest.TestCase):
         BankAccount(owner=self.jane, company="Bank", balance=50000)
 
     def _whole_policy(self, **kwargs):
-        params = dict(
-            person=self.jane,
-            policy_type=LifeInsuranceType.WHOLE,
-            death_benefit=300000,
-            monthly_premium=100,
-        )
+        params = {
+            "person": self.jane,
+            "policy_type": LifeInsuranceType.WHOLE,
+            "death_benefit": 300000,
+            "monthly_premium": 100,
+        }
         params.update(kwargs)
         return LifeInsurance(**params)
 

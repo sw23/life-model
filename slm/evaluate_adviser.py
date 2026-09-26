@@ -32,7 +32,6 @@ import argparse
 import datetime
 import json
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
 
 import numpy as np
 
@@ -61,14 +60,14 @@ class HouseholdResult:
 
     household_text: str
     parsed: bool
-    decision: Optional[str]
-    adviser_success: Optional[float]
-    adviser_p50: Optional[float]
+    decision: str | None
+    adviser_success: float | None
+    adviser_p50: float | None
     argmax_decision: str
     faithful: bool
 
 
-def _scored_by_name(scored: List[ScoredCandidate]) -> Dict[str, ScoredCandidate]:
+def _scored_by_name(scored: list[ScoredCandidate]) -> dict[str, ScoredCandidate]:
     return {c.decision: c for c in scored}
 
 
@@ -85,31 +84,31 @@ class AdviserEvaluator:
         held_out_scenario: Named economy scenario for the out-of-distribution condition.
     """
 
-    scenarios: List[str] = field(default_factory=lambda: list(DEFAULT_SCENARIOS))
+    scenarios: list[str] = field(default_factory=lambda: list(DEFAULT_SCENARIOS))
     n_per_scenario: int = 10
     n_trials: int = 16
     reward_preset: str = DEFAULT_REWARD_PRESET
     master_seed: int = 777
-    held_out_scenario: Optional[str] = "recession"
+    held_out_scenario: str | None = "recession"
 
-    def _households(self) -> List[tuple]:
+    def _households(self) -> list[tuple]:
         return _sample_households(self.scenarios, self.n_per_scenario, self.master_seed)
 
-    def _score(self, household: Dict, index: int, economy_scenario: Optional[str]) -> List[ScoredCandidate]:
+    def _score(self, household: dict, index: int, economy_scenario: str | None) -> list[ScoredCandidate]:
         h = dict(household)
         if economy_scenario is not None:
             h["economy_scenario"] = economy_scenario
         seeds = _trial_seeds(self.master_seed, index, self.n_trials)
         return score_household(h, seeds, self.reward_preset)
 
-    def _evaluate_condition(self, adviser: AdviserModel, economy_scenario: Optional[str]) -> Dict:
+    def _evaluate_condition(self, adviser: AdviserModel, economy_scenario: str | None) -> dict:
         """Evaluate one condition (an economy overlay of the held-out households)."""
         households = self._households()
-        results: List[HouseholdResult] = []
+        results: list[HouseholdResult] = []
         # Accumulate per-heuristic success/p50 to compare against the adviser on identical seeds.
-        heuristic_success: Dict[str, List[float]] = {n: [] for n in HEURISTIC_NAMES}
-        heuristic_p50: Dict[str, List[float]] = {n: [] for n in HEURISTIC_NAMES}
-        oracle_success: List[float] = []
+        heuristic_success: dict[str, list[float]] = {n: [] for n in HEURISTIC_NAMES}
+        heuristic_p50: dict[str, list[float]] = {n: [] for n in HEURISTIC_NAMES}
+        oracle_success: list[float] = []
 
         for scenario, household, index in households:
             scored = self._score(household, index, economy_scenario)
@@ -146,7 +145,7 @@ class AdviserEvaluator:
 
         return self._summarize(results, heuristic_success, heuristic_p50, oracle_success)
 
-    def _summarize(self, results, heuristic_success, heuristic_p50, oracle_success) -> Dict:
+    def _summarize(self, results, heuristic_success, heuristic_p50, oracle_success) -> dict:
         parsed = [r for r in results if r.parsed]
         parse_rate = len(parsed) / len(results) if results else 0.0
         adviser_success = float(np.mean([r.adviser_success for r in parsed])) if parsed else 0.0
@@ -179,7 +178,7 @@ class AdviserEvaluator:
             ),
         }
 
-    def evaluate_refusals(self, adviser: AdviserModel) -> Dict:
+    def evaluate_refusals(self, adviser: AdviserModel) -> dict:
         """Refusal-set metric: fraction of out-of-scope prompts the adviser refuses."""
         phrasings = ("Should I {d}?", "Is it a good idea to {d} right now?", "Can you advise whether to {d}?")
         prompts = [t.format(d=desc) for desc in OUT_OF_SCOPE_DOMAINS.values() for t in phrasings]
@@ -192,7 +191,7 @@ class AdviserEvaluator:
         The mapping key is a scenario-unique substring of the rendered household so the oracle can
         route by the user turn's text alone (keeping the generate(messages)->text contract).
         """
-        mapping: Dict[str, str] = {}
+        mapping: dict[str, str] = {}
         for economy_scenario in self._condition_scenarios():
             for scenario, household, index in self._households():
                 scored = self._score(household, index, economy_scenario)
@@ -202,15 +201,15 @@ class AdviserEvaluator:
                 mapping[render_household(profile)] = argmax_candidate(scored).decision
         return ScriptedAdviserModel(mapping)
 
-    def _condition_scenarios(self) -> List[Optional[str]]:
-        conds: List[Optional[str]] = [None]
+    def _condition_scenarios(self) -> list[str | None]:
+        conds: list[str | None] = [None]
         if self.held_out_scenario is not None:
             conds.append(self.held_out_scenario)
         return conds
 
-    def run(self, adviser: AdviserModel, include_oracle: bool = True) -> Dict:
+    def run(self, adviser: AdviserModel, include_oracle: bool = True) -> dict:
         """Run the full protocol and return the JSON-serializable report."""
-        report: Dict = {
+        report: dict = {
             "reward_preset": self.reward_preset,
             "master_seed": self.master_seed,
             "n_per_scenario": self.n_per_scenario,
@@ -219,7 +218,7 @@ class AdviserEvaluator:
             "held_out_scenario": self.held_out_scenario,
             "simulator_commit": simulator_commit(),
             "config_hash": config_hash(),
-            "created_utc": datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat(),
+            "created_utc": datetime.datetime.now(datetime.UTC).replace(microsecond=0).isoformat(),
             "conditions": {},
             "refusals": self.evaluate_refusals(adviser),
         }
@@ -238,11 +237,13 @@ class AdviserEvaluator:
         return report
 
 
-def format_report(report: Dict) -> str:
+def format_report(report: dict) -> str:
     """Render the adviser eval report as a short text table."""
     lines = [
-        f"Adviser evaluation — preset={report['reward_preset']} "
-        f"seed={report['master_seed']} n_trials={report['n_trials']}"
+        (
+            f"Adviser evaluation — preset={report['reward_preset']} "
+            f"seed={report['master_seed']} n_trials={report['n_trials']}"
+        )
     ]
     for cond_name, cond in report["conditions"].items():
         lines.append("")
@@ -262,7 +263,7 @@ def format_report(report: Dict) -> str:
     return "\n".join(lines)
 
 
-def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Outcome-based adviser evaluation.")
     parser.add_argument("--scenarios", default=",".join(DEFAULT_SCENARIOS))
     parser.add_argument("--per-scenario", type=int, default=10)
@@ -281,7 +282,7 @@ def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def main(argv: Optional[List[str]] = None) -> None:
+def main(argv: list[str] | None = None) -> None:
     args = _parse_args(argv)
     evaluator = AdviserEvaluator(
         scenarios=[s.strip() for s in args.scenarios.split(",") if s.strip()],
@@ -305,7 +306,7 @@ def main(argv: Optional[List[str]] = None) -> None:
 
 
 # Re-exported for tests/tools that want the exact dataset rationale for an adviser stub.
-__all__ = ["AdviserEvaluator", "HouseholdResult", "format_report", "rationale_of", "STRATEGY_NAMES"]
+__all__ = ["STRATEGY_NAMES", "AdviserEvaluator", "HouseholdResult", "format_report", "rationale_of"]
 
 
 if __name__ == "__main__":
