@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from .config.config_manager import config as _global_config
 
@@ -11,22 +11,22 @@ if TYPE_CHECKING:
     from .config.financial_config import FinancialConfig
 
 
-def _fin(config: "Optional[FinancialConfig]") -> "FinancialConfig":
+def _fin(config: "FinancialConfig | None") -> "FinancialConfig":
     """Resolve the financial config to use (per-model if given, else global)."""
     return config if config is not None else _global_config.financial
 
 
-def job_401k_contrib_limit(age: int, config: "Optional[FinancialConfig]" = None) -> int:
+def job_401k_contrib_limit(age: int, config: "FinancialConfig | None" = None) -> int:
     """Get 401k contribution limit based on age"""
     return _fin(config).get_job_401k_contrib_limit(age)
 
 
-def federal_retirement_age(config: "Optional[FinancialConfig]" = None) -> float:
+def federal_retirement_age(config: "FinancialConfig | None" = None) -> float:
     """Get federal retirement age"""
     return _fin(config).retirement.federal_retirement_age
 
 
-def get_rmd_distribution_periods(config: "Optional[FinancialConfig]" = None) -> list:
+def get_rmd_distribution_periods(config: "FinancialConfig | None" = None) -> list:
     """Get RMD distribution periods from configuration.
 
     The Uniform Lifetime Table (IRS Pub. 590-B Appendix B) lives in the config
@@ -38,8 +38,8 @@ def get_rmd_distribution_periods(config: "Optional[FinancialConfig]" = None) -> 
 def required_min_distrib(
     age: int,
     balance: float,
-    config: "Optional[FinancialConfig]" = None,
-    start_age: "Optional[int]" = None,
+    config: "FinancialConfig | None" = None,
+    start_age: "int | None" = None,
 ) -> float:
     """Calculate the required minimum distribution (RMD) for the year.
 
@@ -74,7 +74,7 @@ def required_min_distrib(
     return balance / period_by_age[lookup_age]
 
 
-def rmd_start_age(birth_year: int, config: "Optional[FinancialConfig]" = None, year: "Optional[int]" = None) -> int:
+def rmd_start_age(birth_year: int, config: "FinancialConfig | None" = None, year: "int | None" = None) -> int:
     """Age at which required minimum distributions begin (SECURE 2.0).
 
     The base start age is the year-indexed ``rmd_start_age`` parameter (73 under SECURE 2.0);

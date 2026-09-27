@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 import html
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from ..model import LifeModelAgent
 
@@ -75,7 +75,7 @@ class Child(LifeModelAgent):
             return 0.0
         return nominal * self.model.economy.cumulative_inflation(self.model.year)
 
-    def grow_up(self, *, retirement_age: float = 65, spending: "Optional[Spending]" = None) -> "Person":
+    def grow_up(self, *, retirement_age: float = 65, spending: "Spending | None" = None) -> "Person":
         """Promote this child to an independent ``Person`` in the same family and stop modeling
         them as a dependent.
 

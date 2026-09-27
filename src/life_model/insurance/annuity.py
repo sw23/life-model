@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 from enum import Enum
-from typing import Optional, cast
+from typing import cast
 
 from ..config.config_manager import config as _global_config
 from ..model import Event, LifeModel, LifeModelAgent
@@ -30,7 +30,7 @@ class AnnuityPayoutType(Enum):
     LUMP_SUM = "Lump Sum"
 
 
-def calculate_life_expectancy(age: int, gender: Optional[GenderAtBirth] = None) -> float:
+def calculate_life_expectancy(age: int, gender: GenderAtBirth | None = None) -> float:
     """Calculate life expectancy using actuarial mortality tables
 
     Args:
@@ -81,7 +81,7 @@ def calculate_annuity_factor(
     interest_rate: float,
     payout_type: AnnuityPayoutType,
     period_certain_years: int = 0,
-    gender: Optional[GenderAtBirth] = None,
+    gender: GenderAtBirth | None = None,
 ) -> float:
     """Calculate annuity factor using actuarial principles
 
@@ -175,13 +175,13 @@ class Annuity(LifeModelAgent):
         person: Person,
         annuity_type: AnnuityType,
         initial_balance: float = 0.0,
-        interest_rate: Optional[float] = None,
+        interest_rate: float | None = None,
         payout_type: AnnuityPayoutType = AnnuityPayoutType.LIFE_ONLY,
-        payout_start_age: Optional[int] = None,
-        monthly_payout: Optional[float] = None,
-        period_certain_years: Optional[int] = None,
-        surrender_charge_years: Optional[int] = None,
-        surrender_charge_rate: Optional[float] = None,
+        payout_start_age: int | None = None,
+        monthly_payout: float | None = None,
+        period_certain_years: int | None = None,
+        surrender_charge_years: int | None = None,
+        surrender_charge_rate: float | None = None,
     ):
         """Models an annuity for a person
 
@@ -203,7 +203,7 @@ class Annuity(LifeModelAgent):
             approximation.
         """
         super().__init__(cast(LifeModel, person.model))
-        self.model: "LifeModel" = cast("LifeModel", self.model)
+        self.model: LifeModel = cast("LifeModel", self.model)
         annuity_config = self.model.config.insurance.annuity
         if interest_rate is None:
             interest_rate = annuity_config.default_interest_rate
@@ -388,7 +388,7 @@ class Annuity(LifeModelAgent):
         )
         return True
 
-    def _expected_payout_months(self, gender: Optional[GenderAtBirth]) -> float:
+    def _expected_payout_months(self, gender: GenderAtBirth | None) -> float:
         """Expected number of monthly payouts, used for the exclusion ratio."""
         life_months = calculate_life_expectancy(self.person.age, gender) * 12
         if self.payout_type == AnnuityPayoutType.LIFE_WITH_PERIOD_CERTAIN:

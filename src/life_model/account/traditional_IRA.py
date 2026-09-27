@@ -2,7 +2,6 @@
 #
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
-from typing import Optional
 
 from ..base_classes import Investment
 from ..model import compound_interest
@@ -14,8 +13,8 @@ class TraditionalIRA(Investment):
         self,
         person: Person,
         balance: float = 0,
-        growth_rate: Optional[float] = None,
-        contribution_limit: Optional[float] = None,
+        growth_rate: float | None = None,
+        contribution_limit: float | None = None,
     ):
         """Models a Traditional IRA account for a person
 

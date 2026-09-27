@@ -284,7 +284,7 @@ class TestPerAccountBeneficiary(unittest.TestCase):
         return model, breadwinner, spouse, child, ira
 
     def test_designated_ira_routed_to_child_residual_to_spouse(self):
-        model, breadwinner, spouse, child, ira = self._family_with_designated_ira()
+        model, breadwinner, spouse, child, _ira = self._family_with_designated_ira()
         model.run()
 
         self.assertTrue(breadwinner.is_deceased)
@@ -296,7 +296,7 @@ class TestPerAccountBeneficiary(unittest.TestCase):
         self.assertAlmostEqual(spouse.bank_account_balance, 50000, delta=1.0)
 
     def test_spouse_designee_gets_tax_free_rollover(self):
-        model, breadwinner, spouse, child, ira = self._family_with_designated_ira()
+        model, _breadwinner, spouse, _child, ira = self._family_with_designated_ira()
         ira.beneficiary = spouse
         model.run()
 
@@ -307,7 +307,7 @@ class TestPerAccountBeneficiary(unittest.TestCase):
         self.assertEqual(sum(df["Taxes"]), 0)
 
     def test_predeceased_beneficiary_falls_back_to_residual_path(self):
-        model, breadwinner, spouse, child, ira = self._family_with_designated_ira(child_dies_first=True)
+        model, _breadwinner, spouse, child, ira = self._family_with_designated_ira(child_dies_first=True)
         model.run()
 
         # The designation is void (child predeceased); the pre-tax balance follows the residual
@@ -464,7 +464,7 @@ class TestPensionSurvivorAtDeath(unittest.TestCase):
     def test_survivor_transfer_runs_before_benefit_sweep(self):
         # The survivor transfer must happen before
         # _remove_from_simulation's Benefit sweep, or the continued stream would be deleted.
-        model, breadwinner, spouse = self._couple(survivor_percent=50)
+        model, _breadwinner, spouse = self._couple(survivor_percent=50)
         model.run()
         # The pension agent still exists in the model (not swept) and is owned by the spouse.
         surviving = spouse.pensions[0]

@@ -15,7 +15,7 @@ always serializes to byte-identical text — a prerequisite for byte-identical J
 """
 
 import re
-from typing import Any, Dict
+from typing import Any
 
 from .schema import HouseholdProfile
 
@@ -78,7 +78,7 @@ def _money(text: str, pattern: re.Pattern) -> int:
     return int(match.group(1).replace(",", ""))
 
 
-def parse_household(text: str) -> Dict[str, Any]:
+def parse_household(text: str) -> dict[str, Any]:
     """Recover the household fields from rendered text (inverse of :func:`render_household`).
 
     The economy is returned as ``None`` when the outlook is the ``baseline`` (no named scenario),

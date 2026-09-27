@@ -26,8 +26,8 @@ When it is not picklable, the runner transparently falls back to running trials 
 current process (the simulation is CPU-light, so this is only a speed difference).
 """
 
+from collections.abc import Callable, Sequence
 from concurrent.futures import ProcessPoolExecutor
-from typing import Callable, List, Optional, Sequence
 
 import numpy as np
 import pandas as pd
@@ -56,7 +56,7 @@ class MonteCarloResult:
     provides success-probability, percentile, and fan-chart helpers over them.
     """
 
-    def __init__(self, frames: List[pd.DataFrame]):
+    def __init__(self, frames: list[pd.DataFrame]):
         if not frames:
             raise ValueError("MonteCarloResult requires at least one trial frame")
         self.frames = frames
@@ -66,7 +66,7 @@ class MonteCarloResult:
         return len(self.frames)
 
     @property
-    def years(self) -> List[int]:
+    def years(self) -> list[int]:
         """The simulated calendar years (from the first trial; all trials share this range)."""
         return [int(y) for y in self.frames[0]["Year"].tolist()]
 
@@ -144,8 +144,8 @@ class MonteCarlo:
         self,
         model_factory: ModelFactory,
         n: int = 1000,
-        seed: Optional[int] = None,
-        workers: Optional[int] = None,
+        seed: int | None = None,
+        workers: int | None = None,
     ):
         if n < 1:
             raise ValueError("n must be at least 1")
@@ -154,7 +154,7 @@ class MonteCarlo:
         self.seed = seed
         self.workers = workers
 
-    def _trial_seeds(self) -> List[int]:
+    def _trial_seeds(self) -> list[int]:
         """Derive ``n`` independent, reproducible per-trial seeds from the master seed."""
         sequence = np.random.SeedSequence(self.seed)
         return [int(child.generate_state(1)[0]) for child in sequence.spawn(self.n)]
@@ -170,7 +170,7 @@ class MonteCarlo:
             try:
                 with ProcessPoolExecutor(max_workers=self.workers) as executor:
                     frames = list(executor.map(_run_trial, args))
-            except Exception:
+            except Exception:  # noqa: BLE001
                 # Fall back to sequential execution if the pool can't run the trials (e.g. an
                 # object deep in the model turns out not to be picklable). The sim is CPU-light.
                 frames = [_run_trial(a) for a in args]
@@ -182,5 +182,5 @@ class MonteCarlo:
         try:
             pickle.dumps(self.model_factory)
             return True
-        except Exception:
+        except Exception:  # noqa: BLE001 - pickling can fail with many exception types
             return False

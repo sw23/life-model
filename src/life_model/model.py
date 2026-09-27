@@ -3,9 +3,10 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-from datetime import date
+from collections.abc import Callable
+from datetime import datetime
 from math import e as const_e
-from typing import Callable, Dict, List, Optional
+from typing import ClassVar
 
 import mesa
 import pandas as pd
@@ -32,9 +33,7 @@ def round_money(amount: float) -> float:
 
 
 class Stat:
-    def __init__(
-        self, name: str, title: Optional[str] = None, fmt: Optional[str] = None, aggregator: Optional[Callable] = None
-    ):
+    def __init__(self, name: str, title: str | None = None, fmt: str | None = None, aggregator: Callable | None = None):
         """Stat
 
         Args:
@@ -54,7 +53,7 @@ class Stat:
 
 
 class MoneyStat(Stat):
-    def __init__(self, name: str, title: Optional[str] = None):
+    def __init__(self, name: str, title: str | None = None):
         super().__init__(name, title, FMT_MONEY)
 
 
@@ -95,7 +94,7 @@ class EventLog:
 
 
 class LifeModel(mesa.Model):
-    STATS = [
+    STATS: ClassVar[list[MoneyStat]] = [
         MoneyStat("stat_gross_income", "Income"),  # Gross income made in a year
         MoneyStat("stat_bank_balance", "Bank Balance"),  # Bank account balance at the end of each year
         MoneyStat("stat_brokerage_balance", "Brokerage Balance"),  # Taxable brokerage balance at year end
@@ -113,7 +112,7 @@ class LifeModel(mesa.Model):
         MoneyStat("stat_charitable_donations", "Charity"),  # Total charitable donations in a year
     ]
 
-    EXTRA_STATS = [
+    EXTRA_STATS: ClassVar[list[MoneyStat]] = [
         MoneyStat("stat_taxes_paid_federal", "Federal Taxes"),  # Federal income taxes paid in a year
         MoneyStat("stat_taxes_paid_state", "State Taxes"),  # State income taxes paid in a year
         MoneyStat("stat_taxes_paid_ss", "SS Taxes"),  # Social security taxes paid in a year
@@ -132,11 +131,11 @@ class LifeModel(mesa.Model):
 
     def __init__(
         self,
-        end_year: Optional[int] = None,
-        start_year: Optional[int] = None,
-        seed: Optional[int] = None,
-        config: Optional[FinancialConfig] = None,
-        scenario: Optional[str] = None,
+        end_year: int | None = None,
+        start_year: int | None = None,
+        seed: int | None = None,
+        config: FinancialConfig | None = None,
+        scenario: str | None = None,
         *,
         collect_data: bool = True,
     ):
@@ -159,7 +158,7 @@ class LifeModel(mesa.Model):
         """
         super().__init__(seed=seed)  # Required in Mesa 3.0
         if start_year is None:
-            start_year = date.today().year
+            start_year = datetime.now().astimezone().year
 
         # Resolve per-model financial configuration.
         if config is None:
@@ -187,11 +186,11 @@ class LifeModel(mesa.Model):
         from .economy import EconomyModel
 
         self.economy = EconomyModel(self)
-        self.datacollector: Optional[mesa.DataCollector] = None
+        self.datacollector: mesa.DataCollector | None = None
         if collect_data:
             self.datacollector = mesa.DataCollector(
                 model_reporters={
-                    **{"Year": "year"},
+                    "Year": "year",
                     **{x.title: lambda model, x=x: x.model_reporter(model) for x in self.STATS},
                     **{x.title: lambda model, x=x: x.model_reporter(model) for x in self.EXTRA_STATS},
                 },
@@ -202,7 +201,7 @@ class LifeModel(mesa.Model):
             )
 
     @classmethod
-    def get_stat_by_name(cls, stat_name: str) -> Optional[Stat]:
+    def get_stat_by_name(cls, stat_name: str) -> Stat | None:
         """Returns a stat by name.
 
         Args:
@@ -220,7 +219,7 @@ class LifeModel(mesa.Model):
         return None
 
     @classmethod
-    def get_stat_by_title(cls, stat_title: str) -> Optional[Stat]:
+    def get_stat_by_title(cls, stat_title: str) -> Stat | None:
         """Returns a stat by title.
 
         Args:
@@ -326,10 +325,10 @@ class LifeModel(mesa.Model):
 
     def get_yearly_stat_df(
         self,
-        columns: Optional[List[str]] = None,
-        extra_columns: Optional[List[str]] = None,
-        aggregate: Optional[Dict[str, Callable]] = None,
-        column_formats: Optional[Dict[str, str]] = None,
+        columns: list[str] | None = None,
+        extra_columns: list[str] | None = None,
+        aggregate: dict[str, Callable] | None = None,
+        column_formats: dict[str, str] | None = None,
         real_dollars: bool = False,
     ) -> Styler:
         """Get a DataFrame of the yearly stats
@@ -366,7 +365,7 @@ class LifeModel(mesa.Model):
             df = self._to_real_dollars(df)
         if aggregate is not None:
             # Aggregate the data if desired
-            aggregators = {**{"Year": "max"}, **aggregate, **{x.title: x.aggregator.__name__ for x in stats}}
+            aggregators = {"Year": "max", **aggregate, **{x.title: x.aggregator.__name__ for x in stats}}
             df = df.aggregate(aggregators).reset_index().transpose()
             df.columns = df.iloc[0]
             df = df.drop(df.index[0])
@@ -394,7 +393,7 @@ class LifeModel(mesa.Model):
                 df[col] = [value / deflators[i] for i, value in enumerate(df[col].tolist())]
         return df
 
-    def format_dataframe(self, df: pd.DataFrame, extra_formats: Optional[Dict[str, str]] = None) -> Styler:
+    def format_dataframe(self, df: pd.DataFrame, extra_formats: dict[str, str] | None = None) -> Styler:
         """Format a dataframe
 
         Args:
@@ -410,7 +409,7 @@ class LifeModel(mesa.Model):
         formats = {**formats, **extra_formats} if extra_formats is not None else formats
         return df.style.format(precision=0, na_rep="MISSING", formatter=formats).hide()
 
-    def aggregate_dataframe(self, df: pd.DataFrame, aggregate: Optional[Dict[str, Callable]] = None) -> pd.DataFrame:
+    def aggregate_dataframe(self, df: pd.DataFrame, aggregate: dict[str, Callable] | None = None) -> pd.DataFrame:
         """Aggregate a dataframe
 
         Args:
@@ -423,7 +422,7 @@ class LifeModel(mesa.Model):
         # Aggregate the data
         stats = [self.get_stat_by_title(str(x)) for x in df.columns]
         stats = [x for x in stats if x is not None]
-        aggregators = {**{"Year": "max"}, **{x.title: x.aggregator.__name__ for x in stats}}
+        aggregators = {"Year": "max", **{x.title: x.aggregator.__name__ for x in stats}}
         df = df.aggregate(aggregators).reset_index().transpose()
         df.columns = df.iloc[0]
         return df.drop(df.index[0])
@@ -436,7 +435,7 @@ class LifeModelAgent(mesa.Agent):
     #   pre_step:  Person ages first (-20), then account growth/RMDs (-10), then job income (0)
     #   step:      account growth (-10) before tax-unit settlement (0)
     #   post_step: stat resets/escalators run at the default priority (0)
-    STEP_PRIORITY: Dict[str, int] = {}
+    STEP_PRIORITY: ClassVar[dict[str, int]] = {}
 
     def __init__(self, model: LifeModel):
         """LifeModelAgent
@@ -454,18 +453,13 @@ class LifeModelAgent(mesa.Agent):
 
     def pre_step(self):
         """Pre-step phase. Called for all agents before step phase."""
-        pass
 
     def step(self):
         """Step phase. Called for all agents after pre-step phase."""
-        pass
 
     def post_step(self):
         """Post-step phase. Called for all agents after the step phase."""
-        pass
 
 
 class ModelSetupException(Exception):
     """Exception raised when there is an error setting up the model."""
-
-    pass

@@ -19,16 +19,16 @@ from pathlib import Path
 import pytest
 
 hypothesis = pytest.importorskip("hypothesis")
-from hypothesis import given, settings  # noqa: E402
-from hypothesis import strategies as st  # noqa: E402
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
-from ..account.brokerage import BrokerageAccount  # noqa: E402
-from ..config.financial_config import FinancialConfig  # noqa: E402
-from ..housing.home import Mortgage  # noqa: E402
-from ..model import LifeModel  # noqa: E402
-from ..people.family import Family  # noqa: E402
-from ..people.person import Person, Spending  # noqa: E402
-from ..tax.federal import FilingStatus, federal_income_tax, max_tax_rate  # noqa: E402
+from ..account.brokerage import BrokerageAccount
+from ..config.financial_config import FinancialConfig
+from ..housing.home import Mortgage
+from ..model import LifeModel
+from ..people.family import Family
+from ..people.person import Person, Spending
+from ..tax.federal import FilingStatus, federal_income_tax, max_tax_rate
 
 TEST_CONFIG = str(Path(__file__).parent / "fixtures" / "test_config.yaml")
 

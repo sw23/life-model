@@ -11,9 +11,9 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from baselines import BASELINES  # noqa: E402
-from environment import FinancialLifeEnv  # noqa: E402
-from evaluation import EvalProtocol, format_comparison_table, run_policy_episode, spawn_seeds  # noqa: E402
+from baselines import BASELINES
+from environment import FinancialLifeEnv
+from evaluation import EvalProtocol, format_comparison_table, run_policy_episode, spawn_seeds
 
 _REQUIRED_STAT_KEYS = {
     "n",
@@ -51,7 +51,7 @@ class TestRunPolicyEpisode(unittest.TestCase):
 
 class TestEvalProtocol(unittest.TestCase):
     def _protocol(self, **overrides):
-        kwargs = dict(n_eval=4, master_seed=123, bootstrap_resamples=200, held_out_scenario="recession")
+        kwargs = {"n_eval": 4, "master_seed": 123, "bootstrap_resamples": 200, "held_out_scenario": "recession"}
         kwargs.update(overrides)
         return EvalProtocol(**kwargs)
 

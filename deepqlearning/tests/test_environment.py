@@ -13,8 +13,8 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from actions import ActionType, encode_flat_action  # noqa: E402
-from environment import FinancialLifeEnv  # noqa: E402
+from actions import ActionType, encode_flat_action
+from environment import FinancialLifeEnv
 
 
 def _no_action(env):
@@ -38,7 +38,7 @@ class TestGymnasiumAPI(unittest.TestCase):
         env.reset(seed=0)
         result = env.step(_no_action(env))
         self.assertEqual(len(result), 5)
-        obs, reward, terminated, truncated, info = result
+        _obs, reward, terminated, truncated, _info = result
         self.assertIsInstance(reward, float)
         self.assertIsInstance(terminated, bool)
         self.assertIsInstance(truncated, bool)

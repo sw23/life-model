@@ -10,7 +10,7 @@ to the AdviserModel protocol shape (constructors lazy-import their heavy deps, s
 module is free). Actual generation is exercised in manual/local runs against real models.
 """
 
-import slm.backends as backends
+from slm import backends
 from slm.adviser import AdviserModel
 
 

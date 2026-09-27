@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import gymnasium as gym
 import numpy as np
@@ -120,7 +120,7 @@ class FinancialLifeEnv(gym.Env):
     pre-tax and Roth withdrawals genuinely different to the agent.
     """
 
-    metadata = {"render_modes": ["human"]}
+    metadata = {"render_modes": ["human"]}  # noqa: RUF012 - gymnasium.Env declares it as an instance attribute
 
     # Below this net worth the episode ends and the bankruptcy penalty applies (single threshold
     # so the penalty and the termination condition can never disagree).
@@ -132,10 +132,10 @@ class FinancialLifeEnv(gym.Env):
 
     def __init__(
         self,
-        config: Optional[Dict] = None,
-        render_mode: Optional[str] = None,
+        config: dict | None = None,
+        render_mode: str | None = None,
         *,
-        reward_config: Optional[RewardConfig] = None,
+        reward_config: RewardConfig | None = None,
     ):
         super().__init__()
 
@@ -208,7 +208,7 @@ class FinancialLifeEnv(gym.Env):
         """Size of the observation vector (see OBS_SPEC for the feature layout)."""
         return len(OBS_SPEC)
 
-    def _resolve_episode_household(self, options: Dict) -> Dict[str, Any]:
+    def _resolve_episode_household(self, options: dict) -> dict[str, Any]:
         """Resolve the household parameters for this episode.
 
         Without options the env's configured point household is used. ``options={"scenario":
@@ -230,7 +230,7 @@ class FinancialLifeEnv(gym.Env):
             "children_ages",
             "models_healthcare",
         )
-        household: Dict[str, Any] = {key: self.config[key] for key in household_keys}
+        household: dict[str, Any] = {key: self.config[key] for key in household_keys}
         household["economy_scenario"] = self.config["economy_scenario"]
 
         if scenario_name is not None or randomize:
@@ -241,7 +241,7 @@ class FinancialLifeEnv(gym.Env):
                 household.update(sampler.sample(self.np_random))
         return household
 
-    def reset(self, *, seed: Optional[int] = None, options: Optional[Dict] = None) -> Tuple[np.ndarray, Dict[str, Any]]:
+    def reset(self, *, seed: int | None = None, options: dict | None = None) -> tuple[np.ndarray, dict[str, Any]]:
         """Reset the environment to its initial state.
 
         Args:
@@ -355,11 +355,11 @@ class FinancialLifeEnv(gym.Env):
         self.total_lifetime_spending = 0.0
         # Net worth captured just before the person died (the estate value the reward sees);
         # None while the person is alive.
-        self._estate_value_at_death: Optional[float] = None
+        self._estate_value_at_death: float | None = None
 
         return self._get_observation(), self._get_info(None)
 
-    def step(self, action: int) -> Tuple[np.ndarray, float, bool, bool, Dict]:
+    def step(self, action: int) -> tuple[np.ndarray, float, bool, bool, dict]:
         """Execute one step (one simulated year) in the environment.
 
         Args:
@@ -422,10 +422,10 @@ class FinancialLifeEnv(gym.Env):
 
     def _get_info(
         self,
-        action_result: Optional[ActionResult],
-        action_type: Optional[ActionType] = None,
+        action_result: ActionResult | None,
+        action_type: ActionType | None = None,
         action_amount: float = 0.0,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Build the info dict returned by reset/step."""
         return {
             "action_result": action_result,
@@ -461,7 +461,7 @@ class FinancialLifeEnv(gym.Env):
         # Spending / retire / no-op actions don't use a dollar amount.
         return 0.0
 
-    def _owned_accounts(self) -> List[FinancialAccount]:
+    def _owned_accounts(self) -> list[FinancialAccount]:
         """All balance-holding accounts owned by the person."""
         return [
             a
@@ -469,7 +469,7 @@ class FinancialLifeEnv(gym.Env):
             if isinstance(a, FinancialAccount) and getattr(a, "person", None) is self.person
         ]
 
-    def _observed_market_rates(self) -> Tuple[float, float, float]:
+    def _observed_market_rates(self) -> tuple[float, float, float]:
         """(inflation, equity return, bond return), in percent, without lookahead.
 
         After at least one simulated year, these are the *realized* rates of the most recently
@@ -491,7 +491,7 @@ class FinancialLifeEnv(gym.Env):
             economy.bond_return(realized_year),
         )
 
-    def _projected_tax_position(self, projected_ordinary_income: float) -> Tuple[float, float]:
+    def _projected_tax_position(self, projected_ordinary_income: float) -> tuple[float, float]:
         """(dollars of headroom to the next federal bracket edge, marginal rate fraction) for the
         upcoming simulated year, at the projected ordinary income for a single filer."""
         params = self.model.tax_params_for_year(self.model.year)
@@ -503,7 +503,7 @@ class FinancialLifeEnv(gym.Env):
         top_rate = params.tax_brackets.single[-1][2]
         return float("inf"), top_rate / 100.0
 
-    def _compute_observation_features(self) -> Dict[str, float]:
+    def _compute_observation_features(self) -> dict[str, float]:
         """Raw (unclipped) value of every observation feature, keyed by OBS_SPEC name.
 
         Split from :meth:`_get_observation` so tests can check individual features against
@@ -653,7 +653,7 @@ class FinancialLifeEnv(gym.Env):
             or self._calculate_net_worth() < self.BANKRUPTCY_THRESHOLD
         )
 
-    def render(self) -> Optional[str]:
+    def render(self) -> str | None:
         """Render the environment for the configured ``render_mode``."""
         if self.render_mode == "human":
             net_worth = self._calculate_net_worth()
@@ -669,7 +669,7 @@ class FinancialLifeEnv(gym.Env):
 
         return None
 
-    def get_legal_actions(self) -> List[int]:
+    def get_legal_actions(self) -> list[int]:
         """Get list of legal flat action indices for the current state.
 
         Legality is decided solely by ``Action.can_execute`` (via the executor), so the mask can
@@ -709,7 +709,7 @@ class FinancialLifeEnvGenerator:
     """
 
     @staticmethod
-    def create_scenario_env(scenario: str, config: Optional[Dict] = None) -> FinancialLifeEnv:
+    def create_scenario_env(scenario: str, config: dict | None = None) -> FinancialLifeEnv:
         """Create an environment configured with a named household scenario's point values."""
         merged = dict(HOUSEHOLD_SCENARIOS[scenario].point)
         merged["household_scenario"] = scenario
@@ -738,6 +738,6 @@ class FinancialLifeEnvGenerator:
         return FinancialLifeEnvGenerator.create_scenario_env("mid_career")
 
     @staticmethod
-    def create_custom_env(config: Dict) -> FinancialLifeEnv:
+    def create_custom_env(config: dict) -> FinancialLifeEnv:
         """Create environment with custom configuration"""
         return FinancialLifeEnv(config)

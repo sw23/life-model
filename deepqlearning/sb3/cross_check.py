@@ -33,9 +33,9 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.abspath(os.path.join(_HERE, "..")))
 sys.path.insert(0, os.path.abspath(os.path.join(_HERE, "..", "..", "src")))
 
-from environment import FinancialLifeEnv  # noqa: E402
-from evaluation import EvalProtocol, run_policy_episode  # noqa: E402
-from rewards import DEFAULT_PRESET  # noqa: E402
+from environment import FinancialLifeEnv
+from evaluation import EvalProtocol, run_policy_episode
+from rewards import DEFAULT_PRESET
 
 
 def _require_sb3():

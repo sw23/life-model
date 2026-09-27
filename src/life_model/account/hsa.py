@@ -3,7 +3,6 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 from enum import Enum
-from typing import Optional
 
 from ..base_classes import FinancialAccount
 from ..people.person import Person
@@ -22,8 +21,8 @@ class HealthSavingsAccount(FinancialAccount):
         person: Person,
         hsa_type: HSAType,
         balance: float = 0,
-        contribution_limit: Optional[float] = None,
-        employer_contribution: Optional[float] = None,
+        contribution_limit: float | None = None,
+        employer_contribution: float | None = None,
     ):
         """Models a Health Savings Account (HSA)
 

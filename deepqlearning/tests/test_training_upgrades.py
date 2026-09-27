@@ -14,14 +14,14 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from agent import (  # noqa: E402
+from agent import (
     Experience,
     FinancialDQNAgent,
     NStepAccumulator,
     PrioritizedReplayBuffer,
 )
-from environment import FinancialLifeEnv  # noqa: E402
-from vector_trainer import make_vector_env  # noqa: E402
+from environment import FinancialLifeEnv
+from vector_trainer import make_vector_env
 
 
 class TestPrioritizedReplayBuffer(unittest.TestCase):

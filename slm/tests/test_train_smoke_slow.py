@@ -26,7 +26,7 @@ def _require_training_stack():
         import peft  # noqa: F401
         import transformers  # noqa: F401
         import trl  # noqa: F401
-    except Exception as exc:  # pragma: no cover - environment dependent
+    except Exception as exc:  # noqa: BLE001  # pragma: no cover - environment dependent
         pytest.skip(f"training stack not installed: {exc}")
 
 

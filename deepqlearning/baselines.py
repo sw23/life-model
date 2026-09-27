@@ -22,7 +22,7 @@ runs them to produce transitions that can warm-start the replay buffer, kept
 behind an off-by-default trainer flag.
 """
 
-from typing import Callable, Dict, List, Optional
+from collections.abc import Callable
 
 import numpy as np
 from actions import ActionType, encode_flat_action
@@ -40,7 +40,7 @@ _EMERGENCY_FUND_MONTHS = 6
 _WATERFALL_RESERVE_MONTHS = 3
 
 
-def _first_legal(env: FinancialLifeEnv, candidates: List[int]) -> int:
+def _first_legal(env: FinancialLifeEnv, candidates: list[int]) -> int:
     """Return the first candidate action that is currently legal, else ``NO_ACTION``."""
     legal = set(env.get_legal_actions())
     for action in candidates:
@@ -98,7 +98,7 @@ def contribution_waterfall_policy(env: FinancialLifeEnv) -> int:
         return _NO_ACTION
 
     features = env._compute_observation_features()
-    ladder: List[int] = []
+    ladder: list[int] = []
     if features["hsa_room_fraction"] > 0.01:
         ladder.append(encode_flat_action(ActionType.TRANSFER_BANK_TO_HSA, 0.50))
     if features["ira_room_fraction"] > 0.01:
@@ -162,7 +162,7 @@ def emergency_fund_first_policy(env: FinancialLifeEnv) -> int:
     return contribution_waterfall_policy(env)
 
 
-BASELINES: Dict[str, BaselinePolicy] = {
+BASELINES: dict[str, BaselinePolicy] = {
     "do_nothing": do_nothing_policy,
     "always_max_401k": always_max_401k_policy,
     "save_25_percent": save_25_percent_policy,
@@ -195,12 +195,12 @@ def run_baseline_episode(env: FinancialLifeEnv, policy: BaselinePolicy, seed: in
     return float(total_reward)
 
 
-def evaluate_baseline(env: FinancialLifeEnv, policy: BaselinePolicy, seeds: List[int]) -> float:
+def evaluate_baseline(env: FinancialLifeEnv, policy: BaselinePolicy, seeds: list[int]) -> float:
     """Average reward of ``policy`` over the given seeds."""
     return float(np.mean([run_baseline_episode(env, policy, seed) for seed in seeds]))
 
 
-def evaluate_all_baselines(env: FinancialLifeEnv, seeds: List[int]) -> Dict[str, float]:
+def evaluate_all_baselines(env: FinancialLifeEnv, seeds: list[int]) -> dict[str, float]:
     """Average reward for every named baseline over the given seeds."""
     return {name: evaluate_baseline(env, policy, seeds) for name, policy in BASELINES.items()}
 
@@ -208,9 +208,9 @@ def evaluate_all_baselines(env: FinancialLifeEnv, seeds: List[int]) -> Dict[str,
 def collect_teacher_experiences(
     env: FinancialLifeEnv,
     policy: BaselinePolicy,
-    seeds: List[int],
-    max_per_seed: Optional[int] = None,
-) -> List[tuple]:
+    seeds: list[int],
+    max_per_seed: int | None = None,
+) -> list[tuple]:
     """Roll a teacher ``policy`` and return replay transitions for warm-starting.
 
     Each transition is ``(state, action, reward, next_state, done, legal_actions,
@@ -218,7 +218,7 @@ def collect_teacher_experiences(
     trainer can seed the buffer with expert trajectories. Off by default (imitation can bias the
     policy); the trainer exposes it behind a flag and the eval report compares with/without.
     """
-    transitions: List[tuple] = []
+    transitions: list[tuple] = []
     for seed in seeds:
         state, _ = env.reset(seed=seed)
         steps = 0

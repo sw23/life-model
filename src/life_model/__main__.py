@@ -4,7 +4,7 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 import argparse
-from datetime import date
+from datetime import datetime
 
 from life_model import BankAccount, Family, LifeModel, Person, Spending, __version__
 
@@ -33,7 +33,7 @@ def main(args=None):
     parser = get_parser()
     args = parser.parse_args(args)
 
-    start_year = date.today().year
+    start_year = datetime.now().astimezone().year
     model = LifeModel(start_year=start_year, end_year=start_year + args.years)
     family = Family(model)
     person = Person(family=family, name="Spencer", age=45, retirement_age=55, spending=Spending(model, base=30000))

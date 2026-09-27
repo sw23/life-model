@@ -144,7 +144,7 @@ mortality_rates = [
 def get_chance_of_mortality(age: int, gender: GenderAtBirth) -> float:
     """Get the chance of mortality for a given age and gender"""
     # Bound age to valid range
-    age = 0 if age < 0 else 119 if age > 119 else age
+    age = 0 if age < 0 else min(age, 119)
     # Map gender to the correct index in the mortality_rates array
     gender_idx = 1 if gender == GenderAtBirth.MALE else 2
     # Find the mortality rate for the given age and gender

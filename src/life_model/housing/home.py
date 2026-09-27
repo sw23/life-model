@@ -4,7 +4,6 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 import html
-from typing import Optional
 
 from ..base_classes import Loan
 from ..model import Event, LifeModel, LifeModelAgent
@@ -19,7 +18,7 @@ class Home(LifeModelAgent):
         person: Person,
         name: str,
         purchase_price: float,
-        value_yearly_increase: Optional[float],
+        value_yearly_increase: float | None,
         down_payment: float,
         mortgage: "Mortgage",
         expenses: "HomeExpenses",
@@ -76,7 +75,7 @@ class Home(LifeModelAgent):
         return self.model.economy.home_appreciation(self.model.year)
 
     @value_yearly_increase.setter
-    def value_yearly_increase(self, value: Optional[float]) -> None:
+    def value_yearly_increase(self, value: float | None) -> None:
         self._value_yearly_increase_override = value
 
     @property
@@ -122,7 +121,7 @@ class Home(LifeModelAgent):
             )
         )
 
-    def sell(self, selling_cost_percent: Optional[float] = None) -> float:
+    def sell(self, selling_cost_percent: float | None = None) -> float:
         """Sell the home: pay off the mortgage, realize equity to cash, and tax the gain.
 
         The taxable gain above the §121 primary-residence exclusion (2-of-5-year residency assumed)
@@ -231,7 +230,7 @@ class HomeExpenses(LifeModelAgent):
         self.improvement_increase = improvement_increase
         self.hoa_amount = hoa_amount
         self.hoa_increase = hoa_increase
-        self.home: Optional[Home] = None
+        self.home: Home | None = None
 
     def get_yearly_spending(self):
         spending_amount = 0
@@ -267,8 +266,8 @@ class Mortgage(Loan):
         start_date: float,
         length_years: int,
         yearly_interest_rate: float,
-        principal: Optional[float] = None,
-        monthly_payment: Optional[float] = None,
+        principal: float | None = None,
+        monthly_payment: float | None = None,
     ):
         """Mortgage
 

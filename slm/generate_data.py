@@ -34,7 +34,6 @@ import argparse
 import datetime
 import json
 from concurrent.futures import ProcessPoolExecutor
-from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 from scenarios import HOUSEHOLD_SCENARIOS, EpisodeSampler
@@ -72,13 +71,13 @@ TEACHER_GATING = (
 )
 
 
-def _trial_seeds(generation_seed: int, index: int, n_trials: int) -> List[int]:
+def _trial_seeds(generation_seed: int, index: int, n_trials: int) -> list[int]:
     """Reproducible per-household trial seeds from the master seed and the household index."""
     seq = np.random.SeedSequence([generation_seed, index])
     return [int(child.generate_state(1)[0]) for child in seq.spawn(n_trials)]
 
 
-def _to_profile(scenario: str, household: Dict) -> HouseholdProfile:
+def _to_profile(scenario: str, household: dict) -> HouseholdProfile:
     """Convert a sampled household dict (enum gender) to the schema profile (string gender)."""
     return HouseholdProfile(
         scenario=scenario,
@@ -96,8 +95,8 @@ def _to_profile(scenario: str, household: Dict) -> HouseholdProfile:
 
 def _decision_example(
     scenario: str,
-    household: Dict,
-    scored: List[ScoredCandidate],
+    household: dict,
+    scored: list[ScoredCandidate],
     provenance: Provenance,
     index: int,
 ) -> AdviceExample:
@@ -128,11 +127,11 @@ def _decision_example(
     )
 
 
-def _refusal_examples(provenance: Provenance) -> List[AdviceExample]:
+def _refusal_examples(provenance: Provenance) -> list[AdviceExample]:
     """Explicit out-of-scope refusal examples, so scope discipline is trained, not just prompted."""
     # A few phrasings per domain give the refusal behavior linguistic coverage without a paraphrase model.
     phrasings = ("Should I {d}?", "Is it a good idea to {d} right now?", "Can you advise whether to {d}?")
-    examples: List[AdviceExample] = []
+    examples: list[AdviceExample] = []
     for domain, desc in OUT_OF_SCOPE_DOMAINS.items():
         for j, template in enumerate(phrasings):
             question = template.format(d=desc)
@@ -156,7 +155,7 @@ def _refusal_examples(provenance: Provenance) -> List[AdviceExample]:
     return examples
 
 
-def _augment_household(rng: np.random.Generator, household: Dict) -> Dict:
+def _augment_household(rng: np.random.Generator, household: dict) -> dict:
     """Add opt-in children and healthcare to a sampled household (deterministic under ``rng``).
 
     Healthcare (age-banded medical spending plus Medicare from the eligibility age) is priced for
@@ -172,10 +171,10 @@ def _augment_household(rng: np.random.Generator, household: Dict) -> Dict:
     return household
 
 
-def _sample_households(scenarios: List[str], n_per_scenario: int, generation_seed: int) -> List[Tuple[str, Dict, int]]:
+def _sample_households(scenarios: list[str], n_per_scenario: int, generation_seed: int) -> list[tuple[str, dict, int]]:
     """Draw every household sequentially from one seeded RNG (scenario-major, deterministic)."""
     rng = np.random.default_rng(generation_seed)
-    items: List[Tuple[str, Dict, int]] = []
+    items: list[tuple[str, dict, int]] = []
     index = 0
     for scenario in scenarios:
         sampler = EpisodeSampler(scenario)
@@ -186,21 +185,21 @@ def _sample_households(scenarios: List[str], n_per_scenario: int, generation_see
     return items
 
 
-def _score_worker(args: Tuple[Dict, List[int], str]) -> List[ScoredCandidate]:
+def _score_worker(args: tuple[dict, list[int], str]) -> list[ScoredCandidate]:
     """Top-level (picklable) scoring worker for the process pool (mirrors montecarlo._run_trial)."""
     household, seeds, reward_preset = args
     return score_household(household, seeds, reward_preset)
 
 
 def generate_examples(
-    scenarios: List[str],
+    scenarios: list[str],
     n_per_scenario: int,
     n_trials: int,
     generation_seed: int,
     reward_preset: str = DEFAULT_REWARD_PRESET,
     include_refusals: bool = True,
     workers: int = 1,
-) -> List[AdviceExample]:
+) -> list[AdviceExample]:
     """Generate the full example list deterministically (in-scope decisions + refusals).
 
     Households are drawn sequentially (fast, deterministic) and then scored; scoring is
@@ -224,10 +223,10 @@ def generate_examples(
         try:
             with ProcessPoolExecutor(max_workers=workers) as pool:
                 scored_lists = list(pool.map(_score_worker, work))
-        except Exception:
+        except Exception:  # noqa: BLE001 - any pool failure falls back to the sequential path
             scored_lists = [_score_worker(a) for a in work]
 
-    examples: List[AdviceExample] = [
+    examples: list[AdviceExample] = [
         _decision_example(scenario, household, scored, provenance, idx)
         for (scenario, household, idx), scored in zip(items, scored_lists)
     ]
@@ -236,14 +235,14 @@ def generate_examples(
     return examples
 
 
-def examples_to_jsonl(examples: List[AdviceExample]) -> str:
+def examples_to_jsonl(examples: list[AdviceExample]) -> str:
     """Serialize examples to canonical (sorted-key) JSONL — byte-identical under seed."""
     return "".join(json.dumps(ex.model_dump(mode="json"), sort_keys=True) + "\n" for ex in examples)
 
 
 def build_datasheet(
-    examples: List[AdviceExample],
-    scenarios: List[str],
+    examples: list[AdviceExample],
+    scenarios: list[str],
     n_trials: int,
     generation_seed: int,
     reward_preset: str,
@@ -272,18 +271,18 @@ def build_datasheet(
         decision_space=decision_space(),
         teacher_gating=TEACHER_GATING,
         scale_note=scale_note,
-        created_utc=datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat(),
+        created_utc=datetime.datetime.now(datetime.UTC).replace(microsecond=0).isoformat(),
     )
 
 
 def write_dataset(
     out_path: str,
-    scenarios: List[str],
+    scenarios: list[str],
     n_per_scenario: int,
     n_trials: int,
     generation_seed: int,
     reward_preset: str = DEFAULT_REWARD_PRESET,
-    datasheet_path: Optional[str] = None,
+    datasheet_path: str | None = None,
     scale_note: str = "pipeline-validation scale",
     include_refusals: bool = True,
     workers: int = 1,
@@ -311,7 +310,7 @@ def write_dataset(
     return datasheet
 
 
-def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate simulator-verified adviser data.")
     parser.add_argument("--scenarios", default=",".join(DEFAULT_SCENARIOS), help="Comma-separated household scenarios.")
     parser.add_argument("--per-scenario", type=int, default=25, help="Households per scenario.")
@@ -326,7 +325,7 @@ def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def main(argv: Optional[List[str]] = None) -> None:
+def main(argv: list[str] | None = None) -> None:
     args = _parse_args(argv)
     scenarios = [s.strip() for s in args.scenarios.split(",") if s.strip()]
     unknown = [s for s in scenarios if s not in HOUSEHOLD_SCENARIOS]

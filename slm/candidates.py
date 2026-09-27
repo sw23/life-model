@@ -20,8 +20,6 @@ Imports the RL modules with bare names, so ``deepqlearning/`` must be on ``sys.p
 test conftest arranges this, mirroring ``deepqlearning/tests/conftest.py``).
 """
 
-from typing import Dict
-
 from actions import ActionType, encode_flat_action
 from baselines import (
     _NO_ACTION,
@@ -46,7 +44,7 @@ def max_roth_401k_policy(env: FinancialLifeEnv) -> int:
 
 
 # Strategy name -> executable baseline policy. Order matches slm.strategies.STRATEGY_NAMES.
-CANDIDATE_POLICIES: Dict[str, BaselinePolicy] = {
+CANDIDATE_POLICIES: dict[str, BaselinePolicy] = {
     "contribution_waterfall": contribution_waterfall_policy,
     "age_glide": age_glide_policy,
     "emergency_fund_first": emergency_fund_first_policy,

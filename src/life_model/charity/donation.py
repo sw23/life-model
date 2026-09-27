@@ -4,7 +4,7 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 import html
 from enum import Enum
-from typing import TYPE_CHECKING, Optional, cast
+from typing import TYPE_CHECKING, ClassVar, cast
 
 from ..model import Event, LifeModel, LifeModelAgent
 
@@ -24,7 +24,7 @@ class DonationType(Enum):
 class Donation(LifeModelAgent):
     # Donate in pre_step after income is deposited (jobs run at the default priority 0) but
     # before the tax unit settles taxes in the step stage, so the deduction is visible this year.
-    STEP_PRIORITY = {"pre_step": 10}
+    STEP_PRIORITY: ClassVar[dict[str, int]] = {"pre_step": 10}
 
     def __init__(
         self,
@@ -34,8 +34,8 @@ class Donation(LifeModelAgent):
         donation_type: DonationType = DonationType.CASH,
         tax_deductible: bool = True,
         frequency_years: int = 1,
-        start_year: Optional[int] = None,
-        end_year: Optional[int] = None,
+        start_year: int | None = None,
+        end_year: int | None = None,
     ):
         """Models a charitable donation for a person
 
@@ -129,8 +129,6 @@ class Donation(LifeModelAgent):
 
     def step(self):
         """No-op: donations are made in pre_step so they are deductible this year."""
-        pass
 
     def post_step(self):
         """No-op: donation cash movement happens in pre_step."""
-        pass

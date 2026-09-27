@@ -8,13 +8,11 @@ import os
 import random
 from collections import deque, namedtuple
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
 
 import numpy as np
 import torch
-import torch.nn as nn
-import torch.optim as optim
 from environment import OBS_VERSION, FinancialLifeEnv
+from torch import nn, optim
 
 # Identifies the checkpoint format: reward shaping, observation layout, action space, and tensor
 # layout. A checkpoint whose version differs from the code refuses to load rather than silently
@@ -37,8 +35,8 @@ Experience.__new__.__defaults__ = (None,)
 class DQNNetwork(nn.Module):
     """Deep Q-Network for financial decision making"""
 
-    def __init__(self, state_size: int, action_size: int, hidden_sizes: Optional[List[int]] = None):
-        super(DQNNetwork, self).__init__()
+    def __init__(self, state_size: int, action_size: int, hidden_sizes: list[int] | None = None):
+        super().__init__()
         if hidden_sizes is None:
             hidden_sizes = [512, 256, 128]
 
@@ -77,8 +75,8 @@ class DQNNetwork(nn.Module):
 class DuelingDQN(nn.Module):
     """Dueling DQN architecture for better value estimation"""
 
-    def __init__(self, state_size: int, action_size: int, hidden_sizes: Optional[List[int]] = None):
-        super(DuelingDQN, self).__init__()
+    def __init__(self, state_size: int, action_size: int, hidden_sizes: list[int] | None = None):
+        super().__init__()
         if hidden_sizes is None:
             hidden_sizes = [512, 256]
 
@@ -130,7 +128,7 @@ class ReplayBuffer:
         """Add experience to buffer"""
         self.buffer.append(Experience(*args))
 
-    def sample(self, batch_size: int) -> List[Experience]:
+    def sample(self, batch_size: int) -> list[Experience]:
         """Sample random batch from buffer"""
         return random.sample(self.buffer, batch_size)
 
@@ -152,7 +150,7 @@ class PrioritizedReplayBuffer:
         self.capacity = capacity
         self.alpha = alpha
         self.epsilon = epsilon
-        self.buffer: List[Experience] = []
+        self.buffer: list[Experience] = []
         self.priorities = np.zeros(capacity, dtype=np.float64)
         self.pos = 0
 
@@ -211,7 +209,7 @@ class NStepAccumulator:
     def push(self, state, action, reward, legal_actions, next_state, next_legal_actions, done):
         """Record a step and return a list of finalized n-step transitions (possibly empty)."""
         self._items.append((state, action, float(reward), list(legal_actions)))
-        emitted: List[Experience] = []
+        emitted: list[Experience] = []
         if done:
             emitted.extend(self.flush(next_state, next_legal_actions))
         elif len(self._items) >= self.n_step:
@@ -219,9 +217,9 @@ class NStepAccumulator:
             self._items.popleft()
         return emitted
 
-    def flush(self, next_state, next_legal_actions) -> List[Experience]:
+    def flush(self, next_state, next_legal_actions) -> list[Experience]:
         """Emit truncated transitions for every remaining start index at episode end."""
-        emitted: List[Experience] = []
+        emitted: list[Experience] = []
         while self._items:
             emitted.append(self._make(len(self._items), next_state, next_legal_actions, done=True))
             self._items.popleft()
@@ -231,7 +229,7 @@ class NStepAccumulator:
 class FinancialDQNAgent:
     """Deep Q-Network agent for financial decision making"""
 
-    def __init__(self, state_size: int, action_size: int, config: Optional[Dict] = None):
+    def __init__(self, state_size: int, action_size: int, config: dict | None = None):
 
         # Default configuration
         self.config = {
@@ -306,7 +304,7 @@ class FinancialDQNAgent:
         print(f"Using Prioritized Replay: {self.use_per}, n-step: {self.config['n_step']}")
 
     @staticmethod
-    def _select_device(preference: Optional[str] = None) -> torch.device:
+    def _select_device(preference: str | None = None) -> torch.device:
         """Pick a compute device: CUDA when available, otherwise CPU. Apple MPS (Metal) is used
         only when explicitly requested (``preference="mps"``).
 
@@ -333,7 +331,7 @@ class FinancialDQNAgent:
         frac = min(1.0, self.steps_done / max(1, self.config["per_beta_steps"]))
         return start + (1.0 - start) * frac
 
-    def _legal_mask(self, legal_actions_batch: List[List[int]]) -> torch.Tensor:
+    def _legal_mask(self, legal_actions_batch: list[list[int]]) -> torch.Tensor:
         """Build an additive mask (0 for legal, -inf for illegal) for a batch of legal-action lists."""
         mask = torch.full((len(legal_actions_batch), self.action_size), float("-inf"), device=self.device)
         for i, legal in enumerate(legal_actions_batch):
@@ -344,7 +342,7 @@ class FinancialDQNAgent:
                 mask[i, :] = 0.0
         return mask
 
-    def select_action(self, state: np.ndarray, legal_actions: List[int], training: bool = True) -> int:
+    def select_action(self, state: np.ndarray, legal_actions: list[int], training: bool = True) -> int:
         """Select an action using an epsilon-greedy policy over the legal actions."""
 
         if training and random.random() < self.epsilon:
@@ -364,8 +362,8 @@ class FinancialDQNAgent:
         return action
 
     def select_actions_batch(
-        self, states: np.ndarray, legal_actions_batch: List[List[int]], training: bool = True
-    ) -> List[int]:
+        self, states: np.ndarray, legal_actions_batch: list[list[int]], training: bool = True
+    ) -> list[int]:
         """Epsilon-greedy action selection for a batch of states (vectorized collection).
 
         Each row independently explores with probability ``epsilon`` (a random legal action) or
@@ -381,7 +379,7 @@ class FinancialDQNAgent:
         if was_training:
             self.q_network.train()
 
-        actions: List[int] = []
+        actions: list[int] = []
         for i in range(n):
             legal = legal_actions_batch[i]
             if training and legal and random.random() < self.epsilon:
@@ -397,9 +395,9 @@ class FinancialDQNAgent:
         reward: float,
         next_state: np.ndarray,
         done: bool,
-        legal_actions: List[int],
-        next_legal_actions: List[int],
-        discount: Optional[float] = None,
+        legal_actions: list[int],
+        next_legal_actions: list[int],
+        discount: float | None = None,
     ):
         """Store an experience in the replay buffer.
 
@@ -415,7 +413,7 @@ class FinancialDQNAgent:
         """Store an already-built :class:`Experience` (e.g. from :class:`NStepAccumulator`)."""
         self.replay_buffer.push(*experience)
 
-    def train(self) -> Optional[float]:
+    def train(self) -> float | None:
         """Train the agent on a batch of experiences.
 
         Supports prioritized replay (importance-sampling-weighted loss + priority updates from the
@@ -602,15 +600,15 @@ class RolloutResult:
     steps: int
     terminated: bool
     truncated: bool
-    final_info: Dict
-    trajectory: List[Dict] = field(default_factory=list)
+    final_info: dict
+    trajectory: list[dict] = field(default_factory=list)
 
 
 def rollout(
     env: FinancialLifeEnv,
     agent: FinancialDQNAgent,
     training: bool = False,
-    seed: Optional[int] = None,
+    seed: int | None = None,
     collect_trajectory: bool = False,
 ) -> RolloutResult:
     """Run one episode. The single episode loop used by training, evaluation, and analysis.
@@ -624,7 +622,7 @@ def rollout(
     steps = 0
     terminated = False
     truncated = False
-    trajectory: List[Dict] = []
+    trajectory: list[dict] = []
     # N-step accumulator for the training path. n_step=1 recovers 1-step DQN.
     nstep = NStepAccumulator(agent.config.get("n_step", 1), agent.config["gamma"]) if training else None
 
@@ -664,7 +662,7 @@ def rollout(
 class FinancialDQNTrainer:
     """Trainer for the financial DQN agent"""
 
-    def __init__(self, env: FinancialLifeEnv, agent: FinancialDQNAgent, config: Optional[Dict] = None):
+    def __init__(self, env: FinancialLifeEnv, agent: FinancialDQNAgent, config: dict | None = None):
 
         self.env = env
         self.agent = agent
@@ -689,7 +687,7 @@ class FinancialDQNTrainer:
         self.eval_rewards = []
         self.training_metrics = {"avg_reward": [], "avg_net_worth": [], "success_rate": [], "avg_retirement_age": []}
 
-    def _episode_seed(self, episode: int) -> Optional[int]:
+    def _episode_seed(self, episode: int) -> int | None:
         base = self.config.get("base_seed")
         return None if base is None else base + episode
 
@@ -765,7 +763,7 @@ class FinancialDQNTrainer:
 
         return float(np.mean(eval_rewards))
 
-    def get_training_stats(self) -> Dict:
+    def get_training_stats(self) -> dict:
         """Get training statistics"""
         return {
             "episode_rewards": self.episode_rewards,

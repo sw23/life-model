@@ -4,7 +4,6 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 import html
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
 
 from ..base_classes import Investment
 from ..people.person import Person
@@ -51,9 +50,9 @@ class BrokerageAccount(Investment):
         person: Person,
         company: str,
         balance: float = 0,
-        growth_rate: Optional[float] = None,
+        growth_rate: float | None = None,
         *,
-        dividend_yield: Optional[float] = None,
+        dividend_yield: float | None = None,
     ):
         """Models a brokerage/investment account
 
@@ -71,10 +70,10 @@ class BrokerageAccount(Investment):
         """
         super().__init__(person, balance, growth_rate)
         self.company = company
-        self.investments: List = []  # List of individual investments
+        self.investments: list = []  # List of individual investments
         self._dividend_yield_override = dividend_yield
         # Basis is tracked per lot; an opening balance is treated as freshly purchased at cost.
-        self.lots: List[TaxLot] = []
+        self.lots: list[TaxLot] = []
         if balance > 0:
             self.lots.append(TaxLot(value=balance, cost_basis=balance, acquired_year=self.model.year))
 
@@ -86,7 +85,7 @@ class BrokerageAccount(Investment):
         return self.model.config.accounts.brokerage.dividend_yield
 
     @dividend_yield.setter
-    def dividend_yield(self, value: Optional[float]) -> None:
+    def dividend_yield(self, value: float | None) -> None:
         self._dividend_yield_override = value
 
     @property
@@ -151,7 +150,7 @@ class BrokerageAccount(Investment):
         self.lots.append(TaxLot(value=amount, cost_basis=amount, acquired_year=self.model.year))
         return True
 
-    def deposit_with_basis(self, amount: float, cost_basis: float, acquired_year: Optional[int] = None) -> None:
+    def deposit_with_basis(self, amount: float, cost_basis: float, acquired_year: int | None = None) -> None:
         """Credit ``amount`` as a lot with an explicit basis and acquisition year.
 
         Used where the transferred property carries a basis or holding period that differs from a
@@ -185,7 +184,7 @@ class BrokerageAccount(Investment):
             self.person.income.add(IncomeType.SHORT_TERM_CAPITAL_GAIN, short_term_gain)
         return withdrawn
 
-    def sell(self, amount: float) -> Tuple[float, float, float]:
+    def sell(self, amount: float) -> tuple[float, float, float]:
         """Consume lots FIFO for ``amount`` without posting anything to the income ledger.
 
         Returns:
@@ -219,7 +218,7 @@ class BrokerageAccount(Investment):
 
         return actual_withdrawal, long_term_gain, short_term_gain
 
-    def preview_gain(self, amount: float) -> Tuple[float, float]:
+    def preview_gain(self, amount: float) -> tuple[float, float]:
         """Preview the gains selling ``amount`` would realize, WITHOUT mutating any lots.
 
         Walks the same FIFO path as :meth:`sell` but consumes nothing, returning

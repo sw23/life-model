@@ -4,7 +4,6 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 import html
 from enum import Enum
-from typing import Optional
 
 from ..base_classes import Loan
 from ..people.person import Person
@@ -28,8 +27,8 @@ class StudentLoan(Loan):
         yearly_interest_rate: float,
         length_years: int,
         school_name: str,
-        principal: Optional[float] = None,
-        monthly_payment: Optional[float] = None,
+        principal: float | None = None,
+        monthly_payment: float | None = None,
         in_deferment: bool = False,
     ):
         """Models a student loan for a person

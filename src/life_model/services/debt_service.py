@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-from typing import TYPE_CHECKING, Tuple
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ..people.person import Person
@@ -21,7 +21,7 @@ class DebtService:
     def __init__(self, person: "Person"):
         self.person = person
 
-    def service_year(self) -> Tuple[float, float]:
+    def service_year(self) -> tuple[float, float]:
         """Service every personal debt for one simulated year.
 
         Returns:

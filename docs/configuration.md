@@ -28,9 +28,9 @@ Configuration is resolved when a `LifeModel` is constructed, not at import time
 ```python
 from life_model.model import LifeModel
 
-baseline = LifeModel()                     # packaged defaults
+baseline = LifeModel()  # packaged defaults
 high_tax = LifeModel(scenario="high_tax")  # a packaged scenario
-custom   = LifeModel(config=my_config)     # a FinancialConfig you built
+custom = LifeModel(config=my_config)  # a FinancialConfig you built
 ```
 
 Domain code reads configuration through the model:
@@ -140,8 +140,8 @@ HSA limits, gift exclusion, RMD start age). Access them with:
 
 ```python
 params = model.config.tax_year(2025)
-params.standard_deduction.single   # 15750
-params.ss_wage_base                # 176100
+params.standard_deduction.single  # 15750
+params.ss_wage_base  # 176100
 ```
 
 ### Projection rule for years outside the table
@@ -255,15 +255,17 @@ otherwise):
 ```python
 from life_model import MonteCarlo, LifeModel
 
+
 def build(seed):
     model = LifeModel(seed=seed, scenario="stochastic")  # a stochastic-economy scenario
     # ... construct the family, jobs, and accounts ...
     return model
 
+
 result = MonteCarlo(build, n=1000, seed=42).run()
-result.success_rate(lambda row: row["Bank Balance"] > 0)   # probability of not running out
-result.percentiles("Bank Balance", [10, 50, 90])           # fan-chart frames
-result.fan_chart("Bank Balance")                           # matplotlib fan chart
+result.success_rate(lambda row: row["Bank Balance"] > 0)  # probability of not running out
+result.percentiles("Bank Balance", [10, 50, 90])  # fan-chart frames
+result.fan_chart("Bank Balance")  # matplotlib fan chart
 ```
 
 Per-trial seeds are derived deterministically from the master `seed`, so a study

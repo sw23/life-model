@@ -4,7 +4,7 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 import html
 from enum import Enum
-from typing import List, Optional, cast
+from typing import cast
 
 from ..model import Event, LifeModel, LifeModelAgent
 from ..people.person import Person
@@ -44,7 +44,7 @@ class InsuranceClaim:
         self.deductible = deductible
         self.status = ClaimStatus.PENDING
         self.payout_amount = 0.0
-        self.settlement_date: Optional[int] = None
+        self.settlement_date: int | None = None
 
 
 class Insurance(LifeModelAgent):
@@ -56,10 +56,10 @@ class Insurance(LifeModelAgent):
         annual_premium: float,
         coverage_amount: float,
         deductible: float = 0,
-        coverage_start_age: Optional[int] = None,
-        coverage_end_age: Optional[int] = None,
-        premium_increase_rate: Optional[float] = None,
-        max_claims_per_year: Optional[int] = None,
+        coverage_start_age: int | None = None,
+        coverage_end_age: int | None = None,
+        premium_increase_rate: float | None = None,
+        max_claims_per_year: int | None = None,
     ):
         """Models insurance coverage for a person
 
@@ -76,7 +76,7 @@ class Insurance(LifeModelAgent):
             max_claims_per_year: Maximum claims allowed per year. Configured default if None.
         """
         super().__init__(cast(LifeModel, person.model))
-        self.model: "LifeModel" = cast("LifeModel", self.model)
+        self.model: LifeModel = cast("LifeModel", self.model)
         general_config = self.model.config.insurance.general
         if premium_increase_rate is None:
             premium_increase_rate = general_config.default_premium_increase_rate
@@ -97,7 +97,7 @@ class Insurance(LifeModelAgent):
         # State tracking
         self.is_active = True
         self.policy_start_year = self.model.year
-        self.claims_history: List[InsuranceClaim] = []
+        self.claims_history: list[InsuranceClaim] = []
         self.claims_this_year = 0
 
         # Statistics tracking
@@ -116,9 +116,7 @@ class Insurance(LifeModelAgent):
             return False
         if self.person.age < self.coverage_start_age:
             return False
-        if self.coverage_end_age and self.person.age > self.coverage_end_age:
-            return False
-        return True
+        return not (self.coverage_end_age and self.person.age > self.coverage_end_age)
 
     @property
     def years_active(self) -> int:
@@ -146,9 +144,7 @@ class Insurance(LifeModelAgent):
         self.stat_premiums_paid += self.annual_premium
         return True
 
-    def file_claim(
-        self, claim_amount: float, description: str, *, charge_loss: bool = True
-    ) -> Optional[InsuranceClaim]:
+    def file_claim(self, claim_amount: float, description: str, *, charge_loss: bool = True) -> InsuranceClaim | None:
         """File an insurance claim.
 
         Args:
@@ -229,7 +225,7 @@ class Insurance(LifeModelAgent):
         self.is_active = False
         self.model.event_log.add(Event(f"{self.person.name} cancelled {self.insurance_type.value} insurance"))
 
-    def update_coverage(self, new_coverage_amount: float, new_deductible: Optional[float] = None):
+    def update_coverage(self, new_coverage_amount: float, new_deductible: float | None = None):
         """Update coverage amount and optionally deductible"""
         old_coverage = self.coverage_amount
         self.coverage_amount = new_coverage_amount
@@ -248,18 +244,18 @@ class Insurance(LifeModelAgent):
             Event(f"{self.person.name} updated {self.insurance_type.value} coverage to ${new_coverage_amount:,.0f}")
         )
 
-    def get_claim_history(self, year: Optional[int] = None) -> List[InsuranceClaim]:
+    def get_claim_history(self, year: int | None = None) -> list[InsuranceClaim]:
         """Get claims history, optionally filtered by year"""
         if year is None:
             return self.claims_history.copy()
         return [claim for claim in self.claims_history if claim.claim_date == year]
 
-    def get_total_claims_amount(self, year: Optional[int] = None) -> float:
+    def get_total_claims_amount(self, year: int | None = None) -> float:
         """Get total amount of claims filed, optionally for a specific year"""
         claims = self.get_claim_history(year)
         return sum(claim.amount for claim in claims)
 
-    def get_total_payouts(self, year: Optional[int] = None) -> float:
+    def get_total_payouts(self, year: int | None = None) -> float:
         """Get total payouts received, optionally for a specific year"""
         claims = self.get_claim_history(year)
         return sum(claim.payout_amount for claim in claims if claim.status == ClaimStatus.APPROVED)

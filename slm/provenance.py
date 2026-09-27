@@ -30,7 +30,7 @@ def simulator_commit() -> str:
         here = os.path.dirname(os.path.abspath(__file__))
         out = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=here, stderr=subprocess.DEVNULL)
         return out.decode().strip()
-    except Exception:
+    except (OSError, subprocess.CalledProcessError):
         return "unknown"
 
 

@@ -160,7 +160,7 @@ class TestChildCollege529(unittest.TestCase):
         self.assertEqual(parent.bank_account_balance, 85000)
 
     def test_529_for_other_child_not_drawn(self):
-        model, parent, child, plan = self._college_child_model(plan_balance=50000)
+        model, parent, _child, plan = self._college_child_model(plan_balance=50000)
         # A 529 whose beneficiary is a different child must not fund this child's college.
         other = Child(parent, "Sibling", birth_year=2020)  # age 6 -> school band (5000)
         plan.change_beneficiary(other)

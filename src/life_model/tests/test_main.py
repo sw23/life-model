@@ -17,6 +17,7 @@ class TestMainModule(unittest.TestCase):
             [sys.executable, "-m", "life_model", "--years", "3"],
             capture_output=True,
             text=True,
+            check=False,
         )
         self.assertEqual(result.returncode, 0, msg=result.stderr)
         self.assertIn("Year", result.stdout)
@@ -27,6 +28,7 @@ class TestMainModule(unittest.TestCase):
             [sys.executable, "-m", "life_model", "--version"],
             capture_output=True,
             text=True,
+            check=False,
         )
         self.assertEqual(result.returncode, 0, msg=result.stderr)
         self.assertIn(life_model.__version__, result.stdout)

@@ -12,12 +12,12 @@ deterministic stubs here. Real backends (HF/MLX/API) live in :mod:`slm.backends`
 imports so importing this module never pulls in torch or transformers.
 """
 
-from typing import Dict, List, Optional, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from .prompts import format_decision_answer, format_refusal_answer
 from .strategies import STRATEGY_NAMES, decision_space
 
-Messages = List[Dict[str, str]]
+Messages = list[dict[str, str]]
 
 # Marker the user turn carries when (and only when) it is an in-scope decision request. The
 # stubs use its presence/absence to decide whether to answer or refuse, mirroring what a trained
@@ -48,7 +48,7 @@ class StubAdviserModel:
     the full pipeline end-to-end in CI without any weights.
     """
 
-    def __init__(self, fixed_decision: Optional[str] = None, rationale: str = "Stubbed rationale."):
+    def __init__(self, fixed_decision: str | None = None, rationale: str = "Stubbed rationale."):
         self.fixed_decision = fixed_decision or STRATEGY_NAMES[0]
         if self.fixed_decision not in decision_space():
             raise ValueError(f"unknown strategy {self.fixed_decision!r}")
@@ -70,7 +70,7 @@ class ScriptedAdviserModel:
     any real model. Out-of-scope requests (no menu, no matching key) refuse.
     """
 
-    def __init__(self, decision_by_household: Dict[str, str], rationale: str = "Oracle argmax."):
+    def __init__(self, decision_by_household: dict[str, str], rationale: str = "Oracle argmax."):
         self.decision_by_household = dict(decision_by_household)
         self.rationale = rationale
 
