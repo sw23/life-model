@@ -20,7 +20,7 @@ pyyaml>=6.0
 # real local model; the schema/serializer/scoring/eval/tool-loop paths and CI never need them.
 transformers>=5.17.0
 peft>=0.21.0
-trl>=1.13.0
+trl>=1.14.0
 datasets>=5.0.1
 accelerate>=1.15.0
 torch>=2.14.0
