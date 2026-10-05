@@ -12,7 +12,7 @@ other bill. The curve captures chronic-care and general medical spend inside a s
 rather than modeling each condition separately (documented v1 simplification).
 """
 
-from typing import Optional, cast
+from typing import cast
 
 from ..model import LifeModel, LifeModelAgent
 from ..people.person import Person
@@ -50,7 +50,7 @@ class MedicalCosts(LifeModelAgent):
         """
         return medical_inflation_factor(self.model, year)
 
-    def annual_cost(self, year: Optional[int] = None) -> float:
+    def annual_cost(self, year: int | None = None) -> float:
         """This person's nominal medical cost for ``year`` (defaults to the current model year).
 
         Computed (not charged): the age-band base cost indexed by cumulative medical inflation.

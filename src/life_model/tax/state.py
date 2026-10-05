@@ -16,7 +16,7 @@ Two code paths coexist:
   the pack's flat rate or brackets.
 """
 
-from typing import TYPE_CHECKING, Dict, Optional
+from typing import TYPE_CHECKING
 
 from ..config.config_manager import config as _global_config
 from .brackets import apply_brackets
@@ -28,16 +28,16 @@ if TYPE_CHECKING:
     from .federal import FilingStatus
 
 
-def _fin(config: "Optional[FinancialConfig]") -> "FinancialConfig":
+def _fin(config: "FinancialConfig | None") -> "FinancialConfig":
     return config if config is not None else _global_config.financial
 
 
-def get_state_tax_rate(config: "Optional[FinancialConfig]" = None) -> float:
+def get_state_tax_rate(config: "FinancialConfig | None" = None) -> float:
     """Get the configured DEFAULT flat state tax rate."""
     return _fin(config).tax.state.tax_rate
 
 
-def state_income_tax(income: float, config: "Optional[FinancialConfig]" = None) -> float:
+def state_income_tax(income: float, config: "FinancialConfig | None" = None) -> float:
     """Calculate state income taxes due at the DEFAULT flat rate.
 
     Args:
@@ -63,11 +63,11 @@ def _state_standard_deduction(pack: "StateTaxPack", filing_status: "FilingStatus
 
 
 def state_income_tax_for_unit(
-    totals_by_type: "Dict[IncomeType, float]",
+    totals_by_type: "dict[IncomeType, float]",
     filing_status: "FilingStatus",
-    state: Optional[str],
+    state: str | None,
     legacy_agi_base: float,
-    config: "Optional[FinancialConfig]" = None,
+    config: "FinancialConfig | None" = None,
 ) -> float:
     """Compute state income tax for a tax unit resolving the resident's state pack.
 

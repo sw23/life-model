@@ -450,7 +450,7 @@ class TestBrokerageFundsSpending(unittest.TestCase):
     def test_brokerage_sale_realizes_capital_gains_tax(self):
         # Basis is 25% of value, so every dollar sold is 75% long-term gain. Selling to cover
         # $60k of bills realizes gain and pays preferential-rate tax on it.
-        _, person, account, _ = self._retiree_with_brokerage(
+        _, person, _account, _ = self._retiree_with_brokerage(
             bank=0.0, spending=60000, broker_value=200000, broker_basis=50000
         )
         TaxUnit([person]).settle_year()

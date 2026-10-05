@@ -9,7 +9,7 @@ Based on the ExampleSimulation.ipynb notebook.
 """
 
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any
 
 import solara
 from mesa.visualization import Slider, SolaraViz, make_plot_component
@@ -35,7 +35,7 @@ STATE_CHOICES = [DEFAULT_STATE_KEY] + sorted(
     code for code in FinancialConfig().tax.state.packs if code != DEFAULT_STATE_KEY
 )
 
-current_year = datetime.now().year
+current_year = datetime.now().astimezone().year
 
 
 def param_value(spec: Any) -> Any:
@@ -58,7 +58,7 @@ def param_value(spec: Any) -> Any:
 # values used when the model is constructed directly (import time / tests). Keeping them in one
 # place is what keeps the two construction paths in agreement.
 
-PERSON_DEFAULTS: Dict[str, Dict[str, Any]] = {
+PERSON_DEFAULTS: dict[str, dict[str, Any]] = {
     "john": {
         "enabled": True,
         "age": 44,
@@ -97,7 +97,7 @@ PERSON_DEFAULTS: Dict[str, Dict[str, Any]] = {
     },
 }
 
-SHARED_DEFAULTS: Dict[str, Any] = {
+SHARED_DEFAULTS: dict[str, Any] = {
     "start_year": current_year,
     "end_year": current_year + 50,
     "salary_increase": 2.0,
@@ -113,7 +113,7 @@ SHARED_DEFAULTS: Dict[str, Any] = {
 }
 
 
-def _person_param_specs(prefix: str, name: str) -> Dict[str, Any]:
+def _person_param_specs(prefix: str, name: str) -> dict[str, Any]:
     """Build the SolaraViz control specs for one person from that person's defaults."""
     d = PERSON_DEFAULTS[prefix]
     return {
@@ -136,12 +136,12 @@ def _person_param_specs(prefix: str, name: str) -> Dict[str, Any]:
     }
 
 
-def _get(kwargs: Dict[str, Any], key: str, default: Any) -> Any:
+def _get(kwargs: dict[str, Any], key: str, default: Any) -> Any:
     """Fetch a normalized param value from the model kwargs, falling back to ``default``."""
     return param_value(kwargs.get(key, default))
 
 
-def _add_person(model: LifeModel, family: Family, prefix: str, kwargs: Dict[str, Any]) -> Optional[Person]:
+def _add_person(model: LifeModel, family: Family, prefix: str, kwargs: dict[str, Any]) -> Person | None:
     """Create a person (with bank account, job, and optional 401k) from the params, if enabled."""
     d = PERSON_DEFAULTS[prefix]
 
@@ -201,7 +201,7 @@ def _add_person(model: LifeModel, family: Family, prefix: str, kwargs: Dict[str,
     return person
 
 
-def _add_home(model: LifeModel, owner: Optional[Person], kwargs: Dict[str, Any]) -> None:
+def _add_home(model: LifeModel, owner: Person | None, kwargs: dict[str, Any]) -> None:
     """Attach a mortgaged home to ``owner`` when the home checkbox is enabled."""
     if owner is None or not _get(kwargs, "home_enabled", SHARED_DEFAULTS["home_enabled"]):
         return
@@ -240,7 +240,7 @@ def _add_home(model: LifeModel, owner: Optional[Person], kwargs: Dict[str, Any])
     )
 
 
-def _add_healthcare(model: LifeModel, people: "tuple[Optional[Person], ...]", kwargs: Dict[str, Any]) -> None:
+def _add_healthcare(model: LifeModel, people: "tuple[Person | None, ...]", kwargs: dict[str, Any]) -> None:
     """Attach the opt-in healthcare agents to each enabled person when the toggle is on.
 
     Adds the age-related medical cost curve, Medicare (premiums + IRMAA), and the long-term-care
@@ -256,7 +256,7 @@ def _add_healthcare(model: LifeModel, people: "tuple[Optional[Person], ...]", kw
         LongTermCare(person)
 
 
-def _scenario_value(raw: Any) -> Optional[str]:
+def _scenario_value(raw: Any) -> str | None:
     """Map the scenario dropdown selection to a LifeModel scenario name (or None for defaults)."""
     value = param_value(raw)
     if value in (None, SCENARIO_DEFAULT_LABEL):
@@ -264,7 +264,7 @@ def _scenario_value(raw: Any) -> Optional[str]:
     return value
 
 
-def _state_value(raw: Any) -> Optional[str]:
+def _state_value(raw: Any) -> str | None:
     """Map the state dropdown selection to a Person ``state`` (None for the DEFAULT pack)."""
     value = param_value(raw)
     if value in (None, DEFAULT_STATE_KEY):

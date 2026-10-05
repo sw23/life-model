@@ -117,18 +117,18 @@ class TestTrustEstateIntegration(unittest.TestCase):
         return model, grantor, child, trust
 
     def test_irrevocable_assets_excluded_from_gross_estate(self):
-        model, grantor, child, trust = self._dying_grantor_with_trust(TrustType.IRREVOCABLE, residual=0)
+        _model, grantor, _child, _trust = self._dying_grantor_with_trust(TrustType.IRREVOCABLE, residual=0)
         self.assertEqual(grantor._gross_estate_value(), 0.0)
 
     def test_revocable_assets_included_in_gross_estate(self):
-        model, grantor, child, trust = self._dying_grantor_with_trust(TrustType.REVOCABLE, residual=0)
+        _model, grantor, _child, _trust = self._dying_grantor_with_trust(TrustType.REVOCABLE, residual=0)
         self.assertEqual(grantor._gross_estate_value(), 200000)
 
     def test_revocable_trust_taxed_at_death_irrevocable_not(self):
         # Revocable: $200k trust + $100k residual bank in a $100k-exemption estate -> taxable
         # $200k -> $80k estate tax (40%). The child receives the residual bank ($100k, out of
         # which the estate tax is paid) plus the trust payout: 100k - 80k + 200k = 220k.
-        model_r, grantor_r, child_r, _ = self._dying_grantor_with_trust(TrustType.REVOCABLE)
+        model_r, _grantor_r, child_r, _ = self._dying_grantor_with_trust(TrustType.REVOCABLE)
         model_r.run()
         events_r = " | ".join(e.message for e in model_r.event_log.list)
         self.assertIn("Estate tax", events_r)
@@ -136,7 +136,7 @@ class TestTrustEstateIntegration(unittest.TestCase):
 
         # Irrevocable: the trust assets escape the estate tax; only the $100k residual is in the
         # gross estate, which sits within the exemption -> no estate tax at all.
-        model_i, grantor_i, child_i, trust_i = self._dying_grantor_with_trust(TrustType.IRREVOCABLE)
+        model_i, _grantor_i, child_i, _trust_i = self._dying_grantor_with_trust(TrustType.IRREVOCABLE)
         model_i.run()
         events_i = " | ".join(e.message for e in model_i.event_log.list)
         self.assertNotIn("Estate tax", events_i)

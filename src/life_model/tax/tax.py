@@ -3,7 +3,8 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-from typing import TYPE_CHECKING, Optional, Sequence
+from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 from .federal import FilingStatus, capital_gains_tax, federal_income_tax, net_investment_income_tax
 from .fica import (
@@ -53,10 +54,10 @@ def compute_taxes(
     deductions: float,
     filing_status: FilingStatus,
     wage_incomes: "Sequence[float]",
-    config: "Optional[FinancialConfig]" = None,
+    config: "FinancialConfig | None" = None,
     *,
     credits: float = 0.0,
-    state_tax: "Optional[float]" = None,
+    state_tax: "float | None" = None,
     preferential_income: float = 0.0,
     net_investment_income: float = 0.0,
 ) -> TaxesDue:
@@ -126,7 +127,7 @@ def get_income_taxes_due(
     gross_income: float,
     deductions: float,
     filing_status: FilingStatus,
-    config: "Optional[FinancialConfig]" = None,
+    config: "FinancialConfig | None" = None,
 ) -> TaxesDue:
     """Gets income taxes due for a single earner whose entire income is wages.
 

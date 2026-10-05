@@ -138,7 +138,7 @@ class TestCanExecuteImpliesSuccess(unittest.TestCase):
         samples = 0
         for seed in range(60):
             env = FinancialLifeEnv()
-            state, _ = env.reset(seed=seed)
+            _state, _ = env.reset(seed=seed)
             rng = np.random.RandomState(seed)
             for _ in range(40):
                 legal = env.get_legal_actions()

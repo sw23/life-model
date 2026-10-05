@@ -29,8 +29,8 @@ condition for the default objective: the agent's mean return exceeds every plann
 its CI does not overlap the best heuristic's. The held-out gap is reported, not gated.
 """
 
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
-from typing import Callable, Dict, List, Optional
 
 import numpy as np
 
@@ -42,13 +42,13 @@ from .baselines import BASELINES, PLANNER_BASELINES
 Policy = Callable[[FinancialLifeEnv], int]
 
 
-def spawn_seeds(master_seed: Optional[int], n: int) -> List[int]:
+def spawn_seeds(master_seed: int | None, n: int) -> list[int]:
     """Derive ``n`` independent, reproducible seeds from a master seed via ``SeedSequence``."""
     sequence = np.random.SeedSequence(master_seed)
     return [int(child.generate_state(1)[0]) for child in sequence.spawn(n)]
 
 
-def summarize_final_infos(infos: List[Dict]) -> Dict:
+def summarize_final_infos(infos: list[dict]) -> dict:
     """Count how a set of financial episodes ended, from their terminal ``info`` dicts.
 
     An episode ends in exactly one of three ways: the person died of natural causes, the household
@@ -76,7 +76,7 @@ def summarize_final_infos(infos: List[Dict]) -> Dict:
     }
 
 
-def format_final_infos(infos: List[Dict]) -> str:
+def format_final_infos(infos: list[dict]) -> str:
     """One-line rendering of :func:`summarize_final_infos`, for a trainer's evaluation printout."""
     summary = summarize_final_infos(infos)
     n = summary["n"]
@@ -124,7 +124,7 @@ def run_policy_episode(env: FinancialLifeEnv, policy: Policy, seed: int) -> Epis
     env.reset(seed=seed)
     total_reward = 0.0
     steps = 0
-    info: Dict = {}
+    info: dict = {}
     terminated = truncated = False
     while True:
         action = policy(env)
@@ -182,11 +182,11 @@ class PolicyStats:
     net_worth_p90: float
     mean_steps: float
 
-    def as_dict(self) -> Dict:
+    def as_dict(self) -> dict:
         return asdict(self)
 
 
-def summarize(outcomes: List[EpisodeOutcome], resamples: int, ci: float, rng: np.random.Generator) -> PolicyStats:
+def summarize(outcomes: list[EpisodeOutcome], resamples: int, ci: float, rng: np.random.Generator) -> PolicyStats:
     """Summarize a list of episode outcomes into a :class:`PolicyStats`."""
     returns = np.array([o.total_reward for o in outcomes], dtype=float)
     net_worths = np.array([o.real_terminal_net_worth for o in outcomes], dtype=float)
@@ -221,22 +221,22 @@ class EvalProtocol:
         ci: Confidence level (e.g. 0.95).
     """
 
-    env_config: Dict = field(default_factory=dict)
+    env_config: dict = field(default_factory=dict)
     reward_preset: str = DEFAULT_PRESET
     n_eval: int = 50
     master_seed: int = 12345
-    held_out_scenario: Optional[str] = "recession"
+    held_out_scenario: str | None = "recession"
     bootstrap_resamples: int = 2000
     ci: float = 0.95
 
-    def _make_env(self, extra_config: Optional[Dict] = None) -> FinancialLifeEnv:
+    def _make_env(self, extra_config: dict | None = None) -> FinancialLifeEnv:
         config = dict(self.env_config)
         config["reward_preset"] = self.reward_preset
         if extra_config:
             config.update(extra_config)
         return FinancialLifeEnv(config)
 
-    def _conditions(self) -> Dict[str, Dict]:
+    def _conditions(self) -> dict[str, dict]:
         """Map condition name -> {env_extra_config, seeds}. Seed sets are disjoint spawns."""
         # Two disjoint seed sets from the master seed: train and held-out.
         both = spawn_seeds(self.master_seed, 2 * self.n_eval)
@@ -252,13 +252,13 @@ class EvalProtocol:
             }
         return conditions
 
-    def evaluate_policy(self, policy: Policy, env: FinancialLifeEnv, seeds: List[int]) -> PolicyStats:
+    def evaluate_policy(self, policy: Policy, env: FinancialLifeEnv, seeds: list[int]) -> PolicyStats:
         """Evaluate one policy on one env over ``seeds`` and return its statistics."""
         outcomes = [run_policy_episode(env, policy, seed) for seed in seeds]
         rng = np.random.default_rng(self.master_seed)
         return summarize(outcomes, self.bootstrap_resamples, self.ci, rng)
 
-    def run(self, policies: Optional[Dict[str, Policy]] = None, agent=None) -> Dict:
+    def run(self, policies: dict[str, Policy] | None = None, agent=None) -> dict:
         """Run the protocol and return the JSON-serializable report.
 
         Args:
@@ -271,7 +271,7 @@ class EvalProtocol:
             policies = {"agent": greedy_agent_policy(agent), **policies}
 
         conditions = self._conditions()
-        report: Dict = {
+        report: dict = {
             "reward_preset": self.reward_preset,
             "reward_config": asdict(get_reward_config(self.reward_preset)),
             "master_seed": self.master_seed,
@@ -290,7 +290,7 @@ class EvalProtocol:
             report["intelligent"] = self._intelligence_verdict(report)
         return report
 
-    def _intelligence_verdict(self, report: Dict) -> Dict:
+    def _intelligence_verdict(self, report: dict) -> dict:
         """Operational 'intelligent' verdict, computed on the train condition.
 
         The agent is intelligent iff its mean return exceeds every planner heuristic's AND its CI
@@ -324,9 +324,9 @@ class EvalProtocol:
         }
 
 
-def format_comparison_table(report: Dict) -> str:
+def format_comparison_table(report: dict) -> str:
     """Render the protocol report as a plain-text comparison table for the trainer to print."""
-    lines: List[str] = []
+    lines: list[str] = []
     lines.append(
         f"Evaluation protocol — preset={report['reward_preset']} n={report['n_eval']} "
         f"master_seed={report['master_seed']}"

@@ -4,14 +4,13 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 import html
-from typing import Optional
 
 from ..model import LifeModelAgent
 from ..people.person import Person
 
 
 class Apartment(LifeModelAgent):
-    def __init__(self, person: Person, name: str, monthly_rent: float, yearly_increase: Optional[float] = 5):
+    def __init__(self, person: Person, name: str, monthly_rent: float, yearly_increase: float | None = 5):
         """Apartment
 
         Args:
@@ -37,7 +36,7 @@ class Apartment(LifeModelAgent):
         return self.model.economy.inflation(self.model.year)
 
     @yearly_increase.setter
-    def yearly_increase(self, value: Optional[float]) -> None:
+    def yearly_increase(self, value: float | None) -> None:
         self._yearly_increase_override = value
 
     @property

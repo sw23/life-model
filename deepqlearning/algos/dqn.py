@@ -17,11 +17,11 @@ import json
 import os
 import pickle
 import random
-from typing import Dict, Optional, Sequence
+from collections.abc import Sequence
 
 import numpy as np
 import torch
-import torch.optim as optim
+from torch import optim
 
 from .base import ActResult, Algorithm, StepBatch, legal_mask_tensor
 from .networks import build_q_network
@@ -40,7 +40,7 @@ class DQNAgent(Algorithm):
     name = "dqn"
 
     @staticmethod
-    def default_config() -> Dict:
+    def default_config() -> dict:
         return {
             "learning_rate": 1e-4,
             "batch_size": 64,
@@ -75,7 +75,7 @@ class DQNAgent(Algorithm):
             "verbose": True,
         }
 
-    def __init__(self, obs_space, action_space, config: Optional[Dict] = None):
+    def __init__(self, obs_space, action_space, config: dict | None = None):
         super().__init__(obs_space, action_space, config)
 
         self.obs_version = self.config["obs_version"]
@@ -106,7 +106,7 @@ class DQNAgent(Algorithm):
         # Training state
         self.epsilon = self.config["epsilon_start"]
         # One n-step accumulator per environment stream, created on first sight of that stream.
-        self._accumulators: Dict[int, NStepAccumulator] = {}
+        self._accumulators: dict[int, NStepAccumulator] = {}
 
         if self.config["verbose"]:
             print(f"Initialized DQN Agent on {self.device}")
@@ -162,7 +162,7 @@ class DQNAgent(Algorithm):
         done: bool,
         legal_actions,
         next_legal_actions,
-        discount: Optional[float] = None,
+        discount: float | None = None,
     ):
         """Store a single transition directly in the replay buffer, bypassing n-step accumulation.
 
@@ -201,7 +201,7 @@ class DQNAgent(Algorithm):
 
     # --- learning ----------------------------------------------------------------------------
 
-    def update(self) -> Optional[Dict[str, float]]:
+    def update(self) -> dict[str, float] | None:
         """One gradient step on a replay batch, or ``None`` while the buffer is still warming up.
 
         Supports prioritized replay (importance-sampling-weighted loss + priority updates from the

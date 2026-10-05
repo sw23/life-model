@@ -22,12 +22,11 @@ in the ``none``/``mean`` configurations there is nothing to bootstrap the remain
 truncated return is used as-is.
 """
 
-from typing import Dict, List, Optional, Sequence
+from collections.abc import Sequence
 
 import numpy as np
 import torch
-import torch.nn as nn
-import torch.optim as optim
+from torch import nn, optim
 
 from .base import ActResult, Algorithm, StepBatch, masked_categorical
 from .networks import build_encoder
@@ -39,7 +38,7 @@ class PolicyNetwork(nn.Module):
     """Shared encoder feeding a policy-logit head and (optionally) a state-value head."""
 
     def __init__(self, obs_space, action_size: int, hidden_sizes=None, with_value: bool = False):
-        super(PolicyNetwork, self).__init__()
+        super().__init__()
         self.encoder = build_encoder(obs_space, hidden_sizes)
         self.policy_head = nn.Linear(self.encoder.output_dim, action_size)
         self.value_head = nn.Linear(self.encoder.output_dim, 1) if with_value else None
@@ -58,7 +57,7 @@ class ReinforceAgent(Algorithm):
     name = "reinforce"
 
     @staticmethod
-    def default_config() -> Dict:
+    def default_config() -> dict:
         return {
             "learning_rate": 1e-3,
             "gamma": 0.99,
@@ -77,7 +76,7 @@ class ReinforceAgent(Algorithm):
             "verbose": True,
         }
 
-    def __init__(self, obs_space, action_space, config: Optional[Dict] = None):
+    def __init__(self, obs_space, action_space, config: dict | None = None):
         super().__init__(obs_space, action_space, config)
 
         baseline = self.config["baseline"]
@@ -96,8 +95,8 @@ class ReinforceAgent(Algorithm):
         self._return_count = 0
 
         # In-progress trace per environment stream, and the completed episodes awaiting an update.
-        self._traces: Dict[int, List[Dict]] = {}
-        self._completed: List[List[Dict]] = []
+        self._traces: dict[int, list[dict]] = {}
+        self._completed: list[list[dict]] = []
 
         if self.config["verbose"]:
             print(f"Initialized REINFORCE on {self.device} (baseline={baseline}, hidden={self.config['hidden_sizes']})")
@@ -134,10 +133,10 @@ class ReinforceAgent(Algorithm):
                 self._completed.append(trace)
                 self._traces[env_id] = []
 
-    def _discounted_returns(self, rewards: Sequence[float]) -> List[float]:
+    def _discounted_returns(self, rewards: Sequence[float]) -> list[float]:
         """Reward-to-go for each step: ``G_t = r_t + gamma * G_{t+1}``."""
         gamma = self.config["gamma"]
-        returns: List[float] = [0.0] * len(rewards)
+        returns: list[float] = [0.0] * len(rewards)
         running = 0.0
         for t in range(len(rewards) - 1, -1, -1):
             running = float(rewards[t]) + gamma * running
@@ -146,7 +145,7 @@ class ReinforceAgent(Algorithm):
 
     # --- learning ----------------------------------------------------------------------------
 
-    def update(self) -> Optional[Dict[str, float]]:
+    def update(self) -> dict[str, float] | None:
         """Take one policy-gradient step once ``batch_episodes`` episodes have completed."""
         if len(self._completed) < self.config["batch_episodes"]:
             return None
@@ -216,7 +215,7 @@ class ReinforceAgent(Algorithm):
 
     # --- checkpointing -----------------------------------------------------------------------
 
-    def checkpoint_state(self) -> Dict:
+    def checkpoint_state(self) -> dict:
         return {
             "policy_state_dict": self.policy.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
@@ -225,7 +224,7 @@ class ReinforceAgent(Algorithm):
             "return_count": int(self._return_count),
         }
 
-    def restore_checkpoint(self, checkpoint: Dict) -> None:
+    def restore_checkpoint(self, checkpoint: dict) -> None:
         self.policy.load_state_dict(checkpoint["policy_state_dict"])
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         self.steps_done = int(checkpoint.get("steps_done", 0))

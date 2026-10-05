@@ -6,7 +6,6 @@
 """The single-episode loop shared by training, evaluation, and policy analysis."""
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
 
 import numpy as np
 
@@ -22,15 +21,15 @@ class RolloutResult:
     steps: int
     terminated: bool
     truncated: bool
-    final_info: Dict
-    trajectory: List[Dict] = field(default_factory=list)
+    final_info: dict
+    trajectory: list[dict] = field(default_factory=list)
 
 
 def rollout(
     env,
     algo: Algorithm,
     training: bool = False,
-    seed: Optional[int] = None,
+    seed: int | None = None,
     collect_trajectory: bool = False,
 ) -> RolloutResult:
     """Run one episode.
@@ -52,7 +51,7 @@ def rollout(
     steps = 0
     terminated = False
     truncated = False
-    trajectory: List[Dict] = []
+    trajectory: list[dict] = []
     legal_actions = legal_actions_of(env, info, action_size)
 
     while True:

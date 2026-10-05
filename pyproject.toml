@@ -64,8 +64,14 @@ line-length = 120
 extend-exclude = ["*.ipynb"]
 
 [tool.ruff.lint]
-# Default rules (E, F) plus isort import sorting.
+# Ruff's default rules plus isort import sorting. The defaults move with the ruff version, which is
+# pinned in tox.ini and .pre-commit-config.yaml; bump those together and fix any new violations.
 extend-select = ["I"]
+
+[tool.ruff.lint.per-file-ignores]
+# Public import paths (life_model.account.roth_IRA / traditional_IRA); renaming would break callers.
+"src/life_model/account/roth_IRA.py" = ["N999"]
+"src/life_model/account/traditional_IRA.py" = ["N999"]
 
 [tool.mypy]
 ignore_missing_imports = true

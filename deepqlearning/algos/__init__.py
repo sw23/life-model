@@ -5,8 +5,6 @@
 
 """From-scratch PyTorch algorithms behind one :class:`~deepqlearning.algos.base.Algorithm` API."""
 
-from typing import Dict, Type
-
 from .base import ActResult, Algorithm, StepBatch
 from .dqn import DQNAgent
 from .ppo import PPOAgent
@@ -14,7 +12,7 @@ from .reinforce import ReinforceAgent
 
 # Name -> class, keyed by the algorithm's ``name`` attribute (the same string written into its
 # checkpoints and accepted by the training CLI's ``--algo``).
-ALGORITHMS: Dict[str, Type[Algorithm]] = {
+ALGORITHMS: dict[str, type[Algorithm]] = {
     DQNAgent.name: DQNAgent,
     ReinforceAgent.name: ReinforceAgent,
     PPOAgent.name: PPOAgent,

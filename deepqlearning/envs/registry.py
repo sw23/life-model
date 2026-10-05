@@ -16,8 +16,8 @@ raises a friendly :class:`ImportError` naming what to install.
 """
 
 import importlib.util
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional, Tuple
 
 import gymnasium as gym
 
@@ -37,14 +37,14 @@ class EnvSpec:
     """
 
     name: str
-    factory: Callable[[Dict], gym.Env]
+    factory: Callable[[dict], gym.Env]
     domain: str
-    default_config: Dict = field(default_factory=dict)
-    requires: Tuple[str, ...] = ()
+    default_config: dict = field(default_factory=dict)
+    requires: tuple[str, ...] = ()
     install_hint: str = ""
 
 
-_REGISTRY: Dict[str, EnvSpec] = {}
+_REGISTRY: dict[str, EnvSpec] = {}
 
 
 def register_env(spec: EnvSpec) -> EnvSpec:
@@ -53,7 +53,7 @@ def register_env(spec: EnvSpec) -> EnvSpec:
     return spec
 
 
-def registered_env_names() -> List[str]:
+def registered_env_names() -> list[str]:
     """Every registered name, sorted."""
     return sorted(_REGISTRY)
 
@@ -74,7 +74,7 @@ def _check_requirements(spec: EnvSpec) -> None:
         raise ImportError(f"Environment {spec.name!r} needs {', '.join(missing)}. Install with:\n    {hint}")
 
 
-def make_env(name: str, config: Optional[Dict] = None) -> gym.Env:
+def make_env(name: str, config: dict | None = None) -> gym.Env:
     """Build the environment registered as ``name`` with ``config`` merged over its defaults."""
     spec = resolve_env_spec(name)
     _check_requirements(spec)
@@ -89,7 +89,7 @@ class _EnvFactory:
     It holds only the name and config, so the lazy imports inside the factory happen in the worker.
     """
 
-    def __init__(self, name: str, config: Optional[Dict] = None):
+    def __init__(self, name: str, config: dict | None = None):
         self.name = name
         self.config = dict(config or {})
 
@@ -98,7 +98,7 @@ class _EnvFactory:
 
 
 def make_vector_env(
-    name: str, config: Optional[Dict] = None, num_envs: int = 1, backend: str = "sync"
+    name: str, config: dict | None = None, num_envs: int = 1, backend: str = "sync"
 ) -> gym.vector.VectorEnv:
     """Build a vector env of ``num_envs`` copies of ``name``.
 
@@ -120,8 +120,8 @@ def make_vector_env(
 FINANCIAL_SCENARIOS = ("basic", "high_earner", "low_earner", "mid_career")
 
 
-def _financial_factory(scenario: str) -> Callable[[Dict], gym.Env]:
-    def factory(config: Dict) -> gym.Env:
+def _financial_factory(scenario: str) -> Callable[[dict], gym.Env]:
+    def factory(config: dict) -> gym.Env:
         from .financial.environment import FinancialLifeEnvGenerator
 
         return FinancialLifeEnvGenerator.create_scenario_env(scenario, config)

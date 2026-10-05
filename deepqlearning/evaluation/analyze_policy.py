@@ -25,7 +25,6 @@ import json
 import os
 import sys
 from collections import Counter
-from typing import Dict, List, Optional
 
 import matplotlib
 
@@ -34,21 +33,21 @@ matplotlib.use("Agg")  # headless: never require a display
 # Importable both as ``deepqlearning.evaluation.analyze_policy`` and as a bare script path.
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
-import matplotlib.pyplot as plt  # noqa: E402
-import numpy as np  # noqa: E402
+import matplotlib.pyplot as plt
+import numpy as np
 
-from deepqlearning.algos.base import Algorithm  # noqa: E402
-from deepqlearning.algos.dqn import DQNAgent  # noqa: E402
-from deepqlearning.envs.financial.actions import ActionType  # noqa: E402
-from deepqlearning.envs.financial.environment import OBS_VERSION, FinancialLifeEnv  # noqa: E402
-from deepqlearning.training.rollout import rollout  # noqa: E402
+from deepqlearning.algos.base import Algorithm
+from deepqlearning.algos.dqn import DQNAgent
+from deepqlearning.envs.financial.actions import ActionType
+from deepqlearning.envs.financial.environment import OBS_VERSION, FinancialLifeEnv
+from deepqlearning.training.rollout import rollout
 
 # Coarse action categories for a readable heatmap.
 _CATEGORIES = ["noop", "contribute", "withdraw", "spend", "retire"]
 _CATEGORY_COLORS = ["#d9d9d9", "#2c7fb8", "#d95f0e", "#7fbf7b", "#756bb1"]
 
 
-def _categorize(action_type: Optional[str]) -> str:
+def _categorize(action_type: str | None) -> str:
     if action_type is None:
         return "noop"
     if action_type.startswith("transfer_"):
@@ -63,8 +62,8 @@ def _categorize(action_type: Optional[str]) -> str:
 
 
 def collect_greedy_trajectories(
-    agent: Algorithm, env_config: Optional[Dict], n_episodes: int, seed_base: int = 3_000_000
-) -> List[List[Dict]]:
+    agent: Algorithm, env_config: dict | None, n_episodes: int, seed_base: int = 3_000_000
+) -> list[list[dict]]:
     """Run ``n_episodes`` greedy episodes and return their step-by-step trajectories."""
     env = FinancialLifeEnv(env_config or {})
     trajectories = []
@@ -74,7 +73,7 @@ def collect_greedy_trajectories(
     return trajectories
 
 
-def action_heatmap(trajectories: List[List[Dict]], out_path: str, n_wealth_bins: int = 10) -> Dict:
+def action_heatmap(trajectories: list[list[dict]], out_path: str, n_wealth_bins: int = 10) -> dict:
     """Dominant action category over an age x wealth-decile grid, saved as a PNG.
 
     Returns the grid data (category index per cell, plus the age/wealth edges) for inline rendering.
@@ -89,7 +88,7 @@ def action_heatmap(trajectories: List[List[Dict]], out_path: str, n_wealth_bins:
     n_wealth = len(wealth_edges) - 1
 
     # Per cell: modal category (or -1 if empty).
-    buckets: Dict = {(a, w): Counter() for a in range(n_age) for w in range(n_wealth)}
+    buckets: dict = {(a, w): Counter() for a in range(n_age) for w in range(n_wealth)}
     age_idx = np.clip(np.digitize(ages, age_edges) - 1, 0, n_age - 1)
     wealth_idx = np.clip(np.digitize(nets, wealth_edges) - 1, 0, n_wealth - 1)
     for a, w, c in zip(age_idx, wealth_idx, cats):
@@ -130,10 +129,10 @@ def action_heatmap(trajectories: List[List[Dict]], out_path: str, n_wealth_bins:
     }
 
 
-def contribution_schedule(trajectories: List[List[Dict]], out_path: str) -> Dict:
+def contribution_schedule(trajectories: list[list[dict]], out_path: str) -> dict:
     """Average dollars contributed / withdrawn per year of age across episodes, saved as a PNG."""
-    by_age_contrib: Dict[int, List[float]] = {}
-    by_age_withdraw: Dict[int, List[float]] = {}
+    by_age_contrib: dict[int, list[float]] = {}
+    by_age_withdraw: dict[int, list[float]] = {}
     for traj in trajectories:
         for s in traj:
             age = s.get("age")
@@ -163,12 +162,12 @@ def contribution_schedule(trajectories: List[List[Dict]], out_path: str) -> Dict
 
 
 def lifetime_trace(
-    agent: Algorithm, env_config: Optional[Dict], out_png: str, out_json: str, seed: int = 4_000_000
-) -> Dict:
+    agent: Algorithm, env_config: dict | None, out_png: str, out_json: str, seed: int = 4_000_000
+) -> dict:
     """One annotated greedy episode: year-by-year state/action/reward, as JSON + a net-worth figure."""
     env = FinancialLifeEnv(env_config or {})
     state, _ = env.reset(seed=seed)
-    rows: List[Dict] = []
+    rows: list[dict] = []
     while True:
         legal = env.get_legal_actions()
         action = agent.select_action(state, legal, training=False)
@@ -208,7 +207,7 @@ def lifetime_trace(
     return {"rows": rows, "final_net_worth": nets[-1] if nets else 0.0, "steps": len(rows)}
 
 
-def analyze(agent: Algorithm, env_config: Optional[Dict], out_dir: str, n_episodes: int = 50) -> Dict:
+def analyze(agent: Algorithm, env_config: dict | None, out_dir: str, n_episodes: int = 50) -> dict:
     """Generate all policy-analysis artifacts into ``out_dir`` and return a manifest of their data + paths."""
     os.makedirs(out_dir, exist_ok=True)
     trajectories = collect_greedy_trajectories(agent, env_config, n_episodes)

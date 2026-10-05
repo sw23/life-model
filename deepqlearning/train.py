@@ -24,7 +24,6 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional
 
 import matplotlib
 
@@ -36,27 +35,27 @@ if not os.environ.get("DISPLAY") and not sys.platform.startswith("darwin"):
 # Importable both as ``python -m deepqlearning.train`` and as a bare script path.
 sys.path.insert(0, os.path.abspath(os.path.dirname(os.path.dirname(__file__))))
 
-import matplotlib.pyplot as plt  # noqa: E402
-import numpy as np  # noqa: E402
+import matplotlib.pyplot as plt
+import numpy as np
 
-from deepqlearning.algos import ALGORITHMS  # noqa: E402
-from deepqlearning.envs.registry import make_env, registered_env_names, resolve_env_spec  # noqa: E402
-from deepqlearning.training.episode_trainer import EpisodeTrainer  # noqa: E402
-from deepqlearning.training.rollout import rollout  # noqa: E402
-from deepqlearning.training.trainer import Trainer  # noqa: E402
+from deepqlearning.algos import ALGORITHMS
+from deepqlearning.envs.registry import make_env, registered_env_names, resolve_env_spec
+from deepqlearning.training.episode_trainer import EpisodeTrainer
+from deepqlearning.training.rollout import rollout
+from deepqlearning.training.trainer import Trainer
 
 # Output roots live next to this file so a run started from anywhere writes to the same place.
 BASE_PATH = Path(__file__).resolve().parent
 
 
-def parse_overrides(assignments: Optional[List[str]]) -> Dict[str, Dict]:
+def parse_overrides(assignments: list[str] | None) -> dict[str, dict]:
     """Split ``section.key=value`` strings into per-section config dicts.
 
     Values are parsed as JSON when possible (so ``true``, ``0.001``, ``[64,64]``, and ``null`` come
     through as the right Python types) and kept as strings otherwise. A key with no section prefix
     is treated as an algorithm hyperparameter, which is what most tuning touches.
     """
-    sections: Dict[str, Dict] = {"algo": {}, "env": {}, "train": {}}
+    sections: dict[str, dict] = {"algo": {}, "env": {}, "train": {}}
     for assignment in assignments or []:
         if "=" not in assignment:
             raise SystemExit(f"--set expects KEY=VALUE, got {assignment!r}")
@@ -73,7 +72,7 @@ def parse_overrides(assignments: Optional[List[str]]) -> Dict[str, Dict]:
     return sections
 
 
-def plot_training_results(trainer: EpisodeTrainer, save_path: Optional[str] = None, show: bool = False):
+def plot_training_results(trainer: EpisodeTrainer, save_path: str | None = None, show: bool = False):
     """Plot training results.
 
     Args:

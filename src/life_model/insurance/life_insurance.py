@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 from enum import Enum
-from typing import Optional, Union, cast
+from typing import cast
 
 from ..model import Event, LifeModel, LifeModelAgent, compound_interest
 from ..people.person import Person
@@ -31,13 +31,13 @@ class LifeInsurance(LifeModelAgent):
         policy_type: LifeInsuranceType,
         death_benefit: float,
         monthly_premium: float,
-        term_years: Optional[int] = None,
-        premium_increase_rate: Union[float, dict, None] = None,
-        cash_value_growth_rate: Optional[float] = None,
-        loan_interest_rate: Optional[float] = None,
-        max_missed_payments: Optional[int] = None,
+        term_years: int | None = None,
+        premium_increase_rate: float | dict | None = None,
+        cash_value_growth_rate: float | None = None,
+        loan_interest_rate: float | None = None,
+        max_missed_payments: int | None = None,
         *,
-        beneficiary: Optional[Person] = None,
+        beneficiary: Person | None = None,
     ):
         """Models life insurance policy for a person
 
@@ -57,7 +57,7 @@ class LifeInsurance(LifeModelAgent):
                 surviving spouse, then the first family member with a bank account.
         """
         super().__init__(cast(LifeModel, person.model))
-        self.model: "LifeModel" = cast("LifeModel", self.model)  # Type override for better intellisense
+        self.model: LifeModel = cast("LifeModel", self.model)  # Type override for better intellisense
         life_config = self.model.config.insurance.life
         if cash_value_growth_rate is None:
             cash_value_growth_rate = life_config.default_cash_value_growth_rate

@@ -4,7 +4,6 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 import html
-from typing import Optional
 
 from ..base_classes import FinancialAccount
 from ..model import compound_interest
@@ -13,7 +12,7 @@ from ..people.person import Person
 
 class BankAccount(FinancialAccount):
     def __init__(
-        self, owner: Person, company: str, type: str = "Bank", balance: float = 0, interest_rate: Optional[float] = None
+        self, owner: Person, company: str, type: str = "Bank", balance: float = 0, interest_rate: float | None = None
     ):
         """Class modeling bank accounts
 
@@ -47,7 +46,7 @@ class BankAccount(FinancialAccount):
         return self.model.economy.cash_yield(self.model.year)
 
     @interest_rate.setter
-    def interest_rate(self, value: Optional[float]) -> None:
+    def interest_rate(self, value: float | None) -> None:
         self._interest_rate_override = value
 
     def get_balance(self) -> float:

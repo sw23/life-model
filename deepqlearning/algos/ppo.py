@@ -21,12 +21,11 @@ Two details that are easy to get wrong and are pinned by tests:
   against unmasked logits would produce ratios the behavior policy could never have generated.
 """
 
-from typing import Dict, Iterable, List, Optional, Sequence
+from collections.abc import Iterable, Sequence
 
 import numpy as np
 import torch
-import torch.nn as nn
-import torch.optim as optim
+from torch import nn, optim
 
 from .base import ActResult, Algorithm, StepBatch, masked_categorical
 from .networks import build_encoder
@@ -36,7 +35,7 @@ class ActorCritic(nn.Module):
     """Shared encoder feeding a policy-logit head and a state-value head."""
 
     def __init__(self, obs_space, action_size: int, hidden_sizes=None):
-        super(ActorCritic, self).__init__()
+        super().__init__()
         self.encoder = build_encoder(obs_space, hidden_sizes)
         self.policy_head = nn.Linear(self.encoder.output_dim, action_size)
         self.value_head = nn.Linear(self.encoder.output_dim, 1)
@@ -56,7 +55,7 @@ class RolloutBuffer:
 
     def __init__(self, n_steps: int, num_envs: int):
         self.capacity = max(1, int(n_steps) * max(1, int(num_envs)))
-        self._streams: Dict[int, List[Dict]] = {}
+        self._streams: dict[int, list[dict]] = {}
         self._size = 0
 
     def resize(self, n_steps: int, num_envs: int) -> None:
@@ -64,7 +63,7 @@ class RolloutBuffer:
         self.capacity = max(1, int(n_steps) * max(1, int(num_envs)))
         self.clear()
 
-    def add(self, env_id: int, transition: Dict) -> None:
+    def add(self, env_id: int, transition: dict) -> None:
         self._streams.setdefault(int(env_id), []).append(transition)
         self._size += 1
 
@@ -75,7 +74,7 @@ class RolloutBuffer:
         self._streams = {}
         self._size = 0
 
-    def streams(self) -> Iterable[List[Dict]]:
+    def streams(self) -> Iterable[list[dict]]:
         """Each stream's transitions, in the order they were collected."""
         return [stream for stream in self._streams.values() if stream]
 
@@ -130,7 +129,7 @@ class PPOAgent(Algorithm):
     name = "ppo"
 
     @staticmethod
-    def default_config() -> Dict:
+    def default_config() -> dict:
         return {
             "learning_rate": 3e-4,
             "gamma": 0.99,
@@ -150,7 +149,7 @@ class PPOAgent(Algorithm):
             "verbose": True,
         }
 
-    def __init__(self, obs_space, action_space, config: Optional[Dict] = None):
+    def __init__(self, obs_space, action_space, config: dict | None = None):
         super().__init__(obs_space, action_space, config)
 
         self.policy = ActorCritic(self.obs_space, self.action_size, self.config["hidden_sizes"]).to(self.device)
@@ -219,7 +218,7 @@ class PPOAgent(Algorithm):
 
     # --- learning ----------------------------------------------------------------------------
 
-    def _next_values(self, transitions: List[Dict]) -> np.ndarray:
+    def _next_values(self, transitions: list[dict]) -> np.ndarray:
         """Value of each transition's successor state, in one batched forward pass."""
         with torch.no_grad():
             _, values = self.policy(self._to_tensor(np.stack([t["next_obs"] for t in transitions])))
@@ -231,7 +230,7 @@ class PPOAgent(Algorithm):
         flat = [t for stream in streams for t in stream]
         next_values = self._next_values(flat)
 
-        advantages: List[np.ndarray] = []
+        advantages: list[np.ndarray] = []
         offset = 0
         for stream in streams:
             size = len(stream)
@@ -263,7 +262,7 @@ class PPOAgent(Algorithm):
             "legal": [t["legal"] for t in flat],
         }
 
-    def update(self) -> Optional[Dict[str, float]]:
+    def update(self) -> dict[str, float] | None:
         """Run the clipped-surrogate epochs once a full rollout is collected, then drop it."""
         if not self.buffer.ready():
             return None
@@ -324,14 +323,14 @@ class PPOAgent(Algorithm):
 
     # --- checkpointing -----------------------------------------------------------------------
 
-    def checkpoint_state(self) -> Dict:
+    def checkpoint_state(self) -> dict:
         return {
             "policy_state_dict": self.policy.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
             "steps_done": int(self.steps_done),
         }
 
-    def restore_checkpoint(self, checkpoint: Dict) -> None:
+    def restore_checkpoint(self, checkpoint: dict) -> None:
         self.policy.load_state_dict(checkpoint["policy_state_dict"])
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         self.steps_done = int(checkpoint.get("steps_done", 0))

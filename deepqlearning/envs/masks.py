@@ -18,12 +18,10 @@ Algorithms treat "all actions legal" and "no mask" identically, so nothing needs
 train on an environment without masking.
 """
 
-from typing import Dict, List, Optional
-
 import numpy as np
 
 
-def _action_count(env, n: Optional[int]) -> int:
+def _action_count(env, n: int | None) -> int:
     """Number of discrete actions, from the explicit ``n`` or the env's action space."""
     if n is not None:
         return int(n)
@@ -31,7 +29,7 @@ def _action_count(env, n: Optional[int]) -> int:
     return int(space.n)
 
 
-def legal_actions_of(env, info: Optional[Dict] = None, n: Optional[int] = None) -> List[int]:
+def legal_actions_of(env, info: dict | None = None, n: int | None = None) -> list[int]:
     """Legal action indices for ``env``'s current state, using the fallback chain above."""
     if info is not None:
         mask = info.get("legal_mask")
@@ -43,14 +41,14 @@ def legal_actions_of(env, info: Optional[Dict] = None, n: Optional[int] = None) 
     return list(range(_action_count(env, n)))
 
 
-def masks_from_vector_info(info: Dict, num_envs: int, action_size: int) -> List[List[int]]:
+def masks_from_vector_info(info: dict, num_envs: int, action_size: int) -> list[list[int]]:
     """Per-env legal-action lists from a vector env's batched ``info``.
 
     Vector environments stack each sub-env's ``info`` value into an array indexed by env. An
     environment that publishes no mask (or a per-env ``None`` entry) yields every action.
     """
     masks = info.get("legal_mask")
-    result: List[List[int]] = []
+    result: list[list[int]] = []
     for i in range(num_envs):
         row = masks[i] if masks is not None and masks[i] is not None else None
         if row is None:

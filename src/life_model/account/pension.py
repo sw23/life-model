@@ -3,7 +3,6 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 import html
-from typing import Optional
 
 from ..base_classes import Benefit
 from ..people.person import Person
@@ -33,7 +32,7 @@ class Pension(Benefit):
         vesting_years: int,
         benefit_amount: float,
         *,
-        start_age: Optional[float] = None,
+        start_age: float | None = None,
         cola_percent: float = 0.0,
         survivor_percent: float = 0.0,
     ):

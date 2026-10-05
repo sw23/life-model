@@ -22,19 +22,19 @@ except PackageNotFoundError:  # package is not installed (e.g. source checkout w
     __version__ = "0.0.0+dev"
 
 __all__ = [
+    "BankAccount",
+    "EconomyModel",
+    "Family",
+    "FilingStatus",
+    "GenderAtBirth",
+    "Job",
     "LifeModel",
     "LifeModelAgent",
-    "EconomyModel",
     "MonteCarlo",
     "MonteCarloResult",
-    "Person",
-    "Family",
-    "Spending",
-    "GenderAtBirth",
     "MortalityMode",
-    "Job",
+    "Person",
     "Salary",
-    "BankAccount",
-    "FilingStatus",
+    "Spending",
     "__version__",
 ]

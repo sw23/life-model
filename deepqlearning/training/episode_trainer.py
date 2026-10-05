@@ -14,8 +14,6 @@ episodes ended in bankruptcy, how many in a natural death) is supplied by the ca
 ``eval_summary`` hook, so the loop stays usable for environments that have no such notions.
 """
 
-from typing import Dict, List, Optional
-
 import numpy as np
 
 from ..algos.base import Algorithm
@@ -25,7 +23,7 @@ from .rollout import rollout
 class EpisodeTrainer:
     """Trains an algorithm for a fixed number of episodes on one environment."""
 
-    def __init__(self, env, algo: Algorithm, config: Optional[Dict] = None):
+    def __init__(self, env, algo: Algorithm, config: dict | None = None):
         self.env = env
         self.algo = algo
 
@@ -48,10 +46,10 @@ class EpisodeTrainer:
         if config:
             self.config.update(config)
 
-        self.episode_rewards: List[float] = []
-        self.eval_rewards: List[float] = []
+        self.episode_rewards: list[float] = []
+        self.eval_rewards: list[float] = []
 
-    def _episode_seed(self, episode: int) -> Optional[int]:
+    def _episode_seed(self, episode: int) -> int | None:
         base = self.config.get("base_seed")
         return None if base is None else base + episode
 
@@ -106,7 +104,7 @@ class EpisodeTrainer:
 
         return float(np.mean(eval_rewards))
 
-    def get_training_stats(self) -> Dict:
+    def get_training_stats(self) -> dict:
         """Training curves and totals, in a JSON-serializable form."""
         return {
             "episode_rewards": self.episode_rewards,

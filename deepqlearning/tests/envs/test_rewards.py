@@ -10,6 +10,7 @@ correctness, ruin alignment / terminal-branch selection, and — the float-type 
 returned value is a genuine Python float, not an ``np.float64``.
 """
 
+import itertools
 import math
 import unittest
 
@@ -28,17 +29,17 @@ from deepqlearning.envs.financial.rewards import (
 
 
 def _cfg(**overrides) -> RewardConfig:
-    base = dict(
-        name="test",
-        crra_gamma=2.0,
-        consumption_weight=1.0,
-        consumption_scale=10_000.0,
-        consumption_floor=1_000.0,
-        bequest_weight=1.0,
-        bequest_gamma=1.5,
-        bequest_scale=100_000.0,
-        ruin_penalty=-50.0,
-    )
+    base = {
+        "name": "test",
+        "crra_gamma": 2.0,
+        "consumption_weight": 1.0,
+        "consumption_scale": 10_000.0,
+        "consumption_floor": 1_000.0,
+        "bequest_weight": 1.0,
+        "bequest_gamma": 1.5,
+        "bequest_scale": 100_000.0,
+        "ruin_penalty": -50.0,
+    }
     base.update(overrides)
     return RewardConfig(**base)
 
@@ -57,7 +58,7 @@ class TestCRRA(unittest.TestCase):
         for gamma in (0.0, 0.5, 1.0, 2.0, 4.0):
             xs = [0.1, 0.5, 1.0, 2.0, 5.0, 20.0]
             vals = [crra_utility(x, gamma) for x in xs]
-            for a, b in zip(vals, vals[1:]):
+            for a, b in itertools.pairwise(vals):
                 self.assertLess(a, b, f"gamma={gamma} not increasing")
 
     def test_concave_diminishing_returns(self):

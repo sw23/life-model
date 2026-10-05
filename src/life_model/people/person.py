@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-from typing import TYPE_CHECKING, List, Optional, Tuple
+from typing import TYPE_CHECKING, ClassVar, Optional
 
 from ..account.job401k import Job401kAccount
 from ..limits import federal_retirement_age
@@ -17,7 +17,7 @@ from ..tax.state import state_income_tax_for_unit
 from ..tax.tax import TaxesDue, compute_taxes
 from .family import Family
 from .mortality import get_blended_chance_of_mortality, get_chance_of_mortality
-from .types import GenderAtBirth, MortalityMode  # noqa: F401  (re-exported for backward compatibility)
+from .types import GenderAtBirth, MortalityMode
 
 if TYPE_CHECKING:
     from ..dependents.child import Child
@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 
 class Person(LifeModelAgent):
     # Age first in pre_step so income/RMD calculations see the current-year age.
-    STEP_PRIORITY = {"pre_step": -20}
+    STEP_PRIORITY: ClassVar[dict[str, int]] = {"pre_step": -20}
 
     def __init__(
         self,
@@ -38,8 +38,8 @@ class Person(LifeModelAgent):
         *,
         gender: GenderAtBirth = GenderAtBirth.OTHER,
         mortality_mode: MortalityMode = MortalityMode.IMMORTAL,
-        death_age: Optional[int] = None,
-        state: Optional[str] = None,
+        death_age: int | None = None,
+        state: str | None = None,
     ):
         """Person
 
@@ -71,12 +71,12 @@ class Person(LifeModelAgent):
         self.is_deceased = False
         # Optional explicit estate beneficiary (a Person). When unset, the estate passes to the
         # surviving spouse, then to the first surviving family member.
-        self.estate_beneficiary: Optional["Person"] = None
+        self.estate_beneficiary: Person | None = None
         # Unified estate-tax exemption consumed during life by taxable gifts (e.g. irrevocable
         # trust funding above the annual gift exclusion). Reduces the exemption at death.
         self.estate_exemption_used = 0.0
         # Year this person was widowed (used to switch filing status to SINGLE the following year).
-        self._widowed_year: Optional[int] = None
+        self._widowed_year: int | None = None
         self.debt = 0
         # Per-person income ledger: separates FICA wages from ordinary taxable income so that
         # payroll tax and income tax each see the correct base (see tax/income.py).
@@ -90,7 +90,7 @@ class Person(LifeModelAgent):
         # person is the only durable home for it.
         self.capital_loss_carryforward = 0.0
         self.filing_status = FilingStatus.SINGLE
-        self.social_security: Optional[SocialSecurity] = None
+        self.social_security: SocialSecurity | None = None
         self.retirement_triggered = False
         self._retirement_age_event_logged = False
         # Cash held when the person has no bank account (see receive_cash).
@@ -336,7 +336,7 @@ class Person(LifeModelAgent):
         return max(standard_deduction, itemized_deductions)
 
     @property
-    def all_retirement_accounts(self) -> List[Job401kAccount]:
+    def all_retirement_accounts(self) -> list[Job401kAccount]:
         return [x.retirement_account for x in self.jobs if x.retirement_account is not None]
 
     @property
@@ -454,7 +454,7 @@ class Person(LifeModelAgent):
     # concern until the core penalty backlog item lands.
     # ------------------------------------------------------------------
 
-    def _owned_accounts_of_type(self, account_cls) -> List:
+    def _owned_accounts_of_type(self, account_cls) -> list:
         """This person's accounts of ``account_cls``, discovered by scanning the model's agents
         (IRA/HSA/brokerage accounts reference ``person`` directly and are not registry-backed)."""
         return [a for a in self.model.agents if isinstance(a, account_cls) and getattr(a, "person", None) is self]
@@ -561,7 +561,7 @@ class Person(LifeModelAgent):
         """Total balance across this person's taxable brokerage accounts."""
         return sum(account.balance for account in self.brokerage_accounts)
 
-    def preview_brokerage_gain(self, amount: float) -> Tuple[float, float]:
+    def preview_brokerage_gain(self, amount: float) -> tuple[float, float]:
         """Preview the ``(long_term, short_term)`` gains withdrawing ``amount`` would realize.
 
         Mirrors ``withdraw_from_brokerage_accounts``' account order exactly but mutates nothing,
@@ -680,7 +680,7 @@ class Person(LifeModelAgent):
             event_str = f"{self.name} and {spouse.name} got married at age {self.age} and {spouse.age}"
             self.model.event_log.add(Event(event_str))
 
-    def add_child(self, name: str, birth_year: Optional[int] = None) -> "Child":
+    def add_child(self, name: str, birth_year: int | None = None) -> "Child":
         """Add a child dependent to this person.
 
         Scheduled births are just ``LifeEvent(year, "Birth of X", person.add_child, "X")``.
@@ -909,7 +909,7 @@ class Person(LifeModelAgent):
                 pensions.unregister(self, pension)
                 pension.remove()
 
-    def _owned_financial_agents(self) -> List["LifeModelAgent"]:
+    def _owned_financial_agents(self) -> list["LifeModelAgent"]:
         """All balance-holding accounts (bank, brokerage, IRAs, HSA, 401k) owned by this person."""
         from ..base_classes import FinancialAccount
 
@@ -1169,7 +1169,7 @@ class Person(LifeModelAgent):
 
 
 class Spending(LifeModelAgent):
-    def __init__(self, model: LifeModel, base: float = 0, yearly_increase: Optional[float] = 0):
+    def __init__(self, model: LifeModel, base: float = 0, yearly_increase: float | None = 0):
         """Spending
 
         Args:
@@ -1191,7 +1191,7 @@ class Spending(LifeModelAgent):
         return self.model.economy.inflation(self.model.year)
 
     @yearly_increase.setter
-    def yearly_increase(self, value: Optional[float]) -> None:
+    def yearly_increase(self, value: float | None) -> None:
         self._yearly_increase_override = value
 
     def add_expense(self, amount: float):

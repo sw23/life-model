@@ -10,15 +10,15 @@ from slm.serializer import parse_household, render_household
 
 
 def _profile(**overrides) -> HouseholdProfile:
-    base = dict(
-        scenario="mid_career",
-        person_start_age=35,
-        person_retirement_age=62,
-        person_gender="Female",
-        initial_salary=80000,
-        initial_bank_balance=30000,
-        initial_spending=50000,
-    )
+    base = {
+        "scenario": "mid_career",
+        "person_start_age": 35,
+        "person_retirement_age": 62,
+        "person_gender": "Female",
+        "initial_salary": 80000,
+        "initial_bank_balance": 30000,
+        "initial_spending": 50000,
+    }
     base.update(overrides)
     return HouseholdProfile(**base)
 

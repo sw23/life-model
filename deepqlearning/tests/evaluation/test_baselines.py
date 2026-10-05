@@ -91,7 +91,7 @@ class TestPlannerBaselines(unittest.TestCase):
         env = FinancialLifeEnv()
         transitions = collect_teacher_experiences(env, BASELINES["contribution_waterfall"], seeds=[1, 2])
         self.assertGreater(len(transitions), 0)
-        state, action, reward, next_state, done, legal, next_legal = transitions[0]
+        state, action, reward, _next_state, done, legal, next_legal = transitions[0]
         self.assertEqual(state.shape, (env.observation_space.shape[0],))
         self.assertIn(action, range(env.action_space.n))
         self.assertIs(type(reward), float)

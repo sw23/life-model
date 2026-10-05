@@ -7,7 +7,6 @@
 
 import random
 from collections import deque, namedtuple
-from typing import List
 
 import numpy as np
 
@@ -34,7 +33,7 @@ class ReplayBuffer:
         """Add experience to buffer"""
         self.buffer.append(Experience(*args))
 
-    def sample(self, batch_size: int) -> List[Experience]:
+    def sample(self, batch_size: int) -> list[Experience]:
         """Sample random batch from buffer"""
         return random.sample(self.buffer, batch_size)
 
@@ -56,7 +55,7 @@ class PrioritizedReplayBuffer:
         self.capacity = capacity
         self.alpha = alpha
         self.epsilon = epsilon
-        self.buffer: List[Experience] = []
+        self.buffer: list[Experience] = []
         self.priorities = np.zeros(capacity, dtype=np.float64)
         self.pos = 0
 
@@ -115,7 +114,7 @@ class NStepAccumulator:
     def push(self, state, action, reward, legal_actions, next_state, next_legal_actions, done):
         """Record a step and return a list of finalized n-step transitions (possibly empty)."""
         self._items.append((state, action, float(reward), list(legal_actions)))
-        emitted: List[Experience] = []
+        emitted: list[Experience] = []
         if done:
             emitted.extend(self.flush(next_state, next_legal_actions))
         elif len(self._items) >= self.n_step:
@@ -123,9 +122,9 @@ class NStepAccumulator:
             self._items.popleft()
         return emitted
 
-    def flush(self, next_state, next_legal_actions) -> List[Experience]:
+    def flush(self, next_state, next_legal_actions) -> list[Experience]:
         """Emit truncated transitions for every remaining start index at episode end."""
-        emitted: List[Experience] = []
+        emitted: list[Experience] = []
         while self._items:
             emitted.append(self._make(len(self._items), next_state, next_legal_actions, done=True))
             self._items.popleft()

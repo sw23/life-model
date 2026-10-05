@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, ClassVar, Optional
 
 from .limits import federal_retirement_age
 from .model import LifeModelAgent
@@ -33,17 +33,14 @@ class FinancialAccount(LifeModelAgent, ABC):
     @abstractmethod
     def get_balance(self) -> float:
         """Get current account balance"""
-        pass
 
     @abstractmethod
     def deposit(self, amount: float) -> bool:
         """Deposit amount into account. Returns success status"""
-        pass
 
     @abstractmethod
     def withdraw(self, amount: float) -> float:
         """Withdraw amount from account. Returns actual amount withdrawn"""
-        pass
 
     def step(self):
         """Track balance history each step"""
@@ -68,8 +65,8 @@ class Loan(LifeModelAgent, ABC):
         loan_amount: float,
         yearly_interest_rate: float,
         length_years: int,
-        principal: Optional[float] = None,
-        monthly_payment: Optional[float] = None,
+        principal: float | None = None,
+        monthly_payment: float | None = None,
     ):
         super().__init__(person.model)
         self.person = person
@@ -155,7 +152,7 @@ class Loan(LifeModelAgent, ABC):
 
         return actual_interest_payment + principal_payment
 
-    def make_yearly_payment(self, monthly_payment: Optional[float] = None, extra_to_principal: float = 0) -> float:
+    def make_yearly_payment(self, monthly_payment: float | None = None, extra_to_principal: float = 0) -> float:
         """Amortize one simulated year as twelve monthly payments.
 
         ``extra_to_principal`` is applied once (in the first month). Payments stop early once the
@@ -199,16 +196,20 @@ class Investment(FinancialAccount, ABC):
     """Abstract base class for investment accounts with growth"""
 
     # Apply growth before tax-unit settlement so withdrawals see the grown balance.
-    STEP_PRIORITY = {"step": -10}
+    STEP_PRIORITY: ClassVar[dict[str, int]] = {"step": -10}
 
     # Maps an account's asset class to the economy rate that drives its return.
-    _ASSET_CLASS_RATES = {"equity": "equity_return", "bond": "bond_return", "cash": "cash_yield"}
+    _ASSET_CLASS_RATES: ClassVar[dict[str, str]] = {
+        "equity": "equity_return",
+        "bond": "bond_return",
+        "cash": "cash_yield",
+    }
 
     def __init__(
         self,
         person: "Person",
         balance: float = 0,
-        growth_rate: Optional[float] = None,
+        growth_rate: float | None = None,
         asset_class: str = "equity",
         *,
         beneficiary: Optional["Person"] = None,
@@ -232,13 +233,12 @@ class Investment(FinancialAccount, ABC):
         return self.model.economy.rate(rate_name, self.model.year)
 
     @growth_rate.setter
-    def growth_rate(self, value: Optional[float]) -> None:
+    def growth_rate(self, value: float | None) -> None:
         self._growth_rate_override = value
 
     @abstractmethod
     def calculate_growth(self) -> float:
         """Calculate investment growth for the period"""
-        pass
 
     def apply_growth(self):
         """Apply calculated growth to balance"""
@@ -283,9 +283,7 @@ class Benefit(LifeModelAgent, ABC):
     @abstractmethod
     def get_annual_benefit(self) -> float:
         """Calculate annual benefit amount"""
-        pass
 
     @abstractmethod
     def is_eligible(self) -> bool:
         """Check if person is eligible to receive benefits"""
-        pass

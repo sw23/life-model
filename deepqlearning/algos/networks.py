@@ -16,12 +16,10 @@ checkpoint format — every key in a saved ``state_dict`` is derived from them, 
 make existing checkpoints unloadable.
 """
 
-from typing import List, Optional
-
 import numpy as np
 import torch
-import torch.nn as nn
 from gymnasium import spaces
+from torch import nn
 
 
 def _init_linear(module: nn.Module) -> None:
@@ -34,8 +32,8 @@ def _init_linear(module: nn.Module) -> None:
 class MLP(nn.Module):
     """Plain multi-layer perceptron over a flat state, with dropout between hidden layers."""
 
-    def __init__(self, state_size: int, action_size: int, hidden_sizes: Optional[List[int]] = None):
-        super(MLP, self).__init__()
+    def __init__(self, state_size: int, action_size: int, hidden_sizes: list[int] | None = None):
+        super().__init__()
         if hidden_sizes is None:
             hidden_sizes = [512, 256, 128]
 
@@ -68,8 +66,8 @@ class MLP(nn.Module):
 class DuelingMLP(nn.Module):
     """Dueling architecture: shared features split into a state-value and an advantage stream."""
 
-    def __init__(self, state_size: int, action_size: int, hidden_sizes: Optional[List[int]] = None):
-        super(DuelingMLP, self).__init__()
+    def __init__(self, state_size: int, action_size: int, hidden_sizes: list[int] | None = None):
+        super().__init__()
         if hidden_sizes is None:
             hidden_sizes = [512, 256]
 
@@ -114,10 +112,10 @@ class MLPEncoder(nn.Module):
     log-probability was computed under.
     """
 
-    def __init__(self, state_size: int, hidden_sizes: Optional[List[int]] = None):
-        super(MLPEncoder, self).__init__()
+    def __init__(self, state_size: int, hidden_sizes: list[int] | None = None):
+        super().__init__()
         hidden_sizes = list(hidden_sizes or [64, 64])
-        layers: List[nn.Module] = []
+        layers: list[nn.Module] = []
         input_size = int(state_size)
         for hidden_size in hidden_sizes:
             layers.append(nn.Linear(input_size, hidden_size))
@@ -132,7 +130,7 @@ class MLPEncoder(nn.Module):
 
 
 def build_q_network(
-    obs_space: spaces.Space, action_size: int, hidden_sizes: Optional[List[int]] = None, dueling: bool = True
+    obs_space: spaces.Space, action_size: int, hidden_sizes: list[int] | None = None, dueling: bool = True
 ) -> nn.Module:
     """Action-value network over the flattened ``obs_space``.
 
@@ -143,6 +141,6 @@ def build_q_network(
     return mlp(state_size, action_size, hidden_sizes)
 
 
-def build_encoder(obs_space: spaces.Space, hidden_sizes: Optional[List[int]] = None) -> nn.Module:
+def build_encoder(obs_space: spaces.Space, hidden_sizes: list[int] | None = None) -> nn.Module:
     """Feature extractor over the flattened ``obs_space``, exposing its width as ``.output_dim``."""
     return MLPEncoder(int(np.prod(obs_space.shape)), hidden_sizes)

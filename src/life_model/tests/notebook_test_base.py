@@ -18,9 +18,9 @@ import unittest
 # First set the environment variable before any Jupyter imports
 os.environ["JUPYTER_PLATFORM_DIRS"] = "1"
 
-import nbformat  # noqa: E402
-from jupyter_client import kernelspec  # noqa: E402
-from nbconvert.preprocessors import ExecutePreprocessor  # noqa: E402
+import nbformat
+from jupyter_client import kernelspec
+from nbconvert.preprocessors import ExecutePreprocessor
 
 
 def get_repo_root():
@@ -50,7 +50,7 @@ def get_available_kernel():
             return "python3"
 
         # Look for any Python kernel
-        for name, spec in kernel_specs.items():
+        for name in kernel_specs:
             if "python" in name.lower():
                 return name
 
@@ -58,7 +58,7 @@ def get_available_kernel():
         if is_running_in_tox():
             return create_temporary_kernel()
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - best-effort kernel discovery
         print(f"Error finding kernels: {e}")
         # If we're in a tox environment, create a kernel
         if is_running_in_tox():
@@ -164,5 +164,5 @@ class JupyterNotebookTestBase(unittest.TestCase):
         try:
             # Execute the notebook
             execute_preprocessor.preprocess(notebook, {"metadata": {"path": os.path.dirname(notebook_path)}})
-        except Exception as e:
-            self.fail(f"Error executing the notebook: {str(e)}")
+        except Exception as e:  # noqa: BLE001 - report any execution failure as a test failure
+            self.fail(f"Error executing the notebook: {e!s}")

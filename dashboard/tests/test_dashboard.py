@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Test the dashboard components
 
@@ -187,7 +186,7 @@ def test_model_stops_at_end_year():
 
 def test_scenario_changes_outcomes():
     """The scenario selection visibly changes results (high_tax vs low_tax bank divergence)."""
-    common = dict(start_year=2023, end_year=2033, john_enabled=True, jane_enabled=False, john_salary=120000)
+    common = {"start_year": 2023, "end_year": 2033, "john_enabled": True, "jane_enabled": False, "john_salary": 120000}
 
     high = DashboardLifeModel(scenario="high_tax", **common)
     low = DashboardLifeModel(scenario="low_tax", **common)
@@ -226,7 +225,7 @@ def test_state_dropdown_maps_to_person_state():
 
 def test_state_selection_changes_state_tax():
     """A no-income-tax state (TX) pays less total tax than the DEFAULT flat rate."""
-    common = dict(start_year=2023, end_year=2033, john_enabled=True, jane_enabled=False, john_salary=120000)
+    common = {"start_year": 2023, "end_year": 2033, "john_enabled": True, "jane_enabled": False, "john_salary": 120000}
     tx = DashboardLifeModel(state="TX", **common)
     default = DashboardLifeModel(state="DEFAULT", **common)
     tx.run()

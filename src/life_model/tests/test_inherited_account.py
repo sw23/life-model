@@ -45,7 +45,7 @@ def _parent_child_model(*, start_year=2026, end_year=2037, ira_balance=500000, e
 class TestTenYearInheritance(unittest.TestCase):
     def test_ten_year_even_spread_taxes_beneficiary_annually(self):
         # Zero growth so distributions are an exact even spread ($50k/yr on $500k over 10 yrs).
-        model, parent, child = _parent_child_model(equity_return=0)
+        model, parent, _child = _parent_child_model(equity_return=0)
         model.run()
 
         self.assertTrue(parent.is_deceased)
@@ -57,7 +57,7 @@ class TestTenYearInheritance(unittest.TestCase):
         self.assertEqual(taxed_years, list(range(2027, 2037)))  # exactly ten annual distributions
 
     def test_account_empties_by_year_ten_and_removes_itself(self):
-        model, parent, child = _parent_child_model(equity_return=0)
+        model, _parent, child = _parent_child_model(equity_return=0)
         model.run()
 
         # The inherited account has removed itself from the simulation by the end.
@@ -70,7 +70,7 @@ class TestTenYearInheritance(unittest.TestCase):
     def test_growth_continues_so_total_exceeds_starting_balance(self):
         # Default 7% equity return: the account keeps growing, so the ten distributions sum to
         # more than the starting $500k.
-        model, parent, child = _parent_child_model()  # default economy
+        model, _parent, child = _parent_child_model()  # default economy
         model.run()
 
         self.assertFalse(any(isinstance(a, InheritedPretaxAccount) for a in model.agents))
@@ -98,7 +98,7 @@ class TestTenYearInheritance(unittest.TestCase):
         # Reporting: the undistributed inherited corpus is surfaced in "Useable Balance" during
         # the 10-year window (inherited-account withdrawals carry no early-withdrawal penalty),
         # not invisible to balance stats for a decade.
-        model, parent, child = _parent_child_model(equity_return=0)
+        model, _parent, _child = _parent_child_model(equity_return=0)
         model.run()
         df = model.datacollector.get_model_vars_dataframe()
         useable = dict(zip(df["Year"], df["Useable Balance"]))
@@ -142,7 +142,7 @@ class TestTenYearInheritance(unittest.TestCase):
         self.assertFalse(any(isinstance(a, InheritedPretaxAccount) for a in model.agents))
 
     def test_lump_sum_distributes_entirely_in_death_year(self):
-        model, parent, child = _parent_child_model(end_year=2027, mode="lump_sum")
+        model, _parent, _child = _parent_child_model(end_year=2027, mode="lump_sum")
         model.run()
         df = model.datacollector.get_model_vars_dataframe()
         taxes = dict(zip(df["Year"], df["Taxes"]))

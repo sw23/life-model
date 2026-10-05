@@ -4,7 +4,7 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 import html
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from ..limits import job_401k_contrib_limit
 from ..model import Event, LifeModel, LifeModelAgent
@@ -30,10 +30,10 @@ class Job(LifeModelAgent):
         self.company = company
         self.role = role
         self.salary = salary
-        self.retirement_account: Optional["Job401kAccount"] = None
+        self.retirement_account: Job401kAccount | None = None
         # Set by StockPlan when one attaches to this job. Vest income is deliberately excluded from
         # the 401(k)-eligible compensation computed below, matching the usual plan-document rule.
-        self.stock_plan: Optional["StockPlan"] = None
+        self.stock_plan: StockPlan | None = None
         self.retired = False
 
         self.stat_gross_income = 0
@@ -110,7 +110,7 @@ class Job(LifeModelAgent):
 
 
 class Salary(LifeModelAgent):
-    def __init__(self, model: LifeModel, base: float, yearly_increase: Optional[float] = 0, yearly_bonus: float = 0):
+    def __init__(self, model: LifeModel, base: float, yearly_increase: float | None = 0, yearly_bonus: float = 0):
         """Salary
 
         Args:
@@ -132,7 +132,7 @@ class Salary(LifeModelAgent):
         return self.model.economy.wage_growth(self.model.year)
 
     @yearly_increase.setter
-    def yearly_increase(self, value: Optional[float]) -> None:
+    def yearly_increase(self, value: float | None) -> None:
         self._yearly_increase_override = value
 
     @property

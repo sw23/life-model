@@ -25,7 +25,6 @@ ready to learn simply returns ``None``.
 """
 
 import time
-from typing import Dict, List, Optional
 
 import numpy as np
 import torch
@@ -43,8 +42,8 @@ class Trainer:
         self,
         algo: Algorithm,
         env_name: str = "financial",
-        env_config: Optional[Dict] = None,
-        config: Optional[Dict] = None,
+        env_config: dict | None = None,
+        config: dict | None = None,
     ):
         self.algo = algo
         self.env_name = env_name
@@ -74,8 +73,8 @@ class Trainer:
 
         self.writer = self._make_tensorboard_writer()
         self.scheduler = self._make_scheduler()
-        self.episode_rewards: List[float] = []
-        self.eval_rewards: List[float] = []
+        self.episode_rewards: list[float] = []
+        self.eval_rewards: list[float] = []
         self.best_eval = -float("inf")
         self._collected_steps = 0
 
@@ -117,7 +116,7 @@ class Trainer:
             env.close()
         return float(np.mean(rewards))
 
-    def train(self) -> Dict:
+    def train(self) -> dict:
         """Run vectorized collection + training until the step budget or early stop. Returns stats."""
         num_envs = self.config["num_envs"]
         action_size = self.algo.action_size

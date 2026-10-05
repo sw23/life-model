@@ -54,7 +54,7 @@ class TestRunPolicyEpisode(unittest.TestCase):
 
 class TestEvalProtocol(unittest.TestCase):
     def _protocol(self, **overrides):
-        kwargs = dict(n_eval=4, master_seed=123, bootstrap_resamples=200, held_out_scenario="recession")
+        kwargs = {"n_eval": 4, "master_seed": 123, "bootstrap_resamples": 200, "held_out_scenario": "recession"}
         kwargs.update(overrides)
         return EvalProtocol(**kwargs)
 

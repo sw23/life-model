@@ -33,9 +33,9 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.abspath(os.path.join(_HERE, "..", "..")))
 sys.path.insert(0, os.path.abspath(os.path.join(_HERE, "..", "..", "src")))
 
-from deepqlearning.envs.financial.environment import FinancialLifeEnv  # noqa: E402
-from deepqlearning.envs.financial.rewards import DEFAULT_PRESET  # noqa: E402
-from deepqlearning.evaluation.protocol import EvalProtocol, run_policy_episode  # noqa: E402
+from deepqlearning.envs.financial.environment import FinancialLifeEnv
+from deepqlearning.envs.financial.rewards import DEFAULT_PRESET
+from deepqlearning.evaluation.protocol import EvalProtocol, run_policy_episode
 
 
 def _require_sb3():

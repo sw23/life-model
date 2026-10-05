@@ -3,13 +3,13 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-from typing import Callable, List, Optional
+from collections.abc import Callable
 
 from .model import LifeModelAgent
 
 
 class LifeEvents(LifeModelAgent):
-    def __init__(self, model, life_events: Optional[List["LifeEvent"]] = None):
+    def __init__(self, model, life_events: list["LifeEvent"] | None = None):
         """List of life events
 
         Args:

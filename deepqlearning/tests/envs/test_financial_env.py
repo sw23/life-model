@@ -34,7 +34,7 @@ class TestGymnasiumAPI(unittest.TestCase):
         env.reset(seed=0)
         result = env.step(_no_action(env))
         self.assertEqual(len(result), 5)
-        obs, reward, terminated, truncated, info = result
+        _obs, reward, terminated, truncated, _info = result
         self.assertIsInstance(reward, float)
         self.assertIsInstance(terminated, bool)
         self.assertIsInstance(truncated, bool)

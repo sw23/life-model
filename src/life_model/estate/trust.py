@@ -5,7 +5,7 @@
 
 import html
 from enum import Enum
-from typing import List, Optional
+from typing import ClassVar
 
 from ..base_classes import Investment
 from ..model import Event, LifeModelAgent
@@ -46,17 +46,17 @@ class Trust(LifeModelAgent):
     """
 
     # Apply growth before tax-unit settlement, matching Investment's step ordering.
-    STEP_PRIORITY = {"step": -10}
+    STEP_PRIORITY: ClassVar[dict[str, int]] = {"step": -10}
 
     def __init__(
         self,
         grantor: Person,
         trust_type: TrustType,
-        beneficiaries: List[Person],
+        beneficiaries: list[Person],
         *,
         name: str = "Trust",
         balance: float = 0.0,
-        growth_rate: Optional[float] = None,
+        growth_rate: float | None = None,
         asset_class: str = "equity",
     ):
         """Create a trust.
@@ -86,7 +86,7 @@ class Trust(LifeModelAgent):
         self.asset_class = asset_class
         # Gifts into the trust this calendar year (for the annual gift-exclusion accounting).
         self.contributions_this_year = 0.0
-        self.stat_balance_history: List[float] = []
+        self.stat_balance_history: list[float] = []
 
         self.model.registries.trusts.register(grantor, self)
 
@@ -147,7 +147,7 @@ class Trust(LifeModelAgent):
         beneficiary.receive_cash(distributed, source=f"distribution from {self.name}")
         return distributed
 
-    def pay_out_at_grantor_death(self, residual_inheritor: Optional[Person] = None):
+    def pay_out_at_grantor_death(self, residual_inheritor: Person | None = None):
         """Terminate a revocable trust at the grantor's death: split the balance evenly among the
         surviving beneficiaries (outside the will's beneficiary path) and remove the trust.
 

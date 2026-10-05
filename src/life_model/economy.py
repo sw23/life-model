@@ -18,7 +18,7 @@ reads it. Rates are cached per year, which makes stochastic runs reproducible un
 real-dollar reporting.
 """
 
-from typing import TYPE_CHECKING, Dict, List
+from typing import TYPE_CHECKING, ClassVar
 
 from .model import LifeModelAgent
 
@@ -52,13 +52,13 @@ class EconomyModel(LifeModelAgent):
 
     # Run before every other agent's pre_step so the year's rates are cached before anyone reads
     # them (Person ages at -20, accounts grow at -10; the economy must precede both).
-    STEP_PRIORITY = {"pre_step": -100}
+    STEP_PRIORITY: ClassVar[dict[str, int]] = {"pre_step": -100}
 
     def __init__(self, model: "LifeModel"):
         super().__init__(model)
         self.config = model.config.economy
         # year -> {rate_name: percent}
-        self._rates_by_year: Dict[int, Dict[str, float]] = {}
+        self._rates_by_year: dict[int, dict[str, float]] = {}
         # Cache the starting year immediately so consumers constructed before the first step
         # (the usual case) already see coherent rates.
         self._ensure_year(model.year)
@@ -66,14 +66,14 @@ class EconomyModel(LifeModelAgent):
     # ------------------------------------------------------------------
     # Per-year resolution
     # ------------------------------------------------------------------
-    def _ensure_year(self, year: int) -> Dict[str, float]:
+    def _ensure_year(self, year: int) -> dict[str, float]:
         rates = self._rates_by_year.get(year)
         if rates is None:
             rates = self._compute_year(year)
             self._rates_by_year[year] = rates
         return rates
 
-    def _compute_year(self, year: int) -> Dict[str, float]:
+    def _compute_year(self, year: int) -> dict[str, float]:
         mode = self.config.mode
         if mode == "fixed":
             return self._fixed_rates()
@@ -83,7 +83,7 @@ class EconomyModel(LifeModelAgent):
             return self._stochastic_rates()
         raise ValueError(f"Unknown economy mode {mode!r}")
 
-    def _fixed_rates(self) -> Dict[str, float]:
+    def _fixed_rates(self) -> dict[str, float]:
         c = self.config
         return {
             "inflation": c.inflation,
@@ -94,7 +94,7 @@ class EconomyModel(LifeModelAgent):
             "home_appreciation": c.home_appreciation,
         }
 
-    def _path_rates(self, year: int) -> Dict[str, float]:
+    def _path_rates(self, year: int) -> dict[str, float]:
         rates = self._fixed_rates()
         for name, series in self.config.paths.items():
             if name not in rates:
@@ -103,7 +103,7 @@ class EconomyModel(LifeModelAgent):
                 rates[name] = series[year]
         return rates
 
-    def _stochastic_rates(self) -> Dict[str, float]:
+    def _stochastic_rates(self) -> dict[str, float]:
         s = self.config.stochastic
         # Correlated equity/bond/inflation draw via a Cholesky factor of the correlation matrix.
         equity_z, bond_z, inflation_z = self._correlated_normals(
@@ -120,7 +120,7 @@ class EconomyModel(LifeModelAgent):
             "home_appreciation": s.home_appreciation_mean + s.home_appreciation_vol * self.model.random.gauss(0, 1),
         }
 
-    def _correlated_normals(self, eq_bond: float, eq_inf: float, bond_inf: float) -> List[float]:
+    def _correlated_normals(self, eq_bond: float, eq_inf: float, bond_inf: float) -> list[float]:
         """Return three correlated standard normals drawn from the model's seeded RNG.
 
         Independent normals are combined through the Cholesky factor of the correlation matrix so

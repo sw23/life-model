@@ -5,6 +5,7 @@
 
 """Tests for the age-related medical cost curve agent."""
 
+import itertools
 import unittest
 
 from ..account.bank import BankAccount
@@ -71,7 +72,7 @@ class TestMedicalCosts(unittest.TestCase):
         med = df["Medical Costs"].tolist()
         years = df["Year"].tolist()
         # Nominal medical spend is non-decreasing (band jumps + medical inflation).
-        for a, b in zip(med, med[1:]):
+        for a, b in itertools.pairwise(med):
             self.assertGreaterEqual(b, a)
         # Real (CPI-deflated) medical spend increases with age across the run: deflate by CPI
         # only; the band jumps (65/75/85) plus the 2pp medical premium dominate.

@@ -29,8 +29,9 @@ algorithm that keeps per-stream state (n-step accumulation, rollout segments) ke
 import json
 import os
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import ClassVar, Dict, List, Optional, Sequence
+from typing import ClassVar
 
 import numpy as np
 import torch
@@ -57,7 +58,7 @@ class ActResult:
     """
 
     actions: np.ndarray
-    extras: Dict[str, np.ndarray] = field(default_factory=dict)
+    extras: dict[str, np.ndarray] = field(default_factory=dict)
 
 
 @dataclass
@@ -75,16 +76,16 @@ class StepBatch:
     next_obs: np.ndarray
     terminated: np.ndarray
     truncated: np.ndarray
-    legal: List[List[int]]
-    next_legal: List[List[int]]
+    legal: list[list[int]]
+    next_legal: list[list[int]]
     env_ids: np.ndarray
-    extras: Dict[str, np.ndarray] = field(default_factory=dict)
+    extras: dict[str, np.ndarray] = field(default_factory=dict)
 
     def __len__(self) -> int:
         return len(self.actions)
 
 
-def select_device(preference: Optional[str] = None) -> torch.device:
+def select_device(preference: str | None = None) -> torch.device:
     """Pick a compute device: CUDA when available, otherwise CPU. Apple MPS (Metal) is used
     only when explicitly requested (``preference="mps"``).
 
@@ -172,7 +173,7 @@ class Algorithm(ABC):
     on_policy: ClassVar[bool] = False
     name: ClassVar[str] = "algorithm"
 
-    def __init__(self, obs_space, action_space, config: Optional[Dict] = None):
+    def __init__(self, obs_space, action_space, config: dict | None = None):
         self.obs_space = as_box_space(obs_space)
         self.action_space = as_discrete_space(action_space)
         self.obs_shape = tuple(self.obs_space.shape)
@@ -186,12 +187,12 @@ class Algorithm(ABC):
         self.device = select_device(self.config.get("device"))
         # Training history, kept on the algorithm so it survives a save/load round trip and is
         # available to the plotting helpers.
-        self.training_losses: List[float] = []
-        self.episode_rewards: List[float] = []
+        self.training_losses: list[float] = []
+        self.episode_rewards: list[float] = []
         self.steps_done = 0
 
     @staticmethod
-    def default_config() -> Dict:
+    def default_config() -> dict:
         """Hyperparameters this algorithm accepts, with their defaults."""
         return {}
 
@@ -206,7 +207,7 @@ class Algorithm(ABC):
         """Record a batch of transitions (into a replay buffer or a rollout segment)."""
 
     @abstractmethod
-    def update(self) -> Optional[Dict[str, float]]:
+    def update(self) -> dict[str, float] | None:
         """Take a gradient step if enough data is buffered; return metrics, or ``None`` if not."""
 
     def anneal(self, progress: float) -> None:
@@ -231,11 +232,11 @@ class Algorithm(ABC):
         """Path of the JSON sidecar holding non-tensor training history for ``filepath``."""
         return os.path.splitext(str(filepath))[0] + ".history.json"
 
-    def checkpoint_state(self) -> Dict:
+    def checkpoint_state(self) -> dict:
         """Tensors and scalars to persist. Must stay ``torch.load(weights_only=True)``-safe."""
         raise NotImplementedError
 
-    def restore_checkpoint(self, checkpoint: Dict) -> None:
+    def restore_checkpoint(self, checkpoint: dict) -> None:
         """Restore the state produced by :meth:`checkpoint_state`."""
         raise NotImplementedError
 

@@ -11,8 +11,6 @@ numbers is vacuously faithful (it claims nothing false); a rationale that cites 
 fails. This is a pure function of text + scores, so it is unit-testable without any model.
 """
 
-from typing import List
-
 from .rationales import cited_dollars, cited_percentages, faithfulness_targets
 from .schema import ScoredCandidate
 
@@ -23,13 +21,13 @@ PCT_TOLERANCE = 1
 DOLLAR_TOLERANCE_FRACTION = 0.02
 
 
-def _matches(value: float, targets: List[int], tol: float) -> bool:
+def _matches(value: float, targets: list[int], tol: float) -> bool:
     return any(abs(value - t) <= tol for t in targets)
 
 
 def is_faithful(
     rationale: str,
-    scored: List[ScoredCandidate],
+    scored: list[ScoredCandidate],
     chosen: str,
     pct_tolerance: int = PCT_TOLERANCE,
     dollar_tolerance_fraction: float = DOLLAR_TOLERANCE_FRACTION,
