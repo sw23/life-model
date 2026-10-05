@@ -25,8 +25,9 @@ behind an off-by-default trainer flag.
 from typing import Callable, Dict, List, Optional
 
 import numpy as np
-from actions import ActionType, encode_flat_action
-from environment import FinancialLifeEnv
+
+from ..envs.financial.actions import ActionType, encode_flat_action
+from ..envs.financial.environment import FinancialLifeEnv
 
 # A baseline policy maps the environment's current state to a flat discrete action index
 # (the index carries both the action type and the amount bucket).
@@ -214,7 +215,7 @@ def collect_teacher_experiences(
     """Roll a teacher ``policy`` and return replay transitions for warm-starting.
 
     Each transition is ``(state, action, reward, next_state, done, legal_actions,
-    next_legal_actions)`` — the exact tuple ``FinancialDQNAgent.store_experience`` expects — so a
+    next_legal_actions)`` — the exact tuple ``DQNAgent.store_experience`` expects — so a
     trainer can seed the buffer with expert trajectories. Off by default (imitation can bias the
     policy); the trainer exposes it behind a flag and the eval report compares with/without.
     """

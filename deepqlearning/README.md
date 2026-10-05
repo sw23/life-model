@@ -1,14 +1,96 @@
-# Deep Reinforcement Learning for Financial Planning
+# Reinforcement Learning on the Life Model
 
-Train an AI agent to make financial decisions over a person's lifetime. The agent learns to
-manage bank accounts, retirement funds, debt, and lifestyle choices to optimize a defensible,
-utility-based financial-planning objective — and is measured against planner-grade
-heuristics with a proper statistical protocol.
+Train an agent to make financial decisions over a person's lifetime. Three algorithms (DQN,
+REINFORCE, PPO) are implemented from scratch in PyTorch behind one interface, and every household
+scenario is reachable by name.
 
-## 🎯 The objective — what "good" means
+```bash
+python -m deepqlearning.train --env financial:basic      --algo dqn --total-env-steps 200000 --num-envs 8
+python -m deepqlearning.train --env financial:mid_career --algo ppo --total-env-steps 200000
+```
+
+## 📦 Layout
+
+```
+deepqlearning/
+├── train.py                  # unified CLI: any environment x any algorithm
+├── envs/                     # name -> environment registry
+│   ├── registry.py           # EnvSpec, make_env, make_vector_env
+│   ├── masks.py              # optional legal-action mask protocol
+│   └── financial/            # the life-model environment: environment, actions, rewards, scenarios
+├── algos/                    # from-scratch PyTorch algorithms
+│   ├── base.py               # the Algorithm interface (act / observe / update / anneal)
+│   ├── networks.py           # MLP, DuelingMLP, encoder + Q-network builders
+│   ├── replay.py             # Experience, replay buffers, n-step accumulation
+│   └── dqn.py, reinforce.py, ppo.py
+├── training/                 # collection loops
+│   ├── rollout.py            # one episode
+│   ├── episode_trainer.py    # episode-count budget (notebooks, smoke tests)
+│   └── trainer.py            # vectorized env-step budget (real runs)
+├── evaluation/               # financial-domain only
+│   ├── protocol.py           # the statistical evaluation protocol
+│   ├── baselines.py          # scripted planner heuristics — the bar to beat
+│   ├── analyze_policy.py     # policy heatmap / schedule / lifetime trace
+│   └── benchmark_env.py      # throughput harness
+└── tests/                    # mirrors the package: tests/envs, tests/algos, tests/training, ...
+```
+
+Everything is imported as a package (`from deepqlearning.envs.registry import make_env`). Run from
+the **repo root**, which must be on `sys.path` — the test conftest, the notebook, and each script
+entry point arrange that themselves.
+
+## 🌍 Environments
+
+| Name | Domain | Observation | Actions | Notes |
+|------|--------|-------------|---------|-------|
+| `financial` (= `financial:basic`) | financial | `Box(34,)` | `Discrete(52)` | one simulated year per step |
+| `financial:high_earner`, `financial:low_earner`, `financial:mid_career` | financial | " | " | different point households |
+
+```python
+from deepqlearning.envs.registry import make_env, make_vector_env
+
+env = make_env("financial:basic", {"reward_preset": "wealth_max"})
+venv = make_vector_env("financial:mid_career", {}, num_envs=8, backend="sync")
+```
+
+Adding an environment is one `register_env(EnvSpec(...))` call; the factory is imported lazily, so
+importing the registry never costs an import of `life_model`. An environment that needs an
+optional package lists it in `EnvSpec.requires`, and `make_env` then fails with an install hint
+instead of an import traceback.
+
+### Legal-action masking is optional
+
+The financial environment restricts which of its 52 actions are valid each year.
+`envs/masks.py:legal_actions_of` resolves that in three steps: `info["legal_mask"]` (the only form
+that survives an async vector backend), then `env.get_legal_actions()`, then "everything is legal".
+An environment that declares nothing is treated as having no restriction, so a new environment
+needs no masking support to be trainable.
+
+## 🧠 Algorithms
+
+All three implement `Algorithm` (`algos/base.py`), which is **batched**: a trainer hands the
+algorithm `N >= 1` environment streams and calls `act` → `observe` → `update` every step. The
+trainer never learns which algorithm it is driving — `update` simply returns `None` until the
+algorithm has enough data.
+
+| `--algo` | Family | Learns from | Key config |
+|----------|--------|-------------|------------|
+| `dqn` | off-policy value | replay buffer, every step | `hidden_sizes`, `use_dueling`, `use_double_dqn`, `use_prioritized_replay`, `n_step`, `epsilon_*`, `target_update_freq` |
+| `reinforce` | on-policy policy gradient | whole episodes | `baseline` (`none`/`mean`/`value`), `batch_episodes`, `entropy_coef`, `normalize_returns` |
+| `ppo` | on-policy, clipped surrogate | fixed rollout, reused for several epochs | `n_steps`, `epochs`, `minibatches`, `clip_range`, `gae_lambda`, `value_coef`, `entropy_coef` |
+
+Networks are MLPs sized from the observation space alone, so nothing in an algorithm knows which
+environment it is training on.
+
+**Learning quality is open work.** The tests check that every algorithm trains end to end
+without diverging; none asserts that an algorithm learns a good policy, since the financial
+environment has no known optimal policy. Observed learning on it is weak so far, and more
+exploration is the expected next step.
+
+## 🎯 The financial objective — what "good" means
 
 The reward is **not** "maximize net worth" (whose optimal policy is to hoard and never spend). It
-is a utility-based objective defined in `rewards.py`:
+is a utility-based objective defined in `envs/financial/rewards.py`:
 
 - **Per-year consumption utility** `u(c_t)` — CRRA utility of the year's **real**
   (inflation-deflated) spending. Concave, so *smoothing* consumption is optimal — actual financial
@@ -17,9 +99,9 @@ is a utility-based objective defined in `rewards.py`:
 - **Terminal ruin penalty** — a large negative applied when the episode ends in bankruptcy,
   aligned with the environment's `BANKRUPTCY_THRESHOLD`.
 
-Time preference is the DQN `gamma` alone (no double discounting inside the reward). Risk-aversion,
-bequest weight, and ruin penalty are **configuration**, pinned by three presets and recorded in
-every eval report:
+Time preference is the algorithm's `gamma` alone (no double discounting inside the reward).
+Risk-aversion, bequest weight, and ruin penalty are **configuration**, pinned by three presets and
+recorded in every eval report:
 
 | Preset | Character |
 |--------|-----------|
@@ -27,54 +109,21 @@ every eval report:
 | `wealth_max` | Bequest-dominant wealth-accumulation objective; a comparison point for the consumption-based presets. |
 | `smooth_consumption` | High CRRA risk aversion; pushes toward a smooth lifetime consumption path. |
 
-Select a preset with `--reward-preset` (trainer) or `reward_preset` in the env config.
-
-## 🚀 Quick Start
-
-### 1. Install Dependencies
-```bash
-pip install -r ../requirements.txt -r requirements-rl.txt
-```
-
-### 2. Train Your First Agent
-```bash
-# Vectorized trainer on the default retirement_security objective
-python train_financial_agent.py --scenario basic --vectorized --num-envs 8 \
-    --total-env-steps 200000 --reward-preset retirement_security --protocol-eval
-
-# Single-env trainer, fixed episode count
-python train_financial_agent.py --scenario high_earner --episodes 1500
-```
-
-### 3. Interactive Tutorial
-For a step-by-step walkthrough, open the Jupyter notebook:
-```bash
-jupyter notebook Training_Example.ipynb
-```
-
-## 🎯 Training Scenarios
-
-Choose from pre-configured financial scenarios (defined in `scenarios.py`; the same definitions
-anchor the domain randomizer, so fixed and randomized variants can never drift apart):
-
-- **`basic`** - Standard middle-class income profile (great for learning)
-- **`high_earner`** - High income with complex investment decisions
-- **`low_earner`** - Limited income requiring careful budgeting
-- **`mid_career`** - Starting training from age 35
+Select a preset with `--reward-preset` (CLI) or `reward_preset` in the env config.
 
 ### Domain randomization
 
 `env.reset(seed=..., options={"randomize": True, "scenario": "basic"})` draws the episode's
 household — start age, retirement age, salary, spending, bank balance, gender — from seeded
-distributions around the scenario's point values (`EpisodeSampler` in `scenarios.py`). The same
-seed always reproduces the same household and trajectory; without options the fixed point
-household is reproduced exactly. A scenario can also carry named economy scenarios (e.g.
-`recession`) to sample per episode as a curriculum knob.
+distributions around the scenario's point values (`EpisodeSampler` in
+`envs/financial/scenarios.py`). The same seed always reproduces the same household and trajectory;
+without options the fixed point household is reproduced exactly. A scenario can also carry named
+economy scenarios (e.g. `recession`) to sample per episode as a curriculum knob.
 
-## 🎮 How It Works
+## 🎮 How the financial environment works
 
-Each environment step is one simulated year: the agent picks one flat discrete action, then the
-underlying `life_model` simulation advances a year (income, account growth, RMDs, taxes, death).
+Each step is one simulated year: the agent picks one flat discrete action, then the underlying
+`life_model` simulation advances a year (income, account growth, RMDs, taxes, death).
 
 **Fidelity notes:**
 
@@ -95,8 +144,8 @@ underlying `life_model` simulation advances a year (income, account growth, RMDs
 
 Every amount-bearing action is crossed with amount buckets **{10%, 25%, 50%, 100%}** of the
 balance available to that action (capped at `max_action_amount`, default $50k/year), so "how
-much" is part of the policy. `actions.encode_flat_action`/`decode_flat_action` are the exact
-inverse indexers (round-trip tested).
+much" is part of the policy. `encode_flat_action`/`decode_flat_action` are the exact inverse
+indexers (round-trip tested).
 
 | Indices | Action | Buckets |
 |---------|--------|---------|
@@ -125,7 +174,7 @@ executes successfully.
 
 Finite, documented bounds; observations are clipped into them. Money features are in **real**
 (inflation-deflated, start-of-episode) dollars normalized by $1M. See `OBS_SPEC` in
-`environment.py` for the authoritative list; summary:
+`envs/financial/environment.py` for the authoritative list; summary:
 
 | Group | Features |
 |-------|----------|
@@ -141,50 +190,63 @@ The tax-position features are *projections* for the upcoming year: the income le
 and cleared inside `model.step()`, so intra-year "income so far" is never observable at the
 decision boundary.
 
-## 🛠️ Training Options
+The terminal `info` also publishes `bankrupt`, so a trainer can report how episodes ended without
+reaching into the environment.
 
-### Basic Training
+## 🛠️ Training options
+
 ```bash
-# Train with default settings
-python train_financial_agent.py --scenario basic
+# Install
+pip install -r ../requirements.txt -r requirements-rl.txt
 
-# Train for specific number of episodes
-python train_financial_agent.py --scenario high_earner --episodes 2000
+# Vectorized step budget (the default mode)
+python -m deepqlearning.train --env financial:basic --algo dqn \
+    --total-env-steps 200000 --num-envs 8 --reward-preset retirement_security --protocol-eval
+
+# Episode budget, single environment
+python -m deepqlearning.train --env financial:high_earner --algo ppo --episodes 1500
+
+# Continue from a checkpoint, or evaluate one without training
+python -m deepqlearning.train --env financial:basic --algo dqn \
+    --load-model models/financial_basic_dqn.pt --episodes 500
+python -m deepqlearning.train --env financial:basic --algo dqn --eval-only \
+    --load-model models/financial_basic_dqn.pt --compare-baselines
 ```
 
-### Continue Training from Saved Model
+| Flag | Meaning |
+|------|---------|
+| `--env`, `--algo` | Registered environment name; `dqn`, `reinforce`, or `ppo` |
+| `--total-env-steps`, `--num-envs`, `--backend` | Vectorized trainer budget and parallelism (`sync`/`async`) |
+| `--episodes` | Use the episodic trainer instead |
+| `--load-model`, `--eval-only`, `--eval-episodes` | Checkpoint loading and final evaluation |
+| `--tensorboard <dir>`, `--plot-results`, `--save-plots` | Optional logging and figures |
+| `--set SECTION.KEY=VALUE` | Repeatable config override; `SECTION` is `algo` (default), `env`, or `train` |
+| `--reward-preset`, `--protocol-eval`, `--protocol-n-eval`, `--compare-baselines` | **Financial only** — rejected on other environments |
+
+`--set` values are parsed as JSON when possible, so types come through:
+`--set learning_rate=3e-4 --set hidden_sizes='[256,256]' --set use_dueling=false --set env.economy_mode=fixed`.
+
+Outputs are keyed `{env}_{algo}` under `models/`, `results/`, and `plots/`, so runs of different
+pairings never overwrite each other.
+
+> **Checkpoint compatibility:** DQN checkpoints carry `MODEL_VERSION` (currently **4**) and the
+> environment's `obs_version`, saved as tensor-only `.pt` files plus a `.history.json` sidecar so
+> they load under modern PyTorch defaults (`torch.load(..., weights_only=True)`). Loading a
+> checkpoint from a different version **fails with a clear error** — a checkpoint's weights are tied
+> to a specific observation layout, action space, and reward scale. An environment with no versioned
+> observation layout leaves `obs_version` unset and the gate off. REINFORCE and
+> PPO checkpoints record their algorithm name and refuse to load into a different one.
+
+### Interactive tutorial
+
 ```bash
-# Load and continue training an existing model
-python train_financial_agent.py --scenario basic --load_model models/financial_dqn_basic.pt --episodes 500
+jupyter notebook Training_Example.ipynb
 ```
 
-### Evaluation Only
-```bash
-# Evaluate a trained model without additional training
-python train_financial_agent.py --scenario basic --eval_only --load_model models/financial_dqn_basic.pt
-```
+## 📊 Baselines & the bar (financial)
 
-> **Checkpoint compatibility:** checkpoints carry `MODEL_VERSION` (currently **4**) and
-> `OBS_VERSION`, saved as tensor-only `.pt` files plus a
-> `.history.json` sidecar so they load under modern PyTorch defaults
-> (`torch.load(..., weights_only=True)`). Loading a checkpoint from a different version **fails
-> with a clear error** — a checkpoint's weights are tied to a specific observation layout, action
-> space, and reward scale, so a mismatched checkpoint would be silently misaligned. Retrain, or
-> check out the code version that produced the checkpoint.
-
-### Generate Training Plots
-```bash
-# Display training progress plots
-python train_financial_agent.py --scenario basic --plot_results
-
-# Save plots to file
-python train_financial_agent.py --scenario basic --plot_results --save_plots plots/basic_training.png
-```
-
-## 📊 Baselines & the bar
-
-`baselines.py` provides planner-grade heuristics an advisor would recognize — these are the bar
-the agent must beat, not "do nothing":
+`evaluation/baselines.py` provides planner-grade heuristics an advisor would recognize — these are
+the bar the agent must beat, not "do nothing":
 
 - `contribution_waterfall` — fill scarce tax-advantaged room (HSA → IRA, gated by the observed
   room features) then route the rest to the 401k, then a taxable brokerage, keeping a cash reserve.
@@ -199,7 +261,7 @@ regression detectors.
 
 ## 🔬 Evaluation protocol & reading the report
 
-`evaluation.py`'s `EvalProtocol` runs the agent and every baseline on **identical**
+`evaluation/protocol.py`'s `EvalProtocol` runs the agent and every baseline on **identical**
 `SeedSequence`-spawned seed sets across three conditions and writes a JSON report + a comparison
 table (`--protocol-eval`):
 
@@ -228,52 +290,47 @@ reward is meant to produce. This is an honest snapshot — a full-scale run (bel
 widen the gap; the "beats every heuristic with separated CIs" claim will only be made here once a
 committed report shows it.
 
-## 🏋️ Training upgrades
+## 🏋️ Training-stack features
 
-The trainer stack (`agent.py`, `vector_trainer.py`) is modernized while staying dependency-light
-(`requirements-rl.txt` is still gymnasium + torch only):
-
-- **Prioritized experience replay** — really implemented now (the old `use_prioritized_replay`
-  flag was dead): proportional sampling, IS-weight correction, TD-error priority updates.
-- **N-step returns** (`n_step=3`) via `NStepAccumulator`, with a per-transition discount.
-- **Vectorized collection** — `VectorizedTrainer` drives `N` `gymnasium.vector` envs (sync default;
-  async optional) feeding one learner, handling `NEXT_STEP` autoreset; per-env seeds derive from a
-  base seed so collection is reproducible.
+- **Prioritized experience replay** — proportional sampling, IS-weight correction, TD-error
+  priority updates (DQN).
+- **N-step returns** (`n_step=3` by default) accumulated per environment stream inside
+  `DQNAgent.observe`, with a per-transition discount.
+- **GAE(λ)** with the truncation-vs-termination distinction handled correctly (PPO).
+- **Vectorized collection** — `Trainer` drives `N` `gymnasium.vector` envs (sync default; async
+  optional) feeding one learner, handling `NEXT_STEP` autoreset; per-env seeds derive from a base
+  seed so collection is reproducible.
 - **LR schedule** (cosine/step) + **early stopping** on eval-plateau, keeping the best checkpoint.
-- The dead `epsilon_decay` config keys are purged; epsilon decays per-episode over
-  `epsilon_decay_fraction` of training.
+- `--tensorboard <logdir>` logs return/loss/eval scalars via `torch.utils.tensorboard` (soft
+  import; absent → training still runs).
 
-### Optional integrations
+### SB3 cross-check
 
-- `--tensorboard <logdir>` — logs return/epsilon/loss/eval scalars via `torch.utils.tensorboard`
-  (behind a soft import; absent → training still runs).
-- **SB3 cross-check** (`sb3/cross_check.py`) trains an external Stable-Baselines3 DQN/PPO on the
-  same env as an independent sanity bound. Gated behind `requirements-rl-sb3.txt`, which nothing in
-  the trainer, env, or test suite imports:
-  ```bash
-  pip install -r requirements-rl.txt -r requirements-rl-sb3.txt
-  python sb3/cross_check.py --algo dqn --timesteps 200000
-  ```
-
-## 🔎 Policy analysis
-
-`analyze_policy.py` turns a checkpoint into human-checkable artifacts (headless Agg backend):
+`sb3/cross_check.py` trains an external Stable-Baselines3 DQN/PPO on the same financial env as an
+independent sanity bound. Gated behind `requirements-rl-sb3.txt`, which nothing in the trainer,
+env, or test suite imports:
 
 ```bash
-python analyze_policy.py --checkpoint models/financial_dqn_basic.pt --reward-preset retirement_security
+pip install -r requirements-rl.txt -r requirements-rl-sb3.txt
+python sb3/cross_check.py --algo dqn --timesteps 200000
+```
+
+## 🔎 Policy analysis (financial)
+
+```bash
+python -m deepqlearning.evaluation.analyze_policy \
+    --checkpoint models/financial_basic_dqn.pt --reward-preset retirement_security
 ```
 
 It writes a **policy heatmap** (dominant action over an age × wealth-decile grid), a
 **contribution/withdrawal schedule by age**, and an annotated **lifetime trace** (JSON + net-worth
-figure). The `Training_Example.ipynb` notebook renders them inline. Committed examples live under
+figure). `Training_Example.ipynb` renders them inline. Committed examples live under
 `reports/retirement_security/`.
 
 ## ⚡ Performance
 
-`benchmark_env.py` measures model-only, single-env, and vectorized step rates:
-
 ```bash
-python benchmark_env.py --num-envs 8
+python -m deepqlearning.evaluation.benchmark_env --num-envs 8
 ```
 
 Reference (Apple Silicon, Python 3.12; env steps use random actions):
@@ -288,25 +345,20 @@ Reference (Apple Silicon, Python 3.12; env steps use random actions):
 | vector env, **async**, 16 envs | ~2,100 (**~1.7x** single-env) |
 
 > **Honest note on the ≥3× target.** The vectorized trainer targets ≥3× env-steps/sec from
-> vectorization. On this workload that is **not reached**: each simulated year is cheap (~1 ms), so `gymnasium`
-> `AsyncVectorEnv`'s per-step multiprocessing IPC/synchronization overhead dominates and caps the
-> speedup at ~1.6–2.0× (confirmed to persist even with an empty `info` payload). The vectorized
-> collector is correct, reproducible, and enables batched inference; the raw throughput ceiling is
-> a property of the cheap per-step sim, reported as measured rather than inflated.
+> vectorization. On this workload that is **not reached**: each simulated year is cheap (~1 ms), so
+> `gymnasium` `AsyncVectorEnv`'s per-step multiprocessing IPC/synchronization overhead dominates and
+> caps the speedup at ~1.6–2.0× (confirmed to persist even with an empty `info` payload). The
+> vectorized collector is correct, reproducible, and enables batched inference; the raw throughput
+> ceiling is a property of the cheap per-step sim, reported as measured rather than inflated.
 
 ## 🔁 Reproducing a full-scale run
 
-The committed report is a moderate (43 s) run. For a full-scale run that is expected to widen the
-agent-vs-heuristic gap:
-
 ```bash
-# Train (vectorized) + write the protocol report and policy-analysis artifacts.
-python train_financial_agent.py --scenario basic --vectorized --num-envs 8 \
+python -m deepqlearning.train --env financial:basic --algo dqn --num-envs 8 \
     --total-env-steps 2000000 --reward-preset retirement_security \
     --protocol-eval --protocol-n-eval 200 --tensorboard runs/basic
 
-# Analyze a specific checkpoint after the fact.
-python analyze_policy.py --checkpoint models/financial_dqn_basic.pt \
+python -m deepqlearning.evaluation.analyze_policy --checkpoint models/financial_basic_dqn.pt \
     --reward-preset retirement_security --episodes 200
 ```
 
@@ -314,20 +366,26 @@ Checkpoints are **not** committed (see `.gitignore`); reports/PNGs/JSON under `r
 larger `--total-env-steps` (and `--protocol-n-eval`, which tightens the CIs) is what turns the
 overlapping-CI result into a statistically separated one.
 
-## 🔧 Customizing Training
+## 🔧 Extending
 
-### Modify Scenarios
-Edit the household scenario definitions in `scenarios.py` (point values + randomization
-spreads) and the training configurations in `train_financial_agent.py`.
+- **New environment** — write a factory and `register_env(EnvSpec(name=..., factory=..., domain=...))`
+  in `envs/registry.py`. Declare optional dependencies in `requires` so a missing one produces a
+  friendly install message instead of an import traceback.
+- **New algorithm** — subclass `Algorithm` (`act` / `observe` / `update`, plus `checkpoint_state` /
+  `restore_checkpoint`) and add it to `ALGORITHMS` in `algos/__init__.py`. Both trainers and the
+  CLI pick it up with no further changes.
+- **New scenario / objective** — edit `envs/financial/scenarios.py` (point values + randomization
+  spreads) or add a preset to `REWARD_PRESETS` in `envs/financial/rewards.py`. The reward function
+  is pure and unit-tested — edit `rewards.py`, not the environment.
+- **New action** — extend `envs/financial/actions.py`: add the `ActionType`, implement its
+  `can_execute`/`execute` (withdrawals must route through a person-level helper so taxes settle
+  through the model), and make sure the environment creates any account it needs. Amount-bearing
+  actions are picked up by the flat indexer automatically; the round-trip and property tests will
+  flag inconsistencies.
 
-### Adjust the objective
-Change `--reward-preset`, or add a preset to `REWARD_PRESETS` in `rewards.py` (risk aversion,
-bequest weight, ruin penalty are all configuration). The reward function is pure and unit-tested —
-edit `rewards.py`, not the environment.
+## 🧪 Tests
 
-### Add New Actions
-Extend the action space in `actions.py`: add the `ActionType`, implement its
-`can_execute`/`execute` (withdrawals must route through a person-level helper so taxes settle
-through the model), and make sure the environment creates any account it needs. Amount-bearing
-actions are picked up by the flat indexer automatically; the round-trip and property tests will
-flag inconsistencies.
+```bash
+tox -e deepqlearning         # fast suite
+tox -e deepqlearning-slow    # 150-episode financial training smoke
+```

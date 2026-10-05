@@ -23,6 +23,7 @@ functions return the underlying data too, so a notebook can render them inline.
 import argparse
 import json
 import os
+import sys
 from collections import Counter
 from typing import Dict, List, Optional
 
@@ -30,11 +31,17 @@ import matplotlib
 
 matplotlib.use("Agg")  # headless: never require a display
 
+# Importable both as ``deepqlearning.evaluation.analyze_policy`` and as a bare script path.
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
-from actions import ActionType  # noqa: E402
-from agent import FinancialDQNAgent, rollout  # noqa: E402
-from environment import FinancialLifeEnv  # noqa: E402
+
+from deepqlearning.algos.base import Algorithm  # noqa: E402
+from deepqlearning.algos.dqn import DQNAgent  # noqa: E402
+from deepqlearning.envs.financial.actions import ActionType  # noqa: E402
+from deepqlearning.envs.financial.environment import OBS_VERSION, FinancialLifeEnv  # noqa: E402
+from deepqlearning.training.rollout import rollout  # noqa: E402
 
 # Coarse action categories for a readable heatmap.
 _CATEGORIES = ["noop", "contribute", "withdraw", "spend", "retire"]
@@ -56,17 +63,14 @@ def _categorize(action_type: Optional[str]) -> str:
 
 
 def collect_greedy_trajectories(
-    agent: FinancialDQNAgent, env_config: Optional[Dict], n_episodes: int, seed_base: int = 3_000_000
+    agent: Algorithm, env_config: Optional[Dict], n_episodes: int, seed_base: int = 3_000_000
 ) -> List[List[Dict]]:
     """Run ``n_episodes`` greedy episodes and return their step-by-step trajectories."""
     env = FinancialLifeEnv(env_config or {})
-    old_eps = agent.epsilon
-    agent.epsilon = 0.0
     trajectories = []
     for i in range(n_episodes):
         result = rollout(env, agent, training=False, seed=seed_base + i, collect_trajectory=True)
         trajectories.append(result.trajectory)
-    agent.epsilon = old_eps
     return trajectories
 
 
@@ -159,12 +163,10 @@ def contribution_schedule(trajectories: List[List[Dict]], out_path: str) -> Dict
 
 
 def lifetime_trace(
-    agent: FinancialDQNAgent, env_config: Optional[Dict], out_png: str, out_json: str, seed: int = 4_000_000
+    agent: Algorithm, env_config: Optional[Dict], out_png: str, out_json: str, seed: int = 4_000_000
 ) -> Dict:
     """One annotated greedy episode: year-by-year state/action/reward, as JSON + a net-worth figure."""
     env = FinancialLifeEnv(env_config or {})
-    old_eps = agent.epsilon
-    agent.epsilon = 0.0
     state, _ = env.reset(seed=seed)
     rows: List[Dict] = []
     while True:
@@ -183,7 +185,6 @@ def lifetime_trace(
         )
         if terminated or truncated:
             break
-    agent.epsilon = old_eps
 
     with open(out_json, "w") as f:
         json.dump(rows, f, indent=2)
@@ -207,7 +208,7 @@ def lifetime_trace(
     return {"rows": rows, "final_net_worth": nets[-1] if nets else 0.0, "steps": len(rows)}
 
 
-def analyze(agent: FinancialDQNAgent, env_config: Optional[Dict], out_dir: str, n_episodes: int = 50) -> Dict:
+def analyze(agent: Algorithm, env_config: Optional[Dict], out_dir: str, n_episodes: int = 50) -> Dict:
     """Generate all policy-analysis artifacts into ``out_dir`` and return a manifest of their data + paths."""
     os.makedirs(out_dir, exist_ok=True)
     trajectories = collect_greedy_trajectories(agent, env_config, n_episodes)
@@ -238,8 +239,8 @@ def main() -> None:
 
     env_config = {"reward_preset": args.reward_preset}
     env = FinancialLifeEnv(env_config)
-    agent = FinancialDQNAgent(env.observation_space.shape[0], env.action_space.n)
-    agent.load_model(args.checkpoint)
+    agent = DQNAgent(env.observation_space, env.action_space, {"obs_version": OBS_VERSION})
+    agent.load(args.checkpoint)
     out_dir = args.out_dir or os.path.join(os.path.dirname(os.path.abspath(args.checkpoint)), "analysis")
     analyze(agent, env_config, out_dir, n_episodes=args.episodes)
 

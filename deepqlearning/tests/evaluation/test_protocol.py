@@ -5,15 +5,18 @@
 
 """Tests for the statistical evaluation protocol."""
 
-import os
-import sys
 import unittest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
-from baselines import BASELINES  # noqa: E402
-from environment import FinancialLifeEnv  # noqa: E402
-from evaluation import EvalProtocol, format_comparison_table, run_policy_episode, spawn_seeds  # noqa: E402
+from deepqlearning.envs.financial.environment import FinancialLifeEnv
+from deepqlearning.evaluation.baselines import BASELINES
+from deepqlearning.evaluation.protocol import (
+    EvalProtocol,
+    format_comparison_table,
+    format_final_infos,
+    run_policy_episode,
+    spawn_seeds,
+    summarize_final_infos,
+)
 
 _REQUIRED_STAT_KEYS = {
     "n",
@@ -102,6 +105,42 @@ class TestEvalProtocol(unittest.TestCase):
         table = format_comparison_table(report)
         self.assertIn("[train]", table)
         self.assertIn("INTELLIGENT", table)
+
+
+class TestFinalInfoSummary(unittest.TestCase):
+    """The financial episode-outcome summary the trainers attach to their evaluation printout."""
+
+    def test_each_episode_counts_once(self):
+        summary = summarize_final_infos(
+            [
+                {"died_from_natural_causes": True, "bankrupt": False, "age": 88},
+                {"died_from_natural_causes": False, "bankrupt": True, "age": 40},
+                {"died_from_natural_causes": False, "bankrupt": False, "age": 119},
+            ]
+        )
+        self.assertEqual(summary["n"], 3)
+        self.assertEqual(summary["natural_deaths"], 1)
+        self.assertEqual(summary["bankruptcies"], 1)
+        self.assertEqual(summary["successful_completions"], 1)
+        self.assertAlmostEqual(summary["avg_age_at_end"], (88 + 40 + 119) / 3)
+
+    def test_death_wins_over_bankruptcy(self):
+        # Dying is what ended the episode, even if the estate was underwater at the time.
+        summary = summarize_final_infos([{"died_from_natural_causes": True, "bankrupt": True, "age": 70}])
+        self.assertEqual(summary["natural_deaths"], 1)
+        self.assertEqual(summary["bankruptcies"], 0)
+
+    def test_environment_publishes_the_bankruptcy_flag(self):
+        env = FinancialLifeEnv()
+        _, info = env.reset(seed=0)
+        self.assertIn("bankrupt", info)
+        self.assertFalse(info["bankrupt"])
+
+    def test_formatted_line_reports_every_bucket(self):
+        line = format_final_infos([{"died_from_natural_causes": False, "bankrupt": False, "age": 100}])
+        self.assertIn("Natural deaths: 0/1", line)
+        self.assertIn("Bankruptcies: 0/1", line)
+        self.assertIn("Successful completions: 1/1", line)
 
 
 if __name__ == "__main__":

@@ -5,16 +5,12 @@
 
 """Unit tests for the Gymnasium environment API, seeding, and reward semantics."""
 
-import os
-import sys
 import unittest
 
 import numpy as np
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
-from actions import ActionType, encode_flat_action  # noqa: E402
-from environment import FinancialLifeEnv  # noqa: E402
+from deepqlearning.envs.financial.actions import ActionType, encode_flat_action
+from deepqlearning.envs.financial.environment import FinancialLifeEnv
 
 
 def _no_action(env):
@@ -141,7 +137,7 @@ class TestRewardSemantics(unittest.TestCase):
     def test_utility_reward_config_replaces_adhoc_weights(self):
         # The reward is a utility-based RewardConfig; the env carries no reward-weight shaping
         # dict (no ``reward_weights`` key in its config).
-        from rewards import DEFAULT_PRESET, RewardConfig
+        from deepqlearning.envs.financial.rewards import DEFAULT_PRESET, RewardConfig
 
         env = FinancialLifeEnv()
         self.assertNotIn("reward_weights", env.config)

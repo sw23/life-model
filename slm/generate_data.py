@@ -37,7 +37,8 @@ from concurrent.futures import ProcessPoolExecutor
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
-from scenarios import HOUSEHOLD_SCENARIOS, EpisodeSampler
+
+from deepqlearning.envs.financial.scenarios import HOUSEHOLD_SCENARIOS, EpisodeSampler
 
 from .prompts import (
     OUT_OF_SCOPE_DOMAINS,

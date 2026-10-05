@@ -27,7 +27,6 @@ Run with::
 
 import os
 import random
-import sys
 import tempfile
 import unittest
 
@@ -35,11 +34,11 @@ import numpy as np
 import pytest
 import torch
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
-from agent import FinancialDQNAgent, FinancialDQNTrainer, rollout  # noqa: E402
-from baselines import BASELINES, evaluate_baseline  # noqa: E402
-from environment import FinancialLifeEnv  # noqa: E402
+from deepqlearning.algos.dqn import DQNAgent
+from deepqlearning.envs.financial.environment import FinancialLifeEnv
+from deepqlearning.evaluation.baselines import BASELINES, evaluate_baseline
+from deepqlearning.training.episode_trainer import EpisodeTrainer
+from deepqlearning.training.rollout import rollout
 
 
 @pytest.mark.slow
@@ -50,9 +49,9 @@ class TestTrainingSmokeSlow(unittest.TestCase):
         torch.manual_seed(0)
 
         env = FinancialLifeEnv()  # default preset = retirement_security
-        agent = FinancialDQNAgent(
-            env.observation_space.shape[0],
-            env.action_space.n,
+        agent = DQNAgent(
+            env.observation_space,
+            env.action_space,
             {
                 "min_replay_size": 300,
                 "batch_size": 64,
@@ -62,7 +61,7 @@ class TestTrainingSmokeSlow(unittest.TestCase):
                 "use_prioritized_replay": True,
             },
         )
-        trainer = FinancialDQNTrainer(
+        trainer = EpisodeTrainer(
             env,
             agent,
             {

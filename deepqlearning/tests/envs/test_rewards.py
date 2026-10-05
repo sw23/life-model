@@ -11,15 +11,11 @@ returned value is a genuine Python float, not an ``np.float64``.
 """
 
 import math
-import os
-import sys
 import unittest
 
 import numpy as np
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
-from rewards import (  # noqa: E402
+from deepqlearning.envs.financial.rewards import (
     DEFAULT_PRESET,
     REWARD_PRESETS,
     RewardConfig,

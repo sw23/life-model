@@ -37,12 +37,15 @@ Then open your browser to http://localhost:8765
 
 ![Dashboard Overview](https://raw.githubusercontent.com/sw23/life-model/main/img/dashboard.png)
 
-### Deep Reinforcement Learning
-Train AI agents to make optimal financial decisions:
+### Reinforcement Learning
+Train AI agents to make optimal financial decisions with DQN, REINFORCE, or PPO:
 ```bash
 pip install -r deepqlearning/requirements-rl.txt
-python deepqlearning/train_financial_agent.py --scenario basic --episodes 1000
+python -m deepqlearning.train --env financial:basic --algo dqn --episodes 1000
+python -m deepqlearning.train --env financial:mid_career --algo ppo --total-env-steps 200000
 ```
+See [deepqlearning/README.md](deepqlearning/README.md) for the environment registry, the algorithm
+interface, and the evaluation protocol.
 
 ## Modeling Status
 This package supports a comprehensive range of financial modeling components:
@@ -106,7 +109,7 @@ This package supports a comprehensive range of financial modeling components:
 - [x] **Economic Scenarios** - Configurable market conditions (recession, inflation, etc.)
 - [x] **Payment Services** - Intelligent bill payment with account prioritization
 - [x] **Tax Optimization** - Strategic withdrawal and contribution planning
-- [x] **Deep Q-Learning** - A reinforcement-learning agent (`deepqlearning/`) that learns an in-episode financial policy, evaluated against planner heuristics with an outcome-based protocol
+- [x] **Reinforcement Learning** - DQN / REINFORCE / PPO agents (`deepqlearning/`) that learn an in-episode financial policy, evaluated against planner heuristics with an outcome-based protocol
 - [x] **Simulation-Grounded Adviser** - A language-model adviser (`slm/`) that maps a household to a recommended plan-level strategy with a Monte-Carlo-certified rationale (educational decision support, not financial advice; see `slm/README.md`)
 
 ## Examples and Documentation

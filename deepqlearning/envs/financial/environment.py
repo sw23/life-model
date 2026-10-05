@@ -7,19 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import gymnasium as gym
 import numpy as np
-from actions import (
-    TRANSFER_ACTIONS,
-    WITHDRAWAL_ACTIONS,
-    ActionExecutor,
-    ActionResult,
-    ActionType,
-    decode_flat_action,
-    flat_action_count,
-    withdrawal_available,
-)
 from gymnasium import spaces
-from rewards import DEFAULT_PRESET, RewardConfig, get_reward_config, step_reward
-from scenarios import HOUSEHOLD_SCENARIOS, EpisodeSampler
 
 from life_model.account.bank import BankAccount
 from life_model.account.brokerage import BrokerageAccount
@@ -39,6 +27,19 @@ from life_model.people.family import Family
 from life_model.people.mortality import get_blended_chance_of_mortality, get_chance_of_mortality
 from life_model.people.person import GenderAtBirth, MortalityMode, Person, Spending
 from life_model.work.job import Job, Salary
+
+from .actions import (
+    TRANSFER_ACTIONS,
+    WITHDRAWAL_ACTIONS,
+    ActionExecutor,
+    ActionResult,
+    ActionType,
+    decode_flat_action,
+    flat_action_count,
+    withdrawal_available,
+)
+from .rewards import DEFAULT_PRESET, RewardConfig, get_reward_config, step_reward
+from .scenarios import HOUSEHOLD_SCENARIOS, EpisodeSampler
 
 # Observation layout version. Bumped whenever the feature list, ordering,
 # normalization, or bounds below change, so checkpoints trained against a different layout are
@@ -437,6 +438,9 @@ class FinancialLifeEnv(gym.Env):
             "action_type": action_type.value if action_type is not None else None,
             "action_amount": action_amount,
             "died_from_natural_causes": self.died_from_natural_causes,
+            # Whether the household is below the bankruptcy threshold. Published so a caller can
+            # tell how an episode ended without reaching into the environment's internals.
+            "bankrupt": self._calculate_net_worth() < self.BANKRUPTCY_THRESHOLD,
             "estate_value_at_death": self._estate_value_at_death,
             "mortality_probability": self._mortality_probability(),
             # Legal-action mask so vectorized collectors can mask without sub-env access.

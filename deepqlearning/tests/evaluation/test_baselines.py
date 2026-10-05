@@ -7,25 +7,24 @@
 
 import os
 import random
-import sys
 import tempfile
 import unittest
 
 import numpy as np
 import torch
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
-from actions import ActionType, encode_flat_action  # noqa: E402
-from agent import FinancialDQNAgent, FinancialDQNTrainer, rollout  # noqa: E402
-from baselines import (  # noqa: E402
+from deepqlearning.algos.dqn import DQNAgent
+from deepqlearning.envs.financial.actions import ActionType, encode_flat_action
+from deepqlearning.envs.financial.environment import FinancialLifeEnv
+from deepqlearning.evaluation.baselines import (
     BASELINES,
     PLANNER_BASELINES,
     collect_teacher_experiences,
     evaluate_all_baselines,
     evaluate_baseline,
 )
-from environment import FinancialLifeEnv  # noqa: E402
+from deepqlearning.training.episode_trainer import EpisodeTrainer
+from deepqlearning.training.rollout import rollout
 
 _NO_ACTION = encode_flat_action(ActionType.NO_ACTION)
 
@@ -111,12 +110,12 @@ class TestAgentBeatsDoNothing(unittest.TestCase):
         env = FinancialLifeEnv()
         state_size = env.observation_space.shape[0]
         action_size = env.action_space.n
-        agent = FinancialDQNAgent(
+        agent = DQNAgent(
             state_size,
             action_size,
             {"min_replay_size": 200, "batch_size": 32, "learning_rate": 1e-3, "epsilon_end": 0.05},
         )
-        trainer = FinancialDQNTrainer(
+        trainer = EpisodeTrainer(
             env,
             agent,
             {
