@@ -10,18 +10,13 @@ correctness, ruin alignment / terminal-branch selection, and — the float-type 
 returned value is a genuine Python float, not an ``np.float64``.
 """
 
+import itertools
 import math
-import os
-import sys
 import unittest
 
 import numpy as np
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
-import itertools
-
-from rewards import (
+from deepqlearning.envs.financial.rewards import (
     DEFAULT_PRESET,
     REWARD_PRESETS,
     RewardConfig,

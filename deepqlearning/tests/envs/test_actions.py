@@ -5,15 +5,11 @@
 
 """Unit tests for the RL action space and the can_execute => execute-succeeds invariant."""
 
-import os
-import sys
 import unittest
 
 import numpy as np
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
-from actions import (
+from deepqlearning.envs.financial.actions import (
     AMOUNT_BEARING_ACTIONS,
     AMOUNT_BUCKETS,
     SINGLETON_ACTIONS,
@@ -23,7 +19,7 @@ from actions import (
     encode_flat_action,
     flat_action_count,
 )
-from environment import FinancialLifeEnv
+from deepqlearning.envs.financial.environment import FinancialLifeEnv
 
 
 class TestActionSpaceHonesty(unittest.TestCase):

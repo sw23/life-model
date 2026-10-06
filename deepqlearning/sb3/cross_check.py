@@ -28,14 +28,14 @@ import json
 import os
 import sys
 
-# Make the flat RL modules importable (environment, baselines, evaluation) and the source tree.
+# Make the deepqlearning package and the source tree importable when run as a bare script path.
 _HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.abspath(os.path.join(_HERE, "..")))
+sys.path.insert(0, os.path.abspath(os.path.join(_HERE, "..", "..")))
 sys.path.insert(0, os.path.abspath(os.path.join(_HERE, "..", "..", "src")))
 
-from environment import FinancialLifeEnv
-from evaluation import EvalProtocol, run_policy_episode
-from rewards import DEFAULT_PRESET
+from deepqlearning.envs.financial.environment import FinancialLifeEnv
+from deepqlearning.envs.financial.rewards import DEFAULT_PRESET
+from deepqlearning.evaluation.protocol import EvalProtocol, run_policy_episode
 
 
 def _require_sb3():

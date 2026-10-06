@@ -15,19 +15,24 @@ Measures and prints:
 
 Run from the repo root::
 
-    .venv-work/bin/python deepqlearning/benchmark_env.py
+    python -m deepqlearning.evaluation.benchmark_env
 
 Record the numbers in deepqlearning/README.md whenever they change materially so future
 regressions are measurable.
 """
 
 import argparse
+import os
+import sys
 import time
 
 import numpy as np
-from environment import FinancialLifeEnv
-from vector_trainer import make_vector_env
 
+# Importable both as ``deepqlearning.evaluation.benchmark_env`` and as a bare script path.
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+
+from deepqlearning.envs.financial.environment import FinancialLifeEnv
+from deepqlearning.envs.registry import make_vector_env
 from life_model.account.bank import BankAccount
 from life_model.account.job401k import Job401kAccount
 from life_model.model import LifeModel
@@ -97,7 +102,7 @@ def bench_vector_env(num_envs: int, steps_per_env: int, backend: str) -> float:
     env; on a multi-core machine this is where the >=3x-over-single-env target comes
     from.
     """
-    venv = make_vector_env({}, num_envs, backend)
+    venv = make_vector_env("financial", {}, num_envs, backend)
     n = venv.single_action_space.n
     rng = np.random.default_rng(0)
     venv.reset(seed=[i for i in range(num_envs)])

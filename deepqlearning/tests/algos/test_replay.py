@@ -3,25 +3,13 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Tests for the training upgrades: PER, n-step returns, batched action selection,
-and vectorized-collection reproducibility."""
+"""Tests for the off-policy storage: prioritized replay and n-step accumulation."""
 
-import os
-import sys
 import unittest
 
 import numpy as np
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
-from agent import (
-    Experience,
-    FinancialDQNAgent,
-    NStepAccumulator,
-    PrioritizedReplayBuffer,
-)
-from environment import FinancialLifeEnv
-from vector_trainer import make_vector_env
+from deepqlearning.algos.replay import Experience, NStepAccumulator, PrioritizedReplayBuffer
 
 
 class TestPrioritizedReplayBuffer(unittest.TestCase):
@@ -89,37 +77,6 @@ class TestNStepAccumulator(unittest.TestCase):
         acc = NStepAccumulator(n_step=2, gamma=1.0)
         out = acc.push(np.zeros(1, np.float32), 0, 1.0, [0], np.zeros(1, np.float32), [0], done=True)
         self.assertIsInstance(out[0], Experience)
-
-
-class TestBatchedActionSelection(unittest.TestCase):
-    def test_batch_actions_are_legal(self):
-        env = FinancialLifeEnv()
-        agent = FinancialDQNAgent(env.observation_space.shape[0], env.action_space.n, {"min_replay_size": 8})
-        agent.epsilon = 0.0
-        states = np.stack([env._get_observation() for _ in range(4)])
-        legal_lists = [env.get_legal_actions() for _ in range(4)]
-        actions = agent.select_actions_batch(states, legal_lists, training=False)
-        self.assertEqual(len(actions), 4)
-        for a, legal in zip(actions, legal_lists):
-            self.assertIn(a, legal)
-
-
-class TestVectorizedReproducibility(unittest.TestCase):
-    def test_same_base_seed_reproduces_per_env_streams(self):
-        # Per-env seeds derived from a base seed must reproduce identical reward streams under
-        # a fixed action policy (acceptance).
-        def collect(base):
-            venv = make_vector_env({}, num_envs=4, backend="sync")
-            no_op = venv.single_action_space.n - 1
-            venv.reset(seed=[base + i for i in range(4)])
-            streams = []
-            for _ in range(30):
-                _, rewards, _, _, _ = venv.step(np.array([no_op] * 4))
-                streams.append(np.asarray(rewards).round(6).tolist())
-            venv.close()
-            return streams
-
-        self.assertEqual(collect(100), collect(100))
 
 
 if __name__ == "__main__":

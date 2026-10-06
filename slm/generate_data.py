@@ -36,7 +36,8 @@ import json
 from concurrent.futures import ProcessPoolExecutor
 
 import numpy as np
-from scenarios import HOUSEHOLD_SCENARIOS, EpisodeSampler
+
+from deepqlearning.envs.financial.scenarios import HOUSEHOLD_SCENARIOS, EpisodeSampler
 
 from .prompts import (
     OUT_OF_SCOPE_DOMAINS,

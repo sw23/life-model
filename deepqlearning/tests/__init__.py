@@ -1,1 +1,1 @@
-"""Deep Q-Learning tests."""
+"""Tests for the reinforcement-learning package, mirroring its module layout."""

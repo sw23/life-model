@@ -6,17 +6,14 @@
 """Tests for the policy-analysis artifacts: they generate headlessly."""
 
 import os
-import sys
 import tempfile
 import unittest
 
 import matplotlib
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
-from agent import FinancialDQNAgent
-from analyze_policy import analyze
-from environment import FinancialLifeEnv
+from deepqlearning.algos.dqn import DQNAgent
+from deepqlearning.envs.financial.environment import FinancialLifeEnv
+from deepqlearning.evaluation.analyze_policy import analyze
 
 
 class TestAnalyzePolicy(unittest.TestCase):
@@ -25,8 +22,7 @@ class TestAnalyzePolicy(unittest.TestCase):
         self.assertEqual(matplotlib.get_backend().lower(), "agg")
 
         env = FinancialLifeEnv()
-        agent = FinancialDQNAgent(env.observation_space.shape[0], env.action_space.n, {"min_replay_size": 8})
-        agent.epsilon = 0.0
+        agent = DQNAgent(env.observation_space, env.action_space, {"min_replay_size": 8, "verbose": False})
 
         out_dir = tempfile.mkdtemp()
         manifest = analyze(agent, {}, out_dir, n_episodes=4)

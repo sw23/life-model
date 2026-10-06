@@ -33,9 +33,10 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 
 import numpy as np
-from baselines import BASELINES, PLANNER_BASELINES
-from environment import FinancialLifeEnv
-from rewards import DEFAULT_PRESET, get_reward_config
+
+from ..envs.financial.environment import FinancialLifeEnv
+from ..envs.financial.rewards import DEFAULT_PRESET, get_reward_config
+from .baselines import BASELINES, PLANNER_BASELINES
 
 # A policy maps the environment's current state to a legal flat action index.
 Policy = Callable[[FinancialLifeEnv], int]
@@ -47,11 +48,51 @@ def spawn_seeds(master_seed: int | None, n: int) -> list[int]:
     return [int(child.generate_state(1)[0]) for child in sequence.spawn(n)]
 
 
-def greedy_agent_policy(agent) -> Policy:
-    """Adapt a trained DQN agent to the ``env -> action`` policy interface (greedy, no exploration).
+def summarize_final_infos(infos: list[dict]) -> dict:
+    """Count how a set of financial episodes ended, from their terminal ``info`` dicts.
 
-    Duck-typed so this module does not import the agent (keeps evaluation dependency-light). The
-    agent only needs ``select_action(state, legal_actions, training=False)``.
+    An episode ends in exactly one of three ways: the person died of natural causes, the household
+    went bankrupt, or it stayed solvent to the horizon / maximum modeled age. Natural death wins
+    when both flags are set, since dying is what ended the episode.
+    """
+    natural_deaths = 0
+    bankruptcies = 0
+    completions = 0
+    ages = []
+    for info in infos:
+        if info.get("died_from_natural_causes"):
+            natural_deaths += 1
+        elif info.get("bankrupt"):
+            bankruptcies += 1
+        else:
+            completions += 1
+        ages.append(info.get("age", 0))
+    return {
+        "n": len(infos),
+        "natural_deaths": natural_deaths,
+        "bankruptcies": bankruptcies,
+        "successful_completions": completions,
+        "avg_age_at_end": float(np.mean(ages)) if ages else 0.0,
+    }
+
+
+def format_final_infos(infos: list[dict]) -> str:
+    """One-line rendering of :func:`summarize_final_infos`, for a trainer's evaluation printout."""
+    summary = summarize_final_infos(infos)
+    n = summary["n"]
+    return (
+        f"Eval Summary: Natural deaths: {summary['natural_deaths']}/{n}, "
+        f"Bankruptcies: {summary['bankruptcies']}/{n}, "
+        f"Successful completions: {summary['successful_completions']}/{n}, "
+        f"Avg age at end: {summary['avg_age_at_end']:.1f}"
+    )
+
+
+def greedy_agent_policy(agent) -> Policy:
+    """Adapt a trained agent to the ``env -> action`` policy interface (greedy, no exploration).
+
+    Duck-typed so this module does not import the algorithms (keeps evaluation dependency-light).
+    The agent only needs ``select_action(state, legal_actions, training=False)``.
     """
 
     def policy(env: FinancialLifeEnv) -> int:

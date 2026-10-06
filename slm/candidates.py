@@ -16,12 +16,13 @@ CI-separated superiority over the heuristics, so distilling from it would silent
 student. Candidates are therefore heuristics + the Roth/pre-tax levers only, and the label is the
 grid argmax.
 
-Imports the RL modules with bare names, so ``deepqlearning/`` must be on ``sys.path`` (the SLM
-test conftest arranges this, mirroring ``deepqlearning/tests/conftest.py``).
+Imports the RL package, so the repo root must be on ``sys.path`` (the SLM test conftest arranges
+this, mirroring ``deepqlearning/tests/conftest.py``).
 """
 
-from actions import ActionType, encode_flat_action
-from baselines import (
+from deepqlearning.envs.financial.actions import ActionType, encode_flat_action
+from deepqlearning.envs.financial.environment import FinancialLifeEnv
+from deepqlearning.evaluation.baselines import (
     _NO_ACTION,
     BaselinePolicy,
     _first_legal,
@@ -31,7 +32,6 @@ from baselines import (
     emergency_fund_first_policy,
     four_percent_drawdown_policy,
 )
-from environment import FinancialLifeEnv
 
 _MAX_ROTH_401K = encode_flat_action(ActionType.TRANSFER_BANK_TO_401K_ROTH, 1.00)
 

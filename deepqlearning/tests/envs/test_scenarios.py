@@ -5,16 +5,12 @@
 
 """Tests for domain randomization: EpisodeSampler and reset(options=...)."""
 
-import os
-import sys
 import unittest
 
 import numpy as np
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
-from environment import FinancialLifeEnv, FinancialLifeEnvGenerator
-from scenarios import HOUSEHOLD_SCENARIOS, EpisodeSampler
+from deepqlearning.envs.financial.environment import FinancialLifeEnv, FinancialLifeEnvGenerator
+from deepqlearning.envs.financial.scenarios import HOUSEHOLD_SCENARIOS, EpisodeSampler
 
 
 def _trajectory(env, seed, options=None, steps=20):

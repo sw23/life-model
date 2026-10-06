@@ -18,8 +18,9 @@ precision claims stay honest.
 """
 
 import numpy as np
-from environment import FinancialLifeEnv
-from evaluation import run_policy_episode
+
+from deepqlearning.envs.financial.environment import FinancialLifeEnv
+from deepqlearning.evaluation.protocol import run_policy_episode
 
 from .candidates import CANDIDATE_POLICIES
 from .schema import ScoredCandidate

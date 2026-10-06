@@ -18,7 +18,7 @@ Runs three advisers through the identical outcome harness on the same held-out h
 
 Usage::
 
-    PYTHONPATH=src:deepqlearning:. python slm/reports/run_eval.py
+    PYTHONPATH=src:. python slm/reports/run_eval.py
 """
 
 import json
