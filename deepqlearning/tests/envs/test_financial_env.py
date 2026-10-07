@@ -128,6 +128,27 @@ class TestSeedingDeterminism(unittest.TestCase):
         self.assertEqual(env.total_lifetime_spending, 0.0)
 
 
+class TestUnseededResetIsReproducible(unittest.TestCase):
+    """A vector env's autoreset calls reset() with no seed; the episode must still follow from the
+    env's first seed instead of drawing OS entropy for the simulation."""
+
+    @staticmethod
+    def _second_episode_return(first_seed: int) -> float:
+        env = FinancialLifeEnv()
+        env.reset(seed=first_seed)
+        env.reset()  # unseeded, like an autoreset
+        total, done = 0.0, False
+        while not done:
+            legal = env.get_legal_actions()
+            _obs, reward, terminated, truncated, _info = env.step(legal[0])
+            total += reward
+            done = terminated or truncated
+        return total
+
+    def test_same_first_seed_gives_same_later_episodes(self):
+        self.assertEqual(self._second_episode_return(7), self._second_episode_return(7))
+
+
 class TestRewardSemantics(unittest.TestCase):
     def test_bankruptcy_penalty_threshold_matches_termination(self):
         env = FinancialLifeEnv()

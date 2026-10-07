@@ -274,10 +274,13 @@ class FinancialLifeEnv(gym.Env):
             scenario_name = household["economy_scenario"]
             financial_config.apply_scenario(scenario_name, get_scenario(scenario_name))
 
-        # Create new model instance, seeded for reproducibility. RL rollouts never read the
-        # DataCollector frames, so collection is skipped for throughput.
+        # Create new model instance, seeded for reproducibility. A reset without a seed (e.g. a
+        # vector env's autoreset) derives the model seed from this env's seeded RNG; seeding the
+        # LifeModel with None would draw OS entropy and make every later episode irreproducible.
+        # RL rollouts never read the DataCollector frames, so collection is skipped for throughput.
+        model_seed = seed if seed is not None else int(self.np_random.integers(2**31 - 1))
         self.model = LifeModel(
-            start_year=self.config["start_year"], seed=seed, config=financial_config, collect_data=False
+            start_year=self.config["start_year"], seed=model_seed, config=financial_config, collect_data=False
         )
         self.family = Family(self.model)
 

@@ -243,6 +243,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--warm-start-seeds", type=int, default=20, help="Teacher episodes to roll for --warm-start-teacher"
     )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Seed Python, NumPy, PyTorch and the training environments so a run is reproducible; "
+        "output files get a _s<seed> suffix",
+    )
     return parser
 
 
@@ -279,6 +286,17 @@ def main():
     for directory in ("models", "plots", "results"):
         Path(BASE_PATH, directory).mkdir(exist_ok=True)
     run_key = f"{args.env.replace(':', '_')}_{args.algo}"
+    if args.seed is not None:
+        # Network initialization and exploration draw from these generators; the environments are
+        # seeded through the trainers' base_seed below.
+        import random
+
+        import torch
+
+        random.seed(args.seed)
+        np.random.seed(args.seed)
+        torch.manual_seed(args.seed)
+        run_key += f"_s{args.seed}"
     model_path = str(BASE_PATH / "models" / f"{run_key}.pt")
 
     # Build the environment first: the algorithm is sized from its spaces.
@@ -320,6 +338,7 @@ def main():
         print("Starting training...")
         if args.episodes:
             episode_config = {
+                "base_seed": args.seed,
                 "num_episodes": args.episodes,
                 "save_freq": 100,
                 "eval_freq": 50,
@@ -340,6 +359,7 @@ def main():
             print(f"Training results saved to {results_path}")
         else:
             vector_config = {
+                "base_seed": 0 if args.seed is None else args.seed * 1000,
                 "num_envs": args.num_envs,
                 "backend": args.backend,
                 "total_env_steps": args.total_env_steps,
