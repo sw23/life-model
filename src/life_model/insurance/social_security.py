@@ -49,14 +49,31 @@ from ..tax.income import IncomeType
 
 if TYPE_CHECKING:
     from ..config.financial_config import FinancialConfig
+    from ..economy import EconomyModel
 
 
-def get_avg_wage_index(year: int, config: "FinancialConfig | None" = None) -> float:
+def _realized_rate(economy: "EconomyModel | None", name: str, year: int, fallback: float) -> float:
+    """The economy's realized ``name`` rate for ``year`` when that year has been simulated
+    (start year through the current year), else the configured long-run ``fallback``.
+
+    Projecting with only realized rates keeps a stochastic economy from being sampled ahead of the
+    simulation (which would peek at future outcomes and reorder the shared random stream).
+    """
+    if economy is not None and economy.model.start_year <= year <= economy.model.year:
+        return economy.rate(name, year)
+    return fallback
+
+
+def get_avg_wage_index(
+    year: int, config: "FinancialConfig | None" = None, *, economy: "EconomyModel | None" = None
+) -> float:
     """Compute the average wage index for a given year
 
     Args:
         year: The year to compute the average wage index for
         config: Per-model config. Defaults to the packaged defaults.
+        economy: The model's economy. Years after the published table grow by its realized wage
+            growth; without it (or for unrealized years) by the configured long-run increase.
 
     Returns:
         The average wage index for the given year
@@ -76,19 +93,22 @@ def get_avg_wage_index(year: int, config: "FinancialConfig | None" = None) -> fl
     else:
         # Years after this range are projected
         last_index = ss_config.avg_wage_index[last_year]
-        increase_rate = ss_config.last_avg_wage_index_increase
-
-        for _ in range(last_year, year):
-            last_index *= 1 + increase_rate / 100.0
+        for projected_year in range(last_year + 1, year + 1):
+            growth = _realized_rate(economy, "wage_growth", projected_year, ss_config.last_avg_wage_index_increase)
+            last_index *= 1 + growth / 100.0
         return last_index
 
 
-def get_cost_of_living_adj(year: int, config: "FinancialConfig | None" = None) -> float:
+def get_cost_of_living_adj(
+    year: int, config: "FinancialConfig | None" = None, *, economy: "EconomyModel | None" = None
+) -> float:
     """Get the cost of living adjustment for a given year
 
     Args:
         year: The year to get the cost of living adjustment for
         config: Per-model config. Defaults to the packaged defaults.
+        economy: The model's economy. Years after the published table use its realized inflation
+            (the COLA tracks CPI-W); without it (or for unrealized years) the long-run assumption.
 
     Returns:
         The cost of living adjustment for the given year
@@ -106,16 +126,21 @@ def get_cost_of_living_adj(year: int, config: "FinancialConfig | None" = None) -
         # Years in this range are in the table
         return ss_config.cost_of_living_adj[year]
     else:
-        # Years after this range use the configured long-run assumption.
-        return ss_config.long_run_cost_of_living_adj
+        # Years after this range follow realized inflation, else the long-run assumption.
+        return _realized_rate(economy, "inflation", year, ss_config.long_run_cost_of_living_adj)
 
 
-def get_bend_points(year: int, config: "FinancialConfig | None" = None) -> tuple[float, float]:
+def get_bend_points(
+    year: int, config: "FinancialConfig | None" = None, *, economy: "EconomyModel | None" = None
+) -> tuple[float, float]:
     """Get the bend points for a given year
 
     Args:
         year: The year to get the bend points for
         config: Per-model config. Defaults to the packaged defaults.
+        economy: The model's economy. When given, bend points after the published table follow the
+            statutory rule, scaling with the average wage index two years earlier (projected with
+            the economy's realized wage growth); otherwise the configured long-run increase applies.
 
     Returns:
         A tuple containing the bend points for the given year
@@ -134,10 +159,16 @@ def get_bend_points(year: int, config: "FinancialConfig | None" = None) -> tuple
         bend_point_data = ss_config.bend_points[year]
         return (float(bend_point_data[0]), float(bend_point_data[1]))
     else:
-        # Years after this range grow the last published bend points by the configured long-run
-        # increase. A 0% increase freezes them at the last published year.
         bend_point_data = ss_config.bend_points[last_year]
         bp0, bp1 = float(bend_point_data[0]), float(bend_point_data[1])
+        if economy is not None:
+            # 42 U.S.C. 415(a)(1)(B): bend points scale with AWI(year - 2).
+            ratio = get_avg_wage_index(year - 2, config, economy=economy) / get_avg_wage_index(
+                last_year - 2, config, economy=economy
+            )
+            return (bp0 * ratio, bp1 * ratio)
+        # Without an economy, grow the last published bend points by the configured long-run
+        # increase. A 0% increase freezes them at the last published year.
         rate = ss_config.long_run_bend_point_increase / 100.0
         for _ in range(last_year, year):
             bp0 *= 1 + rate
@@ -145,7 +176,9 @@ def get_bend_points(year: int, config: "FinancialConfig | None" = None) -> tuple
         return (bp0, bp1)
 
 
-def get_qc_earnings_for_year(year: int, config: "FinancialConfig | None" = None) -> int:
+def get_qc_earnings_for_year(
+    year: int, config: "FinancialConfig | None" = None, *, economy: "EconomyModel | None" = None
+) -> int:
     """Compute the number of credits earned for a given year
 
     Args:
@@ -166,20 +199,22 @@ def get_qc_earnings_for_year(year: int, config: "FinancialConfig | None" = None)
     avg_wage_idx_1976 = ss_config.qc_avg_wage_index_1976
 
     # Calculate previous year's QC amount (rounded to nearest 10 dollars)
-    prev_year_amount = credit_amt_1978 * get_avg_wage_index(year - 3, config) / avg_wage_idx_1976
+    prev_year_amount = credit_amt_1978 * get_avg_wage_index(year - 3, config, economy=economy) / avg_wage_idx_1976
     prev_year_amount = int(round(prev_year_amount / 10.0) * 10.0)
 
     # Calculate current year's QC amount (rounded to nearest 10 dollars)
-    curr_year_amount = credit_amt_1978 * get_avg_wage_index(year - 2, config) / avg_wage_idx_1976
+    curr_year_amount = credit_amt_1978 * get_avg_wage_index(year - 2, config, economy=economy) / avg_wage_idx_1976
     curr_year_amount = int(round(curr_year_amount / 10.0) * 10.0)
 
     # Pick the larger of the two
     return max(prev_year_amount, curr_year_amount)
 
 
-def get_credits_for_year(year: int, earnings: float, config: "FinancialConfig | None" = None) -> int:
+def get_credits_for_year(
+    year: int, earnings: float, config: "FinancialConfig | None" = None, *, economy: "EconomyModel | None" = None
+) -> int:
     """Compute the number of credits earned for a given year"""
-    qc_earnings = get_qc_earnings_for_year(year, config)
+    qc_earnings = get_qc_earnings_for_year(year, config, economy=economy)
     ss_config = _fin(config).social_security
     max_credits = ss_config.max_credits_per_year
     return min(max_credits, int(earnings / qc_earnings))
@@ -235,11 +270,16 @@ class Income:
     def _repr_html_(self):
         return f"<p>{self.year}: ${self.amount}</p>"
 
-    def get_credits(self, config: "FinancialConfig | None" = None) -> int:
+    def get_credits(self, config: "FinancialConfig | None" = None, economy: "EconomyModel | None" = None) -> int:
         """Compute the number of credits earned for a given year"""
-        return get_credits_for_year(self.year, self.amount, config)
+        return get_credits_for_year(self.year, self.amount, config, economy=economy)
 
-    def get_indexed_amount(self, person_age_60_year: int, config: "FinancialConfig | None" = None) -> float:
+    def get_indexed_amount(
+        self,
+        person_age_60_year: int,
+        config: "FinancialConfig | None" = None,
+        economy: "EconomyModel | None" = None,
+    ) -> float:
         """Compute the indexed amount for a given year
 
         Args:
@@ -252,8 +292,8 @@ class Income:
         if self.year >= person_age_60_year:
             return self.amount
         else:
-            awi_at_60 = get_avg_wage_index(person_age_60_year, config)
-            return self.amount * awi_at_60 / get_avg_wage_index(self.year, config)
+            awi_at_60 = get_avg_wage_index(person_age_60_year, config, economy=economy)
+            return self.amount * awi_at_60 / get_avg_wage_index(self.year, config, economy=economy)
 
 
 class SocialSecurity(LifeModelAgent):
@@ -332,14 +372,14 @@ class SocialSecurity(LifeModelAgent):
     def get_indexed_income_history(self) -> list[float]:
         """Computes indexed earnings for a person"""
         age_60_year = self.person.get_year_at_age(60)
-        return [x.get_indexed_amount(age_60_year, self.model.config) for x in self.income_history]
+        return [x.get_indexed_amount(age_60_year, self.model.config, self.model.economy) for x in self.income_history]
 
     def get_aime(self) -> float:
         """Computes Average Indexed Monthly Earnings (AIME) for a person"""
 
         # Make sure the person has enough credits to be eligible
         config = self.model.config
-        credits_earned = sum(x.get_credits(config) for x in self.income_history)
+        credits_earned = sum(x.get_credits(config, self.model.economy) for x in self.income_history)
         if credits_earned < get_min_eligible_credits(config):
             return 0
 
@@ -398,7 +438,7 @@ class SocialSecurity(LifeModelAgent):
 
         # Apply bend points
         year_of_age_62 = self.person.get_year_at_age(62)
-        bend_points = get_bend_points(year_of_age_62, self.model.config)
+        bend_points = get_bend_points(year_of_age_62, self.model.config, economy=self.model.economy)
         pia += min(aime, bend_points[0]) * 0.9
         pia += min(max(0, aime - bend_points[0]), bend_points[1] - bend_points[0]) * 0.32
         pia += max(0, aime - bend_points[1]) * 0.15
@@ -409,7 +449,14 @@ class SocialSecurity(LifeModelAgent):
         # Apply cost of living adjustment
         for cola_year in range(year_of_age_62, current_year):
             # This rounding seems to match the SSA's rounding (truncating to nearest lower dime)
-            pia = int(pia * (1 + get_cost_of_living_adj(cola_year, self.model.config) / 100.0) * 10) / 10.0
+            pia = (
+                int(
+                    pia
+                    * (1 + get_cost_of_living_adj(cola_year, self.model.config, economy=self.model.economy) / 100.0)
+                    * 10
+                )
+                / 10.0
+            )
 
         # Apply early/delayed retirement credits
         pia = self.get_early_delayed_pia(pia)

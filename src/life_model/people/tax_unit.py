@@ -305,7 +305,7 @@ class TaxUnit:
         taxes.federal += sum(m.income.penalties for m in self.members)
         if additional_income > 0:
             allocation = self._prospective_withdrawal_allocation(additional_income)
-            taxes.federal += sum(m.early_withdrawal_penalty(allocation.get(m.unique_id, 0.0)) for m in self.members)
+            taxes.federal += sum(m.prospective_penalty(allocation.get(m.unique_id, 0.0)) for m in self.members)
         return taxes
 
     def withdraw_from_pretax_401ks(self, amount: float) -> float:
@@ -365,6 +365,19 @@ class TaxUnit:
             short_term += member_short
             remaining -= take
         return long_term, short_term
+
+    def _draw_hsa_for_medical(self, bills: float) -> None:
+        """When bills exceed the bank, first reimburse this year's medical costs from HSAs.
+
+        A qualified medical distribution is entirely tax-free, so it is the cheapest money to spend:
+        it comes before brokerage sales and pre-tax withdrawals. Bounded by the shortfall, each
+        member's medical costs, and their HSA balances. (With enough cash the HSA is left to grow.)
+        """
+        shortfall = bills - self.bank_account_balance
+        for member in self.members:
+            if shortfall <= 0:
+                break
+            shortfall -= member.reimburse_medical_from_hsas(shortfall)
 
     def _draw_from_brokerage(self, bills: float) -> None:
         """Sell taxable brokerage to cover ``bills`` + the tax the sale triggers, before any
@@ -558,6 +571,7 @@ class TaxUnit:
         # any brokerage needed to cover bills + the capital-gains tax the sale triggers before the
         # pre-tax 401k is considered. Proceeds land in the bank, so the 401k solve below naturally
         # sizes against the topped-up balance (and does nothing when brokerage already covered it).
+        self._draw_hsa_for_medical(bills)
         self._draw_from_brokerage(bills)
 
         # Net capital gains and losses once — after the brokerage sale — so brokerage gains net

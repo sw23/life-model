@@ -105,6 +105,8 @@ class Person(LifeModelAgent):
         # Per-year record of this member's share of the tax unit's AGI, stamped during
         # ``TaxUnit.settle_year``. Medicare/IRMAA reads this with a two-year lookback.
         self.agi_history: dict[int, float] = {}
+        # Medical costs reimbursed tax-free from HSAs this year (reset in post_step).
+        self.hsa_medical_reimbursed = 0.0
         # Charitable gifts above the AGI limit, carried forward as (year given, amount).
         self.charitable_carryforwards: list[tuple[int, float]] = []
         # Capital losses beyond the year's $3,000 ordinary offset, carried to future years. The
@@ -268,7 +270,21 @@ class Person(LifeModelAgent):
         (their age-capped deductibility is a documented simplification/backlog).
         """
         agents = [*self.medical_costs, *self.medicare, *self.long_term_care]
-        return sum(agent.stat_medical_costs for agent in agents)
+        # Costs reimbursed tax-free from an HSA can't also be deducted (IRC §213 / §223(f)(1)).
+        return max(0.0, sum(agent.stat_medical_costs for agent in agents) - self.hsa_medical_reimbursed)
+
+    def reimburse_medical_from_hsas(self, amount: float) -> float:
+        """Reimburse up to ``amount`` of this year's medical costs tax-free from HSAs into the bank.
+
+        Limited to the year's not-yet-reimbursed medical costs. Returns the amount reimbursed.
+        """
+        amount = min(amount, self.unreimbursed_medical_expenses)
+        if amount <= 0:
+            return 0.0
+        withdrawn = amount - self._withdraw_sequence((hsa.withdraw_medical for hsa in self.hsas), amount)
+        self.hsa_medical_reimbursed += withdrawn
+        self.receive_cash(withdrawn, source="HSA medical reimbursement")
+        return withdrawn
 
     def medical_expense_deduction_with(self, additional_income: float = 0.0) -> float:
         """Itemizable unreimbursed medical: the excess over the AGI floor (IRC §213(a)).
@@ -547,13 +563,41 @@ class Person(LifeModelAgent):
 
     @property
     def pretax_account_balance(self) -> float:
-        """Combined pre-tax balance: 401k pre-tax sub-balances plus Traditional IRAs."""
-        return sum(a.pretax_balance for a in self.all_retirement_accounts) + sum(
-            a.balance for a in self.traditional_iras
+        """Combined balance of the taxable-on-withdrawal sources settlement draws: 401k pre-tax
+        sub-balances, Traditional IRAs, and HSAs (non-medical use)."""
+        return sum(balance for balance, _penalty in self._pretax_sources())
+
+    def _pretax_sources(self) -> list[tuple[float, float]]:
+        """``(balance, penalty_rate)`` for each taxable source, in draw order: pre-tax 401ks, then
+        Traditional IRAs (10% before 59.5), then HSAs as non-medical distributions (20% before 65).
+        Every one is fully taxable as ordinary income."""
+        config = self.model.config
+        retirement_penalty = (
+            config.retirement.early_withdrawal_penalty_rate if self.age < federal_retirement_age(config) else 0.0
         )
+        hsa_config = config.accounts.hsa
+        hsa_penalty = hsa_config.non_medical_penalty_rate if self.age < hsa_config.non_medical_penalty_age else 0.0
+        return [
+            (sum(a.pretax_balance for a in self.all_retirement_accounts), retirement_penalty),
+            (sum(a.balance for a in self.traditional_iras), retirement_penalty),
+            (sum(a.balance for a in self.hsas), hsa_penalty),
+        ]
+
+    def prospective_penalty(self, amount: float) -> float:
+        """Additional tax a settlement draw of ``amount`` would incur, walking the sources in the
+        order :meth:`withdraw_from_pretax_accounts` drains them (side-effect free)."""
+        penalty = 0.0
+        remaining = amount
+        for balance, rate in self._pretax_sources():
+            if remaining <= 0:
+                break
+            take = min(remaining, balance)
+            penalty += take * rate / 100
+            remaining -= take
+        return penalty
 
     def withdraw_from_pretax_accounts(self, amount: float) -> float:
-        """Withdraw from pre-tax 401ks, then Traditional IRAs, into the bank account.
+        """Withdraw from pre-tax 401ks, then Traditional IRAs, then HSAs (non-medical), into the bank.
 
         This is the order the tax unit's settlement solver assumes when it sizes a pre-tax draw.
 
@@ -563,6 +607,8 @@ class Person(LifeModelAgent):
         withdrawn = self.withdraw_from_pretax_401ks(amount)
         if amount - withdrawn > 0:
             withdrawn += self.withdraw_from_traditional_iras(amount - withdrawn)
+        if amount - withdrawn > 0:
+            withdrawn += self.withdraw_from_hsas(amount - withdrawn)
         return withdrawn
 
     def early_withdrawal_penalty(self, amount: float) -> float:
@@ -790,7 +836,7 @@ class Person(LifeModelAgent):
         )
         # Early-withdrawal penalties are additional federal tax: those already on the ledger plus
         # the one a prospective pre-tax withdrawal of ``additional_income`` would trigger.
-        taxes.federal += self.income.penalties + self.early_withdrawal_penalty(additional_income)
+        taxes.federal += self.income.penalties + self.prospective_penalty(additional_income)
         return taxes
 
     def get_married(self, spouse: "Person", link_spouse: bool = True):
@@ -1297,6 +1343,7 @@ class Person(LifeModelAgent):
 
     def post_step(self):
         self.income.clear()
+        self.hsa_medical_reimbursed = 0.0
         self._elective_deferrals_ytd = 0.0
 
 

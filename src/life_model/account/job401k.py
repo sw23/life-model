@@ -38,7 +38,7 @@ class Job401kAccount(RetirementAccount):
         pretax_contrib_percent: float = 0,
         roth_balance: float = 0,
         roth_contrib_percent: float = 0,
-        average_growth: float = 0,
+        average_growth: float | None = None,
         company_match_percent: float = 0,
     ):
         """401k Account
@@ -49,7 +49,8 @@ class Job401kAccount(RetirementAccount):
             pretax_contrib_percent (float, optional): Pre-tax contribution percentage. Defaults to 0.
             roth_balance (float, optional): Initial roth balance of account. Defaults to 0.
             roth_contrib_percent (float, optional): Roth contribution percentage. Defaults to 0.
-            average_growth (float, optional): Average account growth every year. Defaults to 0.
+            average_growth (float, optional): Annual growth rate (percent). Defaults to None, which
+                defers to the economy's equity return each year like every other investment account.
             company_match_percent (float, optional): Percentage that company matches contributions. Defaults to 0.
         """
         # Balance is derived from pretax + roth; grow via average_growth (annual compounding).

@@ -145,3 +145,37 @@ class TestTraditionalVersusRoth(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestHsaFundsSettlement(unittest.TestCase):
+    """HSAs are a settlement source: tax-free for medical costs, else taxable as a last resort."""
+
+    def _person(self, age, hsa_balance, spending=0):
+        model = LifeModel(end_year=2026, start_year=2026, config=_fixture_config())
+        person = Person(Family(model), "P", age, 40, Spending(model, base=spending, yearly_increase=0))
+        BankAccount(person, "Bank", balance=0, interest_rate=0)
+        hsa = HealthSavingsAccount(
+            person, HSAType.INDIVIDUAL, balance=hsa_balance, growth_rate=0, employer_contribution=0
+        )
+        return model, person, hsa
+
+    def test_medical_costs_reimbursed_tax_free_when_cash_is_short(self):
+        model, person, hsa = self._person(age=50, hsa_balance=50000)
+        person.spending.add_expense(8000)
+
+        class _Medical:  # stand-in for a healthcare agent's stamped cost
+            stat_medical_costs = 8000
+
+        person.model.registries.medical_costs.register(person, _Medical())
+        model.step()
+        self.assertAlmostEqual(hsa.balance, 42000, places=2)
+        self.assertEqual(person.stat_taxes_paid, 0)  # qualified distribution: no tax, no penalty
+        self.assertEqual(person.debt, 0)
+
+    def test_non_medical_draw_is_last_resort_and_penalized_before_65(self):
+        model, person, hsa = self._person(age=50, hsa_balance=100000, spending=30000)
+        model.step()
+        self.assertEqual(person.debt, 0)
+        # Fixture: D with 10% x (D - 10k) federal + 20% x D penalty + 5% x (D - 10k) state = 30k:
+        # 0.65 D + 1,500 = 30,000 -> D = 43,846.15.
+        self.assertAlmostEqual(100000 - hsa.balance, 28500 / 0.65, places=1)
