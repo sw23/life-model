@@ -966,16 +966,9 @@ class Person(LifeModelAgent):
         return None
 
     def _settle_annuities_on_death(self, inheritor: Optional["Person"]):
-        from ..insurance.annuity import AnnuityPayoutType
-
+        """Apply each owned annuity's death terms (see :meth:`Annuity.settle_owner_death`)."""
         for annuity in list(self.model.registries.annuities.get_items(self)):
-            continues = annuity.payout_type == AnnuityPayoutType.JOINT_AND_SURVIVOR or (
-                annuity.payout_type == AnnuityPayoutType.LIFE_WITH_PERIOD_CERTAIN
-                and getattr(annuity, "remaining_period_certain_payments", 0) > 0
-            )
-            if not (continues and inheritor is not None):
-                # Life-only, or no beneficiary to continue payments: the annuity stops.
-                annuity.is_active = False
+            annuity.settle_owner_death(inheritor)
 
     def _charge_end_of_life_costs(self):
         """Charge funeral and final-year medical costs against the estate.

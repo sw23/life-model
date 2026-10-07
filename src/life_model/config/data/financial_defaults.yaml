@@ -551,6 +551,9 @@ insurance:
     cash_value_premium_fraction_first_year: 0.3  # fraction of premium to cash value in year 1
     cash_value_premium_fraction_later: 0.6  # fraction of premium to cash value after year 1
     loan_to_value_ratio: 0.9  # max fraction of available cash value borrowable
+    # Term-life premium multiplier by attained age (interpolated). Modeling assumption shaped like
+    # level-term rate curves; not a published table, so no vintage stamp.
+    term_age_multipliers: {20: 1.0, 25: 1.1, 30: 1.3, 35: 1.6, 40: 2.1, 45: 2.8, 50: 3.8, 55: 5.2, 60: 7.1, 65: 10.0, 70: 15.0, 75: 23.0, 80: 35.0, 85: 55.0}
   annuity:
     default_interest_rate: 3.0  # percentage
     default_payout_start_age: 65

@@ -457,6 +457,27 @@ class LifeInsuranceConfig(StrictModel):
     cash_value_premium_fraction_later: float = Field(ge=0, le=1)
     # Maximum fraction of available cash value that can be borrowed against.
     loan_to_value_ratio: float = Field(ge=0, le=1)
+    # Default term-life premium multipliers by attained age (premium = base x multiplier, linearly
+    # interpolated between ages). A modeling assumption shaped like level-term rate curves, not a
+    # published table.
+    term_age_multipliers: dict[int, float] = Field(
+        default_factory=lambda: {
+            20: 1.0,
+            25: 1.1,
+            30: 1.3,
+            35: 1.6,
+            40: 2.1,
+            45: 2.8,
+            50: 3.8,
+            55: 5.2,
+            60: 7.1,
+            65: 10.0,
+            70: 15.0,
+            75: 23.0,
+            80: 35.0,
+            85: 55.0,
+        }
+    )
 
 
 class AnnuityConfig(StrictModel):

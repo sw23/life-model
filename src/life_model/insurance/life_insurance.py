@@ -99,22 +99,7 @@ class LifeInsurance(LifeModelAgent):
             # Default age-based multipliers for term life
             self.premium_increase_type = PremiumIncreaseType.AGE_BASED
             self.yearly_increase_rate = 0.0
-            self.age_multipliers = {
-                20: 1.0,
-                25: 1.1,
-                30: 1.3,
-                35: 1.6,
-                40: 2.1,
-                45: 2.8,
-                50: 3.8,
-                55: 5.2,
-                60: 7.1,
-                65: 10.0,
-                70: 15.0,
-                75: 23.0,
-                80: 35.0,
-                85: 55.0,
-            }
+            self.age_multipliers = dict(self.model.config.insurance.life.term_age_multipliers)
 
         # Policy state
         self.is_active = True
