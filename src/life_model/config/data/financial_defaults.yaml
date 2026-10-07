@@ -219,8 +219,8 @@ retirement:
     base: 24500
     catch_up_age: 50
     catch_up_amount: 8000
-    # 415(c) overall annual-additions limit (employee + employer contributions per plan).
-    # confidence: estimate; verify against IRS Notice 2025-67 before relying on it.
+    # 415(c)(1)(A) overall annual-additions limit (employee + employer contributions per plan).
+    # vintage: 2026, source: IRS Notice 2025-67 (IRB 2025-49), up from $70,000 in 2025
     annual_additions_limit: 72000
   ira:
     contribution_limit: 7500

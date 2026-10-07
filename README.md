@@ -58,12 +58,12 @@ This package supports a comprehensive range of financial modeling components:
 
 ### Accounts & Investments
 - [x] **Bank Accounts** - Checking/savings with interest
-- [x] **401k Plans** - Traditional and Roth with employer matching
-- [x] **Traditional & Roth IRAs** - Individual retirement accounts
-- [x] **HSA** - Health Savings Accounts
+- [x] **401k Plans** - Traditional and Roth with employer matching, one elective limit across jobs, 415(c) cap
+- [x] **Traditional & Roth IRAs** - Deductible Traditional IRAs with RMDs; Roth IRAs drawn basis-first; one shared limit
+- [x] **HSA** - Deductible, invested, family tier and catch-up; non-medical withdrawals taxed
 - [x] **529 Plans** - Education savings accounts
 - [x] **Brokerage Accounts** - Taxable investment accounts
-- [x] **Pensions** - Defined benefit retirement plans with COLA and survivor elections
+- [x] **Pensions** - Defined benefit retirement plans with vesting, accrual formula, COLA and survivor elections
 - [x] **Trust Accounts** - Revocable and irrevocable trusts for estate planning
 
 ### Insurance & Protection
@@ -84,7 +84,8 @@ This package supports a comprehensive range of financial modeling components:
 - [x] **State Taxes** - Per-state tax packs (progressive brackets or flat rate, retirement/Social Security exemptions, SALT integration) with per-person residency
 - [x] **FICA Taxes** - Social Security and Medicare taxes
 - [x] **Capital Gains** - Short-term and long-term capital gains
-- [x] **Required Minimum Distributions (RMDs)** - Retirement account distributions
+- [x] **Required Minimum Distributions (RMDs)** - From 401ks and Traditional IRAs
+- [x] **Early-Withdrawal Penalties** - 10% before 59½ on pre-tax and non-qualified Roth IRA draws; 20% on non-medical HSA draws before 65
 
 ### Housing & Lifestyle
 - [x] **Home Ownership** - Purchase, mortgage, appreciation, and selling

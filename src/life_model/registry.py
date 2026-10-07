@@ -7,6 +7,13 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Generic, TypeVar
 
 if TYPE_CHECKING:
+    # Referenced only as string type arguments in the registry bases below, which ruff does not count
+    # as uses but mypy needs resolved.
+    from .account.brokerage import BrokerageAccount  # noqa: F401
+    from .account.hsa import HealthSavingsAccount  # noqa: F401
+    from .account.job401k import Job401kAccount  # noqa: F401
+    from .account.roth_IRA import RothIRA  # noqa: F401
+    from .account.traditional_IRA import TraditionalIRA  # noqa: F401
     from .people.person import Person
 
 T = TypeVar("T")
