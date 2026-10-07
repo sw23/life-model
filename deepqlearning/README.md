@@ -305,9 +305,24 @@ Every seed reaches the heuristics' level at 0% ruin and 100% success; two of fiv
 the best heuristic on every condition, seed 2 by +3.1 on held-out seeds and +4.5 in the recession.
 The others converge to heuristic-like play. **No seed separates its 95% CI from the best
 heuristic's at n=50, so the strict verdict stays `False`** — the "beats every heuristic with
-separated CIs" claim will only be made here once a committed report shows it. Larger evaluation
-budgets (`--protocol-n-eval`) or a longer budget without early stopping (seed 2 is the one run that
-used its full budget) are the levers to try.
+separated CIs" claim is made only for the PPO report below. Larger evaluation budgets
+(`--protocol-n-eval`) or a longer budget without early stopping (seed 2 is the one run that used its
+full budget) are the levers to try for DQN.
+
+### PPO report and the algorithm sweep
+
+`reports/retirement_security_ppo/` holds the PPO run with the same settings and seed convention
+(`--algo ppo ... --seed 0`, early-stopped at 130k steps). **It is the first committed run with the
+strict verdict `True`:** it beats every planner heuristic on all three conditions — train 35.74 vs
+30.08 (95% CI [32.88, 38.28] vs [27.99, 31.96]), held-out seeds 32.05 vs 27.55, recession 34.62 vs
+29.75 — at 0% ruin. Its policy contributes early, raises spending once wealthy, and draws down in
+retirement, ending with less wealth than the hoarding heuristics but more lifetime utility.
+
+Not every seed gets there. `reports/algorithm_sweep.txt` lists every run (DQN 5 seeds, REINFORCE
+and PPO 3 each): one of three PPO seeds is CI-separated and two of three beat the heuristics on
+average; REINFORCE converges to heuristic-level play on all three. An independent
+Stable-Baselines3 cross-check (`reports/sb3_cross_check/`, no action masking) lands in the same
+place: SB3 PPO 32.72 with no ruin, SB3 DQN 28.02 with 12% ruin.
 
 ## 🏋️ Training-stack features
 
@@ -339,6 +354,7 @@ python sb3/cross_check.py --algo dqn --timesteps 200000
 ```bash
 python -m deepqlearning.evaluation.analyze_policy \
     --checkpoint models/financial_basic_dqn.pt --reward-preset retirement_security
+# any algorithm: --algo ppo --checkpoint models/financial_basic_ppo_s0.pt
 ```
 
 It writes a **policy heatmap** (dominant action over an age × wealth-decile grid), a

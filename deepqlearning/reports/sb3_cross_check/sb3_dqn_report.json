@@ -1,0 +1,284 @@
+{
+  "reward_preset": "retirement_security",
+  "reward_config": {
+    "name": "retirement_security",
+    "crra_gamma": 2.0,
+    "consumption_weight": 1.0,
+    "consumption_scale": 10000.0,
+    "consumption_floor": 1000.0,
+    "bequest_weight": 1.0,
+    "bequest_gamma": 1.5,
+    "bequest_scale": 100000.0,
+    "ruin_penalty": -50.0
+  },
+  "master_seed": 12345,
+  "n_eval": 50,
+  "ci": 0.95,
+  "held_out_scenario": "recession",
+  "conditions": {
+    "train": {
+      "do_nothing": {
+        "n": 50,
+        "mean_return": 14.600504698285524,
+        "ci_low": 8.781222381888144,
+        "ci_high": 20.245629504837876,
+        "ruin_rate": 0.28,
+        "success_rate": 0.68,
+        "net_worth_p10": -33825.192898436784,
+        "net_worth_p50": 75206.62732408909,
+        "net_worth_p90": 270926.4949529585,
+        "mean_steps": 50.26
+      },
+      "always_max_401k": {
+        "n": 50,
+        "mean_return": 30.10441730394327,
+        "ci_low": 28.020325145486286,
+        "ci_high": 31.989184383094194,
+        "ruin_rate": 0.0,
+        "success_rate": 1.0,
+        "net_worth_p10": 806192.2753378425,
+        "net_worth_p50": 1184851.1921010814,
+        "net_worth_p90": 1347435.1300693797,
+        "mean_steps": 51.86
+      },
+      "save_25_percent": {
+        "n": 50,
+        "mean_return": 30.018582302151263,
+        "ci_low": 27.93996502582704,
+        "ci_high": 31.87523349677346,
+        "ruin_rate": 0.0,
+        "success_rate": 0.98,
+        "net_worth_p10": 169449.37311058101,
+        "net_worth_p50": 979185.5322270552,
+        "net_worth_p90": 2974439.3369995626,
+        "mean_steps": 51.86
+      },
+      "contribution_waterfall": {
+        "n": 50,
+        "mean_return": 29.83074763936435,
+        "ci_low": 27.777570026127375,
+        "ci_high": 31.66147802789934,
+        "ruin_rate": 0.0,
+        "success_rate": 0.98,
+        "net_worth_p10": 121620.26078000471,
+        "net_worth_p50": 508761.45049178886,
+        "net_worth_p90": 1450731.1886307432,
+        "mean_steps": 51.86
+      },
+      "age_glide": {
+        "n": 50,
+        "mean_return": 30.06048865982101,
+        "ci_low": 27.97377068270596,
+        "ci_high": 31.944779288220058,
+        "ruin_rate": 0.0,
+        "success_rate": 1.0,
+        "net_worth_p10": 703771.4657905493,
+        "net_worth_p50": 1003352.202626258,
+        "net_worth_p90": 1148338.7808121946,
+        "mean_steps": 51.86
+      },
+      "four_percent_drawdown": {
+        "n": 50,
+        "mean_return": 30.077864024603556,
+        "ci_low": 27.994695914458116,
+        "ci_high": 31.960193482474107,
+        "ruin_rate": 0.0,
+        "success_rate": 1.0,
+        "net_worth_p10": 768245.4295577727,
+        "net_worth_p50": 1041762.6035280614,
+        "net_worth_p90": 1218787.4558239342,
+        "mean_steps": 51.86
+      },
+      "emergency_fund_first": {
+        "n": 50,
+        "mean_return": 29.818703622141687,
+        "ci_low": 27.76504615160461,
+        "ci_high": 31.648044780345522,
+        "ruin_rate": 0.0,
+        "success_rate": 0.98,
+        "net_worth_p10": 103445.13817161978,
+        "net_worth_p50": 498654.58395667456,
+        "net_worth_p90": 1381121.6657173282,
+        "mean_steps": 51.86
+      }
+    },
+    "held_out_seeds": {
+      "do_nothing": {
+        "n": 50,
+        "mean_return": 12.340503382891304,
+        "ci_low": 7.085731095063104,
+        "ci_high": 17.39436815982266,
+        "ruin_rate": 0.28,
+        "success_rate": 0.66,
+        "net_worth_p10": -37042.01575925533,
+        "net_worth_p50": 130868.68617101591,
+        "net_worth_p90": 351037.6082359685,
+        "mean_steps": 45.5
+      },
+      "always_max_401k": {
+        "n": 50,
+        "mean_return": 27.575812660595908,
+        "ci_low": 25.25895240865939,
+        "ci_high": 29.77030075148526,
+        "ruin_rate": 0.0,
+        "success_rate": 1.0,
+        "net_worth_p10": 515072.58618361654,
+        "net_worth_p50": 1092364.3090153097,
+        "net_worth_p90": 1267380.2460866382,
+        "mean_steps": 46.7
+      },
+      "save_25_percent": {
+        "n": 50,
+        "mean_return": 27.56847654338342,
+        "ci_low": 25.204506469579623,
+        "ci_high": 29.772660002355614,
+        "ruin_rate": 0.0,
+        "success_rate": 1.0,
+        "net_worth_p10": 242443.0321036167,
+        "net_worth_p50": 1080073.818831989,
+        "net_worth_p90": 3698252.8364381855,
+        "mean_steps": 46.7
+      },
+      "contribution_waterfall": {
+        "n": 50,
+        "mean_return": 27.415472315080166,
+        "ci_low": 25.080074754690592,
+        "ci_high": 29.605213295927307,
+        "ruin_rate": 0.0,
+        "success_rate": 1.0,
+        "net_worth_p10": 156443.87571462098,
+        "net_worth_p50": 547819.9507410568,
+        "net_worth_p90": 1512586.9374151195,
+        "mean_steps": 46.7
+      },
+      "age_glide": {
+        "n": 50,
+        "mean_return": 27.530504084963958,
+        "ci_low": 25.21349981098458,
+        "ci_high": 29.725362478295082,
+        "ruin_rate": 0.0,
+        "success_rate": 1.0,
+        "net_worth_p10": 441037.773844257,
+        "net_worth_p50": 953058.7589957379,
+        "net_worth_p90": 1067883.6867223273,
+        "mean_steps": 46.7
+      },
+      "four_percent_drawdown": {
+        "n": 50,
+        "mean_return": 27.551467323919933,
+        "ci_low": 25.237293635086075,
+        "ci_high": 29.74282483556258,
+        "ruin_rate": 0.0,
+        "success_rate": 1.0,
+        "net_worth_p10": 491233.4862016919,
+        "net_worth_p50": 988759.9268475882,
+        "net_worth_p90": 1143718.7533488518,
+        "mean_steps": 46.7
+      },
+      "emergency_fund_first": {
+        "n": 50,
+        "mean_return": 27.40530124043079,
+        "ci_low": 25.070647113982865,
+        "ci_high": 29.593752861355075,
+        "ruin_rate": 0.0,
+        "success_rate": 1.0,
+        "net_worth_p10": 151819.24862793088,
+        "net_worth_p50": 537495.528986061,
+        "net_worth_p90": 1444072.9412221846,
+        "mean_steps": 46.7
+      }
+    },
+    "held_out_scenario": {
+      "do_nothing": {
+        "n": 50,
+        "mean_return": 13.242698222603977,
+        "ci_low": 7.550663750860895,
+        "ci_high": 18.850913303436926,
+        "ruin_rate": 0.3,
+        "success_rate": 0.7,
+        "net_worth_p10": -30978.343915317717,
+        "net_worth_p50": 139956.69974474874,
+        "net_worth_p90": 366755.26669262844,
+        "mean_steps": 47.78
+      },
+      "always_max_401k": {
+        "n": 50,
+        "mean_return": 29.770040373465026,
+        "ci_low": 27.763263847012805,
+        "ci_high": 31.689624971053068,
+        "ruin_rate": 0.0,
+        "success_rate": 1.0,
+        "net_worth_p10": 601174.4856244037,
+        "net_worth_p50": 1232968.4693594752,
+        "net_worth_p90": 1285024.6658845702,
+        "mean_steps": 49.58
+      },
+      "save_25_percent": {
+        "n": 50,
+        "mean_return": 29.822927229277024,
+        "ci_low": 27.806863490707244,
+        "ci_high": 31.755718452041695,
+        "ruin_rate": 0.0,
+        "success_rate": 1.0,
+        "net_worth_p10": 581166.3857896116,
+        "net_worth_p50": 1492800.216451978,
+        "net_worth_p90": 2309627.0873745233,
+        "mean_steps": 49.58
+      },
+      "contribution_waterfall": {
+        "n": 50,
+        "mean_return": 29.63051944574381,
+        "ci_low": 27.6355277615207,
+        "ci_high": 31.543599136395155,
+        "ruin_rate": 0.0,
+        "success_rate": 1.0,
+        "net_worth_p10": 433939.9204399163,
+        "net_worth_p50": 669673.074961832,
+        "net_worth_p90": 812021.5847250338,
+        "mean_steps": 49.58
+      },
+      "age_glide": {
+        "n": 50,
+        "mean_return": 29.725733722174922,
+        "ci_low": 27.717368908300113,
+        "ci_high": 31.646008653729435,
+        "ruin_rate": 0.0,
+        "success_rate": 1.0,
+        "net_worth_p10": 517790.0604318448,
+        "net_worth_p50": 1033755.4352188115,
+        "net_worth_p90": 1096755.370912521,
+        "mean_steps": 49.58
+      },
+      "four_percent_drawdown": {
+        "n": 50,
+        "mean_return": 29.745131557023072,
+        "ci_low": 27.739392509260295,
+        "ci_high": 31.662446653844523,
+        "ruin_rate": 0.0,
+        "success_rate": 1.0,
+        "net_worth_p10": 573183.7248929369,
+        "net_worth_p50": 1083891.735411059,
+        "net_worth_p90": 1171916.5161767623,
+        "mean_steps": 49.58
+      },
+      "emergency_fund_first": {
+        "n": 50,
+        "mean_return": 29.620970802760745,
+        "ci_low": 27.62677108752205,
+        "ci_high": 31.533322712670035,
+        "ruin_rate": 0.0,
+        "success_rate": 1.0,
+        "net_worth_p10": 426862.6419292534,
+        "net_worth_p50": 652648.6166283479,
+        "net_worth_p90": 775492.8049677288,
+        "mean_steps": 49.58
+      }
+    }
+  },
+  "sb3_dqn": {
+    "timesteps": 200000,
+    "mean_return_train": 28.01894278982642,
+    "ruin_rate": 0.12,
+    "success_rate": 0.88
+  }
+}

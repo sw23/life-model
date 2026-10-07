@@ -36,8 +36,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 import matplotlib.pyplot as plt
 import numpy as np
 
+from deepqlearning.algos import ALGORITHMS
 from deepqlearning.algos.base import Algorithm
-from deepqlearning.algos.dqn import DQNAgent
 from deepqlearning.envs.financial.actions import ActionType
 from deepqlearning.envs.financial.environment import OBS_VERSION, FinancialLifeEnv
 from deepqlearning.training.rollout import rollout
@@ -233,6 +233,7 @@ def analyze(agent: Algorithm, env_config: dict | None, out_dir: str, n_episodes:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate policy-analysis artifacts for a checkpoint")
     parser.add_argument("--checkpoint", required=True, help="Path to a trained .pt checkpoint")
+    parser.add_argument("--algo", default="dqn", choices=sorted(ALGORITHMS), help="Algorithm that wrote the checkpoint")
     parser.add_argument("--reward-preset", default="retirement_security")
     parser.add_argument("--out-dir", default=None, help="Output dir (default: next to the checkpoint)")
     parser.add_argument("--episodes", type=int, default=50)
@@ -240,7 +241,10 @@ def main() -> None:
 
     env_config = {"reward_preset": args.reward_preset}
     env = FinancialLifeEnv(env_config)
-    agent = DQNAgent(env.observation_space, env.action_space, {"obs_version": OBS_VERSION})
+    algo_config = {"num_envs": 1} if args.algo == "ppo" else {}
+    if args.algo == "dqn":
+        algo_config["obs_version"] = OBS_VERSION
+    agent = ALGORITHMS[args.algo](env.observation_space, env.action_space, algo_config)
     agent.load(args.checkpoint)
     out_dir = args.out_dir or os.path.join(os.path.dirname(os.path.abspath(args.checkpoint)), "analysis")
     analyze(agent, env_config, out_dir, n_episodes=args.episodes)

@@ -1,0 +1,450 @@
+[
+  {
+    "age": 26,
+    "net_worth": 21273.473109537546,
+    "action_type": "transfer_bank_to_401k_pretax",
+    "action_amount": 10000.0,
+    "reward": 0.6627926457841438,
+    "is_retired": false
+  },
+  {
+    "age": 27,
+    "net_worth": 33825.258490111904,
+    "action_type": "transfer_bank_to_401k_pretax",
+    "action_amount": 10673.473109537545,
+    "reward": 0.6584368539616456,
+    "is_retired": false
+  },
+  {
+    "age": 28,
+    "net_worth": 47788.629059270344,
+    "action_type": "transfer_bank_to_401k_pretax",
+    "action_amount": 11275.376994002107,
+    "reward": 0.658597796883149,
+    "is_retired": false
+  },
+  {
+    "age": 29,
+    "net_worth": 63222.71830292589,
+    "action_type": "transfer_bank_to_401k_pretax",
+    "action_amount": 11933.855059751726,
+    "reward": 0.6613546707069904,
+    "is_retired": false
+  },
+  {
+    "age": 30,
+    "net_worth": 80219.15141859105,
+    "action_type": "transfer_bank_to_401k_pretax",
+    "action_amount": 12566.77150009933,
+    "reward": 0.6490378988895349,
+    "is_retired": false
+  },
+  {
+    "age": 31,
+    "net_worth": 99052.76307796765,
+    "action_type": "transfer_bank_to_401k_pretax",
+    "action_amount": 13203.0700174896,
+    "reward": 0.6456494102884767,
+    "is_retired": false
+  },
+  {
+    "age": 32,
+    "net_worth": 119771.51759544172,
+    "action_type": "transfer_bank_to_401k_pretax",
+    "action_amount": 14020.462574261137,
+    "reward": 0.6339913109979691,
+    "is_retired": false
+  },
+  {
+    "age": 33,
+    "net_worth": 142602.01477159373,
+    "action_type": "transfer_bank_to_401k_pretax",
+    "action_amount": 14775.588732796003,
+    "reward": 0.6294607566199781,
+    "is_retired": false
+  },
+  {
+    "age": 34,
+    "net_worth": 167620.54332385008,
+    "action_type": "transfer_bank_to_401k_pretax",
+    "action_amount": 15644.206120425524,
+    "reward": 0.6278362518779234,
+    "is_retired": false
+  },
+  {
+    "age": 35,
+    "net_worth": 194966.1998646968,
+    "action_type": "transfer_bank_to_401k_pretax",
+    "action_amount": 16462.407665960734,
+    "reward": 0.6198751130631432,
+    "is_retired": false
+  },
+  {
+    "age": 36,
+    "net_worth": 224884.88889822786,
+    "action_type": "transfer_bank_to_401k_pretax",
+    "action_amount": 17288.42394141571,
+    "reward": 0.6178260347257052,
+    "is_retired": false
+  },
+  {
+    "age": 37,
+    "net_worth": 257493.55557846144,
+    "action_type": "transfer_bank_to_401k_pretax",
+    "action_amount": 18220.717041649234,
+    "reward": 0.6158272174685302,
+    "is_retired": false
+  },
+  {
+    "age": 38,
+    "net_worth": 292983.53362496453,
+    "action_type": "transfer_bank_to_401k_pretax",
+    "action_amount": 19115.573346339923,
+    "reward": 0.6094629407173517,
+    "is_retired": false
+  },
+  {
+    "age": 39,
+    "net_worth": 331619.0126835065,
+    "action_type": "transfer_bank_to_401k_pretax",
+    "action_amount": 20040.364711795388,
+    "reward": 0.6105183463464054,
+    "is_retired": false
+  },
+  {
+    "age": 40,
+    "net_worth": 373534.4125146185,
+    "action_type": "transfer_bank_to_401k_pretax",
+    "action_amount": 21056.46704104407,
+    "reward": 0.6119529625468112,
+    "is_retired": false
+  },
+  {
+    "age": 41,
+    "net_worth": 418959.7957738989,
+    "action_type": "transfer_bank_to_401k_pretax",
+    "action_amount": 22018.259070101612,
+    "reward": 0.6022630987660949,
+    "is_retired": false
+  },
+  {
+    "age": 42,
+    "net_worth": 468278.90464309265,
+    "action_type": "transfer_bank_to_401k_pretax",
+    "action_amount": 23013.318508403314,
+    "reward": 0.5956733503940901,
+    "is_retired": false
+  },
+  {
+    "age": 43,
+    "net_worth": 521731.89174772555,
+    "action_type": "transfer_bank_to_401k_pretax",
+    "action_amount": 24181.52112275982,
+    "reward": 0.5948123937667784,
+    "is_retired": false
+  },
+  {
+    "age": 44,
+    "net_worth": 579536.3911314025,
+    "action_type": "transfer_bank_to_401k_pretax",
+    "action_amount": 25356.252826047337,
+    "reward": 0.5987397050428568,
+    "is_retired": false
+  },
+  {
+    "age": 45,
+    "net_worth": 641924.3987040827,
+    "action_type": "transfer_bank_to_401k_pretax",
+    "action_amount": 26500.585878813366,
+    "reward": 0.5947101845417357,
+    "is_retired": false
+  },
+  {
+    "age": 46,
+    "net_worth": 709329.1035027087,
+    "action_type": "transfer_bank_to_401k_pretax",
+    "action_amount": 27615.824104796036,
+    "reward": 0.5959647005573574,
+    "is_retired": false
+  },
+  {
+    "age": 47,
+    "net_worth": 782016.1036949902,
+    "action_type": "transfer_bank_to_401k_pretax",
+    "action_amount": 28889.240876381034,
+    "reward": 0.5862810910751175,
+    "is_retired": false
+  },
+  {
+    "age": 48,
+    "net_worth": 860510.5762639599,
+    "action_type": "transfer_bank_to_401k_pretax",
+    "action_amount": 30127.25398211891,
+    "reward": 0.5859896125826274,
+    "is_retired": false
+  },
+  {
+    "age": 49,
+    "net_worth": 945070.1921094594,
+    "action_type": "transfer_bank_to_401k_pretax",
+    "action_amount": 31573.50634727035,
+    "reward": 0.576997681738633,
+    "is_retired": false
+  },
+  {
+    "age": 50,
+    "net_worth": 1036241.9702594816,
+    "action_type": "transfer_bank_to_401k_pretax",
+    "action_amount": 32928.98126966187,
+    "reward": 0.5804127784168002,
+    "is_retired": false
+  },
+  {
+    "age": 51,
+    "net_worth": 1129915.1540542399,
+    "action_type": "increase_spending",
+    "action_amount": 0.0,
+    "reward": 0.5906471916008782,
+    "is_retired": false
+  },
+  {
+    "age": 52,
+    "net_worth": 1226331.020166525,
+    "action_type": "increase_spending",
+    "action_amount": 0.0,
+    "reward": 0.6126657454458662,
+    "is_retired": false
+  },
+  {
+    "age": 53,
+    "net_worth": 1325313.9290112676,
+    "action_type": "increase_spending",
+    "action_amount": 0.0,
+    "reward": 0.6305261062594463,
+    "is_retired": false
+  },
+  {
+    "age": 54,
+    "net_worth": 1426938.0763228568,
+    "action_type": "increase_spending",
+    "action_amount": 0.0,
+    "reward": 0.636913634188779,
+    "is_retired": false
+  },
+  {
+    "age": 55,
+    "net_worth": 1531430.7171642936,
+    "action_type": "increase_spending",
+    "action_amount": 0.0,
+    "reward": 0.6559497917675272,
+    "is_retired": false
+  },
+  {
+    "age": 56,
+    "net_worth": 1638543.2049227273,
+    "action_type": "increase_spending",
+    "action_amount": 0.0,
+    "reward": 0.6675721435681042,
+    "is_retired": false
+  },
+  {
+    "age": 57,
+    "net_worth": 1748422.3224696652,
+    "action_type": "increase_spending",
+    "action_amount": 0.0,
+    "reward": 0.6815289126184516,
+    "is_retired": false
+  },
+  {
+    "age": 58,
+    "net_worth": 1861002.5257178834,
+    "action_type": "increase_spending",
+    "action_amount": 0.0,
+    "reward": 0.6952102973907921,
+    "is_retired": false
+  },
+  {
+    "age": 59,
+    "net_worth": 1976258.384275263,
+    "action_type": "increase_spending",
+    "action_amount": 0.0,
+    "reward": 0.711812194714341,
+    "is_retired": false
+  },
+  {
+    "age": 60,
+    "net_worth": 2094086.365899827,
+    "action_type": "increase_spending",
+    "action_amount": 0.0,
+    "reward": 0.7249172080035524,
+    "is_retired": false
+  },
+  {
+    "age": 61,
+    "net_worth": 2214521.629855631,
+    "action_type": "increase_spending",
+    "action_amount": 0.0,
+    "reward": 0.7274499419390448,
+    "is_retired": false
+  },
+  {
+    "age": 62,
+    "net_worth": 2337844.2720828243,
+    "action_type": "increase_spending",
+    "action_amount": 0.0,
+    "reward": 0.735805310972801,
+    "is_retired": false
+  },
+  {
+    "age": 63,
+    "net_worth": 2463831.7583666164,
+    "action_type": "increase_spending",
+    "action_amount": 0.0,
+    "reward": 0.7446461591471911,
+    "is_retired": false
+  },
+  {
+    "age": 64,
+    "net_worth": 2592405.490543609,
+    "action_type": "increase_spending",
+    "action_amount": 0.0,
+    "reward": 0.7501703622394797,
+    "is_retired": false
+  },
+  {
+    "age": 65,
+    "net_worth": 2723601.1263420046,
+    "action_type": "increase_spending",
+    "action_amount": 0.0,
+    "reward": 0.7625963326827255,
+    "is_retired": true
+  },
+  {
+    "age": 66,
+    "net_worth": 2733616.038201592,
+    "action_type": "transfer_bank_to_401k_roth",
+    "action_amount": 50000.0,
+    "reward": 0.7654439949185132,
+    "is_retired": true
+  },
+  {
+    "age": 67,
+    "net_worth": 2748707.672036538,
+    "action_type": "withdraw_401k_roth",
+    "action_amount": 5300.0,
+    "reward": 0.7598731809899242,
+    "is_retired": true
+  },
+  {
+    "age": 68,
+    "net_worth": 2752603.2614179915,
+    "action_type": "withdraw_401k_roth",
+    "action_amount": 5056.200000000001,
+    "reward": 0.7607388948099146,
+    "is_retired": true
+  },
+  {
+    "age": 69,
+    "net_worth": 2753308.551512835,
+    "action_type": "withdraw_401k_roth",
+    "action_amount": 4823.614790823004,
+    "reward": 0.7620932468866898,
+    "is_retired": true
+  },
+  {
+    "age": 70,
+    "net_worth": 2750646.627117569,
+    "action_type": "withdraw_401k_roth",
+    "action_amount": 4601.728500947632,
+    "reward": 0.7554170675628757,
+    "is_retired": true
+  },
+  {
+    "age": 71,
+    "net_worth": 2744788.4787486633,
+    "action_type": "withdraw_401k_roth",
+    "action_amount": 4390.048980142997,
+    "reward": 0.7577887089024108,
+    "is_retired": true
+  },
+  {
+    "age": 72,
+    "net_worth": 2734980.9288797406,
+    "action_type": "withdraw_401k_roth",
+    "action_amount": 4188.106717259564,
+    "reward": 0.7567297905625984,
+    "is_retired": true
+  },
+  {
+    "age": 73,
+    "net_worth": 2721116.766543154,
+    "action_type": "withdraw_401k_roth",
+    "action_amount": 3995.453798168821,
+    "reward": 0.7558692499622429,
+    "is_retired": true
+  },
+  {
+    "age": 74,
+    "net_worth": 2702867.38196488,
+    "action_type": "withdraw_401k_roth",
+    "action_amount": 3811.6629131570307,
+    "reward": 0.7532835963795562,
+    "is_retired": true
+  },
+  {
+    "age": 75,
+    "net_worth": 2673508.4704423663,
+    "action_type": "withdraw_401k_roth",
+    "action_amount": 3636.326408644629,
+    "reward": 0.7506658235329914,
+    "is_retired": true
+  },
+  {
+    "age": 76,
+    "net_worth": 2638635.020184893,
+    "action_type": "withdraw_401k_roth",
+    "action_amount": 3469.0553869827972,
+    "reward": 0.7510377732124353,
+    "is_retired": true
+  },
+  {
+    "age": 77,
+    "net_worth": 2597689.7478123433,
+    "action_type": "withdraw_401k_roth",
+    "action_amount": 3309.4788322463,
+    "reward": 0.7528039123987179,
+    "is_retired": true
+  },
+  {
+    "age": 78,
+    "net_worth": 2550117.9139256654,
+    "action_type": "withdraw_401k_roth",
+    "action_amount": 3157.2427988761265,
+    "reward": 0.7523638687358427,
+    "is_retired": true
+  },
+  {
+    "age": 79,
+    "net_worth": 2497519.3746632845,
+    "action_type": "withdraw_401k_roth",
+    "action_amount": 15060.04811451801,
+    "reward": 0.7519102338163541,
+    "is_retired": true
+  },
+  {
+    "age": 80,
+    "net_worth": 2436443.128216586,
+    "action_type": "withdraw_401k_roth",
+    "action_amount": 7981.825470919769,
+    "reward": 0.7532538829319964,
+    "is_retired": true
+  },
+  {
+    "age": 81,
+    "net_worth": 0.0,
+    "action_type": "withdraw_401k_roth",
+    "action_amount": 4230.367465407939,
+    "reward": 1.937589425182654,
+    "is_retired": true
+  }
+]

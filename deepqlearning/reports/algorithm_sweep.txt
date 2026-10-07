@@ -1,0 +1,22 @@
+Algorithm sweep — financial:basic, retirement_security, 200k-step budget with early stopping,
+protocol n=50 per condition (master_seed 12345). Mean return: agent vs best planner heuristic.
+Seed 0 is the committed seed for each algorithm (a convention fixed before the first, DQN, sweep ran).
+verdict: INTELLIGENT = beats every planner heuristic on the train condition with a non-overlapping
+95% CI; 'beats mean' = beats every heuristic on the train condition, CIs overlap; '-' = does not.
+
+algo       seed   steps            train   held-out seeds        recession  verdict
+dqn           0   95000   30.04 vs 30.08   27.55 vs 27.55   29.75 vs 29.75  -
+dqn           1   65000   32.27 vs 30.08   28.68 vs 27.55   31.91 vs 29.75  beats mean
+dqn           2  200000   30.76 vs 30.08   30.64 vs 27.55   34.25 vs 29.75  beats mean
+dqn           3   55000   30.26 vs 30.08   27.71 vs 27.55   29.81 vs 29.75  beats mean
+dqn           4   55000   29.99 vs 30.08   27.55 vs 27.55   29.80 vs 29.75  -
+reinforce     0   45000   29.89 vs 30.08   27.51 vs 27.55   29.74 vs 29.75  -
+reinforce     1   55000   30.05 vs 30.08   27.59 vs 27.55   29.85 vs 29.75  -
+reinforce     2   45000   30.12 vs 30.08   27.59 vs 27.55   29.78 vs 29.75  beats mean
+ppo           0  130000   35.74 vs 30.08   32.05 vs 27.55   34.62 vs 29.75  INTELLIGENT
+ppo           1   80000   30.00 vs 30.08   27.69 vs 27.55   29.73 vs 29.75  -
+ppo           2  120000   33.24 vs 30.08   30.14 vs 27.55   31.34 vs 29.75  beats mean
+
+Stable-Baselines3 cross-check (sb3_cross_check/, seed 0, 200k timesteps, no action masking; train condition only):
+  SB3 DQN: mean 28.02 vs best heuristic 30.08, ruin 0.12
+  SB3 PPO: mean 32.72 vs best heuristic 30.08, ruin 0.00
