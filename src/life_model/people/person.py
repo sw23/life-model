@@ -562,6 +562,14 @@ class Person(LifeModelAgent):
         return withdrawn
 
     @property
+    def spendable_resources(self) -> float:
+        """Everything year-end settlement can draw to pay this person's bills: bank, brokerage,
+        pre-tax 401k/IRA/HSA, Roth 401k and Roth IRA balances."""
+        roth_401k = sum(a.roth_balance for a in self.all_retirement_accounts)
+        roth_ira = sum(a.balance for a in self.roth_iras)
+        return self.bank_account_balance + self.brokerage_balance + self.pretax_account_balance + roth_401k + roth_ira
+
+    @property
     def pretax_account_balance(self) -> float:
         """Combined balance of the taxable-on-withdrawal sources settlement draws: 401k pre-tax
         sub-balances, Traditional IRAs, and HSAs (non-medical use)."""

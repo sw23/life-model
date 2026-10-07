@@ -150,15 +150,26 @@ class LifeInsurance(LifeModelAgent):
         return False
 
     def make_premium_payment(self) -> bool:
-        """Attempt to pay the yearly premium. Returns True if successful."""
+        """Charge the yearly premium. Returns True if the policy stays paid up.
+
+        An affordable premium goes through the tax unit's bill path (``spending.add_expense``), so it
+        is paid at year-end settlement like every other bill and can be funded by a sized
+        retirement withdrawal rather than lapsing a cash-poor retiree's policy. "Affordable" means
+        the household's settlement-drawable resources cover it. Otherwise a whole-life policy pays
+        from cash value; failing that the premium is missed (nothing is partially paid) and the
+        policy lapses after ``max_missed_payments`` misses.
+        """
         if not self.is_active or self.is_lapsed or self.is_term_expired:
             return False
 
         yearly_cost = self.yearly_premium
-
-        # Try to pay from bank accounts first
-        remaining_balance = self.person.deduct_from_bank_accounts(yearly_cost)
-        amount_paid = yearly_cost - remaining_balance
+        household = [self.person]
+        if self.person.spouse is not None and not self.person.spouse.is_deceased:
+            household.append(self.person.spouse)
+        amount_paid = 0.0
+        if sum(member.spendable_resources for member in household) >= yearly_cost:
+            self.person.spending.add_expense(yearly_cost)
+            amount_paid = yearly_cost
 
         if amount_paid >= yearly_cost:
             self.total_premiums_paid += yearly_cost
@@ -178,10 +189,6 @@ class LifeInsurance(LifeModelAgent):
 
             return True
         else:
-            # Partial payment or no payment from bank
-            if amount_paid > 0:
-                self.total_premiums_paid += amount_paid
-
             # For whole life, can use cash value to pay premiums
             if self.policy_type == LifeInsuranceType.WHOLE and self.available_cash_value > 0:
                 remaining_premium = yearly_cost - amount_paid
