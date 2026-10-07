@@ -30,24 +30,22 @@ def _fixture_config() -> FinancialConfig:
 
 
 def _fixture_config_with_hoh() -> FinancialConfig:
-    """Fixture config plus explicit round-number head-of-household data."""
+    """Fixture config plus explicit round-number head-of-household data.
+
+    Set in both the static section and the fixture's year table, since simulated years read their
+    brackets and deductions from the year table.
+    """
     cfg = _fixture_config()
-    cfg.apply_scenario(
-        "_hoh",
-        {
-            "tax": {
-                "federal": {
-                    "standard_deduction": {"head_of_household": 15000},
-                    "tax_brackets": {
-                        "head_of_household": [
-                            [0, 60000, 10],
-                            [60001, float("inf"), 25],
-                        ]
-                    },
-                }
-            }
+    hoh = {
+        "standard_deduction": {"head_of_household": 15000},
+        "tax_brackets": {
+            "head_of_household": [
+                [0, 60000, 10],
+                [60001, float("inf"), 25],
+            ]
         },
-    )
+    }
+    cfg.apply_scenario("_hoh", {"tax": {"federal": hoh}, "tax_years": {2020: hoh}})
     return cfg
 
 

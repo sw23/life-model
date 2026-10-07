@@ -62,7 +62,7 @@ class HealthSavingsAccount(TaxAdvantagedAccount):
         """
         if self._contribution_limit_override is not None:
             return self._contribution_limit_override
-        hsa_config = self.person.model.config.accounts.hsa
+        hsa_config = self.model.year_config.accounts.hsa
         base = (
             hsa_config.contribution_limit_family if self.hsa_type == HSAType.FAMILY else hsa_config.contribution_limit
         )

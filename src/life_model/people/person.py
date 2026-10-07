@@ -347,13 +347,13 @@ class Person(LifeModelAgent):
         ``additional_income`` (a prospective 401k withdrawal being sized) raises the medical-expense
         floor so sized taxes equal settled taxes.
         """
-        standard_deduction = get_federal_standard_deduction(self.filing_status, self.model.config)
+        standard_deduction = get_federal_standard_deduction(self.filing_status, self.model.year_config)
         return max(standard_deduction, self.itemized_deductions(state_income_tax_paid, additional_income))
 
     @property
     def federal_deductions(self) -> float:
         """Get federal deductions - use greater of standard or itemized (property-only SALT)"""
-        standard_deduction = get_federal_standard_deduction(self.filing_status, self.model.config)
+        standard_deduction = get_federal_standard_deduction(self.filing_status, self.model.year_config)
         itemized_deductions = self.total_itemized_deductions
         return max(standard_deduction, itemized_deductions)
 
@@ -371,7 +371,7 @@ class Person(LifeModelAgent):
         """Remaining 402(g) elective-deferral room this year, aggregated across all jobs."""
         from ..limits import job_401k_contrib_limit
 
-        limit = job_401k_contrib_limit(self.age, self.model.config)
+        limit = job_401k_contrib_limit(self.age, self.model.year_config)
         return max(0.0, limit - self._elective_deferrals_ytd)
 
     def record_401k_elective_deferral(self, amount: float) -> None:
@@ -738,14 +738,16 @@ class Person(LifeModelAgent):
         totals[IncomeType.PRETAX_DISTRIBUTION] = totals.get(IncomeType.PRETAX_DISTRIBUTION, 0.0) + additional_income
         total_income = ordinary_income + self.preferential_income
         legacy_agi = max(total_income - self.federal_deductions_with_state_tax(0.0, additional_income), 0)
-        state_tax = state_income_tax_for_unit(totals, self.filing_status, self.state, legacy_agi, self.model.config)
+        state_tax = state_income_tax_for_unit(
+            totals, self.filing_status, self.state, legacy_agi, self.model.year_config
+        )
         deductions = self.federal_deductions_with_state_tax(state_tax, additional_income)
         taxes = compute_taxes(
             ordinary_income,
             deductions,
             self.filing_status,
             [self.fica_wages],
-            self.model.config,
+            self.model.year_config,
             state_tax=state_tax,
             preferential_income=self.preferential_income,
             net_investment_income=self.income.net_investment_income,

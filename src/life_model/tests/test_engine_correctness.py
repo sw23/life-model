@@ -19,7 +19,7 @@ from ..people.family import Family
 from ..people.person import Person, Spending
 from ..people.tax_unit import TaxUnit
 from ..tax.federal import FilingStatus, get_federal_standard_deduction
-from ..tax.tax import get_income_taxes_due
+from ..tax.tax import compute_taxes, get_income_taxes_due
 from ..work.job import Job, Salary
 
 
@@ -221,17 +221,21 @@ class TestMixedFilingUnits(unittest.TestCase):
 
         model.step()
 
+        # The 2020 return uses that year's tax parameters (year table, projection rule).
+        year_config = model.config_for_year(2020)
         tax_a = get_income_taxes_due(
             60000,
-            get_federal_standard_deduction(FilingStatus.SINGLE, model.config),
+            get_federal_standard_deduction(FilingStatus.SINGLE, year_config),
             FilingStatus.SINGLE,
-            model.config,
+            year_config,
         ).total
-        tax_bc = get_income_taxes_due(
+        # The couple's FICA is per person (each spouse's own wage base), not on the combined wage.
+        tax_bc = compute_taxes(
             150000,
-            get_federal_standard_deduction(FilingStatus.MARRIED_FILING_JOINTLY, model.config),
+            get_federal_standard_deduction(FilingStatus.MARRIED_FILING_JOINTLY, year_config),
             FilingStatus.MARRIED_FILING_JOINTLY,
-            model.config,
+            [70000, 80000],
+            year_config,
         ).total
 
         total_taxes = sum(p.stat_taxes_paid for p in (a, b, c))

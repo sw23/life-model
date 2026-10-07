@@ -148,6 +148,8 @@ dependents:
     head_of_household: 200000
   ctc_phaseout_rate: 5.0
 
+# Frozen: every simulated year uses the 2020 entry below, so tests can pin exact dollar values.
+tax_years_projection: frozen
 tax_years:
   2020:
     standard_deduction:

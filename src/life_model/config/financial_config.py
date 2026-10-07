@@ -22,6 +22,7 @@ from .models import (
     InsuranceConfig,
     RetirementConfig,
     SocialSecurityConfig,
+    TaxBracketsConfig,
     TaxConfig,
     YearlyTaxParameters,
 )
@@ -168,6 +169,73 @@ class FinancialConfig:
             params = self._project_tax_params(params, inflation_factor)
         return params
 
+    def year_view(self, params: YearlyTaxParameters, inflation_factor: float = 1.0) -> "FinancialConfig":
+        """A config for one simulated year: this config with ``params``' values swapped in.
+
+        The year-table values replace the static ones everywhere the model reads them: the federal
+        standard deduction and brackets, the Social Security wage base (FICA and AIME share it), and
+        the 401k, IRA and HSA contribution limits. Preferential capital-gains brackets are not in the
+        year table; past the last published year they are scaled by ``inflation_factor`` (the same
+        factor the table values were projected with), otherwise left as configured.
+
+        The view is a shallow copy that shares every other sub-model with this config, so it must be
+        treated as read-only.
+        """
+        model = self._model
+        federal = model.tax.federal
+        capital_gains = federal.capital_gains
+        if inflation_factor and inflation_factor != 1.0:
+            capital_gains = TaxBracketsConfig(
+                **{
+                    status: [self._scale_bracket(b, inflation_factor) for b in rows]
+                    for status, rows in capital_gains.model_dump().items()
+                    if rows is not None
+                }
+            )
+        tax = model.tax.model_copy(
+            update={
+                "federal": federal.model_copy(
+                    update={
+                        "standard_deduction": params.standard_deduction,
+                        "tax_brackets": params.tax_brackets,
+                        "capital_gains": capital_gains,
+                    }
+                ),
+                "fica": model.tax.fica.model_copy(update={"social_security_max_income": params.ss_wage_base}),
+            }
+        )
+        retirement = model.retirement.model_copy(
+            update={
+                "job_401k_contrib_limit": model.retirement.job_401k_contrib_limit.model_copy(
+                    update={"base": params.limit_401k_base, "catch_up_amount": params.limit_401k_catch_up}
+                ),
+                "ira": model.retirement.ira.model_copy(update={"contribution_limit": params.limit_ira}),
+            }
+        )
+        accounts = model.accounts.model_copy(
+            update={
+                "hsa": model.accounts.hsa.model_copy(
+                    update={
+                        "contribution_limit": params.limit_hsa_self,
+                        "contribution_limit_family": params.limit_hsa_family,
+                    }
+                )
+            }
+        )
+        view = object.__new__(FinancialConfig)
+        view.config_file = self.config_file
+        view.scenario = self.scenario
+        view._model = model.model_copy(update={"tax": tax, "retirement": retirement, "accounts": accounts})
+        return view
+
+    @staticmethod
+    def _scale_bracket(bracket, factor: float) -> list:
+        """Scale a ``[lower, upper, rate]`` bracket's thresholds by ``factor`` (nearest $50)."""
+        low, high, rate = bracket
+        low = 0 if low == 0 else int(round(low * factor / 50) * 50)
+        high = high if high == float("inf") else int(round(high * factor / 50) * 50)
+        return [low, high, rate]
+
     @staticmethod
     def _project_tax_params(params: YearlyTaxParameters, factor: float) -> "YearlyTaxParameters":
         """Index dollar-denominated tax parameters by ``factor`` with IRS-style rounding.
@@ -269,11 +337,49 @@ class FinancialConfig:
         creating a dead branch.
         """
         merged = self._deep_merge(self._model.model_dump(), overrides)
+        self._propagate_to_tax_years(merged, overrides)
         try:
             self._model = FinancialConfigModel(**merged)
         except ValidationError as e:
             raise ValueError(f"Invalid scenario '{scenario}': {e}")
         self.scenario = scenario
+
+    #: Static config paths whose values the per-year table also carries, mapped to the year-entry
+    #: field. Simulated years read the year table, so a scenario that overrides one of these static
+    #: values is applied to every year entry too (see :meth:`_propagate_to_tax_years`).
+    _YEAR_TABLE_FIELDS = (
+        (("tax", "federal", "standard_deduction"), "standard_deduction"),
+        (("tax", "federal", "tax_brackets"), "tax_brackets"),
+        (("tax", "fica", "social_security_max_income"), "ss_wage_base"),
+        (("retirement", "job_401k_contrib_limit", "base"), "limit_401k_base"),
+        (("retirement", "job_401k_contrib_limit", "catch_up_amount"), "limit_401k_catch_up"),
+        (("retirement", "ira", "contribution_limit"), "limit_ira"),
+        (("accounts", "hsa", "contribution_limit"), "limit_hsa_self"),
+        (("accounts", "hsa", "contribution_limit_family"), "limit_hsa_family"),
+    )
+
+    @classmethod
+    def _propagate_to_tax_years(cls, merged: dict[str, Any], overrides: dict[str, Any]) -> None:
+        """Copy scenario overrides of static year-table fields into every ``tax_years`` entry.
+
+        Without this, a scenario such as ``high_tax`` that sets ``tax.federal.tax_brackets`` would
+        change only the static fallback while every simulated year kept the published table. Dict
+        values (per-filing-status deductions and brackets) are merged per status, so overriding
+        ``single`` alone leaves the other statuses' year values intact. Explicit ``tax_years``
+        entries in the same scenario were merged first and are overwritten by the static override.
+        """
+        for path, field in cls._YEAR_TABLE_FIELDS:
+            node: Any = overrides
+            for key in path:
+                if not isinstance(node, dict) or key not in node:
+                    break
+                node = node[key]
+            else:
+                for entry in merged.get("tax_years", {}).values():
+                    if isinstance(node, dict) and isinstance(entry.get(field), dict):
+                        entry[field] = cls._deep_merge(entry[field], node)
+                    else:
+                        entry[field] = node
 
     @staticmethod
     def _deep_merge(base: dict[str, Any], overrides: dict[str, Any]) -> dict[str, Any]:

@@ -186,6 +186,7 @@ class LifeModel(mesa.Model):
 
             config.apply_scenario(scenario, get_scenario(scenario))
         self.config = config
+        self._year_configs: dict[tuple[int, int], FinancialConfig] = {}
 
         # Initialize registries
         self.registries = ModelRegistries()
@@ -307,13 +308,41 @@ class LifeModel(mesa.Model):
         ``year`` (so a 50-year simulation doesn't apply frozen present-day brackets in 2050).
         Years within the published table are returned unchanged.
         """
+        return self.config.tax_year(year, inflation_factor=self._tax_projection_factor(year))
+
+    def _tax_projection_factor(self, year: int) -> float:
+        """Cumulative realized inflation from the last published tax year to ``year`` (1.0 if the
+        year is published, earlier, or the config freezes unpublished years)."""
         published_years = self.config.model.tax_years
         last_published = max(published_years) if published_years else year
+        if year <= last_published or self.config.model.tax_years_projection == "frozen":
+            return 1.0
         factor = 1.0
-        if year > last_published:
-            for y in range(last_published, year):
-                factor *= 1 + self.economy.inflation(y) / 100
-        return self.config.tax_year(year, inflation_factor=factor)
+        for y in range(last_published, year):
+            factor *= 1 + self.economy.inflation(y) / 100
+        return factor
+
+    def config_for_year(self, year: int) -> FinancialConfig:
+        """This model's config with ``year``'s tax parameters and contribution limits in effect.
+
+        Built from :meth:`tax_params_for_year` (published values, else the projection rule) and
+        cached per year. Tax and contribution-limit code reads this instead of the static config so
+        a multi-decade run applies each year's brackets, deductions, wage base and limits.
+        """
+        # Keyed on the underlying validated model too: applying a scenario replaces it, which must
+        # invalidate views built from the old values.
+        key = (year, id(self.config.model))
+        cached = self._year_configs.get(key)
+        if cached is None:
+            factor = self._tax_projection_factor(year)
+            cached = self.config.year_view(self.config.tax_year(year, inflation_factor=factor), factor)
+            self._year_configs[key] = cached
+        return cached
+
+    @property
+    def year_config(self) -> FinancialConfig:
+        """:meth:`config_for_year` for the current simulated year."""
+        return self.config_for_year(self.year)
 
     def run(self):
         """Run the simulation over the inclusive year range ``[start_year, end_year]``.

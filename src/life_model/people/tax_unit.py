@@ -49,7 +49,8 @@ class TaxUnit:
             raise ValueError("TaxUnit requires at least one member")
         self.members = members
         self.filing_status = members[0].filing_status
-        self.config = members[0].model.config
+        # The year's tax parameters (brackets, deductions, wage base) for this settlement.
+        self.config = members[0].model.year_config
         # A tax unit files in a single state — the head's. No part-year/multi-state.
         self.state = members[0].state
         self._warn_if_mixed_states()

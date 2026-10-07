@@ -42,7 +42,7 @@ class RothIRA(TaxAdvantagedAccount):
     def annual_contribution_limit(self) -> float:
         if self._contribution_limit_override is not None:
             return self._contribution_limit_override
-        return self.person.model.config.retirement.ira.contribution_limit
+        return self.model.year_config.retirement.ira.contribution_limit
 
     def withdraw(self, amount: float) -> float:
         """Withdraw contribution basis first (always tax-free), then earnings.

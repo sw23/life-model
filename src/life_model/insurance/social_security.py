@@ -319,8 +319,9 @@ class SocialSecurity(LifeModelAgent):
             self.income_history.append(income_obj)
 
         # Cap income at THAT year's Social Security wage base, not a single frozen value applied
-        # to every year.
-        max_income = self.model.config.tax_year(income_obj.year).ss_wage_base
+        # to every year. Read from the same per-year config FICA uses, so the payroll-tax base and
+        # the AIME base are one source (including inflation-projected future years).
+        max_income = self.model.config_for_year(income_obj.year).tax.fica.social_security_max_income
         income_obj.amount = min(income_obj.amount, max_income)
 
     @property

@@ -38,7 +38,10 @@ class TestAGIHistory(unittest.TestCase):
         person = _make_person(model, age=40)
         person.income.add(IncomeType.ORDINARY, 100000)
         model.step()
-        deductions = person.federal_deductions
+        # The 2026 return used 2026's standard deduction (the model year has since advanced).
+        from ..tax.federal import FilingStatus, get_federal_standard_deduction
+
+        deductions = get_federal_standard_deduction(FilingStatus.SINGLE, model.config_for_year(2026))
         self.assertIn(2026, person.agi_history)
         self.assertAlmostEqual(person.agi_history[2026], 100000 - deductions, places=2)
 

@@ -71,7 +71,7 @@ class TraditionalIRA(TaxAdvantagedAccount):
     def annual_contribution_limit(self) -> float:
         if self._contribution_limit_override is not None:
             return self._contribution_limit_override
-        return self.person.model.config.retirement.ira.contribution_limit
+        return self.model.year_config.retirement.ira.contribution_limit
 
     def _repr_html_(self):
         desc = "<ul>"

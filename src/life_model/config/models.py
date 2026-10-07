@@ -775,3 +775,6 @@ class FinancialConfigModel(StrictModel):
     dependents: DependentsConfig = Field(default_factory=DependentsConfig)
     equity_comp: EquityCompConfig = Field(default_factory=EquityCompConfig)
     tax_years: dict[int, YearlyTaxParameters]
+    # How simulated years after the last published ``tax_years`` entry are treated: indexed by the
+    # economy's realized inflation (IRS-style rounding), or frozen at the last published values.
+    tax_years_projection: Literal["inflation_indexed", "frozen"] = "inflation_indexed"
