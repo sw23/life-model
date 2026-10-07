@@ -101,8 +101,9 @@ class TestMedicalDeduction(unittest.TestCase):
         self.assertGreater(with_med.stat_taxes_paid, 0)
         self.assertLess(with_med.stat_taxes_paid, without.stat_taxes_paid)
 
-    def test_agi_history_reflects_medical_deduction(self):
-        """Recorded AGI is reduced by the itemized medical deduction (consistent with returns)."""
+    def test_agi_history_is_not_reduced_by_itemized_medical(self):
+        """Recorded AGI is before itemized deductions: the medical deduction is itemized, so it is
+        taken after AGI (Form 1040 line 12), and IRMAA reads MAGI off this history."""
         from ..config.financial_config import FinancialConfig
 
         cfg = FinancialConfig()
@@ -121,8 +122,9 @@ class TestMedicalDeduction(unittest.TestCase):
         MedicalCosts(person)
         person.income.add(IncomeType.ORDINARY, 100000)
         model.step()
-        # AGI = 100,000 - itemized (32,500 medical) = 67,500.
-        self.assertAlmostEqual(person.agi_history[2026], 100000 - 32500, places=2)
+        # The 32,500 medical deduction lowers taxable income, not AGI.
+        self.assertAlmostEqual(person.agi_history[2026], 100000, places=2)
+        self.assertGreater(person.stat_itemized_deductions, 32500)
 
 
 class TestWithdrawalSizingWithMedicalDeduction(unittest.TestCase):

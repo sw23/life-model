@@ -33,17 +33,13 @@ def _make_person(model, age, balance=5_000_000):
 
 class TestAGIHistory(unittest.TestCase):
     def test_settle_year_records_agi(self):
-        """TaxUnit.settle_year records the unit's AGI (income - deductions, floored at 0)."""
+        """TaxUnit.settle_year records the unit's AGI: income before the standard/itemized deduction."""
         model = LifeModel(start_year=2026, end_year=2027)
         person = _make_person(model, age=40)
         person.income.add(IncomeType.ORDINARY, 100000)
         model.step()
-        # The 2026 return used 2026's standard deduction (the model year has since advanced).
-        from ..tax.federal import FilingStatus, get_federal_standard_deduction
-
-        deductions = get_federal_standard_deduction(FilingStatus.SINGLE, model.config_for_year(2026))
         self.assertIn(2026, person.agi_history)
-        self.assertAlmostEqual(person.agi_history[2026], 100000 - deductions, places=2)
+        self.assertAlmostEqual(person.agi_history[2026], 100000, places=2)
 
     def test_agi_floored_at_zero(self):
         """AGI never goes negative when deductions exceed income."""

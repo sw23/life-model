@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 from ..model import round_money
 from ..tax.credits import child_tax_credit
+from ..tax.deductions import deductible_charity, senior_deduction, settle_charitable_carryforwards
 from ..tax.federal import FilingStatus, get_federal_standard_deduction
 from ..tax.income import IncomeType
 from ..tax.state import state_income_tax_for_unit
@@ -168,6 +169,14 @@ class TaxUnit:
 
         With both arguments 0 this is the plain standard-vs-itemized comparison.
         """
+        standard_deduction, itemized = self._deduction_choice(additional_income, state_income_tax_paid)
+        agi = self.agi(additional_income)
+        year = self.members[0].model.year
+        senior = senior_deduction(self.members, self.filing_status, agi, year, self.config)
+        return max(standard_deduction, itemized) + senior
+
+    def _deduction_choice(self, additional_income: float = 0.0, state_income_tax_paid: float = 0.0):
+        """``(standard, itemized)`` for the return; itemized includes charity capped at its AGI limit."""
         standard_deduction = get_federal_standard_deduction(self.filing_status, self.config)
         if self.filing_status == FilingStatus.MARRIED_FILING_SEPARATELY:
             standard_deduction = self.members[0].standard_deduction
@@ -176,8 +185,14 @@ class TaxUnit:
         for index, member in enumerate(self.members):
             member_income = allocation[member.unique_id] if allocation else 0.0
             member_state_tax = state_income_tax_paid if index == 0 else 0.0
-            itemized += member.itemized_deductions(member_state_tax, member_income)
-        return max(standard_deduction, itemized)
+            itemized += member.itemized_deductions(member_state_tax, member_income, include_charitable=False)
+        itemized += deductible_charity(self.members, self.agi(additional_income), self.config)
+        return standard_deduction, itemized
+
+    def agi(self, additional_income: float = 0.0) -> float:
+        """The return's adjusted gross income: ordinary income (already net of above-the-line
+        deductions) plus preferential income, with an optional prospective ordinary amount."""
+        return max(self.taxable_income + self.preferential_income + additional_income, 0.0)
 
     @property
     def num_qualifying_children(self) -> int:
@@ -556,14 +571,18 @@ class TaxUnit:
         # Record this year's AGI on every member. Each member records the AGI of the
         # return they filed — the unit's full AGI, not a per-member split — because Medicare/IRMAA
         # later compares the return's MAGI against filing-status thresholds with a two-year
-        # lookback. Recorded after withdrawal solving so 401k distributions are included.
-        # Preferential income is excluded from ``taxable_income`` (it has its own rate schedule) but
-        # is fully part of AGI — leaving it out here would understate MAGI and silently under-charge
-        # the IRMAA surcharges Medicare reads off this history.
-        agi = max(self.taxable_income + self.preferential_income - self.federal_deductions, 0.0)
+        # lookback. Recorded after withdrawal solving so 401k distributions are included. AGI is
+        # gross income less above-the-line adjustments only: the standard/itemized deductions come
+        # after AGI, so subtracting them (as this once did) understated MAGI and the surcharges.
+        agi = self.agi()
         year = self.members[0].model.year
         for member in self.members:
             member.agi_history[year] = agi
+
+        # Charity above the AGI limit carries forward; consume/record carryforwards exactly once.
+        standard_deduction, itemized = self._deduction_choice(0.0, taxes.state)
+        settle_charitable_carryforwards(self.members, agi, year, self.config)
+        itemized_claimed = itemized if itemized > standard_deduction else 0.0
 
         # Pay everything from the combined accounts exactly once; a shortfall becomes new debt.
         # Refundable credits can make the net due negative (a refund): deposit it instead of
@@ -577,6 +596,8 @@ class TaxUnit:
         self.members[0].debt += shortfall
 
         self._record_stats(taxes, spending_by_member, housing_by_member, interest_by_member)
+        # Which deduction the return took: the itemized amount, or 0 when it took the standard one.
+        self.members[0].stat_itemized_deductions = itemized_claimed
 
     def _solve_withdrawals_and_taxes(self, bills: float) -> TaxesDue:
         """Withdraw enough pre-tax money (401k, then Traditional IRA) to cover bills + the taxes
@@ -633,6 +654,7 @@ class TaxUnit:
             member.stat_taxes_paid_medicare = 0.0
             member.stat_taxes_paid_niit = 0.0
             member.stat_capital_gains = 0.0
+            member.stat_itemized_deductions = 0.0
 
         for member in self.members:
             totals = member.income.totals_by_type()

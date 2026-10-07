@@ -145,6 +145,7 @@ class LifeModel(mesa.Model):
         MoneyStat("stat_capital_gains", "Capital Gains"),  # Capital gains realized in a year
         MoneyStat("stat_stock_vested", "Stock Vested"),  # Value of stock compensation vesting in a year
         MoneyStat("stat_stock_unvested", "Stock Unvested"),  # Value of unvested stock grants at year end
+        MoneyStat("stat_itemized_deductions", "Itemized Deductions"),  # Itemized deductions claimed (0 = standard)
     ]
 
     def __init__(

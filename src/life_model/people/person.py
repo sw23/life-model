@@ -11,6 +11,7 @@ from ..model import Event, LifeModel, LifeModelAgent
 from ..services.debt_service import DebtService
 from ..services.payment_service import PaymentService
 from ..services.tax_calculation_service import TaxCalculationService
+from ..tax.deductions import deductible_charity, senior_deduction
 from ..tax.federal import FilingStatus, get_federal_standard_deduction
 from ..tax.income import IncomeLedger, IncomeType
 from ..tax.state import state_income_tax_for_unit
@@ -40,6 +41,7 @@ class Person(LifeModelAgent):
             "stat_interest_paid",
             "stat_ss_income",
             "stat_capital_gains",
+            "stat_itemized_deductions",
         }
     )
 
@@ -103,6 +105,8 @@ class Person(LifeModelAgent):
         # Per-year record of this member's share of the tax unit's AGI, stamped during
         # ``TaxUnit.settle_year``. Medicare/IRMAA reads this with a two-year lookback.
         self.agi_history: dict[int, float] = {}
+        # Charitable gifts above the AGI limit, carried forward as (year given, amount).
+        self.charitable_carryforwards: list[tuple[int, float]] = []
         # Capital losses beyond the year's $3,000 ordinary offset, carried to future years. The
         # income ledger is cleared every post_step and tax units are rebuilt every year, so the
         # person is the only durable home for it.
@@ -292,7 +296,9 @@ class Person(LifeModelAgent):
         """Itemizable unreimbursed medical with no prospective income (see the ``_with`` method)."""
         return self.medical_expense_deduction_with(0.0)
 
-    def itemized_deductions(self, state_income_tax_paid: float = 0.0, additional_income: float = 0.0) -> float:
+    def itemized_deductions(
+        self, state_income_tax_paid: float = 0.0, additional_income: float = 0.0, *, include_charitable: bool = True
+    ) -> float:
         """Calculate total itemized deductions.
 
         Includes:
@@ -305,8 +311,11 @@ class Person(LifeModelAgent):
         - Unreimbursed medical expenses above the 7.5%-of-income floor;
           ``additional_income`` (a prospective 401k withdrawal being sized) raises that floor so
           sized taxes equal settled taxes.
+
+        ``include_charitable=False`` leaves charity out so a return can add it back capped at its AGI
+        limit (see :mod:`life_model.tax.deductions`).
         """
-        itemized = self.charitable_deductions
+        itemized = self.charitable_deductions if include_charitable else 0.0
         itemized += self.medical_expense_deduction_with(additional_income)
 
         federal = self.model.config.tax.federal
@@ -349,12 +358,21 @@ class Person(LifeModelAgent):
         ``additional_income`` (a prospective 401k withdrawal being sized) raises the medical-expense
         floor so sized taxes equal settled taxes.
         """
-        return max(self.standard_deduction, self.itemized_deductions(state_income_tax_paid, additional_income))
+        agi = self.agi(additional_income)
+        itemized = self.itemized_deductions(state_income_tax_paid, additional_income, include_charitable=False)
+        itemized += deductible_charity([self], agi, self.model.year_config)
+        senior = senior_deduction([self], self.filing_status, agi, self.model.year, self.model.year_config)
+        return max(self.standard_deduction, itemized) + senior
+
+    def agi(self, additional_income: float = 0.0) -> float:
+        """Adjusted gross income on this person's own return (ordinary income is already net of
+        above-the-line deductions), with an optional prospective ordinary amount."""
+        return max(self.taxable_income + self.preferential_income + additional_income, 0.0)
 
     @property
     def federal_deductions(self) -> float:
         """Get federal deductions - use greater of standard or itemized (property-only SALT)"""
-        return max(self.standard_deduction, self.total_itemized_deductions)
+        return self.federal_deductions_with_state_tax(0.0)
 
     @property
     def standard_deduction(self) -> float:

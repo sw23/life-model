@@ -72,6 +72,20 @@ tax:
     # vintage: 2026, source: IRC §163(h)(3) (TCJA acquisition-debt limit); §164(b)(6) SALT cap (OBBBA)
     mortgage_interest_debt_limit: 750000
     salt_deduction_cap: 40000
+    # vintage: statutory, source: OBBBA §70103 (IRC §151(d)(5)(C)), tax years 2025-2028
+    senior_deduction:
+      amount: 6000
+      age: 65
+      first_year: 2025
+      last_year: 2028
+      phaseout_rate: 6.0
+      phaseout_start_single: 75000
+      phaseout_start_married_filing_jointly: 150000
+    # vintage: statutory, source: IRC §170(b)(1)(G) (60% cash limit, permanent under OBBBA),
+    # §170(d)(1) five-year carryover
+    charitable:
+      cash_agi_limit_percent: 60.0
+      carryforward_years: 5
     # vintage: 2026, source: IRC §2010 unified credit (post-OBBBA ~$15M); §2001(c) top estate-tax rate 40%
     estate_tax_exemption: 15000000
     estate_tax_rate: 40.0  # percentage

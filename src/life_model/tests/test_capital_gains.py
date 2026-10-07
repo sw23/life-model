@@ -347,8 +347,8 @@ class TestAgiIncludesGains(unittest.TestCase):
 
         TaxUnit([person]).settle_year()
 
-        # $150k of total income less the $10k fixture standard deduction.
-        self.assertAlmostEqual(person.agi_history[2020], 140000.0, places=2)
+        # AGI is all $150k: the standard deduction comes after AGI (Form 1040 line 11 vs 12).
+        self.assertAlmostEqual(person.agi_history[2020], 150000.0, places=2)
 
 
 class TestBasisStepUpAtDeath(unittest.TestCase):

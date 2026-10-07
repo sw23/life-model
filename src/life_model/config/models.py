@@ -80,6 +80,32 @@ def _default_capital_gains_brackets() -> "TaxBracketsConfig":
     )
 
 
+class SeniorDeductionConfig(StrictModel):
+    """OBBBA's temporary deduction for people 65 and older (taken whether or not one itemizes).
+
+    Each eligible individual gets ``amount``, reduced by ``phaseout_rate`` percent of the return's
+    MAGI above the filing-status threshold. Married couples must file jointly to claim it.
+    """
+
+    # vintage: statutory, source: OBBBA §70103 (IRC §151(d)(5)(C)); tax years 2025-2028
+    amount: int = Field(default=6000, ge=0)
+    age: int = Field(default=65, ge=0)
+    first_year: int = 2025
+    last_year: int = 2028
+    phaseout_rate: float = Field(default=6.0, ge=0, le=100)
+    phaseout_start_single: int = Field(default=75000, ge=0)
+    phaseout_start_married_filing_jointly: int = Field(default=150000, ge=0)
+
+
+class CharitableConfig(StrictModel):
+    """AGI limit on deductible cash gifts to public charities (incl. donor-advised funds)."""
+
+    # vintage: statutory, source: IRC §170(b)(1)(G) 60% cash limit (made permanent by OBBBA);
+    # §170(d)(1) five-year carryover of the excess
+    cash_agi_limit_percent: float = Field(default=60.0, ge=0, le=100)
+    carryforward_years: int = Field(default=5, ge=0)
+
+
 class FederalTaxConfig(StrictModel):
     standard_deduction: StandardDeductionConfig
     tax_brackets: TaxBracketsConfig
@@ -94,6 +120,8 @@ class FederalTaxConfig(StrictModel):
     # vintage: 2026, source: IRC §163(h)(3) TCJA acquisition-debt limit; §164(b)(6) SALT cap (OBBBA).
     mortgage_interest_debt_limit: int = Field(default=750000, ge=0)
     salt_deduction_cap: int = Field(default=40000, ge=0)
+    senior_deduction: SeniorDeductionConfig = Field(default_factory=SeniorDeductionConfig)
+    charitable: CharitableConfig = Field(default_factory=CharitableConfig)
     # Estate transfer parameters (defaults let existing configs load without these keys).
     # The unified exemption shelters estate value below it; transfers to a surviving spouse are
     # fully sheltered by the unlimited marital deduction regardless of the exemption.
