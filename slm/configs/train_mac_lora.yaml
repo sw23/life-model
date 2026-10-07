@@ -1,0 +1,28 @@
+# Apple-silicon config: the default pipeline at a size an M-series Mac trains in about an hour.
+# Same code path as train_default_qlora.yaml, minus 4-bit quantization (bitsandbytes needs CUDA):
+# a smaller instruct model with plain LoRA in bf16 on the Metal (MPS) backend.
+# License: Qwen/Qwen2.5-0.5B-Instruct is Apache-2.0.
+#
+#   python -m slm.generate_data --per-scenario 600 --n-trials 64 --seed 20 --workers 14 \
+#       --out slm/data/dataset.jsonl
+#   python -m slm.train slm/configs/train_mac_lora.yaml
+#   python -m slm.evaluate_adviser --adviser hf --model-id Qwen/Qwen2.5-0.5B-Instruct \
+#       --adapter-path slm/checkpoints/mac_lora --seed 777 --out slm/reports/adviser_eval_mac_lora.json
+model_id: Qwen/Qwen2.5-0.5B-Instruct     # Apache-2.0
+dataset_path: slm/data/dataset.jsonl
+output_dir: slm/checkpoints/mac_lora
+epochs: 1
+per_device_batch_size: 1
+grad_accum: 8
+learning_rate: 0.0002
+warmup_ratio: 0.03
+seq_len: 1536            # a full example (system + household + answer) is ~900 tokens
+precision: bf16
+attn_implementation: sdpa
+gradient_checkpointing: false
+lora:
+  rank: 16
+  alpha: 32
+  dropout: 0.05
+  target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+report_to: none

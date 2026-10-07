@@ -1,6 +1,6 @@
 {
-  "config_hash": "c39a5e5d8243cd75",
-  "created_utc": "2026-07-18T06:24:20+00:00",
+  "config_hash": "b27a4838a65f3529",
+  "created_utc": "2026-10-07T17:35:10+00:00",
   "decision_space": [
     "contribution_waterfall",
     "age_glide",
@@ -25,6 +25,6 @@
   "reward_preset": "retirement_security",
   "scale_note": "pipeline-validation scale (not a publishable adviser)",
   "schema_version": 1,
-  "simulator_commit": "dfac8798d2e136d650ea7e29d48fa30a688048c8",
+  "simulator_commit": "98f62cd9c0dd60834f86ec6e7994b49115f58bf8",
   "teacher_gating": "DQN excluded (protocol report: verdict_intelligent=false, ci_does_not_overlap_best=false); candidates = heuristics + Roth/pre-tax levers, label = grid argmax."
 }

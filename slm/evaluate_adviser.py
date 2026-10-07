@@ -274,10 +274,13 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--adviser",
         default="oracle",
-        choices=["oracle", "stub"],
-        help="Which stub adviser to evaluate (real backends load via slm.backends).",
+        choices=["oracle", "stub", "hf"],
+        help="Adviser to evaluate: the oracle or stub, or a local Hugging Face model ('hf').",
     )
     parser.add_argument("--fixed-decision", default=None, help="Fixed decision for the stub adviser.")
+    parser.add_argument("--model-id", default=None, help="--adviser hf: base model id or local path.")
+    parser.add_argument("--adapter-path", default=None, help="--adviser hf: optional LoRA adapter directory.")
+    parser.add_argument("--max-new-tokens", type=int, default=384, help="--adviser hf: generation budget.")
     parser.add_argument("--out", default=None, help="Write the JSON report here.")
     return parser.parse_args(argv)
 
@@ -295,6 +298,12 @@ def main(argv: list[str] | None = None) -> None:
     adviser: AdviserModel
     if args.adviser == "oracle":
         adviser = evaluator.build_oracle()
+    elif args.adviser == "hf":
+        if not args.model_id:
+            raise SystemExit("--adviser hf needs --model-id")
+        from slm.backends import HFAdviserModel
+
+        adviser = HFAdviserModel(args.model_id, adapter_path=args.adapter_path, max_new_tokens=args.max_new_tokens)
     else:
         adviser = StubAdviserModel(fixed_decision=args.fixed_decision)
     report = evaluator.run(adviser)
