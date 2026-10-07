@@ -98,6 +98,20 @@ class EventLog:
         self.list.append(event)
 
 
+def _optional_attribute(name: str) -> Callable:
+    """Agent reporter returning ``agent.<name>``, or None for agents without it.
+
+    Agents carry only the stats they own (``STATS_OWNED``). Mesa's string attribute reporters
+    return None for a missing attribute in 3.3 but raise from 3.5, so an explicit default keeps
+    per-agent collection working across the supported versions.
+    """
+
+    def reporter(agent):
+        return getattr(agent, name, None)
+
+    return reporter
+
+
 class LifeModelDataCollector(mesa.DataCollector):
     """DataCollector with a public way to add an agent-level reporter after construction.
 
@@ -175,7 +189,8 @@ class LifeModel(mesa.Model):
                 Intended for high-throughput consumers (e.g. RL rollouts) that never read the
                 collected frames. Defaults to True (keyword-only).
         """
-        super().__init__(seed=seed)  # Required in Mesa 3.0
+        # Mesa 3.5 deprecates ``seed=`` in favor of ``rng=``; both seed ``self.random`` identically.
+        super().__init__(rng=seed)
         if start_year is None:
             start_year = datetime.now().astimezone().year
 
@@ -215,8 +230,8 @@ class LifeModel(mesa.Model):
                     **{x.title: lambda model, x=x: x.model_reporter(model) for x in self.EXTRA_STATS},
                 },
                 agent_reporters={
-                    **{x.title: x.name for x in self.STATS},
-                    **{x.title: x.name for x in self.EXTRA_STATS},
+                    **{x.title: _optional_attribute(x.name) for x in self.STATS},
+                    **{x.title: _optional_attribute(x.name) for x in self.EXTRA_STATS},
                 },
             )
 
@@ -369,8 +384,8 @@ class LifeModel(mesa.Model):
             title (str): Title of the stat
             attr_name (str): Name of the attribute
         """
-        # Agents without the attribute report None for it (mesa's attribute-reporter default).
-        self._require_datacollector().add_agent_reporter(title, attr_name)
+        # Agents without the attribute report None for it.
+        self._require_datacollector().add_agent_reporter(title, _optional_attribute(attr_name))
 
     def get_yearly_stat_df(
         self,
