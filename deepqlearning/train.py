@@ -188,6 +188,7 @@ def run_protocol_report(agent, env_config, preset, out_path, n_eval, master_seed
     print("\n" + format_comparison_table(report))
     with open(out_path, "w") as f:
         json.dump(report, f, indent=2)
+        f.write("\n")  # end-of-file newline (pre-commit)
     print(f"\nProtocol report saved to {out_path}")
     return report
 
@@ -356,6 +357,7 @@ def main():
             results_path = BASE_PATH / "results" / f"training_results_{run_key}.json"
             with open(results_path, "w") as f:
                 json.dump(trainer.get_training_stats(), f, indent=2)
+                f.write("\n")  # end-of-file newline (pre-commit)
             print(f"Training results saved to {results_path}")
         else:
             vector_config = {
@@ -387,6 +389,7 @@ def main():
     eval_path = BASE_PATH / "results" / f"evaluation_results_{run_key}.json"
     with open(eval_path, "w") as f:
         json.dump(eval_results, f, indent=2)
+        f.write("\n")  # end-of-file newline (pre-commit)
     print(f"Evaluation results saved to {eval_path}")
 
     # Statistical protocol report: agent vs every baseline on shared seeds.

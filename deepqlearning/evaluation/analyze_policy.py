@@ -187,6 +187,7 @@ def lifetime_trace(
 
     with open(out_json, "w") as f:
         json.dump(rows, f, indent=2)
+        f.write("\n")  # end-of-file newline (pre-commit)
 
     ages = [r["age"] for r in rows]
     nets = [r["net_worth"] for r in rows]
@@ -224,6 +225,7 @@ def analyze(agent: Algorithm, env_config: dict | None, out_dir: str, n_episodes:
     }
     with open(os.path.join(out_dir, "analysis_manifest.json"), "w") as f:
         json.dump(manifest, f, indent=2)
+        f.write("\n")  # end-of-file newline (pre-commit)
     print(f"Policy analysis artifacts written to {out_dir}")
     return manifest
 
