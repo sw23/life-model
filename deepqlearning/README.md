@@ -222,6 +222,8 @@ python -m deepqlearning.train --env financial:basic --algo dqn --eval-only \
 | `--tensorboard <dir>`, `--plot-results`, `--save-plots` | Optional logging and figures |
 | `--set SECTION.KEY=VALUE` | Repeatable config override; `SECTION` is `algo` (default), `env`, or `train` |
 | `--reward-preset`, `--protocol-eval`, `--protocol-n-eval`, `--compare-baselines` | **Financial only** — rejected on other environments |
+| `--seed N` | Seed Python, NumPy, PyTorch and the training envs for a reproducible run; outputs get a `_s<N>` suffix |
+| `--warm-start-teacher NAME`, `--warm-start-seeds K` | **Financial, DQN only** — seed the replay buffer with K episodes of a scripted baseline before training (off by default) |
 
 `--set` values are parsed as JSON when possible, so types come through:
 `--set learning_rate=3e-4 --set hidden_sizes='[256,256]' --set use_dueling=false --set env.economy_mode=fixed`.
@@ -278,17 +280,34 @@ reported, not gated.
 
 ### Committed report (default preset)
 
-`reports/retirement_security/` holds a full committed run (see `protocol_table.txt` /
-`protocol_report.json`) from a **moderate** vectorized run — 40k env steps / 872 episodes / seed 0
-/ ~43 s (labeled in the report's `run_metadata`). In that run the agent's **mean return beats every
-planner heuristic on all three conditions** (train 31.5 vs 30.1 best heuristic; held-out seeds
-+1.0; recession 30.1 vs 29.7), at 0% ruin and 100% success — **but the 95% CIs overlap at n=50, so
-the strict statistical-separation verdict is `False`.** Tellingly, the agent reaches higher utility
-with *lower* median net worth (~$335k vs ~$900k for the hoarding heuristics): under
-`retirement_security` it consumes rather than hoards, which is exactly the behavior the utility
-reward is meant to produce. This is an honest snapshot — a full-scale run (below) is expected to
-widen the gap; the "beats every heuristic with separated CIs" claim will only be made here once a
-committed report shows it.
+`reports/retirement_security/` holds a committed run against the current simulator (see
+`protocol_table.txt` / `protocol_report.json`, `run_metadata` labels it): DQN, seed 0, a 200k-step
+budget that early-stopped at 95k steps / 2,324 episodes, reproducible with
+
+```bash
+python -m deepqlearning.train --env financial:basic --algo dqn --total-env-steps 200000 \
+    --num-envs 8 --reward-preset retirement_security --protocol-eval --seed 0
+```
+
+Seed 0 was fixed as the report seed **before** a five-seed sweep ran (`seed_sweep.txt`), so the
+committed numbers are not cherry-picked. Mean return, agent vs the best planner heuristic (n=50
+per condition):
+
+| Seed | Steps | Train | Held-out seeds | Recession |
+|---|---|---|---|---|
+| 0 (committed) | 95k | 30.04 vs 30.08 | 27.55 vs 27.55 | 29.75 vs 29.75 |
+| 1 | 65k | 32.27 vs 30.08 | 28.68 vs 27.55 | 31.91 vs 29.75 |
+| 2 | 200k | 30.76 vs 30.08 | 30.64 vs 27.55 | 34.25 vs 29.75 |
+| 3 | 55k | 30.26 vs 30.08 | 27.71 vs 27.55 | 29.81 vs 29.75 |
+| 4 | 55k | 29.99 vs 30.08 | 27.55 vs 27.55 | 29.80 vs 29.75 |
+
+Every seed reaches the heuristics' level at 0% ruin and 100% success; two of five (1 and 2) beat
+the best heuristic on every condition, seed 2 by +3.1 on held-out seeds and +4.5 in the recession.
+The others converge to heuristic-like play. **No seed separates its 95% CI from the best
+heuristic's at n=50, so the strict verdict stays `False`** — the "beats every heuristic with
+separated CIs" claim will only be made here once a committed report shows it. Larger evaluation
+budgets (`--protocol-n-eval`) or a longer budget without early stopping (seed 2 is the one run that
+used its full budget) are the levers to try.
 
 ## 🏋️ Training-stack features
 
