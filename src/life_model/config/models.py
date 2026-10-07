@@ -488,10 +488,36 @@ class CreditCardConfig(StrictModel):
     default_minimum_payment_floor: float = Field(default=25.0, ge=0)
 
 
+class RepaymentAssistancePlanConfig(StrictModel):
+    """The Repayment Assistance Plan (RAP), the income-driven plan for federal loans from July 2026.
+
+    Annual payment = ``rate_step_percent``% x AGI for each full ``income_step`` of AGI, capped at
+    ``max_rate_percent``% (1% for $10,001-20,000 ... 10% above $100,000), with ``minimum_annual``
+    at or below the first step; less ``dependent_credit_monthly`` per dependent per month, floored
+    at ``minimum_monthly``. Interest the payment doesn't cover is waived; if principal falls by less
+    than ``principal_match_monthly`` in a month, the government makes up the difference (up to the
+    payment). The balance left after ``forgiveness_years`` of payments is forgiven.
+    """
+
+    # vintage: 2026, source: One Big Beautiful Bill Act (Repayment Assistance Plan), studentaid.gov
+    income_step: int = Field(default=10000, gt=0)
+    rate_step_percent: float = Field(default=1.0, ge=0)
+    max_rate_percent: float = Field(default=10.0, ge=0, le=100)
+    minimum_annual: float = Field(default=120.0, ge=0)
+    minimum_monthly: float = Field(default=10.0, ge=0)
+    dependent_credit_monthly: float = Field(default=50.0, ge=0)
+    principal_match_monthly: float = Field(default=50.0, ge=0)
+    forgiveness_years: int = Field(default=30, ge=0)
+    # The American Rescue Plan exclusion of forgiven student debt covered discharges before 2026
+    # (ARPA §9675); IDR forgiveness after that is ordinary income.
+    forgiveness_taxable: bool = True
+
+
 class StudentLoanConfig(StrictModel):
     # Above-the-line student-loan interest deduction (IRC §221). The MAGI phase-out is not
     # modeled; this is a flat cap. vintage: 2025, source: IRC §221 (statutory, unindexed cap).
     interest_deduction_limit: float = Field(default=2500.0, ge=0)
+    repayment_assistance_plan: RepaymentAssistancePlanConfig = Field(default_factory=RepaymentAssistancePlanConfig)
 
 
 class DebtConfig(StrictModel):

@@ -571,6 +571,18 @@ debt:
   student_loan:
     # vintage: 2025, source: IRC §221 above-the-line interest deduction (MAGI phase-out ignored)
     interest_deduction_limit: 2500  # dollars per year
+    # vintage: 2026, source: One Big Beautiful Bill Act Repayment Assistance Plan; studentaid.gov.
+    # Income-driven plan for federal loans made from July 2026 (opt in per loan).
+    repayment_assistance_plan:
+      income_step: 10000  # 1% of AGI per full $10k step above the first ...
+      rate_step_percent: 1.0
+      max_rate_percent: 10.0  # ... capped at 10% of AGI above $100k
+      minimum_annual: 120.0  # AGI at or below $10k
+      minimum_monthly: 10.0
+      dependent_credit_monthly: 50.0
+      principal_match_monthly: 50.0
+      forgiveness_years: 30
+      forgiveness_taxable: true  # ARPA §9675 exclusion ended with 2025 discharges
   # Interest on unpaid bills carried into the next year (Person.debt). Modeling assumption, not a
   # published figure: null charges the credit-card rate above.
   unpaid_balance_interest_rate: null
