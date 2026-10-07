@@ -10,10 +10,13 @@ from .types import GenderAtBirth
 # Actuarial mortality table for the US population
 # https://www.ssa.gov/oact/STATS/table4c6.html
 #
-# vintage: SSA Period Life Table, 2020 (Actuarial Study; reflects COVID-era mortality). This is a
-# static period table with no mortality-improvement projection applied — future mortality is
-# modeled at present-day rates, which is slightly pessimistic at older ages. Refresh from the
-# latest published SSA period life table when updating.
+# vintage: 2022, source: SSA period life table for the Social Security area population as used in
+# the 2025 Trustees Report (https://www.ssa.gov/oact/STATS/table4c6_2022_TR2025.html). Identified by
+# its published values (e.g. age-0 death probabilities 0.006064 male / 0.005119 female; period life
+# expectancy at birth 74.74 / 80.18); an earlier comment mislabeled it as the 2020 table.
+# The 2026 Trustees Report publishes the 2023 table at the URL above; refresh to it when updating.
+# This is a static period table with no mortality-improvement projection applied — future mortality
+# is modeled at present-day rates, which is slightly pessimistic at older ages.
 
 # Probabilities of death for each age from 0 to 119
 # [Age, Male Probability, Female % Probability]
