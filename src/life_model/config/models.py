@@ -512,8 +512,8 @@ class CreditCardConfig(StrictModel):
 class RepaymentAssistancePlanConfig(StrictModel):
     """The Repayment Assistance Plan (RAP), the income-driven plan for federal loans from July 2026.
 
-    Annual payment = ``rate_step_percent``% x AGI for each full ``income_step`` of AGI, capped at
-    ``max_rate_percent``% (1% for $10,001-20,000 ... 10% above $100,000), with ``minimum_annual``
+    Annual payment = ``rate_step_percent`` percent x AGI for each full ``income_step`` of AGI, capped at
+    ``max_rate_percent`` percent (1% for $10,001-20,000 ... 10% above $100,000), with ``minimum_annual``
     at or below the first step; less ``dependent_credit_monthly`` per dependent per month, floored
     at ``minimum_monthly``. Interest the payment doesn't cover is waived; if principal falls by less
     than ``principal_match_monthly`` in a month, the government makes up the difference (up to the

@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 from enum import Enum
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from ..config.financial_config import resolve_financial_config as _fin
 from ..model import Event, LifeModel, LifeModelAgent
@@ -283,7 +283,7 @@ class Annuity(LifeModelAgent):
         # State tracking
         self.is_active = True
         self.is_annuitized = False
-        self.annuitization_year = None
+        self.annuitization_year: int | None = None
         self.purchase_year = self.model.year
         self.remaining_period_certain_payments = 0
 
@@ -411,7 +411,7 @@ class Annuity(LifeModelAgent):
         self.annuitization_year = self.model.year
 
         gender = getattr(self.person, "gender", None)
-        joint_kwargs = {}
+        joint_kwargs: dict[str, Any] = {}
         if self.payout_type == AnnuityPayoutType.JOINT_AND_SURVIVOR:
             joint = self._joint_life()
             self.joint_annuitant = joint

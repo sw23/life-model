@@ -19,7 +19,7 @@ def senior_deduction(
     members: "list[Person]", filing_status: FilingStatus, magi: float, year: int, config: "FinancialConfig"
 ) -> float:
     """OBBBA senior deduction for a return: ``amount`` per member at or over ``age``, each reduced by
-    ``phaseout_rate``% of MAGI above the threshold. Zero outside 2025-2028 and on separate returns."""
+    ``phaseout_rate`` percent of MAGI above the threshold. Zero outside 2025-2028 and on separate returns."""
     cfg = config.tax.federal.senior_deduction
     if not cfg.first_year <= year <= cfg.last_year or filing_status == FilingStatus.MARRIED_FILING_SEPARATELY:
         return 0.0
