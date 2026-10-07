@@ -19,6 +19,9 @@ class FilingStatus(Enum):
     # Derived by TaxUnit.build_units for an unmarried member with a dependent child. Falls back
     # to SINGLE deduction/brackets when the config carries no head_of_household data.
     HEAD_OF_HOUSEHOLD = 3
+    # A married person filing their own return (both spouses must opt in by setting this status).
+    # Brackets and the standard deduction are half the joint amounts unless configured explicitly.
+    MARRIED_FILING_SEPARATELY = 4
 
 
 def get_federal_standard_deduction(filing_status: FilingStatus, config: "FinancialConfig | None" = None) -> float:

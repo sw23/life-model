@@ -169,6 +169,8 @@ class TaxUnit:
         With both arguments 0 this is the plain standard-vs-itemized comparison.
         """
         standard_deduction = get_federal_standard_deduction(self.filing_status, self.config)
+        if self.filing_status == FilingStatus.MARRIED_FILING_SEPARATELY:
+            standard_deduction = self.members[0].standard_deduction
         allocation = self._prospective_withdrawal_allocation(additional_income) if additional_income > 0 else None
         itemized = 0.0
         for index, member in enumerate(self.members):
@@ -523,6 +525,8 @@ class TaxUnit:
             student_loan_interest = sum(sl.interest_paid_this_year for sl in member.student_loans)
             deduction_limit = self.config.debt.student_loan.interest_deduction_limit
             student_loan_deduction = min(student_loan_interest, deduction_limit)
+            if self.filing_status == FilingStatus.MARRIED_FILING_SEPARATELY:
+                student_loan_deduction = 0.0  # not allowed on a separate return (IRC §221(e)(2))
             if student_loan_deduction > 0:
                 member.income.add(IncomeType.ORDINARY, -student_loan_deduction)
 

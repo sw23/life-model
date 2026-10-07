@@ -25,6 +25,8 @@ class StandardDeductionConfig(StrictModel):
     # Optional: HEAD_OF_HOUSEHOLD falls back to `single` when absent, so existing scenarios and
     # the frozen test fixture load unchanged.
     head_of_household: int | None = Field(default=None, ge=0)
+    # Optional: MARRIED_FILING_SEPARATELY defaults to half the joint amount (IRC §63(c)(2)).
+    married_filing_separately: int | None = Field(default=None, ge=0)
 
 
 class TaxBracketsConfig(StrictModel):
@@ -32,6 +34,10 @@ class TaxBracketsConfig(StrictModel):
     married_filing_jointly: list[list[int | float]]
     # Optional: HEAD_OF_HOUSEHOLD falls back to `single` when absent.
     head_of_household: list[list[int | float]] | None = None
+    # Optional: MARRIED_FILING_SEPARATELY defaults to the joint brackets with every threshold halved,
+    # which is how the separate-return table is defined (IRC §1(d)); 2026's published separate
+    # table (Rev. Proc. 2025-32: 37% above $384,350 = $768,700 / 2) matches.
+    married_filing_separately: list[list[int | float]] | None = None
 
 
 class NIITConfig(StrictModel):
@@ -47,6 +53,7 @@ class NIITConfig(StrictModel):
     single: int = Field(default=200000, ge=0)
     married_filing_jointly: int = Field(default=250000, ge=0)
     head_of_household: int = Field(default=200000, ge=0)
+    married_filing_separately: int = Field(default=125000, ge=0)
 
     def threshold_for(self, filing_status) -> int:
         """MAGI threshold above which the surtax applies, for a filing status."""
@@ -54,6 +61,8 @@ class NIITConfig(StrictModel):
             return self.married_filing_jointly
         if filing_status.value == 3:
             return self.head_of_household
+        if filing_status.value == 4:
+            return self.married_filing_separately
         return self.single
 
 
@@ -277,6 +286,8 @@ class StateTaxConfig(StrictModel):
 class MedicareThresholdConfig(StrictModel):
     single: int = Field(ge=0)
     married_filing_jointly: int = Field(ge=0)
+    # vintage: statutory, source: IRC §3101(b)(2)(B) (not inflation-indexed)
+    married_filing_separately: int = Field(default=125000, ge=0)
 
 
 class FICATaxConfig(StrictModel):
@@ -326,6 +337,10 @@ class SocialSecurityBenefitTaxationConfig(StrictModel):
     upper_threshold_single: int = Field(ge=0)
     lower_threshold_married_filing_jointly: int = Field(ge=0)
     upper_threshold_married_filing_jointly: int = Field(ge=0)
+    # A separate filer who lived with their spouse has a base amount of zero (IRC §86(c)(1)(C)(ii)),
+    # so benefits are taxable from the first dollar of provisional income.
+    lower_threshold_married_filing_separately: int = Field(default=0, ge=0)
+    upper_threshold_married_filing_separately: int = Field(default=0, ge=0)
     lower_inclusion_rate: float = Field(ge=0, le=1)
     upper_inclusion_rate: float = Field(ge=0, le=1)
 
@@ -645,6 +660,10 @@ class MedicareIRMAATierConfig(StrictModel):
 
 class MedicareConfig(StrictModel):
     eligibility_age: int = Field(default=65, ge=0)
+    # A separate filer who lived with their spouse skips the middle IRMAA tiers: above the first
+    # single threshold they pay the second-highest tier, and the highest tier from this MAGI.
+    # vintage: 2026, source: SSA POMS HI 01101.020 / CMS 2026 Part B premiums ($391,000)
+    irmaa_mfs_top_threshold: float = Field(default=391000, ge=0)
     # Part A is premium-free for people with sufficient work history (documented simplification).
     part_b_base_monthly_premium: float = Field(default=202.90, ge=0)
     part_d_base_monthly_premium: float = Field(default=34.50, ge=0)

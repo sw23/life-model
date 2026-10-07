@@ -262,7 +262,9 @@ class FinancialConfig:
         sd["married_filing_jointly"] = round_to(sd["married_filing_jointly"] * factor, 50)
         if sd.get("head_of_household") is not None:
             sd["head_of_household"] = round_to(sd["head_of_household"] * factor, 50)
-        for status in ("single", "married_filing_jointly", "head_of_household"):
+        if sd.get("married_filing_separately") is not None:
+            sd["married_filing_separately"] = round_to(sd["married_filing_separately"] * factor, 50)
+        for status in ("single", "married_filing_jointly", "head_of_household", "married_filing_separately"):
             if data["tax_brackets"].get(status) is not None:
                 data["tax_brackets"][status] = [scale_bracket(b) for b in data["tax_brackets"][status]]
         data["ss_wage_base"] = round_to(data["ss_wage_base"] * factor, 300)
@@ -290,6 +292,10 @@ class FinancialConfig:
             return deduction.married_filing_jointly
         if filing_status.value == 3 and deduction.head_of_household is not None:
             return deduction.head_of_household
+        if filing_status.value == 4:
+            if deduction.married_filing_separately is not None:
+                return deduction.married_filing_separately
+            return deduction.married_filing_jointly / 2
         return deduction.single
 
     def get_federal_tax_brackets(self, filing_status: "FilingStatus") -> list:
@@ -299,6 +305,8 @@ class FinancialConfig:
             return brackets.married_filing_jointly
         if filing_status.value == 3 and brackets.head_of_household is not None:
             return brackets.head_of_household
+        if filing_status.value == 4:
+            return self._separate_brackets(brackets)
         return brackets.single
 
     def get_capital_gains_brackets(self, filing_status: "FilingStatus") -> list:
@@ -309,7 +317,16 @@ class FinancialConfig:
             return brackets.married_filing_jointly
         if filing_status.value == 3 and brackets.head_of_household is not None:
             return brackets.head_of_household
+        if filing_status.value == 4:
+            return self._separate_brackets(brackets)
         return brackets.single
+
+    @staticmethod
+    def _separate_brackets(brackets: TaxBracketsConfig) -> list:
+        """Married-filing-separately brackets: configured, else the joint thresholds halved."""
+        if brackets.married_filing_separately is not None:
+            return brackets.married_filing_separately
+        return [[low / 2, high / 2, rate] for low, high, rate in brackets.married_filing_jointly]
 
     def get_job_401k_contrib_limit(self, age: int) -> int:
         """Get 401k contribution limit based on age"""

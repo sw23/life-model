@@ -42,6 +42,8 @@ def get_medicare_additional_rate_threshold(
     threshold = _fin(config).tax.fica.medicare_additional_rate_threshold
     if filing_status == FilingStatus.MARRIED_FILING_JOINTLY:
         return threshold.married_filing_jointly
+    if filing_status == FilingStatus.MARRIED_FILING_SEPARATELY:
+        return threshold.married_filing_separately
     return threshold.single
 
 

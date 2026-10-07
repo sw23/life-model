@@ -445,6 +445,9 @@ class SocialSecurity(LifeModelAgent):
         if self.person.filing_status == FilingStatus.MARRIED_FILING_JOINTLY:
             lower = bt.lower_threshold_married_filing_jointly
             upper = bt.upper_threshold_married_filing_jointly
+        elif self.person.filing_status == FilingStatus.MARRIED_FILING_SEPARATELY:
+            lower = bt.lower_threshold_married_filing_separately
+            upper = bt.upper_threshold_married_filing_separately
         else:
             lower = bt.lower_threshold_single
             upper = bt.upper_threshold_single

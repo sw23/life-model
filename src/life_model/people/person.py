@@ -310,6 +310,8 @@ class Person(LifeModelAgent):
         itemized += self.medical_expense_deduction_with(additional_income)
 
         federal = self.model.config.tax.federal
+        # A separate return gets half of the joint mortgage-debt and SALT limits.
+        limit_share = 0.5 if self.filing_status == FilingStatus.MARRIED_FILING_SEPARATELY else 1.0
         salt_paid = state_income_tax_paid
         for home in self.homes:
             mortgage = getattr(home, "mortgage", None)
@@ -318,14 +320,14 @@ class Person(LifeModelAgent):
                 # the share attributable to the first $750k of acquisition debt.
                 interest = mortgage.interest_paid_this_year
                 acquisition_debt = mortgage.loan_amount
-                debt_limit = federal.mortgage_interest_debt_limit
+                debt_limit = federal.mortgage_interest_debt_limit * limit_share
                 if acquisition_debt > debt_limit:
                     interest *= debt_limit / acquisition_debt
                 itemized += interest
             salt_paid += home.property_tax_for_year
 
         # SALT deduction (property tax + state income tax) is capped.
-        itemized += min(salt_paid, federal.salt_deduction_cap)
+        itemized += min(salt_paid, federal.salt_deduction_cap * limit_share)
 
         return itemized
 
@@ -347,15 +349,31 @@ class Person(LifeModelAgent):
         ``additional_income`` (a prospective 401k withdrawal being sized) raises the medical-expense
         floor so sized taxes equal settled taxes.
         """
-        standard_deduction = get_federal_standard_deduction(self.filing_status, self.model.year_config)
-        return max(standard_deduction, self.itemized_deductions(state_income_tax_paid, additional_income))
+        return max(self.standard_deduction, self.itemized_deductions(state_income_tax_paid, additional_income))
 
     @property
     def federal_deductions(self) -> float:
         """Get federal deductions - use greater of standard or itemized (property-only SALT)"""
-        standard_deduction = get_federal_standard_deduction(self.filing_status, self.model.year_config)
-        itemized_deductions = self.total_itemized_deductions
-        return max(standard_deduction, itemized_deductions)
+        return max(self.standard_deduction, self.total_itemized_deductions)
+
+    @property
+    def standard_deduction(self) -> float:
+        """This year's standard deduction for the person's filing status.
+
+        Zero for a separate filer whose spouse itemizes: if one spouse itemizes on a separate
+        return, the other must too (IRC §63(c)(6)(A)).
+        """
+        if self.filing_status == FilingStatus.MARRIED_FILING_SEPARATELY and self._spouse_itemizes_separately():
+            return 0.0
+        return get_federal_standard_deduction(self.filing_status, self.model.year_config)
+
+    def _spouse_itemizes_separately(self) -> bool:
+        """Whether this person's living spouse files separately and itemizes (property-only SALT)."""
+        spouse = self.spouse
+        if spouse is None or spouse.is_deceased or spouse.filing_status != FilingStatus.MARRIED_FILING_SEPARATELY:
+            return False
+        own_standard = get_federal_standard_deduction(spouse.filing_status, spouse.model.year_config)
+        return spouse.total_itemized_deductions > own_standard
 
     @property
     def all_retirement_accounts(self) -> list[Job401kAccount]:
