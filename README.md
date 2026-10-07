@@ -7,7 +7,7 @@ The package provides comprehensive models of people, jobs, accounts, insurance, 
 ## Key Features
 - **Comprehensive Financial Modeling**: Model families, individuals, jobs, various account types, insurance policies, debt, taxes, and more
 - **Interactive Dashboard**: Web-based interface using Solara for real-time financial simulations and visualizations
-- **Deep Learning Integration**: Train AI agents using deep Q-learning to optimize financial decision-making
+- **Deep Learning Integration**: Train reinforcement-learning agents (DQN, REINFORCE, PPO) to optimize financial decisions, and build a simulation-grounded language-model adviser whose advice is scored by the simulator
 - **Flexible Configuration**: YAML-based configuration system for different economic scenarios
 
 ## Motivation
@@ -46,6 +46,13 @@ python -m deepqlearning.train --env financial:mid_career --algo ppo --total-env-
 ```
 See [deepqlearning/README.md](deepqlearning/README.md) for the environment registry, the algorithm
 interface, and the evaluation protocol.
+
+### Language-Model Adviser
+[`slm/`](slm/README.md) turns the simulator into a data generator and verifier for a small language
+model that gives household financial-decision advice: every candidate decision is scored by Monte
+Carlo simulation, so rationales are certified by the simulator rather than asserted, and out-of-scope
+questions are refused. It is educational decision support, not financial advice; see the
+[slm README](slm/README.md) for the pipeline, evaluation, and training configurations.
 
 ## Modeling Status
 This package supports a comprehensive range of financial modeling components:
@@ -124,10 +131,11 @@ The interactive dashboard provides real-time visualization of financial simulati
 
 ### Reinforcement Learning
 The deep learning module includes:
-- Pre-configured training scenarios (basic, high_earner, low_earner)
-- 20+ financial actions for AI agents to learn
-- Customizable reward functions for different objectives
-- Training visualization and model evaluation tools
+- A registry of financial environments (`financial`, plus `basic`, `high_earner`, `low_earner`, `mid_career` households) with domain randomization and a stochastic economy
+- 16 financial action types (contributions, withdrawals, spending, early retirement), flattened into 52 discrete actions with amount buckets
+- Utility-based reward presets for different objectives
+- DQN, REINFORCE and PPO, planner-grade heuristic baselines, a statistical evaluation protocol, and policy-analysis reports
+- The simulation-grounded language-model adviser in [`slm/`](slm/README.md), which uses the same environment as its data generator
 
 ### Configuration System
 YAML-based configuration files packaged with life-model (in `src/life_model/config/data/scenarios/`) allow modeling of different economic conditions:

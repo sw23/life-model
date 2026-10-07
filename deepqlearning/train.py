@@ -233,6 +233,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--compare-baselines", action="store_true", help="Score the scripted baselines on the eval seeds"
     )
+    parser.add_argument(
+        "--warm-start-teacher",
+        type=str,
+        default=None,
+        help="Seed the DQN replay buffer with this scripted baseline's experience before training "
+        "(financial envs, off-policy algorithms only; off by default)",
+    )
+    parser.add_argument(
+        "--warm-start-seeds", type=int, default=20, help="Teacher episodes to roll for --warm-start-teacher"
+    )
     return parser
 
 
@@ -245,6 +255,8 @@ def _reject_financial_only_flags(args, parser) -> None:
         used.append("--compare-baselines")
     if args.reward_preset != parser.get_default("reward_preset"):
         used.append("--reward-preset")
+    if args.warm_start_teacher:
+        used.append("--warm-start-teacher")
     if used:
         parser.error(f"{', '.join(used)} apply to financial environments only, but --env is {args.env!r}")
 
@@ -290,6 +302,14 @@ def main():
 
     if args.load_model:
         algo.load(args.load_model)
+
+    if args.warm_start_teacher:
+        if args.algo != "dqn":
+            parser.error("--warm-start-teacher needs an off-policy algorithm with a replay buffer (--algo dqn)")
+        from deepqlearning.training.warm_start import warm_start_replay
+
+        stored = warm_start_replay(algo, env, args.warm_start_teacher, args.warm_start_seeds)
+        print(f"Warm-started replay with {stored} transitions from {args.warm_start_teacher!r}")
 
     # The exact config the env was built with, so the vector trainer and the protocol rebuild it
     # faithfully rather than falling back to the registry defaults.
