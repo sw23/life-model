@@ -95,7 +95,8 @@ omit = [
 ]
 
 [tool.coverage.report]
-fail_under = 84
+# Ratcheted to lock in current coverage (Plan 13 target was 85).
+fail_under = 88
 exclude_lines = [
     "pragma: no cover",
     "def __repr__",
@@ -109,3 +110,10 @@ exclude_lines = [
     "while 0:",
     "while False:",
 ]
+
+# Per-package coverage floors (combined line + branch percent), checked by
+# scripts/check_coverage_floors.py after the unit tests in tox.
+[tool.life_model.coverage_floors]
+tax = 90
+services = 90
+people = 90
