@@ -6,7 +6,7 @@
 import unittest
 
 from ..account.bank import BankAccount
-from ..config.config_manager import config
+from ..config.financial_config import FinancialConfig, default_financial_config
 from ..insurance.social_security import Income, SocialSecurity
 from ..model import LifeModel
 from ..people.family import Family
@@ -194,7 +194,7 @@ class TestSocialSecurity(unittest.TestCase):
 
     def test_variable_sanity_chk(self):
         # Get social security configuration (typed model)
-        ss_config = config.financial.social_security
+        ss_config = default_financial_config().social_security
 
         # Make sure the last bend point year is accurate
         last_bend_points_year = ss_config.last_bend_points_year
@@ -279,6 +279,46 @@ class TestSocialSecurityBenefitsAndWageBase(unittest.TestCase):
         """COLA beyond the published table uses the configured long-run assumption."""
         from ..insurance.social_security import get_cost_of_living_adj
 
-        last_year = config.financial.social_security.last_cost_of_living_adj_year
-        long_run = config.financial.social_security.long_run_cost_of_living_adj
+        last_year = default_financial_config().social_security.last_cost_of_living_adj_year
+        long_run = default_financial_config().social_security.long_run_cost_of_living_adj
         self.assertEqual(get_cost_of_living_adj(last_year + 5), long_run)
+
+
+class TestSocialSecurityPerModelConfig(unittest.TestCase):
+    """Social Security reads the owning model's config, not a process-global one."""
+
+    EARNINGS = tuple((year, 60000) for year in range(1978, 2013))  # 35 years, well over 40 credits
+
+    def _pia(self, config=None):
+        model = LifeModel(start_year=2020, end_year=2030, config=config)
+        person = Person(family=Family(model), name="SS", age=67, retirement_age=62, spending=Spending(model, 10000))
+        BankAccount(owner=person, company="Bank", balance=0)
+        ss = SocialSecurity(person=person, withdrawal_start_age=67, income_history=list(self.EARNINGS))
+        return ss.get_pia()
+
+    def test_models_with_different_ss_config_compute_different_benefits(self):
+        """Raising the full retirement age to 70 in one model makes a claim at 67 three years early.
+
+        The custom model is built first so any leak into shared state would also corrupt the default.
+        """
+        custom = FinancialConfig()
+        custom.apply_scenario("late_fra", {"social_security": {"normal_retirement_age": 70}})
+        pia_custom = self._pia(custom)
+        pia_default = self._pia()
+
+        # 36 months early -> 36 * 5/9 % = 20% reduction.
+        self.assertAlmostEqual(pia_custom / pia_default, 0.80, places=3)
+        self.assertEqual(default_financial_config().social_security.normal_retirement_age, 67)
+
+    def test_module_helpers_honor_explicit_config(self):
+        from ..insurance.social_security import get_cost_of_living_adj, get_normal_retirement_age
+
+        custom = FinancialConfig()
+        custom.apply_scenario("low_cola", {"social_security": {"long_run_cost_of_living_adj": 1.0}})
+        future = custom.social_security.last_cost_of_living_adj_year + 5
+
+        self.assertEqual(get_cost_of_living_adj(future, custom), 1.0)
+        self.assertEqual(
+            get_cost_of_living_adj(future), default_financial_config().social_security.long_run_cost_of_living_adj
+        )
+        self.assertEqual(get_normal_retirement_age(custom), get_normal_retirement_age())

@@ -3,17 +3,36 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
+"""Deprecated process-global configuration shim.
+
+Each :class:`~life_model.model.LifeModel` owns its own :class:`FinancialConfig` (``model.config``),
+built from ``LifeModel(config=..., scenario=...)``. Mutating this global therefore does **not**
+affect any model; it only changes the fallback used by module-level helpers that are called
+without a ``config`` argument. Use ``LifeModel(scenario=...)`` or pass a ``FinancialConfig``
+instead. This module will be removed in a future release.
+"""
+
+import warnings
 from typing import Any, Optional
 
-from .financial_config import FinancialConfig
+from .financial_config import FinancialConfig, default_financial_config
 from .scenarios import get_scenario, list_scenarios
+
+_DEPRECATION_MESSAGE = (
+    "life_model.config.config_manager.config is deprecated and will be removed in a future release. "
+    "It does not affect LifeModel instances; pass LifeModel(config=..., scenario=...) instead, or use "
+    "life_model.config.financial_config.default_financial_config() for the packaged defaults."
+)
+
+
+def _warn() -> None:
+    warnings.warn(_DEPRECATION_MESSAGE, DeprecationWarning, stacklevel=3)
 
 
 class GlobalConfigManager:
-    """Global configuration manager for the life-model package"""
+    """Deprecated global configuration manager (see module docstring)."""
 
     _instance: Optional["GlobalConfigManager"] = None
-    _financial_config: FinancialConfig | None = None
 
     # Singleton: always returns the one shared instance, even when called on a subclass.
     def __new__(cls) -> "GlobalConfigManager":  # noqa: PYI034
@@ -21,52 +40,39 @@ class GlobalConfigManager:
             cls._instance = super().__new__(cls)
         return cls._instance
 
-    def __init__(self):
-        # Config is loaded lazily on first access so that ``import life_model``
-        # never performs file I/O (see the ``financial`` property).
-        pass
-
     @property
     def financial(self) -> FinancialConfig:
-        """Access to financial configuration"""
-        if self._financial_config is None:
-            self._financial_config = FinancialConfig()
-        return self._financial_config
+        """The shared packaged-defaults config (the fallback for helpers called without ``config``)."""
+        _warn()
+        return default_financial_config()
 
     def apply_scenario(self, scenario_name: str, overrides: dict[str, Any] | None = None) -> None:
-        """Apply scenario-specific configuration overrides
-
-        Args:
-            scenario_name: Name of the scenario (e.g., 'recession', 'high_inflation')
-            overrides: Configuration overrides for this scenario. If None, will use
-                      predefined scenario with matching name.
-        """
+        """Apply scenario overrides to the shared fallback config (does not affect models)."""
+        _warn()
         if overrides is None:
             overrides = get_scenario(scenario_name)
-
-        self.financial.apply_scenario(scenario_name, overrides)
+        default_financial_config().apply_scenario(scenario_name, overrides)
 
     def apply_predefined_scenario(self, scenario_name: str) -> None:
-        """Apply a predefined scenario by name
-
-        Args:
-            scenario_name: Name of the predefined scenario
-        """
-        overrides = get_scenario(scenario_name)
-        self.financial.apply_scenario(scenario_name, overrides)
+        """Apply a predefined scenario to the shared fallback config (does not affect models)."""
+        _warn()
+        default_financial_config().apply_scenario(scenario_name, get_scenario(scenario_name))
 
     def list_available_scenarios(self) -> list:
         """Get a list of all available predefined scenarios"""
+        _warn()
         return list_scenarios()
 
     def reset_to_defaults(self) -> None:
-        """Reset all configurations to their default values"""
-        self.financial.reset_to_defaults()
+        """Reset the shared fallback config to the packaged defaults."""
+        _warn()
+        default_financial_config().reset_to_defaults()
 
     def get_current_scenario(self) -> str | None:
-        """Get the currently applied scenario name"""
-        return self.financial.scenario
+        """Get the scenario applied to the shared fallback config"""
+        _warn()
+        return default_financial_config().scenario
 
 
-# Global configuration instance
+# Deprecated global configuration instance
 config = GlobalConfigManager()

@@ -3,14 +3,12 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-import warnings
 from importlib.resources import files
 from typing import TYPE_CHECKING, Any
 
 import yaml
 from pydantic import ValidationError
 
-from .base_config import ScenarioConfig
 from .models import (
     AccountsConfig,
     DebtConfig,
@@ -32,13 +30,14 @@ if TYPE_CHECKING:
     from ..tax.federal import FilingStatus
 
 
-class FinancialConfig(ScenarioConfig):
+class FinancialConfig:
     """Configuration for financial parameters, limits, and rates.
 
     The validated Pydantic model (:class:`FinancialConfigModel`) is *the* runtime
     object: domain code reads typed attributes via the ``tax``/``retirement``/...
-    properties instead of navigating an untyped dict. The ``get(dot_key)``
-    accessor is deprecated and emits a ``DeprecationWarning``.
+    properties instead of navigating an untyped dict. Each :class:`~life_model.model.LifeModel`
+    owns its own instance (``model.config``); module-level helpers that take an optional
+    ``config`` fall back to :func:`default_financial_config`.
     """
 
     def __init__(self, config_file: str | None = None, scenario: str | None = None):
@@ -49,15 +48,16 @@ class FinancialConfig(ScenarioConfig):
             scenario: Optional scenario name to apply after loading defaults.
         """
         self.config_file = config_file
+        self.scenario: str | None = None
         self._model: FinancialConfigModel
-        super().__init__(scenario=scenario)
+        self._load()
         if scenario is not None:
             from .scenarios import get_scenario
 
             self.apply_scenario(scenario, get_scenario(scenario))
 
-    def _initialize_defaults(self) -> None:
-        """Load and validate the default financial configuration."""
+    def _load(self) -> None:
+        """Load and validate the configuration file (packaged defaults when no file is given)."""
         if self.config_file is None:
             data_file = files("life_model.config") / "data" / "financial_defaults.yaml"
             raw_config = yaml.safe_load(data_file.read_text(encoding="utf-8"))
@@ -70,6 +70,11 @@ class FinancialConfig(ScenarioConfig):
         except ValidationError as e:
             source = self.config_file or "packaged defaults"
             raise ValueError(f"Invalid configuration in {source}: {e}")
+
+    def reset_to_defaults(self) -> None:
+        """Reload the configuration file, discarding any applied scenario."""
+        self._load()
+        self.scenario = None
 
     # ------------------------------------------------------------------
     # Typed access to the validated configuration model
@@ -277,38 +282,6 @@ class FinancialConfig(ScenarioConfig):
                 result[key] = value
         return result
 
-    # ------------------------------------------------------------------
-    # Deprecated dot-notation access (walks the validated model)
-    # ------------------------------------------------------------------
-    def get(self, key: str, default: Any = None) -> Any:
-        """Deprecated: read a value by dot-notation key.
-
-        Retained during the migration to typed access. Prefer the ``tax``,
-        ``retirement``, ``social_security``, ``accounts``, ``insurance`` and
-        ``debt`` properties instead.
-        """
-        warnings.warn(
-            "FinancialConfig.get() is deprecated; use the typed config properties "
-            "(e.g. config.financial.tax.state.tax_rate) instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        current: Any = self._model
-        for part in key.split("."):
-            if isinstance(current, dict):
-                if part in current:
-                    current = current[part]
-                else:
-                    try:
-                        current = current[int(part)]
-                    except (KeyError, ValueError):
-                        return default
-            elif hasattr(current, part):
-                current = getattr(current, part)
-            else:
-                return default
-        return current
-
     # Social Security historical tables (typed helpers) -----------------
     def get_avg_wage_index_table(self) -> dict[int, float]:
         """Get the full average wage index table."""
@@ -321,3 +294,24 @@ class FinancialConfig(ScenarioConfig):
     def get_bend_points_table(self) -> dict[int, list[int]]:
         """Get the full bend-points table."""
         return self._model.social_security.bend_points
+
+
+_default_config: FinancialConfig | None = None
+
+
+def default_financial_config() -> FinancialConfig:
+    """Return the shared packaged-defaults config, loading it on first use.
+
+    This is the fallback for module-level helpers called without a ``config``. Models never
+    use it: each :class:`~life_model.model.LifeModel` builds its own instance. Loading is lazy
+    so that ``import life_model`` performs no file I/O.
+    """
+    global _default_config
+    if _default_config is None:
+        _default_config = FinancialConfig()
+    return _default_config
+
+
+def resolve_financial_config(config: FinancialConfig | None) -> FinancialConfig:
+    """Return ``config`` if given, else the packaged defaults (see :func:`default_financial_config`)."""
+    return config if config is not None else default_financial_config()

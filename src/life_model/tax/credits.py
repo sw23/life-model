@@ -13,16 +13,11 @@ into the settlement pipeline.
 import math
 from typing import TYPE_CHECKING
 
-from ..config.config_manager import config as _global_config
+from ..config.financial_config import resolve_financial_config as _fin
 from .federal import FilingStatus
 
 if TYPE_CHECKING:
     from ..config.financial_config import FinancialConfig
-
-
-def _fin(config: "FinancialConfig | None") -> "FinancialConfig":
-    """Resolve the financial config to use (per-model if given, else global)."""
-    return config if config is not None else _global_config.financial
 
 
 def _phaseout_threshold(filing_status: FilingStatus, config: "FinancialConfig | None") -> float:
@@ -56,7 +51,7 @@ def child_tax_credit(
         magi: The unit's modified adjusted gross income (ordinary income before deductions).
         federal_tax: Federal income-tax liability before credits.
         filing_status: The unit's filing status (selects the phase-out threshold).
-        config: Per-model config. Defaults to the global config.
+        config: Per-model config. Defaults to the packaged defaults.
 
     Returns:
         The total credit amount to record on ``TaxesDue.credits`` (>= 0).

@@ -6,7 +6,7 @@
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from ..config.config_manager import config as _global_config
+from ..config.financial_config import resolve_financial_config as _fin
 from .brackets import apply_brackets
 
 if TYPE_CHECKING:
@@ -19,11 +19,6 @@ class FilingStatus(Enum):
     # Derived by TaxUnit.build_units for an unmarried member with a dependent child. Falls back
     # to SINGLE deduction/brackets when the config carries no head_of_household data.
     HEAD_OF_HOUSEHOLD = 3
-
-
-def _fin(config: "FinancialConfig | None") -> "FinancialConfig":
-    """Resolve the financial config to use (per-model if given, else global)."""
-    return config if config is not None else _global_config.financial
 
 
 def get_federal_standard_deduction(filing_status: FilingStatus, config: "FinancialConfig | None" = None) -> float:
@@ -48,7 +43,7 @@ def federal_income_tax(income: float, filing_status: FilingStatus, config: "Fina
     Args:
         income (float): Taxable income.
         filing_status (FilingStatus): Filing status for tax purposes.
-        config (FinancialConfig, optional): Per-model config. Defaults to the global config.
+        config (FinancialConfig, optional): Per-model config. Defaults to the packaged defaults.
 
     Returns:
         total_tax: Amount of tax due based on the taxable income.
@@ -83,7 +78,7 @@ def capital_gains_tax(
         ordinary_income: Taxable income taxed at ordinary rates.
         preferential_income: Taxable long-term gains and qualified dividends.
         filing_status: Filing status of the unit.
-        config: Per-model config. Defaults to the global config.
+        config: Per-model config. Defaults to the packaged defaults.
     """
     gains = max(0.0, preferential_income)
     if gains <= 0:
@@ -110,7 +105,7 @@ def net_investment_income_tax(
         net_investment_income: Interest, dividends, and capital gains for the year.
         magi: Modified adjusted gross income (a pre-deduction figure).
         filing_status: Filing status of the unit.
-        config: Per-model config. Defaults to the global config.
+        config: Per-model config. Defaults to the packaged defaults.
     """
     if net_investment_income <= 0:
         return 0.0

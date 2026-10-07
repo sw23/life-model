@@ -3,13 +3,16 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 from enum import Enum
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
-from ..config.config_manager import config as _global_config
+from ..config.financial_config import resolve_financial_config as _fin
 from ..model import Event, LifeModel, LifeModelAgent
 from ..people.mortality import get_chance_of_mortality
 from ..people.person import GenderAtBirth, Person
 from ..tax.income import IncomeType
+
+if TYPE_CHECKING:
+    from ..config.financial_config import FinancialConfig
 
 
 class AnnuityType(Enum):
@@ -30,17 +33,20 @@ class AnnuityPayoutType(Enum):
     LUMP_SUM = "Lump Sum"
 
 
-def calculate_life_expectancy(age: int, gender: GenderAtBirth | None = None) -> float:
+def calculate_life_expectancy(
+    age: int, gender: GenderAtBirth | None = None, config: "FinancialConfig | None" = None
+) -> float:
     """Calculate life expectancy using actuarial mortality tables
 
     Args:
         age: Current age of the person
         gender: Gender for more accurate calculation (optional)
+        config: Per-model config. Defaults to the packaged defaults.
 
     Returns:
         Expected remaining years of life
     """
-    annuity_config = _global_config.financial.insurance.annuity
+    annuity_config = _fin(config).insurance.annuity
     max_age = annuity_config.max_projection_age
     survival_cutoff = annuity_config.survival_probability_cutoff
 
@@ -82,6 +88,7 @@ def calculate_annuity_factor(
     payout_type: AnnuityPayoutType,
     period_certain_years: int = 0,
     gender: GenderAtBirth | None = None,
+    config: "FinancialConfig | None" = None,
 ) -> float:
     """Calculate annuity factor using actuarial principles
 
@@ -91,11 +98,12 @@ def calculate_annuity_factor(
         payout_type: Type of annuity payout
         period_certain_years: Years of guaranteed payments for period certain
         gender: Gender for mortality calculations
+        config: Per-model config. Defaults to the packaged defaults.
 
     Returns:
         Annuity factor (present value of $1 annuity)
     """
-    annuity_config = _global_config.financial.insurance.annuity
+    annuity_config = _fin(config).insurance.annuity
     max_age = annuity_config.max_projection_age
     survival_cutoff = annuity_config.survival_probability_cutoff
     max_months = (max_age - age) * 12
@@ -158,7 +166,7 @@ def calculate_annuity_factor(
 
     else:
         # For other types, use simplified calculation
-        life_expectancy = calculate_life_expectancy(age, gender)
+        life_expectancy = calculate_life_expectancy(age, gender, config)
         total_months = life_expectancy * 12
 
         if monthly_rate > 0:
@@ -354,6 +362,7 @@ class Annuity(LifeModelAgent):
                 payout_type=self.payout_type,
                 period_certain_years=self.period_certain_years,
                 gender=gender,
+                config=self.model.config,
             )
 
             # Calculate monthly payment: balance divided by annuity factor
@@ -361,7 +370,7 @@ class Annuity(LifeModelAgent):
                 self.monthly_payout = self.balance / annuity_factor
             else:
                 # Fallback to simple calculation if factor is zero
-                life_expectancy = calculate_life_expectancy(self.person.age, gender)
+                life_expectancy = calculate_life_expectancy(self.person.age, gender, self.model.config)
                 self.monthly_payout = self.balance / (life_expectancy * 12)
 
         # Set remaining period certain payments if applicable
@@ -390,7 +399,7 @@ class Annuity(LifeModelAgent):
 
     def _expected_payout_months(self, gender: GenderAtBirth | None) -> float:
         """Expected number of monthly payouts, used for the exclusion ratio."""
-        life_months = calculate_life_expectancy(self.person.age, gender) * 12
+        life_months = calculate_life_expectancy(self.person.age, gender, self.model.config) * 12
         if self.payout_type == AnnuityPayoutType.LIFE_WITH_PERIOD_CERTAIN:
             return max(life_months, self.period_certain_years * 12)
         return life_months

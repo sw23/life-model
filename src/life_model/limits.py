@@ -5,15 +5,10 @@
 
 from typing import TYPE_CHECKING
 
-from .config.config_manager import config as _global_config
+from .config.financial_config import resolve_financial_config as _fin
 
 if TYPE_CHECKING:
     from .config.financial_config import FinancialConfig
-
-
-def _fin(config: "FinancialConfig | None") -> "FinancialConfig":
-    """Resolve the financial config to use (per-model if given, else global)."""
-    return config if config is not None else _global_config.financial
 
 
 def job_401k_contrib_limit(age: int, config: "FinancialConfig | None" = None) -> int:
@@ -46,7 +41,7 @@ def required_min_distrib(
     Args:
         age: The account owner's age this year.
         balance: The pre-tax retirement balance subject to RMDs.
-        config: Per-model config. Defaults to the global config.
+        config: Per-model config. Defaults to the packaged defaults.
         start_age: The age at which RMDs begin. When ``None``, RMDs begin at the first age in the
             distribution-period table. Callers should pass the SECURE 2.0 start
             age via :func:`rmd_start_age`.
@@ -82,7 +77,7 @@ def rmd_start_age(birth_year: int, config: "FinancialConfig | None" = None, year
 
     Args:
         birth_year: The account owner's birth year.
-        config: Per-model config. Defaults to the global config.
+        config: Per-model config. Defaults to the packaged defaults.
         year: The simulated year, used to look up the year-indexed base start age.
     """
     if birth_year >= 1960:
