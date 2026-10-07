@@ -35,14 +35,24 @@ custom = LifeModel(config=my_config)  # a FinancialConfig you built
 
 Domain code reads configuration through the model:
 `self.model.config.tax.state.tax_rate`, `self.model.config.accounts.hsa.
-contribution_limit`, and so on. The tax functions
-(`federal_income_tax`, `state_income_tax`, `social_security_tax`, `medicare_tax`,
-`get_income_taxes_due`) accept an optional `config` argument; agents pass
-`self.model.config` so the correct per-model values are used.
+contribution_limit`, and so on. Module-level helpers (the tax functions such as
+`federal_income_tax` and `get_income_taxes_due`, the `limits` helpers, the Social
+Security table lookups, and the annuity pricing functions) accept an optional
+`config` argument; agents pass `self.model.config` so the correct per-model values
+are used. Called without `config`, a helper falls back to the packaged defaults
+(`life_model.config.financial_config.default_financial_config()`).
 
-### Typed access vs. the deprecated `get()`
+### The deprecated global `config`
 
-Prefer the typed properties on `FinancialConfig`:
+`life_model.config.config_manager.config` is deprecated and emits a
+`DeprecationWarning` on use. It never affected `LifeModel` instances, which own
+their config; mutating it only changed the fallback used by helpers called without
+`config`. Pass `LifeModel(config=..., scenario=...)` instead. It will be removed in
+a future release.
+
+### Typed access
+
+Read values through the typed properties on `FinancialConfig`:
 
 | Property | Returns |
 | --- | --- |
@@ -54,8 +64,8 @@ Prefer the typed properties on `FinancialConfig`:
 | `config.debt` | credit card defaults |
 | `config.equity_comp` | stock compensation vesting defaults |
 
-The dot-notation accessor `config.get("tax.state.tax_rate")` still works
-but emits a `DeprecationWarning`; prefer the typed properties above.
+The dot-notation accessor `config.get("tax.state.tax_rate")`, deprecated since
+v0.3.1, has been removed; use the typed properties above.
 
 ## Authoring scenarios
 

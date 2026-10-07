@@ -5,16 +5,11 @@
 
 from typing import TYPE_CHECKING
 
-from ..config.config_manager import config as _global_config
+from ..config.financial_config import resolve_financial_config as _fin
 from .federal import FilingStatus
 
 if TYPE_CHECKING:
     from ..config.financial_config import FinancialConfig
-
-
-def _fin(config: "FinancialConfig | None") -> "FinancialConfig":
-    """Resolve the financial config to use (per-model if given, else global)."""
-    return config if config is not None else _global_config.financial
 
 
 def get_social_security_rate(config: "FinancialConfig | None" = None) -> float:

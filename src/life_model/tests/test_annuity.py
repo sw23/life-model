@@ -205,5 +205,48 @@ class TestAnnuityReserveAndTaxation(unittest.TestCase):
         self.assertEqual(annuity.interest_rate, 9.5)
 
 
+class TestAnnuityPerModelConfig(unittest.TestCase):
+    """Annuity pricing reads the owning model's config, not a process-global one."""
+
+    @staticmethod
+    def _short_horizon_config():
+        from ..config.financial_config import FinancialConfig
+
+        cfg = FinancialConfig()
+        cfg.apply_scenario("short_horizon", {"insurance": {"annuity": {"max_projection_age": 75}}})
+        return cfg
+
+    def test_life_expectancy_honors_explicit_config(self):
+        from ..insurance.annuity import calculate_life_expectancy
+
+        short = calculate_life_expectancy(65, config=self._short_horizon_config())
+        default = calculate_life_expectancy(65)
+        self.assertLessEqual(short, 10.0)  # capped by the 75-year horizon
+        self.assertGreater(default, short)
+
+    def _monthly_payout(self, config=None):
+        model = LifeModel(start_year=2023, end_year=2030, config=config)
+        person = Person(family=Family(model), name="P", age=65, retirement_age=65, spending=Spending(model, base=1000))
+        BankAccount(owner=person, company="Bank", balance=1000)
+        annuity = Annuity(
+            person=person,
+            annuity_type=AnnuityType.FIXED,
+            initial_balance=100000,
+            interest_rate=3.0,
+            payout_start_age=65,
+        )
+        self.assertTrue(annuity.annuitize())
+        return annuity.monthly_payout
+
+    def test_models_with_different_annuity_config_price_differently(self):
+        """A shorter actuarial horizon in one model means fewer expected payments, so a larger payout.
+
+        The custom model is built first so any leak into shared state would also corrupt the default.
+        """
+        short_payout = self._monthly_payout(self._short_horizon_config())
+        default_payout = self._monthly_payout()
+        self.assertGreater(short_payout, default_payout)
+
+
 if __name__ == "__main__":
     unittest.main()

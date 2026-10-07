@@ -4,10 +4,12 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from ..account.bank import BankAccount
 from ..account.job401k import Job401kAccount
+from ..config.financial_config import FinancialConfig
 from ..model import LifeModel
 from ..people.family import Family
 from ..people.person import Person, Spending
@@ -17,10 +19,17 @@ from ..tax.federal import FilingStatus
 from ..tax.tax import TaxesDue
 from ..work.job import Job, Salary
 
+TEST_CONFIG = str(Path(__file__).parent / "fixtures" / "test_config.yaml")
+
+
+def _fixture_config() -> FinancialConfig:
+    """Fresh FinancialConfig loaded from the frozen test fixture."""
+    return FinancialConfig(config_file=TEST_CONFIG)
+
 
 class TestTaxCalculationService(unittest.TestCase):
     def setUp(self):
-        self.model = LifeModel(1)
+        self.model = LifeModel(1, config=_fixture_config())
         self.family = Family(self.model, "Test Family")
         self.spending = Spending(self.model, base=50000)
         self.person = Person(self.family, "John", 30, 67, self.spending)
@@ -67,6 +76,18 @@ class TestTaxCalculationService(unittest.TestCase):
             # Note: The actual result might be different due to max_tax_rate calculation
             self.assertAlmostEqual(result, 1500, delta=200)  # Allow some tolerance
 
+    def test_calculate_taxes_on_401k_withdrawal_unmocked_against_fixture(self):
+        """Real tax path against the frozen fixture: no other income, $30k pre-tax withdrawal.
+
+        Federal: ($30,000 - $10,000 standard deduction) x 10% = $2,000 (no FICA on distributions).
+        State: the DEFAULT pack's flat 5% applies to the federal-style AGI base, i.e. after the
+        federal deduction: $20,000 x 5% = $1,000.
+        Buffer: $3,000 x 25% (fixture top bracket) = $750. Total $3,750.
+        """
+        self.assertEqual(self.person.taxable_income, 0)
+        result = self.tax_service.calculate_taxes_on_401k_withdrawal(30000)
+        self.assertAlmostEqual(result, 3750.0, places=2)
+
     def test_calculate_taxes_on_401k_withdrawal_zero_amount(self):
         """Test tax calculation with zero withdrawal amount"""
         result = self.tax_service.calculate_taxes_on_401k_withdrawal(0)
@@ -89,7 +110,7 @@ class TestTaxCalculationService(unittest.TestCase):
 
 class TestPaymentService(unittest.TestCase):
     def setUp(self):
-        self.model = LifeModel(2)
+        self.model = LifeModel(2, config=_fixture_config())
         self.family = Family(self.model, "Test Family")
         self.spending = Spending(self.model, base=50000)
         self.person = Person(self.family, "Jane", 35, 67, self.spending)

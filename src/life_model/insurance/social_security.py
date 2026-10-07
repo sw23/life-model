@@ -39,18 +39,24 @@
 # https://www.ssa.gov/OACT/COLA/awiseries.html
 
 
-from ..config.config_manager import config
+from typing import TYPE_CHECKING
+
+from ..config.financial_config import resolve_financial_config as _fin
 from ..model import LifeModelAgent
 from ..people.person import Person
 from ..tax.federal import FilingStatus
 from ..tax.income import IncomeType
 
+if TYPE_CHECKING:
+    from ..config.financial_config import FinancialConfig
 
-def get_avg_wage_index(year: int) -> float:
+
+def get_avg_wage_index(year: int, config: "FinancialConfig | None" = None) -> float:
     """Compute the average wage index for a given year
 
     Args:
         year: The year to compute the average wage index for
+        config: Per-model config. Defaults to the packaged defaults.
 
     Returns:
         The average wage index for the given year
@@ -61,7 +67,7 @@ def get_avg_wage_index(year: int) -> float:
     if year < 1951:
         raise ValueError("Average wage index is not available before 1951")
 
-    ss_config = config.financial.social_security
+    ss_config = _fin(config).social_security
     last_year = ss_config.last_avg_wage_index_year
 
     if year <= last_year:
@@ -77,11 +83,12 @@ def get_avg_wage_index(year: int) -> float:
         return last_index
 
 
-def get_cost_of_living_adj(year: int) -> float:
+def get_cost_of_living_adj(year: int, config: "FinancialConfig | None" = None) -> float:
     """Get the cost of living adjustment for a given year
 
     Args:
         year: The year to get the cost of living adjustment for
+        config: Per-model config. Defaults to the packaged defaults.
 
     Returns:
         The cost of living adjustment for the given year
@@ -92,7 +99,7 @@ def get_cost_of_living_adj(year: int) -> float:
     if year < 1975:
         raise ValueError("Cost of living adjustment is not available before 1975")
 
-    ss_config = config.financial.social_security
+    ss_config = _fin(config).social_security
     last_year = ss_config.last_cost_of_living_adj_year
 
     if year <= last_year:
@@ -103,11 +110,12 @@ def get_cost_of_living_adj(year: int) -> float:
         return ss_config.long_run_cost_of_living_adj
 
 
-def get_bend_points(year: int) -> tuple[float, float]:
+def get_bend_points(year: int, config: "FinancialConfig | None" = None) -> tuple[float, float]:
     """Get the bend points for a given year
 
     Args:
         year: The year to get the bend points for
+        config: Per-model config. Defaults to the packaged defaults.
 
     Returns:
         A tuple containing the bend points for the given year
@@ -118,7 +126,7 @@ def get_bend_points(year: int) -> tuple[float, float]:
     if year < 1979:
         raise ValueError("Bend points are not available before 1979")
 
-    ss_config = config.financial.social_security
+    ss_config = _fin(config).social_security
     last_year = ss_config.last_bend_points_year
 
     if year <= last_year:
@@ -137,11 +145,12 @@ def get_bend_points(year: int) -> tuple[float, float]:
         return (bp0, bp1)
 
 
-def get_qc_earnings_for_year(year: int) -> int:
+def get_qc_earnings_for_year(year: int, config: "FinancialConfig | None" = None) -> int:
     """Compute the number of credits earned for a given year
 
     Args:
         year: The year to compute the number of credits earned for
+        config: Per-model config. Defaults to the packaged defaults.
 
     Returns:
         The number of credits earned for the given year
@@ -152,64 +161,64 @@ def get_qc_earnings_for_year(year: int) -> int:
     if year < 1978:
         raise ValueError("QC earnings are not available before 1978")
 
-    ss_config = config.financial.social_security
+    ss_config = _fin(config).social_security
     credit_amt_1978 = ss_config.qc_credit_amount_1978
     avg_wage_idx_1976 = ss_config.qc_avg_wage_index_1976
 
     # Calculate previous year's QC amount (rounded to nearest 10 dollars)
-    prev_year_amount = credit_amt_1978 * get_avg_wage_index(year - 3) / avg_wage_idx_1976
+    prev_year_amount = credit_amt_1978 * get_avg_wage_index(year - 3, config) / avg_wage_idx_1976
     prev_year_amount = int(round(prev_year_amount / 10.0) * 10.0)
 
     # Calculate current year's QC amount (rounded to nearest 10 dollars)
-    curr_year_amount = credit_amt_1978 * get_avg_wage_index(year - 2) / avg_wage_idx_1976
+    curr_year_amount = credit_amt_1978 * get_avg_wage_index(year - 2, config) / avg_wage_idx_1976
     curr_year_amount = int(round(curr_year_amount / 10.0) * 10.0)
 
     # Pick the larger of the two
     return max(prev_year_amount, curr_year_amount)
 
 
-def get_credits_for_year(year: int, earnings: float) -> int:
+def get_credits_for_year(year: int, earnings: float, config: "FinancialConfig | None" = None) -> int:
     """Compute the number of credits earned for a given year"""
-    qc_earnings = get_qc_earnings_for_year(year)
-    ss_config = config.financial.social_security
+    qc_earnings = get_qc_earnings_for_year(year, config)
+    ss_config = _fin(config).social_security
     max_credits = ss_config.max_credits_per_year
     return min(max_credits, int(earnings / qc_earnings))
 
 
 # Property accessors for configuration values
-def get_min_eligible_credits() -> int:
+def get_min_eligible_credits(config: "FinancialConfig | None" = None) -> int:
     """Get minimum eligible credits from configuration"""
-    return config.financial.social_security.min_eligible_credits
+    return _fin(config).social_security.min_eligible_credits
 
 
-def get_max_credits_per_year() -> int:
+def get_max_credits_per_year(config: "FinancialConfig | None" = None) -> int:
     """Get maximum credits per year from configuration"""
-    return config.financial.social_security.max_credits_per_year
+    return _fin(config).social_security.max_credits_per_year
 
 
-def get_max_years_of_income() -> int:
+def get_max_years_of_income(config: "FinancialConfig | None" = None) -> int:
     """Get maximum years of income from configuration"""
-    return config.financial.social_security.max_years_of_income
+    return _fin(config).social_security.max_years_of_income
 
 
-def get_min_early_retirement_age() -> int:
+def get_min_early_retirement_age(config: "FinancialConfig | None" = None) -> int:
     """Get minimum early retirement age from configuration"""
-    return config.financial.social_security.min_early_retirement_age
+    return _fin(config).social_security.min_early_retirement_age
 
 
-def get_normal_retirement_age() -> int:
+def get_normal_retirement_age(config: "FinancialConfig | None" = None) -> int:
     """Get normal retirement age from configuration"""
-    return config.financial.social_security.normal_retirement_age
+    return _fin(config).social_security.normal_retirement_age
 
 
-def get_delayed_retirement_credit() -> float:
+def get_delayed_retirement_credit(config: "FinancialConfig | None" = None) -> float:
     """Get delayed retirement credit from configuration"""
-    return config.financial.social_security.delayed_retirement_credit
+    return _fin(config).social_security.delayed_retirement_credit
 
 
-def get_max_delayed_retirement_credit_age() -> int:
+def get_max_delayed_retirement_credit_age(config: "FinancialConfig | None" = None) -> int:
     """Get maximum delayed retirement credit age from configuration"""
-    return config.financial.social_security.max_delayed_retirement_credit_age
+    return _fin(config).social_security.max_delayed_retirement_credit_age
 
 
 class Income:
@@ -226,15 +235,16 @@ class Income:
     def _repr_html_(self):
         return f"<p>{self.year}: ${self.amount}</p>"
 
-    def get_credits(self) -> int:
+    def get_credits(self, config: "FinancialConfig | None" = None) -> int:
         """Compute the number of credits earned for a given year"""
-        return get_credits_for_year(self.year, self.amount)
+        return get_credits_for_year(self.year, self.amount, config)
 
-    def get_indexed_amount(self, person_age_60_year: int) -> float:
+    def get_indexed_amount(self, person_age_60_year: int, config: "FinancialConfig | None" = None) -> float:
         """Compute the indexed amount for a given year
 
         Args:
             person_age_60_year: The year in which the person attains age 60
+            config: Per-model config. Defaults to the packaged defaults.
 
         Returns:
             The indexed amount for the given year
@@ -242,7 +252,8 @@ class Income:
         if self.year >= person_age_60_year:
             return self.amount
         else:
-            return self.amount * get_avg_wage_index(person_age_60_year) / get_avg_wage_index(self.year)
+            awi_at_60 = get_avg_wage_index(person_age_60_year, config)
+            return self.amount * awi_at_60 / get_avg_wage_index(self.year, config)
 
 
 class SocialSecurity(LifeModelAgent):
@@ -274,7 +285,7 @@ class SocialSecurity(LifeModelAgent):
                 else:
                     self.income_history.append(Income(income[0], income[1]))
 
-        if self.withdrawal_start_age < get_min_early_retirement_age():
+        if self.withdrawal_start_age < get_min_early_retirement_age(self.model.config):
             raise ValueError("Withdrawal start age cannot be before early retirement age")
 
         # Monthly PIA floor granted as a Social Security survivor benefit when a spouse dies: the
@@ -319,19 +330,21 @@ class SocialSecurity(LifeModelAgent):
 
     def get_indexed_income_history(self) -> list[float]:
         """Computes indexed earnings for a person"""
-        return [x.get_indexed_amount(self.person.get_year_at_age(60)) for x in self.income_history]
+        age_60_year = self.person.get_year_at_age(60)
+        return [x.get_indexed_amount(age_60_year, self.model.config) for x in self.income_history]
 
     def get_aime(self) -> float:
         """Computes Average Indexed Monthly Earnings (AIME) for a person"""
 
         # Make sure the person has enough credits to be eligible
-        credits_earned = sum(x.get_credits() for x in self.income_history)
-        if credits_earned < get_min_eligible_credits():
+        config = self.model.config
+        credits_earned = sum(x.get_credits(config) for x in self.income_history)
+        if credits_earned < get_min_eligible_credits(config):
             return 0
 
         # Pick the highest 35 values from the list
         indexed_earnings = self.get_indexed_income_history()
-        max_years = get_max_years_of_income()
+        max_years = get_max_years_of_income(config)
         highest_earnings = sorted(indexed_earnings, reverse=True)[:max_years]
 
         return round(sum(highest_earnings) / (max_years * 12))
@@ -347,7 +360,8 @@ class SocialSecurity(LifeModelAgent):
         """
         # Apply early/delayed retirement credits
         # https://www.ssa.gov/oact/quickcalc/early_late.html
-        normal_ret_age = get_normal_retirement_age()
+        config = self.model.config
+        normal_ret_age = get_normal_retirement_age(config)
         if self.withdrawal_start_age < normal_ret_age:
             # Reduce for early withdrawal
             months_early = (normal_ret_age - self.withdrawal_start_age) * 12
@@ -356,11 +370,11 @@ class SocialSecurity(LifeModelAgent):
             pia *= 1 - reduction_pct
         elif self.withdrawal_start_age > normal_ret_age:
             # Increase for delayed withdrawal
-            max_del_age = get_max_delayed_retirement_credit_age()
+            max_del_age = get_max_delayed_retirement_credit_age(config)
             max_months_delayed = (max_del_age - normal_ret_age) * 12
             months_delayed = (self.withdrawal_start_age - normal_ret_age) * 12
             months_delayed = min(months_delayed, max_months_delayed)
-            del_credit = get_delayed_retirement_credit()
+            del_credit = get_delayed_retirement_credit(config)
             increase_pct = months_delayed * (del_credit / (100 * 12))
             pia *= 1 + increase_pct
         return pia
@@ -383,7 +397,7 @@ class SocialSecurity(LifeModelAgent):
 
         # Apply bend points
         year_of_age_62 = self.person.get_year_at_age(62)
-        bend_points = get_bend_points(year_of_age_62)
+        bend_points = get_bend_points(year_of_age_62, self.model.config)
         pia += min(aime, bend_points[0]) * 0.9
         pia += min(max(0, aime - bend_points[0]), bend_points[1] - bend_points[0]) * 0.32
         pia += max(0, aime - bend_points[1]) * 0.15
@@ -394,7 +408,7 @@ class SocialSecurity(LifeModelAgent):
         # Apply cost of living adjustment
         for cola_year in range(year_of_age_62, current_year):
             # This rounding seems to match the SSA's rounding (truncating to nearest lower dime)
-            pia = int(pia * (1 + get_cost_of_living_adj(cola_year) / 100.0) * 10) / 10.0
+            pia = int(pia * (1 + get_cost_of_living_adj(cola_year, self.model.config) / 100.0) * 10) / 10.0
 
         # Apply early/delayed retirement credits
         pia = self.get_early_delayed_pia(pia)

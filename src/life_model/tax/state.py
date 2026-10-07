@@ -18,7 +18,7 @@ Two code paths coexist:
 
 from typing import TYPE_CHECKING
 
-from ..config.config_manager import config as _global_config
+from ..config.financial_config import resolve_financial_config as _fin
 from .brackets import apply_brackets
 from .income import IncomeType
 
@@ -26,10 +26,6 @@ if TYPE_CHECKING:
     from ..config.financial_config import FinancialConfig
     from ..config.models import StateTaxPack
     from .federal import FilingStatus
-
-
-def _fin(config: "FinancialConfig | None") -> "FinancialConfig":
-    return config if config is not None else _global_config.financial
 
 
 def get_state_tax_rate(config: "FinancialConfig | None" = None) -> float:
@@ -42,7 +38,7 @@ def state_income_tax(income: float, config: "FinancialConfig | None" = None) -> 
 
     Args:
         income (float): Income subject to state income taxes (a federal-style AGI base).
-        config (FinancialConfig, optional): Per-model config. Defaults to the global config.
+        config (FinancialConfig, optional): Per-model config. Defaults to the packaged defaults.
 
     Returns:
         total_tax: Amount of tax due based on the taxable income.
@@ -83,7 +79,7 @@ def state_income_tax_for_unit(
         filing_status: Filing status of the unit.
         state: The resident's state code (``None`` → the config default state).
         legacy_agi_base: The federal-style AGI base used for the ``DEFAULT`` flat-rate path.
-        config: Per-model config. Defaults to the global config.
+        config: Per-model config. Defaults to the packaged defaults.
     """
     state_config = _fin(config).tax.state
     from ..config.models import DEFAULT_STATE_KEY
