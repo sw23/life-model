@@ -5,7 +5,6 @@
 
 from typing import TYPE_CHECKING
 
-from ..tax.federal import max_tax_rate
 from ..tax.tax import TaxesDue
 
 if TYPE_CHECKING:
@@ -13,7 +12,12 @@ if TYPE_CHECKING:
 
 
 class TaxCalculationService:
-    """Service for handling tax calculations and 401k withdrawal planning"""
+    """Single-person pre-tax 401k withdrawal planning.
+
+    Sizing is side-effect free and exact: the gross withdrawal is the fixed point of
+    ``gross = expenses + taxes(gross) - bank``, the same solve the tax unit uses at settlement, so
+    no max-marginal-rate safety buffer is needed (Plan 05 item 9). Execution is a separate step.
+    """
 
     def __init__(self, person: "Person"):
         self.person = person
@@ -30,29 +34,37 @@ class TaxCalculationService:
         return max(0, total_expenses - self.person.bank_account_balance)
 
     def calculate_taxes_on_401k_withdrawal(self, withdrawal_amount: float) -> float:
-        """Calculate additional taxes owed on 401k withdrawal
+        """Additional taxes (and any early-withdrawal penalty) a pre-tax withdrawal would trigger.
 
         Args:
             withdrawal_amount: Amount being withdrawn from pre-tax 401k
 
         Returns:
-            Additional taxes owed on the withdrawal
+            The exact increase in this year's taxes due to the withdrawal.
         """
         if withdrawal_amount <= 0:
             return 0.0
-
-        # Calculate taxes before and after 401k withdrawal
         taxes_before = self.person.get_income_taxes_due()
         taxes_after = self.person.get_income_taxes_due(withdrawal_amount)
-        base_tax_increase = taxes_after.total - taxes_before.total
+        return taxes_after.total - taxes_before.total
 
-        # Add buffer based on max tax rate to ensure sufficient funds for taxes
-        tax_buffer = base_tax_increase * (max_tax_rate(self.person.filing_status, self.person.model.config) / 100)
+    def size_401k_withdrawal(self, expenses_without_taxes: float) -> float:
+        """Pre-tax withdrawal that covers ``expenses_without_taxes`` plus the taxes it triggers.
 
-        return base_tax_increase + tax_buffer
+        Side-effect free. The map is a contraction because the marginal rate (plus penalty) stays
+        below 100%, so it converges in a handful of iterations.
+        """
+        bank = self.person.bank_account_balance
+        gross = 0.0
+        for _ in range(100):
+            needed = max(0.0, expenses_without_taxes + self.person.get_income_taxes_due(gross).total - bank)
+            if abs(needed - gross) < 0.001:
+                return needed
+            gross = needed
+        return gross
 
     def calculate_total_401k_withdrawal(self, expenses_without_taxes: float) -> tuple[float, TaxesDue]:
-        """Calculate total 401k withdrawal needed including taxes
+        """Size and perform the pre-tax withdrawal needed to cover expenses plus taxes.
 
         Args:
             expenses_without_taxes: Total expenses excluding taxes
@@ -60,24 +72,7 @@ class TaxCalculationService:
         Returns:
             Tuple of (total_withdrawal_amount, final_taxes_due)
         """
-        # Get initial tax calculation
-        initial_taxes = self.person.get_income_taxes_due()
-        total_expenses_with_taxes = expenses_without_taxes + initial_taxes.total
-
-        # Calculate base withdrawal needed
-        base_withdrawal = self.calculate_pretax_401k_withdrawal_needed(total_expenses_with_taxes)
-
-        if base_withdrawal <= 0:
-            return 0.0, initial_taxes
-
-        # Calculate additional taxes on withdrawal
-        additional_taxes = self.calculate_taxes_on_401k_withdrawal(base_withdrawal)
-        total_withdrawal = base_withdrawal + additional_taxes
-
-        # Perform the withdrawal
-        self.person.withdraw_from_pretax_401ks(total_withdrawal)
-
-        # Recalculate final taxes after withdrawal
-        final_taxes = self.person.get_income_taxes_due()
-
-        return total_withdrawal, final_taxes
+        total_withdrawal = self.size_401k_withdrawal(expenses_without_taxes)
+        if total_withdrawal > 0:
+            self.person.withdraw_from_pretax_401ks(total_withdrawal)
+        return total_withdrawal, self.person.get_income_taxes_due()

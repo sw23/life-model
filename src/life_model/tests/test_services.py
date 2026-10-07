@@ -16,7 +16,6 @@ from ..people.person import Person, Spending
 from ..services.payment_service import PaymentService
 from ..services.tax_calculation_service import TaxCalculationService
 from ..tax.federal import FilingStatus
-from ..tax.tax import TaxesDue
 from ..work.job import Job, Salary
 
 TEST_CONFIG = str(Path(__file__).parent / "fixtures" / "test_config.yaml")
@@ -56,26 +55,6 @@ class TestTaxCalculationService(unittest.TestCase):
         result = self.tax_service.calculate_pretax_401k_withdrawal_needed(15000)
         self.assertEqual(result, 5000)  # 15000 - 10000 bank balance
 
-    @patch("life_model.services.tax_calculation_service.max_tax_rate")
-    def test_calculate_taxes_on_401k_withdrawal(self, mock_max_tax_rate):
-        """Test tax calculation on 401k withdrawal"""
-        mock_max_tax_rate.return_value = 25
-
-        # Mock the tax calculation methods
-        with patch.object(self.person, "get_income_taxes_due") as mock_taxes:
-            mock_taxes.side_effect = [
-                TaxesDue(federal=5000, state=1000, ss=0, medicare=0),  # Before withdrawal
-                TaxesDue(federal=6000, state=1200, ss=0, medicare=0),  # After withdrawal
-            ]
-
-            result = self.tax_service.calculate_taxes_on_401k_withdrawal(10000)
-
-            # Base increase: (6000+1200) - (5000+1000) = 1200
-            # Buffer: 1200 * (25/100) = 300
-            # Total: 1200 + 300 = 1500
-            # Note: The actual result might be different due to max_tax_rate calculation
-            self.assertAlmostEqual(result, 1500, delta=200)  # Allow some tolerance
-
     def test_calculate_taxes_on_401k_withdrawal_unmocked_against_fixture(self):
         """Real tax path against the frozen fixture: no other income, $30k pre-tax withdrawal.
 
@@ -83,11 +62,21 @@ class TestTaxCalculationService(unittest.TestCase):
         plus the 10% early-withdrawal additional tax because the owner is 30: $3,000.
         State: the DEFAULT pack's flat 5% applies to the federal-style AGI base, i.e. after the
         federal deduction: $20,000 x 5% = $1,000.
-        Buffer: $6,000 x 25% (fixture top bracket) = $1,500. Total $7,500.
+        Exactly $6,000: no max-marginal-rate buffer (Plan 05 item 9).
         """
         self.assertEqual(self.person.taxable_income, 0)
         result = self.tax_service.calculate_taxes_on_401k_withdrawal(30000)
-        self.assertAlmostEqual(result, 7500.0, places=2)
+        self.assertAlmostEqual(result, 6000.0, places=2)
+
+    def test_sizing_is_the_exact_fixed_point(self):
+        """$30k of expenses, $10k in the bank, owner aged 30, fixture rates.
+
+        taxes(G) = 10% x (G - 10k) federal + 10% x G penalty + 5% x (G - 10k) state = 0.25 G - 1,500,
+        so G = 30,000 + 0.25 G - 1,500 - 10,000  ->  G = 24,666.67 (no over-withdrawal).
+        """
+        gross = self.tax_service.size_401k_withdrawal(30000)
+        self.assertAlmostEqual(gross, 74000 / 3, places=2)
+        self.assertEqual(self.job401k.pretax_balance, 50000)  # sizing moves no money
 
     def test_calculate_taxes_on_401k_withdrawal_zero_amount(self):
         """Test tax calculation with zero withdrawal amount"""
