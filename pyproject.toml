@@ -13,7 +13,7 @@ authors = [{ name = "Spencer Williams", email = "sw23@users.noreply.github.com" 
 dependencies = [
     "pandas",
     "matplotlib",
-    "mesa>=3.3",
+    "mesa>=3.5",
     "networkx",
     "pyyaml",
     "pydantic>=2",

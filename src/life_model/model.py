@@ -3,8 +3,6 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-import itertools
-import weakref
 from collections.abc import Callable
 from datetime import datetime
 from math import e as const_e
@@ -494,26 +492,7 @@ class LifeModel(mesa.Model):
         return df.drop(df.index[0])
 
 
-class _ModelIdCounters(weakref.WeakKeyDictionary):
-    """Per-model agent id counters that do not keep their models alive.
-
-    mesa 3.3's ``Agent._ids`` is a class-level ``defaultdict`` keyed by model, so every model ever
-    built stays reachable (with all of its agents) for the life of the process. Batch callers that
-    build thousands of models (Monte Carlo, RL episodes, SLM data generation) leaked gigabytes per
-    worker. Newer mesa assigns ids in the model and never reads ``_ids``.
-    """
-
-    def __getitem__(self, model):
-        try:
-            return super().__getitem__(model)
-        except KeyError:
-            counter = self[model] = itertools.count(1)
-            return counter
-
-
 class LifeModelAgent(mesa.Agent):
-    _ids = _ModelIdCounters()
-
     # Per-stage execution priority. Within a stage, agents run in ascending priority order
     # (lower runs first); ties preserve construction order. This makes the yearly sequence
     # deterministic and independent of object construction order (see LifeModel.step docstring).

@@ -5,9 +5,9 @@
 
 """A finished LifeModel must be garbage-collectable.
 
-mesa 3.3 keys its agent id counters by model in a class-level dict, which kept every model ever
-built (and all of its agents) alive. Batch callers build thousands of models per process, so the
-leak grew without bound — it exhausted memory during SLM dataset generation.
+mesa before 3.4.2 kept its agent id counters in a class-level dict keyed by model, so every model
+ever built (and all of its agents) stayed alive. Batch callers build thousands of models per
+process, so the leak grew without bound — it exhausted memory during SLM dataset generation.
 """
 
 import gc
