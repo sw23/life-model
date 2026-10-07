@@ -12,6 +12,8 @@ from ..tax.income import IncomeType
 
 
 class TraditionalIRA(TaxAdvantagedAccount):
+    STATS_OWNED = frozenset({"stat_required_min_distrib"})
+
     tax_treatment = TaxTreatment.PRETAX
     is_rmd_eligible = True
     limit_group = "ira"  # one IRA limit shared across Roth and Traditional

@@ -488,7 +488,12 @@ class TaxUnit:
 
         # Personal debt carried by members is settled exactly once (fixes double-pay / phantom
         # debt): zero it here and fold it into this year's bills.
+        # The carried balance accrues a year of interest (credit-card-like by default) before it
+        # is repaid: unpaid bills are a real liability, not a free loan.
+        debt_rate = self.config.debt.effective_unpaid_balance_interest_rate / 100
         existing_debt = sum(m.debt for m in self.members)
+        carried_interest_by_member = {m.unique_id: m.debt * debt_rate for m in self.members}
+        existing_debt += sum(carried_interest_by_member.values())
         for member in self.members:
             member.debt = 0
 
@@ -521,7 +526,7 @@ class TaxUnit:
                 member.income.add(IncomeType.ORDINARY, -student_loan_deduction)
 
             housing_by_member[member.unique_id] = member_housing
-            interest_by_member[member.unique_id] = member_interest
+            interest_by_member[member.unique_id] = member_interest + carried_interest_by_member[member.unique_id]
             debt_payment_by_member[member.unique_id] = member_debt_paid
 
         total_spending = sum(spending_by_member.values())

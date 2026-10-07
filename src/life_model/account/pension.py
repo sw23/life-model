@@ -29,6 +29,8 @@ class Pension(Benefit):
         spouse at the retiree's death (see :meth:`Person.die`); no joint-life actuarial factor.
     """
 
+    STATS_OWNED = frozenset({"stat_pension_income"})
+
     def __init__(
         self,
         person: Person,

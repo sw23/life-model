@@ -30,6 +30,8 @@ from .inflation import medical_inflation_factor
 
 
 class LongTermCare(LifeModelAgent):
+    STATS_OWNED = frozenset({"stat_medical_costs"})
+
     def __init__(self, person: Person):
         """Model long-term-care need and costs for a person.
 

@@ -557,6 +557,9 @@ debt:
   student_loan:
     # vintage: 2025, source: IRC §221 above-the-line interest deduction (MAGI phase-out ignored)
     interest_deduction_limit: 2500  # dollars per year
+  # Interest on unpaid bills carried into the next year (Person.debt). Modeling assumption, not a
+  # published figure: null charges the credit-card rate above.
+  unpaid_balance_interest_rate: null
 
 housing:
   # PMI charged yearly while loan-to-value exceeds the threshold, then auto-dropped.

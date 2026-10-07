@@ -160,6 +160,8 @@ class StockPlan(LifeModelAgent):
     feedback is not modeled.
     """
 
+    STATS_OWNED = frozenset({"stat_gross_income", "stat_stock_vested", "stat_stock_unvested"})
+
     # Runs after Job.pre_step (priority 0) so wages are already on the ledger, and well before the
     # step stage where the tax unit reads it.
     STEP_PRIORITY: ClassVar[dict[str, int]] = {"pre_step": 5}

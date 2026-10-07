@@ -25,6 +25,8 @@ class PremiumIncreaseType(Enum):
 
 
 class LifeInsurance(LifeModelAgent):
+    STATS_OWNED = frozenset({"stat_premium_payments", "stat_cash_value", "stat_death_benefit_paid"})
+
     def __init__(
         self,
         person: Person,

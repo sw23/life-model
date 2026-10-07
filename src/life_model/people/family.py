@@ -9,6 +9,8 @@ from .tax_unit import TaxUnit
 
 
 class Family(LifeModelAgent):
+    STATS_OWNED = frozenset({"stat_debt"})
+
     def __init__(self, model: LifeModel, *args):
         """Family
 

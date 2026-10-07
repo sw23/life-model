@@ -25,6 +25,24 @@ if TYPE_CHECKING:
 
 
 class Person(LifeModelAgent):
+    STATS_OWNED = frozenset(
+        {
+            "stat_bank_balance",
+            "stat_brokerage_balance",
+            "stat_money_spent",
+            "stat_taxes_paid",
+            "stat_taxes_paid_federal",
+            "stat_taxes_paid_state",
+            "stat_taxes_paid_ss",
+            "stat_taxes_paid_medicare",
+            "stat_taxes_paid_niit",
+            "stat_housing_costs",
+            "stat_interest_paid",
+            "stat_ss_income",
+            "stat_capital_gains",
+        }
+    )
+
     # Age first in pre_step so income/RMD calculations see the current-year age.
     STEP_PRIORITY: ClassVar[dict[str, int]] = {"pre_step": -20}
 
@@ -1242,8 +1260,8 @@ class Person(LifeModelAgent):
         if self in self.family.members:
             self.family.members.remove(self)
         # Zero the deceased's own statistics so the model's per-agent sums exclude them.
-        for stat in (*LifeModel.STATS, *LifeModel.EXTRA_STATS):
-            setattr(self, stat.name, 0)
+        for name in self.STATS_OWNED:
+            setattr(self, name, 0)
         self.remove()
 
     def post_step(self):

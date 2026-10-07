@@ -20,6 +20,8 @@ from .inflation import medical_inflation_factor
 
 
 class MedicalCosts(LifeModelAgent):
+    STATS_OWNED = frozenset({"stat_medical_costs"})
+
     def __init__(self, person: Person):
         """Model age-related medical costs for a person.
 

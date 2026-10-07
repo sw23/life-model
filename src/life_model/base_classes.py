@@ -394,6 +394,8 @@ class TaxAdvantagedAccount(Investment, ABC):
 class RetirementAccount(Investment, ABC):
     """Abstract base class for retirement accounts (401k)."""
 
+    STATS_OWNED = frozenset({"stat_useable_balance"})
+
     def __init__(
         self,
         person: "Person",
@@ -412,9 +414,8 @@ class RetirementAccount(Investment, ABC):
         return self.person.age >= federal_retirement_age(self.model.config)
 
     def step(self):
-        """Update useable balance and track statistics"""
-        if self.is_useable:
-            self.stat_useable_balance = self.balance
+        """Update useable balance (reset every year, so it never goes stale) and track statistics"""
+        self.stat_useable_balance = self.balance if self.is_useable else 0
         super().step()
 
 

@@ -16,6 +16,8 @@ if TYPE_CHECKING:
 
 
 class Job(LifeModelAgent):
+    STATS_OWNED = frozenset({"stat_gross_income", "stat_retirement_contrib", "stat_retirement_match"})
+
     def __init__(self, owner: Person, company: str, role: str, salary: "Salary"):
         """Job
 

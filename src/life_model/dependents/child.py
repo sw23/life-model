@@ -12,6 +12,8 @@ if TYPE_CHECKING:
 
 
 class Child(LifeModelAgent):
+    STATS_OWNED = frozenset({"stat_dependent_costs"})
+
     def __init__(self, person: "Person", name: str, birth_year: int):
         """Models a child dependent for a person
 

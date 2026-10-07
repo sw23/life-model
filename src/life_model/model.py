@@ -48,8 +48,12 @@ class Stat:
         self.aggregator = aggregator or sum
 
     def model_reporter(self, model: "LifeModel"):
-        """Return the value of the stat for the model."""
-        return self.aggregator(getattr(agent, self.name) for agent in model.agents)
+        """Aggregate the stat over the agents whose class declares it in ``STATS_OWNED``.
+
+        Only owners are counted, so a stat can never be double counted by an agent type that
+        merely inherited a zero, and a write to an undeclared agent cannot leak into the total.
+        """
+        return self.aggregator(getattr(agent, self.name) for agent in model.agents if self.name in agent.STATS_OWNED)
 
 
 class MoneyStat(Stat):
@@ -65,7 +69,8 @@ class Event:
             message (str): Event description.
         """
         self.message = message
-        self.year = 0
+        # Stamped with the model year when the event is added to an EventLog.
+        self.year: int | None = None
 
     def _repr_html_(self):
         return f"<tr><td>{self.year}</td><td>{self.message}</td></tr>\n"
@@ -91,6 +96,19 @@ class EventLog:
     def add(self, event: Event):
         event.year = self.model.year
         self.list.append(event)
+
+
+class LifeModelDataCollector(mesa.DataCollector):
+    """DataCollector with a public way to add an agent-level reporter after construction.
+
+    Mesa exposes this only through the private ``_new_agent_reporter`` (the method its own
+    constructor uses); keeping the call here confines the dependency to one place, covered by
+    ``test_collect_data``.
+    """
+
+    def add_agent_reporter(self, name: str, reporter) -> None:
+        """Collect ``reporter`` (an attribute name or a callable on the agent) as column ``name``."""
+        self._new_agent_reporter(name, reporter)
 
 
 class LifeModel(mesa.Model):
@@ -186,9 +204,9 @@ class LifeModel(mesa.Model):
         from .economy import EconomyModel
 
         self.economy = EconomyModel(self)
-        self.datacollector: mesa.DataCollector | None = None
+        self.datacollector: LifeModelDataCollector | None = None
         if collect_data:
-            self.datacollector = mesa.DataCollector(
+            self.datacollector = LifeModelDataCollector(
                 model_reporters={
                     "Year": "year",
                     **{x.title: lambda model, x=x: x.model_reporter(model) for x in self.STATS},
@@ -199,6 +217,11 @@ class LifeModel(mesa.Model):
                     **{x.title: x.name for x in self.EXTRA_STATS},
                 },
             )
+
+    @classmethod
+    def stat_names(cls) -> frozenset[str]:
+        """Attribute names of every model-level stat (``STATS`` and ``EXTRA_STATS``)."""
+        return frozenset(stat.name for stat in (*cls.STATS, *cls.EXTRA_STATS))
 
     @classmethod
     def get_stat_by_name(cls, stat_name: str) -> Stat | None:
@@ -300,7 +323,7 @@ class LifeModel(mesa.Model):
         for _ in self.get_year_range():
             self.step()
 
-    def _require_datacollector(self) -> mesa.DataCollector:
+    def _require_datacollector(self) -> LifeModelDataCollector:
         """Return the DataCollector, or raise clearly when built with ``collect_data=False``."""
         if self.datacollector is None:
             raise ModelSetupException(
@@ -316,12 +339,8 @@ class LifeModel(mesa.Model):
             title (str): Title of the stat
             attr_name (str): Name of the attribute
         """
-        self._require_datacollector()._new_agent_reporter(title, attr_name)
-
-        # Set stat value to 0 for agents that don't have that attribute
-        for agent in self.agents:
-            if not hasattr(agent, attr_name):
-                setattr(agent, attr_name, 0)
+        # Agents without the attribute report None for it (mesa's attribute-reporter default).
+        self._require_datacollector().add_agent_reporter(title, attr_name)
 
     def get_yearly_stat_df(
         self,
@@ -437,6 +456,21 @@ class LifeModelAgent(mesa.Agent):
     #   post_step: stat resets/escalators run at the default priority (0)
     STEP_PRIORITY: ClassVar[dict[str, int]] = {}
 
+    #: Model-level stats (``LifeModel.STATS`` / ``EXTRA_STATS`` names) this agent type reports.
+    #: Declared per class and merged down the inheritance chain by ``__init_subclass__``, so a
+    #: subclass lists only the stats it adds. Owned stats start at 0; model reporters sum only
+    #: over owners.
+    STATS_OWNED: ClassVar[frozenset[str]] = frozenset()
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        declared = frozenset(cls.__dict__.get("STATS_OWNED", frozenset()))
+        unknown = declared - LifeModel.stat_names()
+        if unknown:
+            raise TypeError(f"{cls.__name__}.STATS_OWNED names unknown model stats: {sorted(unknown)}")
+        inherited = frozenset().union(*(getattr(base, "STATS_OWNED", frozenset()) for base in cls.__bases__))
+        cls.STATS_OWNED = inherited | declared
+
     def __init__(self, model: LifeModel):
         """LifeModelAgent
 
@@ -445,11 +479,9 @@ class LifeModelAgent(mesa.Agent):
         """
         super().__init__(model)  # unique_id is now automatically assigned
 
-        # Initialize the stats
-        for stat in LifeModel.STATS:
-            setattr(self, stat.name, 0)
-        for stat in LifeModel.EXTRA_STATS:
-            setattr(self, stat.name, 0)
+        # Initialize the stats this agent type owns.
+        for name in self.STATS_OWNED:
+            setattr(self, name, 0)
 
     def pre_step(self):
         """Pre-step phase. Called for all agents before step phase."""

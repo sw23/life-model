@@ -22,6 +22,8 @@ class DonationType(Enum):
 
 
 class Donation(LifeModelAgent):
+    STATS_OWNED = frozenset({"stat_charitable_donations"})
+
     # Donate in pre_step after income is deposited (jobs run at the default priority 0) but
     # before the tax unit settles taxes in the step stage, so the deduction is visible this year.
     STEP_PRIORITY: ClassVar[dict[str, int]] = {"pre_step": 10}

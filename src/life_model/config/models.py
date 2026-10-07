@@ -454,6 +454,17 @@ class StudentLoanConfig(StrictModel):
 class DebtConfig(StrictModel):
     credit_card: CreditCardConfig
     student_loan: StudentLoanConfig = Field(default_factory=StudentLoanConfig)
+    # Annual interest (percent) on bills a household could not pay, carried into the next year as
+    # ``Person.debt``. None means the credit-card rate: an unpaid shortfall is effectively financed
+    # on a card.
+    unpaid_balance_interest_rate: float | None = Field(default=None, ge=0)
+
+    @property
+    def effective_unpaid_balance_interest_rate(self) -> float:
+        """The configured unpaid-balance rate, or the credit-card rate when unset."""
+        if self.unpaid_balance_interest_rate is not None:
+            return self.unpaid_balance_interest_rate
+        return self.credit_card.default_interest_rate
 
 
 class Section121ExclusionConfig(StrictModel):

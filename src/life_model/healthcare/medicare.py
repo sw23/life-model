@@ -38,6 +38,8 @@ from .inflation import medical_inflation_factor
 
 
 class Medicare(LifeModelAgent):
+    STATS_OWNED = frozenset({"stat_medical_costs"})
+
     def __init__(self, person: Person):
         """Model Medicare enrollment and premiums for a person.
 

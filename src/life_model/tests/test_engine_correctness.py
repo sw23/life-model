@@ -164,19 +164,38 @@ class TestMarriedHousing(unittest.TestCase):
 class TestFamilyDebtPaidOnce(unittest.TestCase):
     """A family member's debt must be paid exactly once, not doubled."""
 
-    def test_member_debt_paid_once(self):
-        model = LifeModel(start_year=2020, end_year=2021)
+    def _married_with_debt(self, debt_rate: float):
+        from ..config.financial_config import FinancialConfig
+
+        config = FinancialConfig()
+        config.apply_scenario("debt", {"debt": {"unpaid_balance_interest_rate": debt_rate}})
+        model = LifeModel(start_year=2020, end_year=2021, config=config)
         family = Family(model)
         a = Person(family, "Fay", age=40, retirement_age=70, spending=Spending(model, 0))
         b = Person(family, "Gil", age=40, retirement_age=70, spending=Spending(model, 0))
         a.get_married(b)
         bank = BankAccount(a, "Bank", balance=100000, interest_rate=0)
         b.debt = 10000
+        return model, a, b, bank
+
+    def test_member_debt_paid_once(self):
+        # Interest-free carry isolates the paid-once property (interest is covered below).
+        model, a, b, bank = self._married_with_debt(debt_rate=0.0)
 
         model.step()
 
         self.assertEqual(bank.balance, 90000)  # withdrawn once, not twice
         self.assertEqual(a.debt, 0)
+        self.assertEqual(b.debt, 0)
+
+    def test_carried_debt_accrues_a_year_of_interest(self):
+        """Plan 04 item 14: unpaid bills are a real liability, repaid with a year of interest."""
+        model, _a, b, bank = self._married_with_debt(debt_rate=18.0)
+
+        model.step()
+
+        self.assertAlmostEqual(bank.balance, 100000 - 10000 * 1.18, places=6)
+        self.assertAlmostEqual(b.stat_interest_paid, 1800, places=6)
         self.assertEqual(b.debt, 0)
 
 

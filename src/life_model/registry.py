@@ -7,14 +7,33 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Generic, TypeVar
 
 if TYPE_CHECKING:
-    # Referenced only as string type arguments in the registry bases below, which ruff does not count
-    # as uses but mypy needs resolved.
+    # Registry item types, referenced only as string type arguments in the registry bases below
+    # (ruff does not count those as uses; mypy needs them resolved).
+    from .account.bank import BankAccount  # noqa: F401
     from .account.brokerage import BrokerageAccount  # noqa: F401
     from .account.hsa import HealthSavingsAccount  # noqa: F401
     from .account.job401k import Job401kAccount  # noqa: F401
+    from .account.pension import Pension  # noqa: F401
     from .account.roth_IRA import RothIRA  # noqa: F401
     from .account.traditional_IRA import TraditionalIRA  # noqa: F401
+    from .charity.daf import DonorAdvisedFund  # noqa: F401
+    from .charity.donation import Donation  # noqa: F401
+    from .debt.car_loan import CarLoan  # noqa: F401
+    from .debt.credit_card import RevolvingDebt  # noqa: F401
+    from .debt.student_loan import StudentLoan  # noqa: F401
+    from .dependents.child import Child  # noqa: F401
+    from .dependents.plan529 import Plan529  # noqa: F401
+    from .estate.trust import Trust  # noqa: F401
+    from .healthcare.long_term_care import LongTermCare  # noqa: F401
+    from .healthcare.medical_costs import MedicalCosts  # noqa: F401
+    from .healthcare.medicare import Medicare  # noqa: F401
+    from .housing.apartment import Apartment  # noqa: F401
+    from .housing.home import Home, Mortgage  # noqa: F401
+    from .insurance.annuity import Annuity  # noqa: F401
+    from .insurance.general_insurance import Insurance  # noqa: F401
+    from .insurance.life_insurance import LifeInsurance  # noqa: F401
     from .people.person import Person
+    from .work.job import Job  # noqa: F401
 
 T = TypeVar("T")
 

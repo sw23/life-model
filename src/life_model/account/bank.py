@@ -11,6 +11,8 @@ from ..people.person import Person
 
 
 class BankAccount(FinancialAccount):
+    STATS_OWNED = frozenset({"stat_useable_balance"})
+
     def __init__(
         self, owner: Person, company: str, type: str = "Bank", balance: float = 0, interest_rate: float | None = None
     ):

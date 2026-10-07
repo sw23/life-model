@@ -26,6 +26,8 @@ class Job401kAccount(RetirementAccount):
       before growth.
     """
 
+    STATS_OWNED = frozenset({"stat_401k_balance", "stat_required_min_distrib"})
+
     is_rmd_eligible = True
     STEP_PRIORITY: ClassVar[dict[str, int]] = {"pre_step": -10, "step": -10}
 
