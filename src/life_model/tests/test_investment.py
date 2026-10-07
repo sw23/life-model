@@ -5,10 +5,16 @@
 
 import unittest
 
+from ..account.brokerage import BrokerageAccount
+from ..account.hsa import HealthSavingsAccount, HSAType
+from ..account.job401k import Job401kAccount
+from ..account.roth_IRA import RothIRA
+from ..account.traditional_IRA import TraditionalIRA
 from ..base_classes import Investment
 from ..model import LifeModel
 from ..people.family import Family
 from ..people.person import Person, Spending
+from ..work.job import Job, Salary
 
 
 class _ConcreteInvestment(Investment):
@@ -69,6 +75,37 @@ class TestInvestment(unittest.TestCase):
         inv.step()
         self.assertAlmostEqual(inv.balance, 1100.0, places=6)
         self.assertEqual(inv.stat_balance_history, [1100.0])
+
+
+def _plan06_person(age: int = 40, year: int = 2020) -> Person:
+    model = LifeModel(end_year=year, start_year=year)
+    return Person(Family(model), "P", age, 65, Spending(model))
+
+
+class TestInvestmentGrowthParity(unittest.TestCase):
+    """Plan 06 acceptance: every Investment subclass grows identically for the same APY (item 13)."""
+
+    def test_all_investments_grow_identically(self):
+        person = _plan06_person()
+        rate = 10.0
+        brokerage = BrokerageAccount(person, "B", balance=1000, growth_rate=rate)
+        roth = RothIRA(person, balance=1000, growth_rate=rate)
+        trad = TraditionalIRA(person, balance=1000, growth_rate=rate)
+        hsa = HealthSavingsAccount(person, HSAType.INDIVIDUAL, balance=1000, growth_rate=rate, employer_contribution=0)
+        job = Job(person, "Co", "Dev", Salary(person.model, base=0))
+        k401 = Job401kAccount(job, pretax_balance=1000, average_growth=rate)
+
+        for account in (brokerage, roth, trad, hsa, k401):
+            account.apply_growth()
+
+        for account in (brokerage, roth, trad, hsa, k401):
+            self.assertAlmostEqual(account.balance, 1100.0, places=6)
+
+    def test_stored_balance_is_settable(self):
+        """Plan 06 item 8: assignment works for stored balances (and raises for the derived 401k)."""
+        brokerage = BrokerageAccount(_plan06_person(), "B", balance=1000)
+        brokerage.balance = 2500
+        self.assertEqual(brokerage.balance, 2500)
 
 
 if __name__ == "__main__":

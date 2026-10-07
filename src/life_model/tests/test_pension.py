@@ -98,7 +98,6 @@ class TestPension(unittest.TestCase):
         # Benefit was level while not in pay; COLA only compounds once benefits have started.
         self.assertAlmostEqual(pension.benefit_amount, 10200, places=2)
 
-
     def test_accrual_formula_sets_benefit(self):
         """years_of_service x multiplier% x final_salary: 30 x 1.5% x $80k = $36k a year."""
         person = self._person(age=66, retirement_age=65)
