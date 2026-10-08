@@ -189,11 +189,25 @@ def _first_account(person: Person, account_cls: type[FinancialAccount]) -> Finan
     return accounts[0] if accounts else None
 
 
+_401K_DEFERRALS = frozenset({ActionType.TRANSFER_BANK_TO_401K_PRETAX, ActionType.TRANSFER_BANK_TO_401K_ROTH})
+
+
 def _remaining_contribution_room(account: FinancialAccount) -> float:
     """Remaining annual contribution room for capped accounts (IRA/HSA); ``inf`` if uncapped."""
     if isinstance(account, TaxAdvantagedAccount):
         return account.remaining_contribution_room()
     return float("inf")
+
+
+def _remaining_401k_deferral_room(person: Person) -> float:
+    """Elective-deferral room left this year: the shared 402(g) limit, capped by pay not yet deferred.
+
+    A bank-to-401k transfer stands in for a payroll deferral, so it obeys the same rules as
+    ``Job.pre_step``: one 402(g) limit across all jobs (payroll deferrals included), and nothing
+    without current compensation (a retiree has none).
+    """
+    pay = sum(job.salary.base + job.salary.bonus for job in person.jobs if not job.retired)
+    return max(0.0, min(person.remaining_401k_elective_room(), pay - person.elective_deferrals_ytd))
 
 
 @dataclass
@@ -243,7 +257,11 @@ class TransferAction(FinancialAction):
         target = self._target()
         if target is None:
             return 0.0
-        return min(self.amount, self.person.bank_account_balance, _remaining_contribution_room(target))
+        if self.action_type in _401K_DEFERRALS:
+            room = _remaining_401k_deferral_room(self.person)
+        else:
+            room = _remaining_contribution_room(target)
+        return min(self.amount, self.person.bank_account_balance, room)
 
     def can_execute(self) -> bool:
         return self._transferable() > 0
@@ -257,9 +275,15 @@ class TransferAction(FinancialAction):
         self.person.deduct_from_bank_accounts(amount)
 
         if self.action_type == ActionType.TRANSFER_BANK_TO_401K_PRETAX:
+            # A pre-tax deferral comes out of this year's taxable wages (like Job.pre_step), so it
+            # is recorded as an above-the-line deduction; without it the money was taxed going in
+            # (as salary) and again coming out (as a distribution).
             target.pretax_balance += amount
+            self.person.income.add_deduction(amount)
+            self.person.record_401k_elective_deferral(amount)
         elif self.action_type == ActionType.TRANSFER_BANK_TO_401K_ROTH:
             target.roth_balance += amount
+            self.person.record_401k_elective_deferral(amount)
         elif isinstance(target, TaxAdvantagedAccount):
             # A contribution (counts against the annual limit and carries its tax treatment),
             # not a plain deposit.

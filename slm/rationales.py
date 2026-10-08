@@ -99,14 +99,21 @@ _PCT_RE = re.compile(r"(\d+)%")
 _DOLLAR_RE = re.compile(r"\$([\d,]+)")
 
 
+def _without_titles(rationale: str) -> str:
+    """Drop strategy titles, whose own numbers (the "4%" in "4%-rule") are names, not citations."""
+    for strategy in STRATEGY_BY_NAME.values():
+        rationale = rationale.replace(strategy.title, "")
+    return rationale
+
+
 def cited_percentages(rationale: str) -> list[int]:
     """Every integer percentage cited in a rationale (for the faithfulness gate)."""
-    return [int(m) for m in _PCT_RE.findall(rationale)]
+    return [int(m) for m in _PCT_RE.findall(_without_titles(rationale))]
 
 
 def cited_dollars(rationale: str) -> list[int]:
     """Every whole-dollar figure cited in a rationale (for the faithfulness gate)."""
-    return [int(m.replace(",", "")) for m in _DOLLAR_RE.findall(rationale)]
+    return [int(m.replace(",", "")) for m in _DOLLAR_RE.findall(_without_titles(rationale))]
 
 
 def faithfulness_targets(scored: list[ScoredCandidate], chosen_name: str) -> tuple[list[int], list[int]]:

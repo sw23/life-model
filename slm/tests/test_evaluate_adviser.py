@@ -113,3 +113,11 @@ def test_no_lever_rationale_is_faithful():
             assert not is_faithful(rationale + " Success is 97%.", scored, NO_LEVER)
             return
     pytest.fail("no insolvent household found")
+
+
+def test_strategy_titles_are_not_cited_numbers():
+    # "Accumulate then 4%-rule drawdown" names a strategy; its 4% is not a claimed success rate.
+    from slm.rationales import cited_percentages
+
+    text = "Accumulate then 4%-rule drawdown (four_percent_drawdown) is solvent in 50% of trials."
+    assert cited_percentages(text) == [50]

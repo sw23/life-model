@@ -426,6 +426,11 @@ class Person(LifeModelAgent):
         limit = job_401k_contrib_limit(self.age, self.model.year_config)
         return max(0.0, limit - self._elective_deferrals_ytd)
 
+    @property
+    def elective_deferrals_ytd(self) -> float:
+        """Elective 401k deferrals recorded so far this year (all jobs, pre-tax + Roth)."""
+        return self._elective_deferrals_ytd
+
     def record_401k_elective_deferral(self, amount: float) -> None:
         """Record an elective 401k deferral against this year's aggregated 402(g) room."""
         self._elective_deferrals_ytd += amount

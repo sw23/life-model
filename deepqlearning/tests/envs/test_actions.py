@@ -257,5 +257,55 @@ class TestWithdrawalTaxDifferential(unittest.TestCase):
         self.assertAlmostEqual(env.person.taxable_income, income_before)
 
 
+class TestContributionTaxTreatment(unittest.TestCase):
+    """Bank-to-401k transfers stand in for payroll deferrals: pre-tax ones are deductible, and both
+    kinds share the 402(g) elective-deferral limit (regression: pre-tax was taxed going in and
+    coming out, and 401k transfers were uncapped, so Roth always won)."""
+
+    def _fresh_env(self):
+        env = FinancialLifeEnv()
+        env.reset(seed=0)
+        env.person.deposit_into_bank_account(200000.0)  # enough cash that only the limit binds
+        return env
+
+    def test_pretax_transfer_is_deductible_roth_is_not(self):
+        pretax, roth = self._fresh_env(), self._fresh_env()
+        for env, action in (
+            (pretax, ActionType.TRANSFER_BANK_TO_401K_PRETAX),
+            (roth, ActionType.TRANSFER_BANK_TO_401K_ROTH),
+        ):
+            before = env.person.taxable_income
+            result = env.action_executor.execute_action(env.person, action, amount=5000.0)
+            self.assertTrue(result.success)
+            env.delta = env.person.taxable_income - before
+        self.assertAlmostEqual(pretax.delta, -5000.0)
+        self.assertAlmostEqual(roth.delta, 0.0)
+
+    def test_401k_transfers_share_the_402g_limit(self):
+        env = self._fresh_env()
+        room = env.person.remaining_401k_elective_room()
+        self.assertGreater(room, 0)
+        first = env.action_executor.execute_action(env.person, ActionType.TRANSFER_BANK_TO_401K_PRETAX, amount=1e9)
+        self.assertAlmostEqual(first.amount_transferred, room)
+        # The Roth side draws on the same (now exhausted) room.
+        self.assertFalse(env.action_executor.can_execute_action(env.person, ActionType.TRANSFER_BANK_TO_401K_ROTH))
+        self.assertAlmostEqual(env.job401k.pretax_balance, room)
+
+    def test_retiree_cannot_defer_into_the_401k(self):
+        env = self._fresh_env()
+        env.action_executor.execute_action(env.person, ActionType.RETIRE_EARLY)
+        for action in (ActionType.TRANSFER_BANK_TO_401K_PRETAX, ActionType.TRANSFER_BANK_TO_401K_ROTH):
+            self.assertFalse(env.action_executor.can_execute_action(env.person, action))
+
+    def test_pretax_deferral_lowers_that_years_income_tax(self):
+        taxes = {}
+        for action in (ActionType.TRANSFER_BANK_TO_401K_PRETAX, ActionType.TRANSFER_BANK_TO_401K_ROTH):
+            env = self._fresh_env()
+            env.step(encode_flat_action(action, 1.00))
+            taxes[action] = env.person.stat_taxes_paid
+        saved = taxes[ActionType.TRANSFER_BANK_TO_401K_ROTH] - taxes[ActionType.TRANSFER_BANK_TO_401K_PRETAX]
+        self.assertGreater(saved, 1000.0)
+
+
 if __name__ == "__main__":
     unittest.main()
