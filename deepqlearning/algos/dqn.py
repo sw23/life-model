@@ -30,7 +30,7 @@ from .replay import Experience, NStepAccumulator, PrioritizedReplayBuffer, Repla
 # Identifies the checkpoint format: reward shaping, observation layout, action space, and tensor
 # layout. A checkpoint whose version differs from the code refuses to load rather than silently
 # misaligning its weights against a different observation/action space (see ``load``).
-MODEL_VERSION = 4
+MODEL_VERSION = 5
 
 
 class DQNAgent(Algorithm):

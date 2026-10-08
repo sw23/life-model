@@ -51,6 +51,17 @@ class HouseholdProfile(StrictModel):
     # are priced for the person. Defaults keep older/simple households unchanged.
     children_ages: list[int] = Field(default_factory=list)
     models_healthcare: bool = False
+    # Retirement-income context (all default to "absent" so older rows still validate):
+    # Social Security claiming age (None = not modeled), the employer 401k match offer, and the
+    # starting invested balances.
+    ss_claim_age: int | None = None
+    # Base spending in retirement as a share of working spending (1.0 = unchanged).
+    retirement_spending_ratio: float = Field(default=1.0, gt=0)
+    employer_match_rate: float = Field(default=0.0, ge=0)
+    employer_match_cap: float = Field(default=0.0, ge=0)
+    initial_401k_pretax: float = Field(default=0.0, ge=0)
+    initial_401k_roth: float = Field(default=0.0, ge=0)
+    initial_brokerage: float = Field(default=0.0, ge=0)
 
 
 class ScoredCandidate(StrictModel):
@@ -132,3 +143,7 @@ class Datasheet(StrictModel):
     decision_basis_counts: dict[str, int] = Field(default_factory=dict)
     max_label_share: float | None = None
     n_dropped_for_balance: int = 0
+    # Calibration of the household distribution, per scenario, over the kept decision examples:
+    # mean best-lever success rate, the share of households whose best lever is solvent in at most
+    # half the trials, and the share with no viable lever (slm.households documents the targets).
+    solvency_by_scenario: dict[str, dict[str, float]] = Field(default_factory=dict)

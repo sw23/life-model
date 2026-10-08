@@ -241,9 +241,10 @@ class TestStochasticEconomy(unittest.TestCase):
             FinancialLifeEnv({"economy_mode": "bogus"})
 
     def test_economy_scenario_applies(self):
-        env = FinancialLifeEnv({"economy_scenario": "recession"})
+        # With the overlay off, a named scenario replaces the economy (core semantics): the
+        # recession scenario switches the economy to path mode with drawdown years.
+        env = FinancialLifeEnv({"economy_scenario": "recession", "scenario_overlay": False})
         env.reset(seed=0)
-        # The recession scenario switches the economy to path mode with drawdown years.
         self.assertEqual(env.model.config.economy.mode, "path")
 
     def test_stochastic_returns_vary_across_years(self):

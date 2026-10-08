@@ -78,3 +78,30 @@ def test_text_mentions_key_facts():
 def test_economy_scenario_surfaced():
     text = render_household(_profile(economy_scenario="recession"))
     assert "recession" in text
+
+
+def test_round_trip_recovers_retirement_income_context():
+    p = _profile(
+        ss_claim_age=67,
+        employer_match_rate=0.5,
+        employer_match_cap=0.06,
+        initial_401k_pretax=120000,
+        initial_401k_roth=20000,
+        initial_brokerage=15000,
+    )
+    recovered = parse_household(render_household(p))
+    assert recovered["ss_claim_age"] == 67
+    assert recovered["employer_match_rate"] == 0.5
+    assert recovered["employer_match_cap"] == 0.06
+    assert recovered["initial_401k_pretax"] == 120000
+    assert recovered["initial_401k_roth"] == 20000
+    assert recovered["initial_brokerage"] == 15000
+
+
+def test_retirement_context_defaults_render_as_absent():
+    text = render_household(_profile())
+    assert "no 401k match" in text
+    assert "Social Security is not modeled" in text
+    recovered = parse_household(text)
+    assert recovered["ss_claim_age"] is None
+    assert recovered["employer_match_rate"] == 0.0

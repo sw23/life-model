@@ -21,6 +21,12 @@ from life_model.config.scenarios import get_scenario
 from life_model.dependents.child import Child
 from life_model.healthcare.medical_costs import MedicalCosts
 from life_model.healthcare.medicare import Medicare
+from life_model.insurance.social_security import (
+    SocialSecurity,
+    get_avg_wage_index,
+    get_max_delayed_retirement_credit_age,
+    get_min_early_retirement_age,
+)
 from life_model.limits import required_min_distrib, rmd_start_age
 from life_model.model import LifeModel
 from life_model.people.family import Family
@@ -34,17 +40,19 @@ from .actions import (
     ActionExecutor,
     ActionResult,
     ActionType,
+    EmployerMatch,
     decode_flat_action,
     flat_action_count,
     withdrawal_available,
 )
+from .economy_overlay import DEFAULT_REGIME_YEARS, ScenarioOverlay
 from .rewards import DEFAULT_PRESET, RewardConfig, get_reward_config, step_reward
 from .scenarios import HOUSEHOLD_SCENARIOS, EpisodeSampler
 
 # Observation layout version. Bumped whenever the feature list, ordering,
 # normalization, or bounds below change, so checkpoints trained against a different layout are
 # rejected instead of silently misread.
-OBS_VERSION = 3
+OBS_VERSION = 4
 
 # Age at which tax-advantaged accounts can be tapped without the early-withdrawal penalty.
 PENALTY_FREE_AGE = 59.5
@@ -96,9 +104,19 @@ OBS_SPEC = [
     ("equity_return", -1.0, 1.0),  # last realized year's equity return, percent / 100
     ("bond_return", -1.0, 1.0),  # last realized year's bond return, percent / 100
     ("log_deflator", 0.0, 5.0),  # log of cumulative inflation since the episode start
+    # --- Social Security and employer match ---
+    ("ss_annual_benefit", 0.0, 2.0),  # annual SS benefit (real $/100k): paid once claiming, else earned so far
+    ("years_to_ss_claim", 0.0, 1.0),  # max(0, claim_age - age) / 50
+    ("employer_match_rate", 0.0, 2.0),  # employer dollars per deferred dollar
+    ("employer_match_cap", 0.0, 1.0),  # matched deferrals as a share of pay
 ]
 
 _MONEY_SCALE = 1_000_000.0
+
+# Earliest year a synthesized earnings record may start (SSA quarter-of-coverage table start).
+_FIRST_EARNINGS_YEAR = 1978
+# Earliest year-of-age-62 SSA publishes bend points for.
+_FIRST_BEND_POINT_YEAR = 1979
 
 # Economy modes the environment accepts (see EconomyModel; "path" is reachable via a named
 # economy_scenario rather than directly).
@@ -151,13 +169,27 @@ class FinancialLifeEnv(gym.Env):
             "initial_bank_balance": 10000,
             "initial_spending": 30000,
             "max_action_amount": 50000,  # Max amount for transfer/withdrawal actions
-            "account_growth": 6.0,  # Average annual growth for the created 401k (percent)
+            # Annual growth (percent) for the created 401k. None follows the economy's equity
+            # return each year like every other investment account, so a 401k-heavy plan faces
+            # market risk; a number pins it (the pre-OBS_VERSION-4 world used a fixed 6.0).
+            "account_growth": None,
+            # Yearly spending / salary growth (percent). None follows the economy's inflation /
+            # wage growth, so a high-inflation draw raises costs instead of a fixed 2%.
+            "spending_growth": None,
+            "salary_growth": None,
             # Economy behavior: "stochastic" draws correlated equity/bond/inflation
             # each year from the model's seeded RNG (training default — the agent sees bad years);
             # "fixed" reproduces the constant-rate economy for unit tests. A named economy
             # scenario (config/scenarios, e.g. "recession") overrides where it sets values.
             "economy_mode": "stochastic",
             "economy_scenario": None,
+            # How a named economy scenario combines with a stochastic economy. True (default):
+            # as an overlay (economy_overlay.py) — level overrides shift the random draws for
+            # ``scenario_regime_years`` and path overrides script their listed years, so trials
+            # still differ. False: the scenario replaces the economy (core apply_scenario
+            # semantics; e.g. recession becomes a deterministic path economy).
+            "scenario_overlay": True,
+            "scenario_regime_years": DEFAULT_REGIME_YEARS,
             # Household scenario whose distributions are used when reset(options={"randomize":
             # True}) draws a randomized household.
             "household_scenario": "basic",
@@ -168,6 +200,23 @@ class FinancialLifeEnv(gym.Env):
             # the Medicare eligibility age, Medicare premiums.
             "children_ages": (),
             "models_healthcare": False,
+            # Social Security: on by default. Benefits start at ``ss_claim_age`` (None = the
+            # retirement age, clipped to the 62-70 claiming window) from an earnings history
+            # synthesized back to ``career_start_age`` at the current salary, indexed by the
+            # average wage index (an assumption: a flat real career; see _synthetic_earnings).
+            "social_security": True,
+            "ss_claim_age": None,
+            "career_start_age": 22,
+            # Employer 401k match: ``rate`` per deferred dollar on deferrals up to ``cap`` x pay.
+            "employer_match_rate": 0.0,
+            "employer_match_cap": 0.0,
+            # Base spending is multiplied by this once when the person retires (planner convention:
+            # retirement spending is 70-90% of the working level; 1.0 = no change).
+            "retirement_spending_ratio": 1.0,
+            # Starting invested balances (nominal dollars at the start year).
+            "initial_401k_pretax": 0.0,
+            "initial_401k_roth": 0.0,
+            "initial_brokerage": 0.0,
         }
 
         if config:
@@ -230,6 +279,13 @@ class FinancialLifeEnv(gym.Env):
             "initial_spending",
             "children_ages",
             "models_healthcare",
+            "ss_claim_age",
+            "retirement_spending_ratio",
+            "employer_match_rate",
+            "employer_match_cap",
+            "initial_401k_pretax",
+            "initial_401k_roth",
+            "initial_brokerage",
         )
         household: dict[str, Any] = {key: self.config[key] for key in household_keys}
         household["economy_scenario"] = self.config["economy_scenario"]
@@ -270,9 +326,22 @@ class FinancialLifeEnv(gym.Env):
         # values. Draws use the model's seeded RNG, so a given seed reproduces the same economy.
         financial_config = FinancialConfig()
         financial_config.model.economy.mode = self.config["economy_mode"]
+        overlay: ScenarioOverlay | None = None
         if household.get("economy_scenario") is not None:
             scenario_name = household["economy_scenario"]
-            financial_config.apply_scenario(scenario_name, get_scenario(scenario_name))
+            scenario = get_scenario(scenario_name)
+            if self.config["economy_mode"] == "stochastic" and self.config["scenario_overlay"]:
+                rest = {key: value for key, value in scenario.items() if key != "economy"}
+                if rest:
+                    financial_config.apply_scenario(scenario_name, rest)
+                overlay = ScenarioOverlay.from_scenario(
+                    scenario.get("economy") or {},
+                    financial_config.model.economy.stochastic,
+                    self.config["start_year"],
+                    int(self.config["scenario_regime_years"]),
+                )
+            else:
+                financial_config.apply_scenario(scenario_name, scenario)
 
         # Create new model instance, seeded for reproducibility. A reset without a seed (e.g. a
         # vector env's autoreset) derives the model seed from this env's seeded RNG; seeding the
@@ -282,6 +351,8 @@ class FinancialLifeEnv(gym.Env):
         self.model = LifeModel(
             start_year=self.config["start_year"], seed=model_seed, config=financial_config, collect_data=False
         )
+        if overlay is not None:
+            overlay.install(self.model.economy)
         self.family = Family(self.model)
 
         # Create person with model-native stochastic mortality: death is decided by
@@ -296,7 +367,7 @@ class FinancialLifeEnv(gym.Env):
             spending=Spending(
                 model=self.model,
                 base=household["initial_spending"],
-                yearly_increase=2,  # 2% inflation
+                yearly_increase=self.config["spending_growth"],
             ),
             gender=household["person_gender"],
             mortality_mode=MortalityMode.STOCHASTIC,
@@ -319,14 +390,21 @@ class FinancialLifeEnv(gym.Env):
             salary=Salary(
                 model=self.model,
                 base=household["initial_salary"],
-                yearly_increase=3,  # 3% annual raises
+                yearly_increase=self.config["salary_growth"],
                 yearly_bonus=1,
             ),
         )
 
         # Create the accounts the agent can act on so every action type is reachable.
-        self.job401k = Job401kAccount(job=self.job, average_growth=self.config["account_growth"])
-        self.brokerage = BrokerageAccount(person=self.person, company="Brokerage")
+        self.job401k = Job401kAccount(
+            job=self.job,
+            pretax_balance=float(household.get("initial_401k_pretax") or 0.0),
+            roth_balance=float(household.get("initial_401k_roth") or 0.0),
+            average_growth=self.config["account_growth"],
+        )
+        self.brokerage = BrokerageAccount(
+            person=self.person, company="Brokerage", balance=float(household.get("initial_brokerage") or 0.0)
+        )
         self.traditional_ira = TraditionalIRA(person=self.person)
         self.roth_ira = RothIRA(person=self.person)
         self.hsa = HealthSavingsAccount(person=self.person, hsa_type=HSAType.INDIVIDUAL)
@@ -343,8 +421,27 @@ class FinancialLifeEnv(gym.Env):
             self.medical_costs = MedicalCosts(self.person)
             self.medicare = Medicare(self.person)
 
-        # Action executor
-        self.action_executor = ActionExecutor(self.model)
+        # Social Security (after the job, so wages enter the earnings record in-simulation).
+        self.social_security: SocialSecurity | None = None
+        # Skipped for a person who turned 62 before SSA's bend-point table starts (1979): only
+        # artificial test households (start ages near 119) reach that.
+        turned_62 = self.config["start_year"] - int(household["person_start_age"]) + 62
+        if self.config["social_security"] and turned_62 >= _FIRST_BEND_POINT_YEAR:
+            self.social_security = SocialSecurity(
+                self.person,
+                withdrawal_start_age=self._ss_claim_age(household),
+                income_history=self._synthetic_earnings(household),
+            )
+        self._ss_benefit_cache: tuple[int, float] | None = None
+        # Retirement spending step-down: applied once, when the person is first observed retired.
+        self._retirement_spending_applied = False
+        self._apply_retirement_spending()
+
+        # Action executor; bank-to-401k deferrals earn the household's employer match.
+        self.employer_match = EmployerMatch(
+            float(household.get("employer_match_rate") or 0.0), float(household.get("employer_match_cap") or 0.0)
+        )
+        self.action_executor = ActionExecutor(self.model, employer_match=self.employer_match)
 
         # Reset step counter
         self.current_step = 0
@@ -362,6 +459,71 @@ class FinancialLifeEnv(gym.Env):
         self._estate_value_at_death: float | None = None
 
         return self._get_observation(), self._get_info(None)
+
+    def _apply_retirement_spending(self) -> None:
+        """Step base spending down to ``retirement_spending_ratio`` the first time the person is retired."""
+        if self._retirement_spending_applied or not self.person.is_retired:
+            return
+        ratio = self.episode_household.get("retirement_spending_ratio")
+        self.person.spending.base *= 1.0 if ratio is None else float(ratio)
+        self._retirement_spending_applied = True
+
+    def _ss_claim_age(self, household: dict[str, Any]) -> int:
+        """The Social Security claiming age: the configured one, else the retirement age clipped to 62-70."""
+        config = self.model.config
+        low = get_min_early_retirement_age(config)
+        high = get_max_delayed_retirement_credit_age(config)
+        claim = household.get("ss_claim_age")
+        if claim is None:
+            claim = household["person_retirement_age"]
+        return int(min(max(int(claim), low), high))
+
+    def _synthetic_earnings(self, household: dict[str, Any]) -> list[tuple[int, float]]:
+        """Earnings record for the years worked before the episode starts.
+
+        Assumes a flat *real* career: each past year's wage is today's salary scaled by the
+        average wage index ratio, from ``career_start_age`` to the year before the start year,
+        capped at that year's taxable maximum. It overstates benefits for someone whose salary
+        recently jumped and understates them for someone who peaked earlier.
+        """
+        start_year = self.config["start_year"]
+        years_worked = max(0, int(household["person_start_age"]) - int(self.config["career_start_age"]))
+        salary = float(household["initial_salary"])
+        config, economy = self.model.config, self.model.economy
+        awi_now = get_avg_wage_index(start_year, config, economy=economy)
+        # SSA's wage index and quarter-of-coverage tables start in 1951 / 1978; earlier working
+        # years are dropped (only very old start ages reach them).
+        first_year = max(start_year - years_worked, _FIRST_EARNINGS_YEAR)
+        history: list[tuple[int, float]] = []
+        for year in range(first_year, start_year):
+            wage = salary * get_avg_wage_index(year, config, economy=economy) / awi_now
+            cap = self.model.config_for_year(year).tax.fica.social_security_max_income
+            history.append((year, round(min(wage, cap), 2)))
+        return history
+
+    def _ss_annual_benefit(self) -> float:
+        """Annual Social Security benefit in **current-year** dollars: the benefit paid once claiming,
+        else the benefit earned so far at the claiming age.
+
+        Before age 60 the PIA formula works in age-60 wage-indexed dollars (bend points and indexed
+        earnings are both projected to that year), so the pre-60 figure is scaled back to the
+        current year by the average-wage-index ratio. Cached per simulated year, since the PIA
+        computation walks the whole earnings record.
+        """
+        ss = self.social_security
+        if ss is None or self.person.is_deceased:
+            return 0.0
+        year = self.model.year
+        if self._ss_benefit_cache is None or self._ss_benefit_cache[0] != year:
+            annual = max(ss.get_pia(), ss.survivor_pia_floor) * 12
+            age_60_year = self.person.get_year_at_age(60)
+            if year < age_60_year:
+                config, economy = self.model.config, self.model.economy
+                annual *= get_avg_wage_index(year, config, economy=economy) / get_avg_wage_index(
+                    age_60_year, config, economy=economy
+                )
+            self._ss_benefit_cache = (year, annual)
+        return self._ss_benefit_cache[1]
 
     def step(self, action: int) -> tuple[np.ndarray, float, bool, bool, dict]:
         """Execute one step (one simulated year) in the environment.
@@ -398,6 +560,8 @@ class FinancialLifeEnv(gym.Env):
         net_worth_before_step = self._calculate_net_worth()
         self.model.step()
         self.current_step += 1
+        if not self.person.is_deceased:
+            self._apply_retirement_spending()
         if self.person.is_deceased and self._estate_value_at_death is None:
             self._estate_value_at_death = net_worth_before_step
 
@@ -597,6 +761,14 @@ class FinancialLifeEnv(gym.Env):
             "equity_return": equity_return / 100.0,
             "bond_return": bond_return / 100.0,
             "log_deflator": float(np.log(max(deflator, 1e-9))),
+            "ss_annual_benefit": self._ss_annual_benefit() / deflator / 100_000.0,
+            "years_to_ss_claim": (
+                max(0.0, self.social_security.withdrawal_start_age - person.age) / 50.0
+                if self.social_security is not None
+                else 0.0
+            ),
+            "employer_match_rate": self.employer_match.rate,
+            "employer_match_cap": self.employer_match.cap,
         }
 
     def _get_observation(self) -> np.ndarray:

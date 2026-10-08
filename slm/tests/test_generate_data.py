@@ -15,10 +15,18 @@ Kept small (one scenario, few households, few trials) so it runs in CI without t
 
 import json
 
+import numpy as np
 import pytest
 
 from slm.generate_data import _balance_labels, build_datasheet, examples_to_jsonl, generate_examples
-from slm.households import MAX_CHILD_SHARE_OF_SPENDING, SLM_SCENARIOS, TRAIN_ECONOMIES, sample_households
+from slm.households import (
+    MAX_CHILD_SHARE_OF_SPENDING,
+    SLM_SCENARIOS,
+    TRAIN_ECONOMIES,
+    _add_children_and_healthcare,
+    _starting_medical_cost,
+    sample_households,
+)
 from slm.prompts import OUT_OF_SCOPE_DOMAINS, REFUSAL_TRAIN_PHRASINGS, is_refusal, parse_decision
 from slm.rationales import build_rationale
 from slm.schema import AdviceExample
@@ -121,9 +129,19 @@ def test_children_fit_inside_the_spending_budget():
         start_age = household["person_start_age"]
         assert all(0 <= age <= min(17, start_age - 20) for age in household["children_ages"])
         base = household["initial_spending"]
-        # Base spending is what remains after child costs; children take at most half the total.
+        # Base spending is what remains after child costs and the start-year medical cost (both are
+        # budgeted inside the total); children take at most half the total.
         child_costs = sum(12000 if a < 6 else 8000 for a in household["children_ages"])
-        assert child_costs <= MAX_CHILD_SHARE_OF_SPENDING * (base + child_costs) + 0.01, scenario
+        medical = _starting_medical_cost(start_age)
+        assert child_costs <= MAX_CHILD_SHARE_OF_SPENDING * (base + child_costs + medical) + 0.01, scenario
+
+
+def test_medical_cost_is_budgeted_inside_spending():
+    raw = {"person_start_age": 45, "initial_spending": 40000.0}
+    household = _add_children_and_healthcare(np.random.default_rng(0), dict(raw))
+    child_costs = sum(12000 if a < 6 else 8000 for a in household["children_ages"])
+    assert household["initial_spending"] + child_costs + _starting_medical_cost(45) == pytest.approx(40000.0)
+    assert _starting_medical_cost(45) == 3000
 
 
 def test_training_economies_exclude_the_held_out_recession():

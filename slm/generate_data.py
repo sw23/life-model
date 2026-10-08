@@ -42,7 +42,7 @@ from concurrent.futures import ProcessPoolExecutor
 
 import numpy as np
 
-from .households import SLM_SCENARIOS, sample_households
+from .households import SLM_SCENARIOS, resolved_ss_claim_age, sample_households
 from .prompts import (
     OUT_OF_SCOPE_DOMAINS,
     REFUSAL_TRAIN_PHRASINGS,
@@ -97,6 +97,13 @@ def _to_profile(scenario: str, household: dict) -> HouseholdProfile:
         economy_scenario=household.get("economy_scenario"),
         children_ages=[int(a) for a in household.get("children_ages", [])],
         models_healthcare=bool(household.get("models_healthcare", False)),
+        ss_claim_age=resolved_ss_claim_age(household),
+        retirement_spending_ratio=float(household.get("retirement_spending_ratio", 1.0)),
+        employer_match_rate=float(household.get("employer_match_rate", 0.0)),
+        employer_match_cap=float(household.get("employer_match_cap", 0.0)),
+        initial_401k_pretax=float(household.get("initial_401k_pretax", 0.0)),
+        initial_401k_roth=float(household.get("initial_401k_roth", 0.0)),
+        initial_brokerage=float(household.get("initial_brokerage", 0.0)),
     )
 
 
@@ -254,6 +261,26 @@ def examples_to_jsonl(examples: list[AdviceExample]) -> str:
     return "".join(json.dumps(ex.model_dump(mode="json"), sort_keys=True) + "\n" for ex in examples)
 
 
+def solvency_by_scenario(examples: list[AdviceExample]) -> dict[str, dict[str, float]]:
+    """Per-scenario calibration of the household distribution (see ``Datasheet.solvency_by_scenario``)."""
+    best_by_scenario: dict[str, list[float]] = collections.defaultdict(list)
+    no_viable_by_scenario: dict[str, list[bool]] = collections.defaultdict(list)
+    for e in examples:
+        if e.kind != "decision":
+            continue
+        best_by_scenario[e.household.scenario].append(max(c.success_rate for c in e.scored_alternatives))
+        no_viable_by_scenario[e.household.scenario].append(e.decision_basis == "no_viable")
+    return {
+        scenario: {
+            "mean_best_success": round(float(np.mean(best)), 4),
+            "share_best_at_most_half": round(float(np.mean([b <= 0.5 for b in best])), 4),
+            "share_no_viable": round(float(np.mean(no_viable_by_scenario[scenario])), 4),
+            "n": len(best),
+        }
+        for scenario, best in sorted(best_by_scenario.items())
+    }
+
+
 def build_datasheet(
     examples: list[AdviceExample],
     scenarios: list[str],
@@ -292,6 +319,7 @@ def build_datasheet(
         decision_basis_counts=dict(sorted(collections.Counter(e.decision_basis for e in decisions).items())),
         max_label_share=max_label_share,
         n_dropped_for_balance=n_dropped_for_balance,
+        solvency_by_scenario=solvency_by_scenario(examples),
         created_utc=datetime.datetime.now(datetime.UTC).replace(microsecond=0).isoformat(),
     )
 

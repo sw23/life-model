@@ -74,6 +74,13 @@ def _household_from_text(text: str) -> dict:
         "initial_spending": float(parsed["initial_spending"]),
         "children_ages": list(parsed["children_ages"]),
         "models_healthcare": parsed["models_healthcare"],
+        "employer_match_rate": float(parsed["employer_match_rate"]),
+        "employer_match_cap": float(parsed["employer_match_cap"]),
+        "initial_401k_pretax": float(parsed["initial_401k_pretax"]),
+        "initial_401k_roth": float(parsed["initial_401k_roth"]),
+        "initial_brokerage": float(parsed["initial_brokerage"]),
+        "ss_claim_age": parsed["ss_claim_age"],
+        "retirement_spending_ratio": float(parsed["retirement_spending_ratio"]),
     }
     if parsed["economy_scenario"] is not None:
         household["economy_scenario"] = parsed["economy_scenario"]

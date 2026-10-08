@@ -43,7 +43,7 @@ entry point arrange that themselves.
 
 | Name | Domain | Observation | Actions | Notes |
 |------|--------|-------------|---------|-------|
-| `financial` (= `financial:basic`) | financial | `Box(34,)` | `Discrete(52)` | one simulated year per step |
+| `financial` (= `financial:basic`) | financial | `Box(38,)` | `Discrete(52)` | one simulated year per step |
 | `financial:high_earner`, `financial:low_earner`, `financial:mid_career` | financial | " | " | different point households |
 
 ```python
@@ -114,7 +114,9 @@ Select a preset with `--reward-preset` (CLI) or `reward_preset` in the env confi
 ### Domain randomization
 
 `env.reset(seed=..., options={"randomize": True, "scenario": "basic"})` draws the episode's
-household — start age, retirement age, salary, spending, bank balance, gender — from seeded
+household — start age, retirement age, salary, spending, bank balance, gender, an employer match offer,
+age-calibrated starting 401k/brokerage balances (a fraction of the "1x salary by 30 ... 8x by 60"
+planner benchmark), and the retirement spending ratio — from seeded
 distributions around the scenario's point values (`EpisodeSampler` in
 `envs/financial/scenarios.py`). The same seed always reproduces the same household and trajectory;
 without options the fixed point household is reproduced exactly. A scenario can also carry named
@@ -135,8 +137,21 @@ Each step is one simulated year: the agent picks one flat discrete action, then 
   seeded via the model RNG); dying runs the model's full death machinery (life insurance,
   estate settlement) inside the reward-visible world.
 - **The economy is stochastic by default.** Correlated equity/bond/inflation draws each year
-  (seeded, reproducible); `{"economy_mode": "fixed"}` restores constant rates for unit tests,
-  and `economy_scenario` applies a named scenario (e.g. `recession`).
+  (seeded, reproducible); `{"economy_mode": "fixed"}` restores constant rates for unit tests.
+  The 401k grows with the economy's equity return like every other account (it was pinned at a
+  fixed 6%), spending grows with inflation, and wages with the economy's wage growth.
+- **Named economy scenarios are overlays.** `economy_scenario` (e.g. `recession`) layers the
+  scenario on the stochastic economy (`envs/financial/economy_overlay.py`): level overrides shift
+  the draws for `scenario_regime_years` (default 10) and path overrides script their listed
+  years, so trials still differ. `{"scenario_overlay": False}` restores the core semantics, where
+  the scenario replaces the economy with a deterministic one.
+- **Retirement income.** The person has Social Security (on by default; claimed at the
+  retirement age clipped to 62-70, or `ss_claim_age`) from an earnings record synthesized back to
+  `career_start_age` at today's salary indexed by the average wage index — a flat real career.
+  Bank-to-401k deferrals earn the household's employer match (`employer_match_rate` per dollar on
+  deferrals up to `employer_match_cap` x pay, deposited pre-tax, 415(c)-capped). Households can
+  start with 401k / brokerage balances, and base spending steps down to
+  `retirement_spending_ratio` of its working level at retirement.
 - **Early-withdrawal penalties** (10% before age 59.5 on tax-advantaged accounts) are applied
   at the action level, pending the core penalty backlog item.
 
@@ -170,7 +185,7 @@ Legality is decided solely by each action's `can_execute` via `env.get_legal_act
 bucket that maps to $0 is illegal, and a property test enforces that every legal action
 executes successfully.
 
-### Observation space — `Box(34,)` (OBS_VERSION 3)
+### Observation space — `Box(38,)` (OBS_VERSION 4)
 
 Finite, documented bounds; observations are clipped into them. Money features are in **real**
 (inflation-deflated, start-of-episode) dollars normalized by $1M. See `OBS_SPEC` in
@@ -185,6 +200,7 @@ Finite, documented bounds; observations are clipped into them. Money features ar
 | Retirement timing | years to 59.5 (/35), years to RMD start (/50), projected RMD (real $M) |
 | Contribution room | IRA remaining-room fraction (one limit shared by Roth and Traditional), HSA remaining-room fraction; both reset each year |
 | Market (realized, no lookahead) | time progress, last year's inflation, equity return, bond return (each %/100), log cumulative-inflation deflator |
+| Retirement income | Social Security benefit (real $/100k: paid once claiming, else earned so far, in current wage-indexed dollars), years to the claim age (/50), employer match rate and cap |
 
 The tax-position features are *projections* for the upcoming year: the income ledger is settled
 and cleared inside `model.step()`, so intra-year "income so far" is never observable at the
@@ -231,7 +247,7 @@ python -m deepqlearning.train --env financial:basic --algo dqn --eval-only \
 Outputs are keyed `{env}_{algo}` under `models/`, `results/`, and `plots/`, so runs of different
 pairings never overwrite each other.
 
-> **Checkpoint compatibility:** DQN checkpoints carry `MODEL_VERSION` (currently **4**) and the
+> **Checkpoint compatibility:** DQN checkpoints carry `MODEL_VERSION` (currently **5**) and the
 > environment's `obs_version`, saved as tensor-only `.pt` files plus a `.history.json` sidecar so
 > they load under modern PyTorch defaults (`torch.load(..., weights_only=True)`). Loading a
 > checkpoint from a different version **fails with a clear error** — a checkpoint's weights are tied

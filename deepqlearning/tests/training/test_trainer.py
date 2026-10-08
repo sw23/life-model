@@ -14,9 +14,11 @@ import torch
 
 from deepqlearning.algos.dqn import DQNAgent
 from deepqlearning.algos.ppo import PPOAgent
-from deepqlearning.envs.financial.environment import FinancialLifeEnv
+from deepqlearning.envs.financial.environment import OBS_SPEC, FinancialLifeEnv
 from deepqlearning.envs.registry import make_vector_env
 from deepqlearning.training.trainer import Trainer
+
+OBS_DIM = len(OBS_SPEC)
 
 # A ten-year horizon, so episodes end (and autoreset) many times within a short run.
 _SHORT_EPISODES = {"person_start_age": 25, "person_max_age": 35}
@@ -58,7 +60,7 @@ class TestTrainerLoop(unittest.TestCase):
         # Exercises the collect -> observe -> update loop and the NEXT_STEP autoreset bookkeeping
         # end to end. Short-horizon episodes make autoresets happen many times in 200 steps.
         torch.manual_seed(0)
-        algo = PPOAgent(34, 52, {"n_steps": 16, "num_envs": 2, "epochs": 2, "minibatches": 2, "verbose": False})
+        algo = PPOAgent(OBS_DIM, 52, {"n_steps": 16, "num_envs": 2, "epochs": 2, "minibatches": 2, "verbose": False})
         trainer = Trainer(
             algo,
             "financial",
@@ -81,7 +83,7 @@ class TestTrainerLoop(unittest.TestCase):
     def test_dqn_runs_over_two_financial_envs(self):
         torch.manual_seed(0)
         algo = DQNAgent(
-            34,
+            OBS_DIM,
             52,
             {
                 "hidden_sizes": [32, 32],
@@ -109,7 +111,7 @@ class TestTrainerLoop(unittest.TestCase):
         self.assertGreater(len(algo.replay_buffer), 0)
 
     def test_unknown_lr_schedule_is_rejected(self):
-        algo = DQNAgent(34, 52, {"verbose": False})
+        algo = DQNAgent(OBS_DIM, 52, {"verbose": False})
         with self.assertRaises(ValueError):
             Trainer(algo, "financial", {}, {"lr_schedule": "exponential"})
 
@@ -123,7 +125,7 @@ class TestTrainerKeepsBestCheckpoint(unittest.TestCase):
         """Eval peaks in the first round then declines: train() must return the peak weights."""
         torch.manual_seed(0)
         algo = DQNAgent(
-            34,
+            OBS_DIM,
             52,
             {
                 "hidden_sizes": [32, 32],

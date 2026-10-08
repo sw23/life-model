@@ -21,6 +21,7 @@ from life_model.account.job401k import Job401kAccount
 from life_model.account.roth_IRA import RothIRA
 from life_model.account.traditional_IRA import TraditionalIRA
 from life_model.base_classes import FinancialAccount, TaxAdvantagedAccount
+from life_model.limits import job_401k_annual_additions_limit
 from life_model.model import LifeModel
 from life_model.people.person import Person
 
@@ -199,6 +200,48 @@ def _remaining_contribution_room(account: FinancialAccount) -> float:
     return float("inf")
 
 
+@dataclass(frozen=True)
+class EmployerMatch:
+    """An employer 401k match: ``rate`` of each elective deferral dollar, up to ``cap`` x pay a year.
+
+    ``EmployerMatch(0.5, 0.06)`` is "50 cents per dollar on the first 6% of pay" (a 3%-of-pay
+    maximum). The match is deposited pre-tax whether the deferral was pre-tax or Roth (the
+    long-standing plan default), is not income to the employee, and is capped so employee plus
+    employer additions stay within the 415(c) limit.
+    """
+
+    rate: float = 0.0
+    cap: float = 0.0
+
+    @property
+    def active(self) -> bool:
+        return self.rate > 0 and self.cap > 0
+
+    def max_match(self, pay: float) -> float:
+        """The most the employer adds in a year for ``pay`` of compensation."""
+        return self.rate * self.cap * pay if self.active else 0.0
+
+    def match_for(self, person: Person, deferral: float) -> float:
+        """Employer dollars earned by deferring ``deferral`` more this year (call before recording it)."""
+        if not self.active or deferral <= 0:
+            return 0.0
+        pay = _current_pay(person)
+        before = person.elective_deferrals_ytd
+        cap_dollars = self.cap * pay
+        matched_before = self.rate * min(before, cap_dollars)
+        matched_after = self.rate * min(before + deferral, cap_dollars)
+        additions_room = job_401k_annual_additions_limit(person.model.config) - (before + deferral) - matched_before
+        return max(0.0, min(matched_after - matched_before, additions_room))
+
+
+NO_MATCH = EmployerMatch()
+
+
+def _current_pay(person: Person) -> float:
+    """This year's compensation from jobs the person has not retired from."""
+    return sum(job.salary.base + job.salary.bonus for job in person.jobs if not job.retired)
+
+
 def _remaining_401k_deferral_room(person: Person) -> float:
     """Elective-deferral room left this year: the shared 402(g) limit, capped by pay not yet deferred.
 
@@ -206,7 +249,7 @@ def _remaining_401k_deferral_room(person: Person) -> float:
     ``Job.pre_step``: one 402(g) limit across all jobs (payroll deferrals included), and nothing
     without current compensation (a retiree has none).
     """
-    pay = sum(job.salary.base + job.salary.bonus for job in person.jobs if not job.retired)
+    pay = _current_pay(person)
     return max(0.0, min(person.remaining_401k_elective_room(), pay - person.elective_deferrals_ytd))
 
 
@@ -223,6 +266,8 @@ class ActionResult:
     amount_transferred: float = 0.0
     fees_paid: float = 0.0
     message: str = ""
+    #: Employer 401k match deposited alongside an elective deferral (pre-tax side).
+    employer_match: float = 0.0
 
 
 class FinancialAction(ABC):
@@ -249,6 +294,12 @@ class FinancialAction(ABC):
 class TransferAction(FinancialAction):
     """Move money from the bank account into a retirement/investment account."""
 
+    def __init__(
+        self, action_type: ActionType, person: Person, amount: float | None = None, match: EmployerMatch = NO_MATCH
+    ):
+        super().__init__(action_type, person, amount)
+        self.match = match
+
     def _target(self) -> FinancialAccount | None:
         return _first_account(self.person, _TRANSFER_TARGETS[self.action_type])
 
@@ -273,6 +324,8 @@ class TransferAction(FinancialAction):
 
         target = self._target()
         self.person.deduct_from_bank_accounts(amount)
+        # Employer match earned by this deferral (computed before the deferral is recorded).
+        employer_match = self.match.match_for(self.person, amount) if self.action_type in _401K_DEFERRALS else 0.0
 
         if self.action_type == ActionType.TRANSFER_BANK_TO_401K_PRETAX:
             # A pre-tax deferral comes out of this year's taxable wages (like Job.pre_step), so it
@@ -291,7 +344,9 @@ class TransferAction(FinancialAction):
         else:
             target.deposit(amount)
 
-        return ActionResult(success=True, amount_transferred=amount)
+        if employer_match > 0:
+            target.pretax_balance += employer_match
+        return ActionResult(success=True, amount_transferred=amount, employer_match=employer_match)
 
 
 class WithdrawalAction(FinancialAction):
@@ -363,11 +418,15 @@ class RetirementAction(FinancialAction):
 
 
 def build_action(
-    action_type: ActionType, person: Person, amount: float | None = None, percentage_change: float = 0.05
+    action_type: ActionType,
+    person: Person,
+    amount: float | None = None,
+    percentage_change: float = 0.05,
+    match: EmployerMatch = NO_MATCH,
 ) -> FinancialAction | None:
     """Construct the :class:`FinancialAction` for ``action_type`` (``None`` for NO_ACTION)."""
     if action_type in TRANSFER_ACTIONS:
-        return TransferAction(action_type, person, amount if amount is not None else 1000.0)
+        return TransferAction(action_type, person, amount if amount is not None else 1000.0, match=match)
     if action_type in WITHDRAWAL_ACTIONS:
         return WithdrawalAction(action_type, person, amount if amount is not None else 1000.0)
     if action_type in SPENDING_ACTIONS:
@@ -380,8 +439,9 @@ def build_action(
 class ActionExecutor:
     """Executes actions and reports whether they are legal."""
 
-    def __init__(self, model: LifeModel):
+    def __init__(self, model: LifeModel, *, employer_match: EmployerMatch = NO_MATCH):
         self.model = model
+        self.employer_match = employer_match
 
     def execute_action(
         self, person: Person, action_type: ActionType, amount: float | None = None, **kwargs
@@ -389,7 +449,9 @@ class ActionExecutor:
         """Execute a financial action."""
         if action_type == ActionType.NO_ACTION:
             return ActionResult(success=True, message="No action taken")
-        action = build_action(action_type, person, amount, kwargs.get("percentage_change", 0.05))
+        action = build_action(
+            action_type, person, amount, kwargs.get("percentage_change", 0.05), match=self.employer_match
+        )
         if action is None:
             return ActionResult(success=False, message=f"Action {action_type} not implemented")
         return action.execute()
