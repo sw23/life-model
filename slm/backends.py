@@ -53,13 +53,15 @@ class HFAdviserModel:
     def generate(self, messages: Messages) -> str:
         import torch
 
-        inputs = self.tokenizer.apply_chat_template(messages, add_generation_prompt=True, return_tensors="pt").to(
-            self.model.device
-        )
+        # return_dict=True pins the shape: transformers 5 returns a BatchEncoding here either way, and
+        # input_ids + attention_mask must both reach generate().
+        inputs = self.tokenizer.apply_chat_template(
+            messages, add_generation_prompt=True, return_tensors="pt", return_dict=True
+        ).to(self.model.device)
         with torch.no_grad():
-            output = self.model.generate(inputs, max_new_tokens=self.max_new_tokens, do_sample=False)
+            output = self.model.generate(**inputs, max_new_tokens=self.max_new_tokens, do_sample=False)
         # Decode only the newly generated tokens (strip the prompt).
-        new_tokens = output[0][inputs.shape[-1] :]
+        new_tokens = output[0][inputs["input_ids"].shape[-1] :]
         return self.tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
 
 

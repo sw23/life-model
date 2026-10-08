@@ -70,12 +70,11 @@ from .strategies import decision_space
 DEFAULT_REWARD_PRESET = "retirement_security"
 DEFAULT_SCENARIOS = ("basic", "high_earner", "low_earner", "mid_career", "late_career", "pre_retiree")
 
-# Teacher-gating provenance string recorded in the datasheet (protocol report:
-# verdict_intelligent=false), so the dataset states honestly that the DQN was not used as a teacher.
+# Teacher-gating provenance string recorded in the datasheet, so the dataset states honestly that no
+# RL policy was used as a teacher (see slm.candidates).
 TEACHER_GATING = (
-    "DQN excluded (protocol report: verdict_intelligent=false, "
-    "ci_does_not_overlap_best=false); candidates = heuristics + Roth/pre-tax levers, label = grid argmax "
-    "(no_plan_lever when no lever is viable)."
+    "No RL teacher (committed protocol reports, seed 0: DQN and PPO verdict_intelligent=false); "
+    "candidates = heuristics + Roth/pre-tax levers, label = grid argmax (no_plan_lever when no lever is viable)."
 )
 
 

@@ -9,12 +9,14 @@ This is the bridge from a strategy *name* (see :mod:`slm.strategies`) to the det
 baseline policy that realizes it in the RL environment. The candidate set is the planner-grade
 heuristics plus two Roth/pre-tax split levers, matching the plan-level levers.
 
-**Teacher gating:** the trained DQN is *not* in the candidate set. Per the
-protocol report (``deepqlearning/reports/retirement_security/protocol_report.json``:
-``verdict_intelligent = false``, ``ci_does_not_overlap_best = false``), the DQN did not achieve
-CI-separated superiority over the heuristics, so distilling from it would silently cap the
-student. Candidates are therefore heuristics + the Roth/pre-tax levers only, and the label is the
-grid argmax.
+**Teacher gating:** no trained RL policy is in the candidate set. Per the committed protocol
+reports (``deepqlearning/reports/retirement_security/protocol_report.json`` for DQN and
+``retirement_security_ppo/protocol_report.json`` for PPO, both ``verdict_intelligent = false`` at
+the committed seed 0), no learned policy achieved CI-separated superiority over the heuristics at
+the seed fixed in advance, so distilling from one would silently cap the student. (PPO seed 1 does
+clear the bar in ``reports/algorithm_sweep.txt``; promoting it would mean choosing a seed after
+seeing results, which the seed convention exists to prevent.) Candidates are therefore heuristics +
+the Roth/pre-tax levers only, and the label is the grid argmax.
 
 Imports the RL package, so the repo root must be on ``sys.path`` (the SLM test conftest arranges
 this, mirroring ``deepqlearning/tests/conftest.py``).

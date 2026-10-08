@@ -1,6 +1,11 @@
 {
   "config_hash": "b27a4838a65f3529",
-  "created_utc": "2026-10-07T17:35:10+00:00",
+  "created_utc": "2026-10-08T06:29:01+00:00",
+  "decision_basis_counts": {
+    "clear": 89,
+    "equivalent": 117,
+    "no_viable": 27
+  },
   "decision_space": [
     "contribution_waterfall",
     "age_glide",
@@ -15,16 +20,29 @@
     "basic",
     "high_earner",
     "low_earner",
-    "mid_career"
+    "mid_career",
+    "late_career",
+    "pre_retiree"
   ],
-  "n_decision_examples": 160,
-  "n_examples": 175,
-  "n_refusal_examples": 15,
+  "label_counts": {
+    "age_glide": 35,
+    "contribution_waterfall": 21,
+    "emergency_fund_first": 2,
+    "four_percent_drawdown": 20,
+    "max_pretax_401k": 81,
+    "max_roth_401k": 47,
+    "no_plan_lever": 27
+  },
+  "max_label_share": 0.35,
+  "n_decision_examples": 233,
+  "n_dropped_for_balance": 7,
+  "n_examples": 281,
+  "n_refusal_examples": 48,
   "n_trials_per_candidate": 16,
   "name": "slm/data/sample_dataset.jsonl",
   "reward_preset": "retirement_security",
   "scale_note": "pipeline-validation scale (not a publishable adviser)",
   "schema_version": 1,
-  "simulator_commit": "98f62cd9c0dd60834f86ec6e7994b49115f58bf8",
-  "teacher_gating": "DQN excluded (protocol report: verdict_intelligent=false, ci_does_not_overlap_best=false); candidates = heuristics + Roth/pre-tax levers, label = grid argmax."
+  "simulator_commit": "e753214e8f2d6c9155137c9282b88c1001b4aa8e",
+  "teacher_gating": "No RL teacher (committed protocol reports, seed 0: DQN and PPO verdict_intelligent=false); candidates = heuristics + Roth/pre-tax levers, label = grid argmax (no_plan_lever when no lever is viable)."
 }
