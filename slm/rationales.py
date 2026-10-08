@@ -6,7 +6,7 @@
 """Templated counterfactual rationales.
 
 The rationale is a pure function of the stored :class:`~slm.schema.ScoredCandidate` records: it
-compares the chosen (argmax) lever against the next-best one and cites the success-rate and
+compares the chosen plan against the default plan (or, for the default, the strongest alternative) and cites the success-rate and
 median-terminal-wealth figures straight from the scoring run. Its wording follows the
 :func:`~slm.scoring.decision_basis`: a clear winner is called the strongest lever, statistically
 indistinguishable options are called equivalent, and ``NO_LEVER`` says no lever is sufficient. Because every number is copied from
@@ -18,8 +18,8 @@ scoring run (numeric-faithfulness gate).
 import re
 
 from .schema import ScoredCandidate
-from .scoring import argmax_candidate, decision_basis
-from .strategies import NO_LEVER, STRATEGY_BY_NAME
+from .scoring import argmax_candidate, decision_basis, label_decision
+from .strategies import DEFAULT_PLAN, NO_LEVER, STRATEGY_BY_NAME
 
 
 def _pct(success_rate: float) -> int:
@@ -32,14 +32,18 @@ def _title(name: str) -> str:
 
 
 def runner_up(scored: list[ScoredCandidate], chosen: str) -> ScoredCandidate:
-    """The best candidate other than ``chosen`` (same deterministic ordering as the argmax)."""
+    """The comparison the rationale cites: the default plan when ``chosen`` changes a lever off it
+    (the counterfactual "what if you changed nothing"), else the best other candidate."""
     others = [c for c in scored if c.decision != chosen]
+    default = next((c for c in others if c.decision == DEFAULT_PLAN.name), None)
+    if default is not None:
+        return default
     return argmax_candidate(others)
 
 
 def rationale_of(scored: list[ScoredCandidate]) -> str:
-    """Convenience: the rationale for the argmax candidate of ``scored``."""
-    return build_rationale(scored, argmax_candidate(scored).decision)
+    """Convenience: the rationale for the label of ``scored``."""
+    return build_rationale(scored, label_decision(scored))
 
 
 def _worst(scored: list[ScoredCandidate]) -> ScoredCandidate:
@@ -59,18 +63,24 @@ def _no_lever_rationale(scored: list[ScoredCandidate]) -> str:
     )
 
 
+def _runner_phrase(runner: ScoredCandidate) -> str:
+    who = "the default plan" if runner.decision == DEFAULT_PLAN.name else "the strongest alternative"
+    return f"{who}, {_title(runner.decision)} ({runner.decision})"
+
+
 def _equivalent_rationale(chosen: ScoredCandidate, runner: ScoredCandidate) -> str:
     delta_wealth = chosen.net_worth_p50 - runner.net_worth_p50
     direction = "above" if delta_wealth >= 0 else "below"
     return (
-        f"Over {chosen.n_trials} shared Monte Carlo trials, the top options are within simulation noise "
-        f"on the simulator's retirement-security objective for this household: "
+        f"Over {chosen.n_trials} shared Monte Carlo trials, no lever change is proven better beyond simulation "
+        f"noise on the simulator's retirement-security objective for this household: "
         f"{_title(chosen.decision)} ({chosen.decision}) stays solvent to end of life "
         f"in {_pct(chosen.success_rate)}% of trials versus {_pct(runner.success_rate)}% for "
-        f"{_title(runner.decision)} ({runner.decision}), and its median terminal net worth of "
+        f"{_runner_phrase(runner)}, and its median terminal net worth of "
         f"${chosen.net_worth_p50:,.0f} is ${abs(delta_wealth):,.0f} {direction} the alternative's "
-        f"${runner.net_worth_p50:,.0f}. It is listed for that slight edge, but either is a reasonable "
-        f"choice. These are simulator Monte Carlo outputs under stated assumptions, not guarantees."
+        f"${runner.net_worth_p50:,.0f}. It is recommended because no change has evidence behind it, but the "
+        f"alternative is a reasonable choice too. These are simulator Monte Carlo outputs under stated "
+        f"assumptions, not guarantees."
     )
 
 
@@ -80,26 +90,31 @@ def build_rationale(scored: list[ScoredCandidate], chosen_name: str) -> str:
         return _no_lever_rationale(scored)
     chosen = next(c for c in scored if c.decision == chosen_name)
     runner = runner_up(scored, chosen_name)
-    if chosen_name == argmax_candidate(scored).decision and decision_basis(scored) == "equivalent":
+    if chosen_name == label_decision(scored) and decision_basis(scored) == "equivalent":
         return _equivalent_rationale(chosen, runner)
     delta_wealth = chosen.net_worth_p50 - runner.net_worth_p50
     direction = "above" if delta_wealth >= 0 else "below"
-    if chosen_name != argmax_candidate(scored).decision:
+    if chosen_name != label_decision(scored):
         lead = (
             f"Over {chosen.n_trials} shared Monte Carlo trials, {_title(chosen_name)} ({chosen_name}) "
-            f"is not the simulator's top-scoring lever here"
+            f"is not the plan the simulator's evidence supports here"
+        )
+    elif chosen_name == DEFAULT_PLAN.name:
+        lead = (
+            f"Over {chosen.n_trials} shared Monte Carlo trials, the default plan, {_title(chosen_name)} "
+            f"({chosen_name}), beats every single-lever change beyond simulation noise on the simulator's "
+            f"retirement-security objective (solvency first, then wealth left at the end of life)"
         )
     else:
         lead = (
             f"Over {chosen.n_trials} shared Monte Carlo trials, {_title(chosen_name)} ({chosen_name}) "
-            f"scores best on the simulator's retirement-security objective (solvency first, then wealth "
-            f"left at the end of life), ahead of every alternative beyond simulation noise"
+            f"improves on the default plan beyond simulation noise on the simulator's retirement-security "
+            f"objective (solvency first, then wealth left at the end of life)"
         )
     return (
         f"{lead}: it keeps the household solvent to end of life in {_pct(chosen.success_rate)}% of trials, "
-        f"versus {_pct(runner.success_rate)}% for the next-best option, {_title(runner.decision)} "
-        f"({runner.decision}). Its median terminal net worth is ${chosen.net_worth_p50:,.0f}, "
-        f"${abs(delta_wealth):,.0f} {direction} the next-best lever's "
+        f"versus {_pct(runner.success_rate)}% for {_runner_phrase(runner)}. Its median terminal net worth is "
+        f"${chosen.net_worth_p50:,.0f}, ${abs(delta_wealth):,.0f} {direction} the alternative's "
         f"${runner.net_worth_p50:,.0f}. These are simulator Monte Carlo outputs under stated "
         f"assumptions, not guarantees."
     )

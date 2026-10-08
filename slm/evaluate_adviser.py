@@ -36,11 +36,13 @@ measures decision quality independent of any model.
 import argparse
 import datetime
 import json
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
 
 import numpy as np
 
 from .adviser import AdviserModel, ScriptedAdviserModel, StubAdviserModel
+from .candidates import REFERENCE_POLICIES
 from .faithfulness import is_consistent, is_faithful
 from .generate_data import DEFAULT_SCENARIOS, _sample_households, _to_profile, _trial_seeds
 from .prompts import (
@@ -54,16 +56,30 @@ from .prompts import (
 from .provenance import config_hash, simulator_commit
 from .rationales import rationale_of
 from .schema import ScoredCandidate
-from .scoring import argmax_candidate, label_decision, paired_bootstrap_ci, score_household
+from .scoring import _Scorer, argmax_candidate, label_decision, paired_bootstrap_ci, search_plans
 from .serializer import render_household
-from .strategies import NO_LEVER, NO_LEVER_DEFAULT_PLAN, STRATEGY_NAMES
+from .strategies import (
+    DEFAULT_PLAN,
+    DIMENSIONS,
+    NO_LEVER,
+    NO_LEVER_DEFAULT_PLAN,
+    STRATEGY_NAMES,
+    dimension_agreement,
+)
 
 DEFAULT_REWARD_PRESET = "retirement_security"
 
-# Heuristic candidates the adviser is measured against (planner-grade baselines present in the
-# decision menu). The Roth/pre-tax levers are candidates but not "planner heuristics", so they are
-# reported but not part of the heuristic bar.
-HEURISTIC_NAMES = ("contribution_waterfall", "age_glide", "emergency_fund_first", "four_percent_drawdown")
+# Reference policies the adviser is measured against: the RL planner heuristics, scored on the same
+# seeds but never recommendable.
+HEURISTIC_NAMES = tuple(REFERENCE_POLICIES)
+
+#: "Constant answers" whose regret every report includes: the default plan, each one-dimension
+#: variant of it (all always scored by the search), and the reference heuristics.
+CONSTANT_ANSWERS = (
+    DEFAULT_PLAN.name,
+    *(DEFAULT_PLAN.with_value(d.name, v).name for d in DIMENSIONS for v in d.values if v != d.default),
+    *HEURISTIC_NAMES,
+)
 
 
 @dataclass
@@ -82,6 +98,8 @@ class HouseholdResult:
     # of what the adviser's answer executes (the default plan when unparsed or abstaining), and
     # whether the answer is in the top set / within Monte Carlo noise of the scored numbers.
     returns: dict = field(default_factory=dict)
+    oracle_return: float = 0.0
+    worst_return: float = 0.0
     executed: str = ""
     in_top_set: bool = False
     consistent: bool = True
@@ -110,16 +128,58 @@ class AdviserEvaluator:
     reward_preset: str = DEFAULT_REWARD_PRESET
     master_seed: int = 777
     held_out_scenario: str | None = "recession"
+    #: Process-pool size for scoring households (1 = sequential). Scores are cached per household
+    #: and condition, so evaluating several advisers with one evaluator scores each household once
+    #: and each adviser's own off-search plans only.
+    workers: int = 1
+    _cache: dict = field(default_factory=dict, init=False, repr=False)
 
     def _households(self) -> list[tuple]:
         return _sample_households(self.scenarios, self.n_per_scenario, self.master_seed)
 
-    def _score(self, household: dict, index: int, economy_scenario: str | None) -> list[ScoredCandidate]:
-        h = dict(household)
-        if economy_scenario is not None:
-            h["economy_scenario"] = economy_scenario
-        seeds = _trial_seeds(self.master_seed, index, self.n_trials)
-        return score_household(h, seeds, self.reward_preset)
+    def _scorer(self, household: dict, index: int, economy_scenario: str | None) -> tuple[_Scorer, list[str]]:
+        """The cached scorer for one household/condition and its searched plan names."""
+        key = (index, economy_scenario)
+        if key not in self._cache:
+            self._cache[key] = _prepare_scorer((household, index, economy_scenario, self._spec()))
+        return self._cache[key]
+
+    def _spec(self) -> tuple:
+        return (self.master_seed, self.n_trials, self.reward_preset)
+
+    def prepare(self) -> None:
+        """Score every held-out household under every condition up front (in a process pool when
+        ``workers > 1``), so later :meth:`run` calls only score each adviser's own extra plans."""
+        work = [
+            (household, index, economy, self._spec())
+            for economy in self._condition_scenarios()
+            for _, household, index in self._households()
+            if (index, economy) not in self._cache
+        ]
+        if not work:
+            return
+        if self.workers > 1:
+            with ProcessPoolExecutor(max_workers=self.workers) as pool:
+                prepared = list(pool.map(_prepare_scorer, work))
+        else:
+            prepared = [_prepare_scorer(w) for w in work]
+        for (_, index, economy, _), result in zip(work, prepared):
+            self._cache[(index, economy)] = result
+
+    def _score(
+        self, household: dict, index: int, economy_scenario: str | None, extra: list[str] | None = None
+    ) -> list[ScoredCandidate]:
+        """Score the searched plans (plus any ``extra`` plan) on the household's eval seeds."""
+        scorer, names = self._scorer(household, index, economy_scenario)
+        names = names + [e for e in (extra or []) if e not in names]
+        scorer.ensure(names, self.n_trials)
+        return scorer.summarize(names, self.n_trials)
+
+    def _score_references(self, household: dict, index: int, economy_scenario: str | None) -> list[ScoredCandidate]:
+        """Score the reference heuristics on the same seeds (the bar; never recommendable)."""
+        scorer, _ = self._scorer(household, index, economy_scenario)
+        scorer.ensure(list(HEURISTIC_NAMES), self.n_trials)
+        return scorer.summarize(list(HEURISTIC_NAMES), self.n_trials)
 
     def _evaluate_condition(self, adviser: AdviserModel, economy_scenario: str | None) -> dict:
         """Evaluate one condition (an economy overlay of the held-out households)."""
@@ -131,23 +191,28 @@ class AdviserEvaluator:
         oracle_success: list[float] = []
 
         for scenario, household, index in households:
-            scored = self._score(household, index, economy_scenario)
-            by_name = _scored_by_name(scored)
             profile = _to_profile(scenario, household)
             if economy_scenario is not None:
                 profile = profile.model_copy(update={"economy_scenario": economy_scenario})
             household_text = render_household(profile)
 
+            # Ask first, so the adviser's own plan is scored on the same seeds as the searched ones.
             answer = adviser.generate(build_messages(household_text))
             decision = parse_decision(answer)
+            extra = [decision] if decision is not None and decision != NO_LEVER else []
+            scored = self._score(household, index, economy_scenario, extra=extra)
+            references = self._score_references(household, index, economy_scenario)
+            by_name = _scored_by_name(scored)
             argmax = argmax_candidate(scored).decision
             label = label_decision(scored)
             oracle_success.append(by_name[argmax].success_rate)
-            for n in HEURISTIC_NAMES:
-                heuristic_success[n].append(by_name[n].success_rate)
-                heuristic_p50[n].append(by_name[n].net_worth_p50)
+            for ref in references:
+                heuristic_success[ref.decision].append(ref.success_rate)
+                heuristic_p50[ref.decision].append(ref.net_worth_p50)
 
-            returns = {c.decision: c.mean_return for c in scored}
+            returns = {c.decision: c.mean_return for c in [*scored, *references]}
+            oracle_return = max(c.mean_return for c in scored)
+            worst_return = min(c.mean_return for c in scored)
             if decision is not None and (decision in by_name or decision == NO_LEVER):
                 executed = NO_LEVER_DEFAULT_PLAN if decision == NO_LEVER else decision
                 adviser_stats = by_name[executed]
@@ -162,6 +227,8 @@ class AdviserEvaluator:
                         is_faithful(answer, scored, decision),
                         label,
                         returns=returns,
+                        oracle_return=oracle_return,
+                        worst_return=worst_return,
                         executed=executed,
                         # Abstaining is "in the top set" exactly when the label is no_plan_lever.
                         in_top_set=(label == NO_LEVER) if decision == NO_LEVER else by_name[decision].in_top_set,
@@ -181,6 +248,8 @@ class AdviserEvaluator:
                         True,
                         label,
                         returns=returns,
+                        oracle_return=oracle_return,
+                        worst_return=worst_return,
                         executed=NO_LEVER_DEFAULT_PLAN,
                     )
                 )
@@ -194,6 +263,9 @@ class AdviserEvaluator:
         adviser_p50 = float(np.mean([r.adviser_p50 for r in parsed])) if parsed else 0.0
         faithfulness_rate = float(np.mean([r.faithful for r in parsed])) if parsed else 1.0
         label_agreement = float(np.mean([r.decision == r.label for r in parsed])) if parsed else 0.0
+        dimension_agreement_rate = (
+            float(np.mean([dimension_agreement(r.decision, r.label) for r in parsed])) if parsed else 0.0
+        )
         abstain_rate = float(np.mean([r.decision == NO_LEVER for r in parsed])) if parsed else 0.0
         label_abstain_rate = float(np.mean([r.label == NO_LEVER for r in results])) if results else 0.0
 
@@ -217,6 +289,7 @@ class AdviserEvaluator:
             "adviser_mean_net_worth_p50": adviser_p50,
             "numeric_faithfulness_rate": faithfulness_rate,
             "label_agreement_rate": label_agreement,
+            "dimension_agreement_rate": dimension_agreement_rate,
             "abstain_rate": abstain_rate,
             "label_abstain_rate": label_abstain_rate,
             "heuristics": heuristics,
@@ -241,9 +314,9 @@ class AdviserEvaluator:
         """
         if not results:
             return {}
-        names = list(results[0].returns)
-        oracle = np.array([max(r.returns.values()) for r in results])
-        span = oracle - np.array([min(r.returns.values()) for r in results])
+        names = [n for n in CONSTANT_ANSWERS if all(n in r.returns for r in results)]
+        oracle = np.array([r.oracle_return for r in results])
+        span = oracle - np.array([r.worst_return for r in results])
         safe_span = np.where(span > 1e-9, span, 1.0)
 
         def regret_of(executed: list[str]) -> np.ndarray:
@@ -346,6 +419,18 @@ class AdviserEvaluator:
         return report
 
 
+def _prepare_scorer(args: tuple) -> tuple[_Scorer, list[str]]:
+    """Top-level (picklable) worker: search the plan grid and score the reference heuristics."""
+    household, index, economy_scenario, (master_seed, n_trials, reward_preset) = args
+    h = dict(household)
+    if economy_scenario is not None:
+        h["economy_scenario"] = economy_scenario
+    scorer = _Scorer(h, _trial_seeds(master_seed, index, n_trials), reward_preset)
+    names = search_plans(scorer, n_trials)
+    scorer.ensure(list(HEURISTIC_NAMES), n_trials)
+    return scorer, names
+
+
 def format_report(report: dict) -> str:
     """Render the adviser eval report as a short text table."""
     lines = [
@@ -406,6 +491,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--model-id", default=None, help="--adviser hf: base model id or local path.")
     parser.add_argument("--adapter-path", default=None, help="--adviser hf: optional LoRA adapter directory.")
     parser.add_argument("--max-new-tokens", type=int, default=384, help="--adviser hf: generation budget.")
+    parser.add_argument("--workers", type=int, default=1, help="Process-pool size for scoring households.")
     parser.add_argument("--out", default=None, help="Write the JSON report here.")
     return parser.parse_args(argv)
 
@@ -419,7 +505,9 @@ def main(argv: list[str] | None = None) -> None:
         reward_preset=args.reward_preset,
         master_seed=args.seed,
         held_out_scenario=None if args.held_out_scenario in ("", "none", "None") else args.held_out_scenario,
+        workers=args.workers,
     )
+    evaluator.prepare()
     adviser: AdviserModel
     if args.adviser == "oracle":
         adviser = evaluator.build_oracle()

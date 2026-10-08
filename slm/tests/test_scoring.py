@@ -13,12 +13,15 @@ from slm.generate_data import _sample_households, _trial_seeds
 from slm.rationales import build_rationale
 from slm.schema import ScoredCandidate
 from slm.scoring import (
+    _undecided,
     argmax_candidate,
     decision_basis,
+    label_plan,
     paired_bootstrap_ci,
     score_household,
     top_set,
 )
+from slm.strategies import DEFAULT_PLAN
 
 
 def _candidate(name, mean_return, *, success=1.0, in_top_set=True, gap_low=0.0, n=32):
@@ -73,16 +76,30 @@ def test_scores_carry_paired_gaps(household):
         assert c.in_top_set == (c.decision == best.decision or c.gap_ci_low <= 0.0)
 
 
-def test_adaptive_trials_grow_only_while_equivalent(household):
+def test_adaptive_trials_grow_only_while_a_lever_is_undecided(household):
     seeds = _trial_seeds(3, 0, 16)
     adaptive = score_household(household, seeds, "retirement_security", min_trials=4)
     n = adaptive[0].n_trials
     assert n in (4, 8, 16)
+    assert all(c.n_trials == n for c in adaptive)
     if n < 16:
-        assert decision_basis(adaptive) != "equivalent"
+        assert not _undecided(adaptive)
     # Scoring the same number of seeds non-adaptively gives the same numbers.
     fixed = score_household(household, seeds[:n], "retirement_security")
     assert [c.model_dump() for c in fixed] == [c.model_dump() for c in adaptive]
+
+
+def test_label_plan_keeps_defaults_without_evidence():
+    default = DEFAULT_PLAN.name
+    roth = DEFAULT_PLAN.with_value("routing", "roth").name
+    claim70 = DEFAULT_PLAN.with_value("claim", "claim70").name
+    scored = [
+        _candidate(default, 10.0),
+        ScoredCandidate(**{**_candidate(roth, 10.5).model_dump(), "gain_ci_low": -0.1, "gain_vs_default": 0.5}),
+        ScoredCandidate(**{**_candidate(claim70, 11.0).model_dump(), "gain_ci_low": 0.2, "gain_vs_default": 1.0}),
+    ]
+    # Roth is better on average but not proven; claiming at 70 is proven.
+    assert label_plan(scored) == claim70
 
 
 def test_consistency_tolerates_noise_but_not_fabrication(household):

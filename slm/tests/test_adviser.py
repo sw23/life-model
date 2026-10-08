@@ -15,10 +15,10 @@ def test_stub_satisfies_protocol():
 
 
 def test_stub_emits_parseable_in_scope_decision():
-    model = StubAdviserModel(fixed_decision="age_glide")
+    model = StubAdviserModel(fixed_decision="save5_pretax_claimret_conventional")
     messages = build_messages("Household profile (basic scenario). ...")
     text = model.generate(messages)
-    assert parse_decision(text) == "age_glide"
+    assert parse_decision(text) == "save5_pretax_claimret_conventional"
     assert not is_refusal(text)
 
 
@@ -30,7 +30,7 @@ def test_stub_refuses_out_of_scope():
 
 
 def test_stub_is_deterministic():
-    model = StubAdviserModel(fixed_decision="max_roth_401k")
+    model = StubAdviserModel(fixed_decision="save0_roth_claimret_conventional")
     messages = build_messages("Household profile (basic scenario). ...")
     assert model.generate(messages) == model.generate(messages)
 
@@ -38,14 +38,14 @@ def test_stub_is_deterministic():
 def test_scripted_oracle_selects_by_household_text():
     # Two distinct households mapped to two distinct decisions.
     mapping = {
-        "high_earner scenario": "max_pretax_401k",
-        "low_earner scenario": "emergency_fund_first",
+        "high_earner scenario": "save0_pretax_claimret_conventional",
+        "low_earner scenario": "save10_split_claim70_bracketfill",
     }
     model = ScriptedAdviserModel(mapping)
     high = model.generate(build_messages("Household profile (high_earner scenario). ..."))
     low = model.generate(build_messages("Household profile (low_earner scenario). ..."))
-    assert parse_decision(high) == "max_pretax_401k"
-    assert parse_decision(low) == "emergency_fund_first"
+    assert parse_decision(high) == "save0_pretax_claimret_conventional"
+    assert parse_decision(low) == "save10_split_claim70_bracketfill"
 
 
 def test_parse_decision_rejects_unknown_strategy():

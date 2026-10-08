@@ -5,7 +5,8 @@
 
 """Versioned dataset schema for the adviser.
 
-``schema_version = 1``. The models reuse the repository's ``StrictModel`` convention
+``schema_version = 2`` (v2: decisions are compositional plan tokens, scored candidates carry paired
+gaps to the best and gains over the default plan, households carry retirement-income context). The models reuse the repository's ``StrictModel`` convention
 (``extra='forbid'`` — a misspelled key fails validation at load time). The schema stores each
 example in three redundant, cross-checkable forms:
 
@@ -25,7 +26,7 @@ from pydantic import Field
 
 from life_model.config.models import StrictModel
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 class ChatMessage(StrictModel):
@@ -87,6 +88,12 @@ class ScoredCandidate(StrictModel):
     gap_ci_low: float = 0.0
     gap_ci_high: float = 0.0
     in_top_set: bool = True
+    # Paired gain over the default plan (``this - default`` per trial) and its bootstrap 95% CI;
+    # zero when the default plan is not among the scored candidates. The label moves a lever off
+    # its default only on a gain whose CI excludes zero (slm.scoring.label_plan).
+    gain_vs_default: float = 0.0
+    gain_ci_low: float = 0.0
+    gain_ci_high: float = 0.0
 
 
 class Provenance(StrictModel):
@@ -102,7 +109,7 @@ class Provenance(StrictModel):
 class AdviceExample(StrictModel):
     """One dataset row: an in-scope decision example or an out-of-scope refusal example."""
 
-    schema_version: Literal[1] = SCHEMA_VERSION
+    schema_version: Literal[2] = SCHEMA_VERSION
     example_id: str
     kind: Literal["decision", "refusal"]
 
@@ -131,7 +138,7 @@ class Datasheet(StrictModel):
     the DQN was eligible to prune candidates per the RL protocol).
     """
 
-    schema_version: Literal[1] = SCHEMA_VERSION
+    schema_version: Literal[2] = SCHEMA_VERSION
     name: str
     description: str
     generation_seed: int

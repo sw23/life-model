@@ -113,6 +113,10 @@ OBS_SPEC = [
 
 _MONEY_SCALE = 1_000_000.0
 
+# After-tax valuation of tax-deferred balances in terminal wealth for the named scenario envs and
+# the SLM scoring env: the middle (22%) federal bracket.
+NAMED_ENV_BEQUEST_TAX_RATE = 0.22
+
 # Earliest year a synthesized earnings record may start (SSA quarter-of-coverage table start).
 _FIRST_EARNINGS_YEAR = 1978
 # Earliest year-of-age-62 SSA publishes bend points for.
@@ -213,6 +217,17 @@ class FinancialLifeEnv(gym.Env):
             # Base spending is multiplied by this once when the person retires (planner convention:
             # retirement spending is 70-90% of the working level; 1.0 = no change).
             "retirement_spending_ratio": 1.0,
+            # Extra saving while working, in percentage points of salary: base spending is cut by
+            # this share of the starting salary until retirement, then restored (before the
+            # retirement step-down). A plan lever, not a household trait.
+            "savings_boost_pct": 0.0,
+            # Terminal wealth (the bequest the reward values, and the outcome evaluations report) is
+            # measured after tax: pre-tax 401k, traditional IRA and HSA balances count at
+            # (1 - this rate), since heirs pay income tax on them. 0.0 (the bare-env default, kept
+            # for unit tests) counts them at face value, which makes deferring tax look like
+            # creating wealth; the named scenario envs (create_scenario_env, so every registry
+            # ``financial:*`` env) and the SLM scoring env use NAMED_ENV_BEQUEST_TAX_RATE.
+            "bequest_pretax_tax_rate": 0.0,
             # Starting invested balances (nominal dollars at the start year).
             "initial_401k_pretax": 0.0,
             "initial_401k_roth": 0.0,
@@ -281,6 +296,7 @@ class FinancialLifeEnv(gym.Env):
             "models_healthcare",
             "ss_claim_age",
             "retirement_spending_ratio",
+            "savings_boost_pct",
             "employer_match_rate",
             "employer_match_cap",
             "initial_401k_pretax",
@@ -433,6 +449,14 @@ class FinancialLifeEnv(gym.Env):
                 income_history=self._synthetic_earnings(household),
             )
         self._ss_benefit_cache: tuple[int, float] | None = None
+        # Savings boost: cut working-years spending by a share of salary (restored at retirement).
+        boost = float(household.get("savings_boost_pct") or 0.0) / 100.0 * float(household["initial_salary"])
+        base_spending = self.person.spending.base
+        self._working_spending_factor = 1.0
+        if boost > 0 and base_spending > 0 and not self.person.is_retired:
+            self._working_spending_factor = max(0.0, base_spending - boost) / base_spending
+            self.person.spending.base = base_spending * self._working_spending_factor
+
         # Retirement spending step-down: applied once, when the person is first observed retired.
         self._retirement_spending_applied = False
         self._apply_retirement_spending()
@@ -457,6 +481,7 @@ class FinancialLifeEnv(gym.Env):
         # Net worth captured just before the person died (the estate value the reward sees);
         # None while the person is alive.
         self._estate_value_at_death: float | None = None
+        self._raw_estate_value_at_death: float | None = None
 
         return self._get_observation(), self._get_info(None)
 
@@ -465,6 +490,8 @@ class FinancialLifeEnv(gym.Env):
         if self._retirement_spending_applied or not self.person.is_retired:
             return
         ratio = self.episode_household.get("retirement_spending_ratio")
+        if self._working_spending_factor > 0:
+            self.person.spending.base /= self._working_spending_factor  # undo the working-years savings boost
         self.person.spending.base *= 1.0 if ratio is None else float(ratio)
         self._retirement_spending_applied = True
 
@@ -557,13 +584,15 @@ class FinancialLifeEnv(gym.Env):
         # person may die inside this call, which runs the full death machinery and removes their
         # agents from the model. Snapshot the pre-step net worth so the estate value at death is
         # observable to the reward (post-death net worth reads ~0 once assets dissolve).
-        net_worth_before_step = self._calculate_net_worth()
+        net_worth_before_step = self._after_tax_net_worth()
+        raw_net_worth_before_step = self._calculate_net_worth()
         self.model.step()
         self.current_step += 1
         if not self.person.is_deceased:
             self._apply_retirement_spending()
         if self.person.is_deceased and self._estate_value_at_death is None:
             self._estate_value_at_death = net_worth_before_step
+            self._raw_estate_value_at_death = raw_net_worth_before_step
 
         # Terminal (task-ending) vs. truncation (time-limit) conditions. Computed before the reward
         # so the utility objective can add its terminal bequest/ruin term on the final step.
@@ -785,6 +814,25 @@ class FinancialLifeEnv(gym.Env):
         liabilities = self.person.debt + sum(home.mortgage.principal for home in self.person.homes if home.mortgage)
         return assets - liabilities
 
+    def _after_tax_net_worth(self) -> float:
+        """Net worth with tax-deferred balances (pre-tax 401k, traditional IRA, HSA) valued after
+        ``bequest_pretax_tax_rate`` — what the wealth is worth to whoever receives it."""
+        rate = float(self.config.get("bequest_pretax_tax_rate") or 0.0)
+        if rate <= 0 or self.person.is_deceased:
+            return self._calculate_net_worth()
+        person = self.person
+        deferred = sum(acc.pretax_balance for acc in person.all_retirement_accounts)
+        deferred += sum(acc.balance for acc in person.traditional_iras)
+        deferred += sum(acc.balance for acc in person.hsas)
+        return self._calculate_net_worth() - rate * deferred
+
+    def terminal_wealth(self) -> tuple[float, float]:
+        """(after-tax, raw) nominal terminal wealth: the estate at death if the person died, else
+        current net worth. The after-tax figure is what the bequest values; the raw one decides ruin."""
+        if self.died_from_natural_causes and self._estate_value_at_death is not None:
+            return self._estate_value_at_death, self._raw_estate_value_at_death
+        return self._after_tax_net_worth(), self._calculate_net_worth()
+
     def _calculate_reward(self, action_result: ActionResult, terminated: bool, truncated: bool) -> float:
         """Utility-based reward for the current step.
 
@@ -800,10 +848,7 @@ class FinancialLifeEnv(gym.Env):
 
         # When the person died this step, the estate value at death (captured pre-dissolution) is
         # the wealth passed on, not the ~0 net worth left after assets dissolve out of the sim.
-        if self.died_from_natural_causes and self._estate_value_at_death is not None:
-            terminal_net_worth = self._estate_value_at_death
-        else:
-            terminal_net_worth = self._calculate_net_worth()
+        terminal_net_worth, _ = self.terminal_wealth()
 
         # Ruin is the same single threshold that ends the episode, so the penalty and the
         # bankruptcy termination can never disagree.
@@ -891,6 +936,7 @@ class FinancialLifeEnvGenerator:
         """Create an environment configured with a named household scenario's point values."""
         merged = dict(HOUSEHOLD_SCENARIOS[scenario].point)
         merged["household_scenario"] = scenario
+        merged["bequest_pretax_tax_rate"] = NAMED_ENV_BEQUEST_TAX_RATE
         if config:
             merged.update(config)
         return FinancialLifeEnv(merged)

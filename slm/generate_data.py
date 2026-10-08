@@ -9,13 +9,16 @@ The pipeline, fully offline and deterministic under ``generation_seed``:
 
 1. Sample seeded households across named scenarios (:mod:`slm.households`: the RL scenarios plus
    older households, varied economies, and children budgeted inside the household's spending).
-2. Enumerate candidate plan-level levers (:mod:`slm.candidates`) — heuristics + Roth/pre-tax
-   split; the DQN is excluded by teacher gating (see :mod:`slm.candidates`).
-3. Score each candidate with a shared-seed Monte Carlo run (:mod:`slm.scoring`).
-4. Label = the argmax candidate, or ``no_plan_lever`` when no lever is viable
-   (:func:`slm.scoring.label_decision`); rationale = a templated counterfactual whose every number
-   is copied from the scoring run and whose wording states how decisive the scores are
-   (:mod:`slm.rationales`) — certified, not stylistic. Optionally cap any one label's share.
+2. Search the compositional plan grid (:mod:`slm.strategies`): the default plan, every
+   one-lever variant, and the combinations (:func:`slm.scoring.search_plans`); no RL policy is a
+   candidate (teacher gating, :mod:`slm.candidates`).
+3. Score each candidate with a shared-seed Monte Carlo run (:mod:`slm.scoring`), adaptively
+   doubling trials while a lever is promising but unproven.
+4. Label = the evidence-backed plan (each lever off its default only on a paired gain beyond
+   noise), or ``no_plan_lever`` when nothing is viable (:func:`slm.scoring.label_decision`);
+   rationale = a templated counterfactual against the default plan whose every number is copied
+   from the scoring run (:mod:`slm.rationales`) — certified, not stylistic. Optionally cap any one
+   label's share.
 5. Emit versioned JSONL + a datasheet (generation seed, simulator commit, config hash, trial
    count) and explicit out-of-scope refusal examples.
 
@@ -73,8 +76,8 @@ DEFAULT_SCENARIOS = ("basic", "high_earner", "low_earner", "mid_career", "late_c
 # Teacher-gating provenance string recorded in the datasheet, so the dataset states honestly that no
 # RL policy was used as a teacher (see slm.candidates).
 TEACHER_GATING = (
-    "No RL teacher (committed protocol reports, seed 0: DQN and PPO verdict_intelligent=false); "
-    "candidates = heuristics + Roth/pre-tax levers, label = grid argmax (no_plan_lever when no lever is viable)."
+    "No RL teacher (no learned policy cleared the pre-registered protocol bar); candidates = the "
+    "coordinate-searched plan grid, label = evidence-backed plan (no_plan_lever when nothing is viable)."
 )
 
 

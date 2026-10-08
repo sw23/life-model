@@ -118,8 +118,9 @@ class EpisodeOutcome:
 def run_policy_episode(env: FinancialLifeEnv, policy: Policy, seed: int) -> EpisodeOutcome:
     """Run one episode under ``policy`` and return its outcome (reward + terminal financial state).
 
-    Terminal net worth is deflated to real (start-of-episode) dollars; when the person died it is
-    the estate value captured at death, not the ~0 post-dissolution net worth.
+    Terminal net worth is deflated to real (start-of-episode) dollars and is after tax on
+    tax-deferred balances; when the person died it is the estate value captured at death, not the
+    ~0 post-dissolution net worth.
     """
     env.reset(seed=seed)
     total_reward = 0.0
@@ -135,12 +136,13 @@ def run_policy_episode(env: FinancialLifeEnv, policy: Policy, seed: int) -> Epis
             break
 
     died_natural = bool(info.get("died_from_natural_causes"))
-    estate = info.get("estate_value_at_death")
-    nominal_net_worth = float(estate) if (died_natural and estate is not None) else env._calculate_net_worth()
+    # After-tax terminal wealth (tax-deferred balances valued net of the env's bequest tax rate);
+    # ruin is decided on raw net worth, matching the env's bankruptcy termination.
+    nominal_net_worth, raw_net_worth = env.terminal_wealth()
     deflator = env.model.economy.cumulative_inflation(env.model.year)
     real_net_worth = nominal_net_worth / max(deflator, 1e-9)
 
-    ruined = nominal_net_worth < env.BANKRUPTCY_THRESHOLD
+    ruined = raw_net_worth < env.BANKRUPTCY_THRESHOLD
     # Success = stayed solvent to the end of life (natural death, max age, or horizon) with a
     # positive estate — "alive to death, fully funded".
     success = (not ruined) and nominal_net_worth > 0.0

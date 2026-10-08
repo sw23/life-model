@@ -15,65 +15,85 @@ generated rationales are certified by Monte Carlo simulation rather than asserte
 
 ## Fidelity ceiling (read before trusting any numbers)
 
-Advice fidelity is capped by what the **pipeline actually scores**. Scored households now include
-child dependents (age-banded childcare / school / college costs) and healthcare (the age-related
-medical-cost curve plus Medicare premiums from the eligibility age), so the levers face the two
-biggest lifetime household expenses rather than a bare single-earner. What is still *not* priced
-here caps fidelity further: no spouse/second earner, no explicit housing purchase, and children are
-drawn synthetically (0–3 dependents with plausible ages) rather than from real household
-demographics. Every dataset stamps the simulator commit and config hash in its datasheet, so data
-generated against an older configuration is detectable after the fact. **Treat any model distilled
-from a pipeline-validation dataset as a pipeline-validation artifact, not a publishable adviser.**
-The committed dataset sample and eval report in this directory are explicitly at
-*pipeline-validation scale*, not a production run.
+Advice fidelity is capped by what the **pipeline actually scores**. Scored households include
+Social Security (an earnings record synthesized at today's salary — a flat real career), an
+employer 401k match, age-calibrated starting 401k/brokerage balances, child dependents
+(age-banded costs) and healthcare (the medical-cost curve plus Medicare), and the economy is
+stochastic with named scenarios layered on as regimes or shocks. Terminal wealth values
+tax-deferred balances after a 22% tax. What is still *not* priced caps fidelity further: no
+spouse/second earner, no housing purchase, no leisure value (so retirement age is not a lever), no
+Social Security earnings test (so claiming is never before retirement), and out-of-pocket medical
+costs compound at CPI + 2 points for the whole horizon (a core-config assumption that makes low
+earners marginal). Every dataset stamps the simulator commit and config hash in its datasheet, so
+data generated against an older configuration is detectable. **Treat any model distilled from a
+pipeline-validation dataset as a pipeline-validation artifact, not a publishable adviser.**
 
 ## Pipeline
 
 | Stage | Module | What it does |
 |---|---|---|
-| Schema | `schema.py` | Versioned dataset schema (`schema_version=1`, pydantic StrictModel). |
+| Schema | `schema.py` | Versioned dataset schema (`schema_version=2`, pydantic StrictModel). |
 | Serialize | `serializer.py` | Household ↔ faithful natural-language text (round-trip tested). |
-| Decisions | `strategies.py`, `candidates.py` | The plan-level lever vocabulary → executable baseline policies. |
-| Score | `scoring.py` | Shared-seed Monte Carlo scoring of each candidate on a household. |
-| Households | `households.py` | SLM household distributions: the RL scenarios plus older households, varied economies, children budgeted inside spending. |
-| Generate | `generate_data.py` | Seeded households → scored candidates → label (argmax or `no_plan_lever`) + basis-aware rationale + refusals → optional label cap → JSONL + datasheet. |
-| Evaluate | `evaluate_adviser.py`, `faithfulness.py` | Execute the advised decision in the simulator; compare vs planner-grade heuristics; numeric-faithfulness + parse-rate + refusal metrics; oracle sanity check. |
+| Decisions | `strategies.py`, `candidates.py` | The compositional plan vocabulary → executable plans; the RL planner heuristics as reference policies. |
+| Score | `scoring.py` | Shared-seed paired Monte Carlo scoring, coordinate search over the plan grid, adaptive trials. |
+| Households | `households.py` | SLM household distributions: the RL scenarios plus older households, varied economies, children and medical costs budgeted inside spending. |
+| Generate | `generate_data.py` | Seeded households → searched plans → evidence-backed label (or `no_plan_lever`) + counterfactual rationale + refusals → optional label cap → JSONL + datasheet. |
+| Evaluate | `evaluate_adviser.py`, `faithfulness.py` | Execute the advised plan in the simulator; regret vs the oracle and vs every constant answer and reference heuristic, with CIs; top-set agreement; exact faithfulness and noise-aware consistency; parse and refusal rates. |
 | Train | `train.py` | Size-agnostic HF SFT (LoRA/QLoRA or full+FSDP) from one YAML `TrainConfig`. |
 | Advise | `advise.py` | Draft → simulate → revise tool-loop; itself an `AdviserModel`. |
 | Backends | `backends.py`, `adviser.py` | `AdviserModel` protocol + stub / HF / MLX / Anthropic-API implementations. |
 
-## Households and labels
+## Plans, households and labels
+
+**The decision is a plan**: one value on each of four independent levers, written as one token
+`<savings>_<routing>_<claim>_<drawdown>`, e.g. `save5_roth_claim70_bracketfill`:
+
+| Lever | Values |
+|---|---|
+| savings | `save0` keep spending · `save5` / `save10` save 5 / 10 more points of salary while working |
+| routing | `pretax` · `roth` · `split` (pre-tax on pay above the 12% bracket, Roth on the rest); savings beyond the 402(g) room go to brokerage above a 3-month cash reserve |
+| claim | `claimret` at retirement · `claimfra` at full retirement age · `claim70` at 70 (never before retirement) |
+| drawdown | `conventional` (the simulator's default order) · `bracketfill` (draw pre-tax savings up to the top of the 12% bracket each retired year) |
+
+The old menu (four planner heuristics plus max pre-tax / max Roth) had two near-duplicate pairs and
+none of the levers advice actually turns on; those heuristics remain as **reference policies** the
+eval scores on the same seeds, not answers.
 
 `households.py` widens the RL environment's four scenarios (ages 19–38) with `late_career` (46–54)
-and `pre_retiree` (54–60), draws each household's economy (about half the stochastic baseline, the
-rest boom / high-inflation / deflation / conservative / aggressive; `recession` is held out for
-evaluation), and budgets children *inside* the sampled spending (child costs are carved out of it,
-capped at half) instead of stacking them on a childless budget. Stacking made a third of households
-insolvent under every strategy.
+and `pre_retiree` (54–60), draws each household's economy (about half the stochastic baseline,
+the rest boom / high-inflation / deflation / conservative / aggressive as overlays; `recession` is
+held out for evaluation), and budgets children and the start-year medical cost *inside* the sampled
+spending. Its low earner spends 75% of gross (the RL point's 83% left nothing after taxes).
 
-Each example records a `decision_basis` (`scoring.decision_basis`):
+**Scoring** (`scoring.py`) runs every candidate on the same trial seeds and compares them pairwise
+on the mean utility return of the reward preset (ruin-avoidance first, then after-tax wealth left
+at death). A coordinate search scores the default plan (`save0_pretax_claimret_conventional`),
+each one-lever variant of it, and two combinations — 8 to 10 plans instead of 54. Trials start at
+`--min-trials` and double while some lever beats the default on average without yet being
+significant.
 
-* **clear** — the argmax beats the runner-up's success rate by two standard errors and two trials,
-  or, when success rates tie, its median terminal wealth by 10%;
-* **equivalent** — the top options are within Monte Carlo noise; the rationale says so;
-* **no_viable** — even the best lever is solvent in at most 10% of trials. The label is then
-  `no_plan_lever` ("no menu strategy is sufficient; the gap is spending versus income") rather than
-  the least-bad strategy. The eval harness executes it as the default plan
-  (`contribution_waterfall`), so abstaining never beats a lever that helps.
+**The label is evidence-backed**: a lever moves off its default only when that one-lever change
+beats the default plan on paired trials with a bootstrap 95% CI above zero; the label combines the
+proven changes (and falls back to the argmax if that combination is not within noise of the best).
+Each example records a `decision_basis`:
+
+* **clear** — the label changes at least one lever with evidence, or the default beats every
+  one-lever change beyond noise;
+* **equivalent** — no change is proven but some is not ruled out; the label stays at the default
+  and the rationale says so;
+* **no_viable** — even the best plan is solvent in at most 10% of trials. The label is then
+  `no_plan_lever`; the eval executes it as the default plan, so abstaining never beats a plan that
+  helps.
 
 `--max-label-share` caps any one label (dropping `equivalent` examples first). Refusals cover 8
 out-of-scope topics × 6 phrasings with rotating wording; the eval uses 3 held-out phrasings.
 
 ## Teacher gating (why no RL policy is a teacher)
 
-Per the committed protocol reports (`deepqlearning/reports/retirement_security/` for DQN and
-`retirement_security_ppo/` for PPO, both `verdict_intelligent=false` at the committed seed 0), no
-learned policy achieved CI-separated superiority over the planner heuristics at the seed fixed in
-advance. A mediocre teacher silently caps the student, so the candidate set is **heuristics +
-Roth/pre-tax levers only**, and each example's label is the candidate-grid argmax. PPO seed 1 does
-clear the bar (`deepqlearning/reports/algorithm_sweep.txt`); promoting it would mean picking a seed
-after seeing results, which the seed convention exists to prevent. A policy that passes at its
-pre-registered seed should be added as a candidate.
+No learned policy has cleared the RL protocol's pre-registered bar (see
+`deepqlearning/README.md`; the bar now includes `always_max_401k` and pools five pre-registered
+seeds). A mediocre teacher silently caps the student, so the candidates are the searched plans
+only. A policy that passes the pooled verdict can be added as a candidate.
 
 ## Setup
 
@@ -90,33 +110,9 @@ gymnasium + pydantic. The **training** stack (`transformers`, `peft`, `trl`, `da
 
 ## Committed artifacts (pipeline-validation scale)
 
-* `slm/data/sample_dataset.jsonl` + `.datasheet.json` — 281 examples (233 decisions across the
-  six household scenarios after a 35% label cap, 48 refusals), seed 20, 16 trials/candidate.
-  Labels: `max_pretax_401k` 81, `max_roth_401k` 47, `age_glide` 35, `no_plan_lever` 27,
-  `contribution_waterfall` 21, `four_percent_drawdown` 20, `emergency_fund_first` 2; basis 89
-  clear / 117 equivalent / 27 no-viable. Regeneration is byte-identical, including across
-  `--workers` values.
-* `slm/reports/adviser_eval.json` (produced by `slm/reports/run_eval.py`) — oracle vs
-  distilled-stub vs tool-loop on 32 held-out households (seed 777) plus the held-out
-  `recession` economy, with per-condition heuristic baselines, parse/faithfulness/refusal rates.
+> The sample dataset, datasheet and eval reports in `data/` and `reports/` predate dataset
+> schema v2 (the compositional plan menu) and are regenerated in the next commit.
 
-Two honest caveats:
-
-1. **Many near-ties.** About half the labels are `equivalent`: on many households the levers
-   (especially pre-tax vs Roth, both maxing the same 402(g) room) land within Monte Carlo noise.
-   The rationale says so instead of overstating the winner. `emergency_fund_first` rarely wins
-   outright because it scores identically to `contribution_waterfall` whenever the 6-month cushion
-   is already met (they are the RL planner baselines and are left as-is).
-2. **Cross-seed faithfulness.** The eval harness re-scores households on its own seeds, so the
-   numeric-faithfulness gate demands that cited numbers reproduce across independent Monte Carlo
-   draws. At 16 trials the noise on dollar medians exceeds the strict 2% tolerance, which is why
-   the tool-loop (whose numbers come from its own live run and are faithful-by-construction to
-   it — unit-tested) scores low here. At production trial counts (≥64) the gate tightens into
-   the intended anti-hallucination check.
-
-An earlier version of this dataset was 81% `max_roth_401k`. The cause was in the RL action layer,
-not the data: pre-tax 401k transfers were not deducted (taxed going in and coming out) and 401k
-transfers were uncapped. Both are fixed; see `deepqlearning/envs/financial/actions.py`.
 
 ## Reproduce
 

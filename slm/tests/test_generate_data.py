@@ -30,7 +30,7 @@ from slm.households import (
 from slm.prompts import OUT_OF_SCOPE_DOMAINS, REFUSAL_TRAIN_PHRASINGS, is_refusal, parse_decision
 from slm.rationales import build_rationale
 from slm.schema import AdviceExample
-from slm.scoring import NO_VIABLE_MAX_SUCCESS, decision_basis
+from slm.scoring import NO_VIABLE_MAX_SUCCESS, argmax_candidate, decision_basis, label_decision, label_plan
 from slm.strategies import NO_LEVER, STRATEGY_NAMES, answer_space
 
 SCEN = ["basic"]
@@ -62,22 +62,26 @@ def test_rationale_reproducible_from_stored_scores(examples):
         assert recomputed == ex.rationale
 
 
-def test_chosen_is_argmax_mean_return_or_no_lever(examples):
-    # The label is the highest mean utility return on the paired trials (the reward preset's
-    # objective), not the highest success rate.
+def test_chosen_is_evidence_backed_plan_or_no_lever(examples):
+    # The label moves a lever off the default only on a significant paired gain (label_plan), and
+    # it is always within Monte Carlo noise of the best scored plan.
     for ex in examples:
         if ex.kind != "decision":
             continue
         best_rate = max(c.success_rate for c in ex.scored_alternatives)
         assert ex.decision_basis == decision_basis(ex.scored_alternatives)
+        assert ex.chosen_decision == label_decision(ex.scored_alternatives)
         if ex.chosen_decision == NO_LEVER:
-            # no_plan_lever exactly when even the best lever is (almost) never solvent.
+            # no_plan_lever exactly when even the best plan is (almost) never solvent.
             assert ex.decision_basis == "no_viable" and best_rate <= NO_VIABLE_MAX_SUCCESS
             continue
         assert ex.decision_basis != "no_viable"
         chosen = next(c for c in ex.scored_alternatives if c.decision == ex.chosen_decision)
-        assert chosen.mean_return == max(c.mean_return for c in ex.scored_alternatives)
-        assert chosen.gap_to_best == 0.0 and chosen.in_top_set
+        assert chosen.in_top_set
+        assert ex.chosen_decision in (
+            label_plan(ex.scored_alternatives),
+            argmax_candidate(ex.scored_alternatives).decision,
+        )
 
 
 def test_decision_examples_parse_and_are_in_scope(examples):

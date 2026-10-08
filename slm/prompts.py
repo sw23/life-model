@@ -13,7 +13,7 @@ not merely requested at inference time. The model answers with a small structure
 
 import re
 
-from .strategies import NO_LEVER, NO_LEVER_DESCRIPTION, NO_LEVER_TITLE, STRATEGIES, answer_space
+from .strategies import DIMENSIONS, NO_LEVER, NO_LEVER_DESCRIPTION, NO_LEVER_TITLE, answer_space
 
 #: The system prompt baked into every training example and every inference call. It fixes
 #: the role (simulation-grounded educational decision support, not fiduciary advice), the output
@@ -22,12 +22,12 @@ SYSTEM_PROMPT = (
     "You are a simulation-grounded financial decision-support assistant for the life-model "
     "simulator. You do NOT give fiduciary or personalized financial advice. You describe the "
     "outcomes the simulator projects for a household under stated assumptions, and you recommend "
-    "one plan-level strategy from a fixed menu.\n"
+    "one retirement plan built from a fixed menu of levers.\n"
     "\n"
     "Rules:\n"
-    "1. Recommend exactly one strategy from the provided decision menu, by its machine name. If the "
-    "simulator shows no strategy keeps the household solvent, answer no_plan_lever instead of "
-    "crowning the least-bad option; if the top options are within simulation noise, say so.\n"
+    "1. Recommend exactly one plan: one value per lever, written as the plan token described in the "
+    "menu. If the simulator shows no plan keeps the household solvent, answer no_plan_lever instead "
+    "of crowning the least-bad option; if the top options are within simulation noise, say so.\n"
     "2. Ground every number you cite in the simulator's Monte Carlo results — never invent "
     "figures.\n"
     "3. Only reason about what the simulator models: wages, spending, taxes, and the account "
@@ -39,7 +39,7 @@ SYSTEM_PROMPT = (
     "use-at-your-own-risk posture; it is not a recommendation to buy or sell any security.\n"
     "\n"
     "Response format when in scope:\n"
-    "DECISION: <one strategy machine name>\n"
+    "DECISION: <one plan token, or no_plan_lever>\n"
     "RATIONALE: <one or two sentences citing the simulator's success-rate and terminal-wealth "
     "numbers>\n"
     "\n"
@@ -105,18 +105,21 @@ _REFUSE_RE = re.compile(r"REFUSE:")
 
 
 def format_decision_menu() -> str:
-    """Render the ordered decision menu as a bulleted list for the user turn."""
-    lines = [f"- {s.name}: {s.title} — {s.description}" for s in STRATEGIES]
+    """Render the plan levers and the token format for the user turn."""
+    lines = []
+    for dim in DIMENSIONS:
+        options = "; ".join(f"{value} = {dim.phrases[value]}" for value in dim.values)
+        lines.append(f"- {dim.name}: {options}")
+    order = "_".join(f"<{dim.name}>" for dim in DIMENSIONS)
+    lines.append(f"A plan token joins one value per lever in this order: {order}.")
     lines.append(f"- {NO_LEVER}: {NO_LEVER_TITLE} — {NO_LEVER_DESCRIPTION}")
     return "\n".join(lines)
 
 
 def build_decision_question(household_text: str, question: str | None = None) -> str:
     """Assemble the user turn: the rendered household, the menu, and the ask."""
-    ask = question or (
-        "Given this household's situation, which single strategy from the menu should they follow, and why?"
-    )
-    return f"{household_text}\n\nDecision menu (choose exactly one by machine name):\n{format_decision_menu()}\n\n{ask}"
+    ask = question or ("Given this household's situation, which plan should they follow, and why?")
+    return f"{household_text}\n\nDecision menu (choose one value per lever):\n{format_decision_menu()}\n\n{ask}"
 
 
 def build_messages(household_text: str, question: str | None = None) -> list[dict[str, str]]:

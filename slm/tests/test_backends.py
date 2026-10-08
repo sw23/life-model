@@ -34,6 +34,6 @@ def test_generate_signature_is_protocol_compatible():
             pass
 
         def generate(self, messages):
-            return "DECISION: age_glide"
+            return "DECISION: save5_pretax_claimret_conventional"
 
     assert isinstance(_Fake(), AdviserModel)

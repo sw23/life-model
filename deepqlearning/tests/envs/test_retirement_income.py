@@ -198,3 +198,35 @@ class TestSampledRetirementContext(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSavingsBoost(unittest.TestCase):
+    def test_boost_cuts_working_spending_and_restores_at_retirement(self):
+        base = _env(person_start_age=60, person_retirement_age=62, initial_salary=100000, initial_spending=50000)
+        boosted = _env(
+            person_start_age=60,
+            person_retirement_age=62,
+            initial_salary=100000,
+            initial_spending=50000,
+            savings_boost_pct=10,
+        )
+        self.assertAlmostEqual(boosted.person.spending.base, 40000)
+        for _ in range(3):
+            base.step(_NO_ACTION)
+            boosted.step(_NO_ACTION)
+        self.assertTrue(boosted.person.is_retired)
+        self.assertAlmostEqual(boosted.person.spending.base, base.person.spending.base)
+
+
+class TestAfterTaxTerminalWealth(unittest.TestCase):
+    def test_deferred_balances_valued_after_tax(self):
+        env = _env(initial_401k_pretax=100000, initial_401k_roth=50000, bequest_pretax_tax_rate=0.22)
+        after, raw = env.terminal_wealth()
+        self.assertAlmostEqual(raw - after, 0.22 * 100000)
+
+    def test_bare_env_counts_face_value_and_named_envs_after_tax(self):
+        self.assertEqual(
+            _env(initial_401k_pretax=100000).terminal_wealth()[0], _env(initial_401k_pretax=100000).terminal_wealth()[1]
+        )
+        named = FinancialLifeEnvGenerator.create_scenario_env("basic")
+        self.assertEqual(named.config["bequest_pretax_tax_rate"], 0.22)

@@ -152,6 +152,13 @@ Each step is one simulated year: the agent picks one flat discrete action, then 
   deferrals up to `employer_match_cap` x pay, deposited pre-tax, 415(c)-capped). Households can
   start with 401k / brokerage balances, and base spending steps down to
   `retirement_spending_ratio` of its working level at retirement.
+- **After-tax terminal wealth.** With `bequest_pretax_tax_rate` set (0.22 in every named
+  `financial:*` env; 0.0 in the bare `FinancialLifeEnv()` used by unit tests), the bequest the
+  reward values and the terminal net worth the protocol reports count pre-tax 401k, traditional
+  IRA and HSA balances net of that tax, since heirs pay it. Counting them at face value made
+  deferring tax look like creating wealth. Ruin is still decided on raw net worth.
+- **Savings boost.** `savings_boost_pct` cuts working-years spending by that many points of
+  salary and restores it at retirement (a plan lever the SLM adviser uses).
 - **Early-withdrawal penalties** (10% before age 59.5 on tax-advantaged accounts) are applied
   at the action level, pending the core penalty backlog item.
 

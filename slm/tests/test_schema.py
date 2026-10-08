@@ -65,9 +65,17 @@ def _example() -> AdviceExample:
     )
 
 
-def test_schema_version_is_one():
-    assert SCHEMA_VERSION == 1
-    assert _example().schema_version == 1
+def test_schema_version_is_two():
+    # v2: compositional plan decisions, paired gaps/gains, retirement-income household context.
+    assert SCHEMA_VERSION == 2
+    assert _example().schema_version == 2
+
+
+def test_v1_rows_rejected():
+    row = _example().model_dump()
+    row["schema_version"] = 1
+    with pytest.raises(ValidationError):
+        AdviceExample(**row)
 
 
 def test_extra_key_forbidden():
