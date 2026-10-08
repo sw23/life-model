@@ -5,18 +5,18 @@ verdict: INTELLIGENT = beats every planner heuristic on the train condition with
 95% CI; 'beats mean' = beats every heuristic on the train condition, CIs overlap; '-' = does not.
 
 algo       seed   steps            train   held-out seeds        recession  verdict
-dqn           0   95000   30.04 vs 30.08   27.55 vs 27.55   29.75 vs 29.75  -
-dqn           1   65000   32.27 vs 30.08   28.68 vs 27.55   31.91 vs 29.75  beats mean
-dqn           2  200000   30.76 vs 30.08   30.64 vs 27.55   34.25 vs 29.75  beats mean
-dqn           3   55000   30.26 vs 30.08   27.71 vs 27.55   29.81 vs 29.75  beats mean
-dqn           4   55000   29.99 vs 30.08   27.55 vs 27.55   29.80 vs 29.75  -
-reinforce     0   45000   29.89 vs 30.08   27.51 vs 27.55   29.74 vs 29.75  -
-reinforce     1   55000   30.05 vs 30.08   27.59 vs 27.55   29.85 vs 29.75  -
-reinforce     2   45000   30.12 vs 30.08   27.59 vs 27.55   29.78 vs 29.75  beats mean
-ppo           0  130000   35.74 vs 30.08   32.05 vs 27.55   34.62 vs 29.75  INTELLIGENT
-ppo           1   80000   30.00 vs 30.08   27.69 vs 27.55   29.73 vs 29.75  -
-ppo           2  120000   33.24 vs 30.08   30.14 vs 27.55   31.34 vs 29.75  beats mean
+dqn           0  170000   26.29 vs 30.13   27.48 vs 27.60   27.23 vs 29.79  -
+dqn           1  115000   32.01 vs 30.13   30.10 vs 27.60   32.83 vs 29.79  beats mean
+dqn           2   45000   30.02 vs 30.13   27.52 vs 27.60   29.73 vs 29.79  -
+dqn           3  100000   30.62 vs 30.13   28.00 vs 27.60   30.38 vs 29.79  beats mean
+dqn           4   55000   30.15 vs 30.13   27.62 vs 27.60   29.81 vs 29.79  beats mean
+reinforce     0  100000   32.47 vs 30.13   29.38 vs 27.60   31.94 vs 29.79  beats mean
+reinforce     1   45000   29.94 vs 30.13   27.51 vs 27.60   29.73 vs 29.79  -
+reinforce     2   50000   30.14 vs 30.13   27.61 vs 27.60   29.81 vs 29.79  beats mean
+ppo           0  130000   30.13 vs 30.13   27.60 vs 27.60   29.82 vs 29.79  -
+ppo           1  145000   36.62 vs 30.13   31.95 vs 27.60   35.61 vs 29.79  INTELLIGENT
+ppo           2   50000   30.05 vs 30.13   27.60 vs 27.60   29.86 vs 29.79  -
 
 Stable-Baselines3 cross-check (sb3_cross_check/, seed 0, 200k timesteps, no action masking; train condition only):
-  SB3 DQN: mean 28.02 vs best heuristic 30.08, ruin 0.12
-  SB3 PPO: mean 32.72 vs best heuristic 30.08, ruin 0.00
+  SB3 DQN: mean -4.30 vs best heuristic 30.13, ruin 0.68
+  SB3 PPO: mean 33.20 vs best heuristic 30.13, ruin 0.00
