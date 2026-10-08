@@ -35,20 +35,45 @@ The committed dataset sample and eval report in this directory are explicitly at
 | Serialize | `serializer.py` | Household ↔ faithful natural-language text (round-trip tested). |
 | Decisions | `strategies.py`, `candidates.py` | The plan-level lever vocabulary → executable baseline policies. |
 | Score | `scoring.py` | Shared-seed Monte Carlo scoring of each candidate on a household. |
-| Generate | `generate_data.py` | Seeded households → scored candidates → argmax label + counterfactual rationale + refusals → JSONL + datasheet. |
+| Households | `households.py` | SLM household distributions: the RL scenarios plus older households, varied economies, children budgeted inside spending. |
+| Generate | `generate_data.py` | Seeded households → scored candidates → label (argmax or `no_plan_lever`) + basis-aware rationale + refusals → optional label cap → JSONL + datasheet. |
 | Evaluate | `evaluate_adviser.py`, `faithfulness.py` | Execute the advised decision in the simulator; compare vs planner-grade heuristics; numeric-faithfulness + parse-rate + refusal metrics; oracle sanity check. |
 | Train | `train.py` | Size-agnostic HF SFT (LoRA/QLoRA or full+FSDP) from one YAML `TrainConfig`. |
 | Advise | `advise.py` | Draft → simulate → revise tool-loop; itself an `AdviserModel`. |
 | Backends | `backends.py`, `adviser.py` | `AdviserModel` protocol + stub / HF / MLX / Anthropic-API implementations. |
 
-## Teacher gating (why the DQN isn't used)
+## Households and labels
 
-Per the protocol report
-(`deepqlearning/reports/retirement_security/protocol_report.json`: `verdict_intelligent=false`,
-`ci_does_not_overlap_best=false`), the trained DQN did **not** achieve CI-separated superiority
-over the planner heuristics. A mediocre teacher silently caps the student, so the candidate set is
-**heuristics + Roth/pre-tax levers only**, and each example's label is the candidate-grid argmax —
-the DQN is excluded. If a future DQN beats the heuristics per that protocol, add it as a candidate.
+`households.py` widens the RL environment's four scenarios (ages 19–38) with `late_career` (46–54)
+and `pre_retiree` (54–60), draws each household's economy (about half the stochastic baseline, the
+rest boom / high-inflation / deflation / conservative / aggressive; `recession` is held out for
+evaluation), and budgets children *inside* the sampled spending (child costs are carved out of it,
+capped at half) instead of stacking them on a childless budget. Stacking made a third of households
+insolvent under every strategy.
+
+Each example records a `decision_basis` (`scoring.decision_basis`):
+
+* **clear** — the argmax beats the runner-up's success rate by two standard errors and two trials,
+  or, when success rates tie, its median terminal wealth by 10%;
+* **equivalent** — the top options are within Monte Carlo noise; the rationale says so;
+* **no_viable** — even the best lever is solvent in at most 10% of trials. The label is then
+  `no_plan_lever` ("no menu strategy is sufficient; the gap is spending versus income") rather than
+  the least-bad strategy. The eval harness executes it as the default plan
+  (`contribution_waterfall`), so abstaining never beats a lever that helps.
+
+`--max-label-share` caps any one label (dropping `equivalent` examples first). Refusals cover 8
+out-of-scope topics × 6 phrasings with rotating wording; the eval uses 3 held-out phrasings.
+
+## Teacher gating (why no RL policy is a teacher)
+
+Per the committed protocol reports (`deepqlearning/reports/retirement_security/` for DQN and
+`retirement_security_ppo/` for PPO, both `verdict_intelligent=false` at the committed seed 0), no
+learned policy achieved CI-separated superiority over the planner heuristics at the seed fixed in
+advance. A mediocre teacher silently caps the student, so the candidate set is **heuristics +
+Roth/pre-tax levers only**, and each example's label is the candidate-grid argmax. PPO seed 1 does
+clear the bar (`deepqlearning/reports/algorithm_sweep.txt`); promoting it would mean picking a seed
+after seeing results, which the seed convention exists to prevent. A policy that passes at its
+pre-registered seed should be added as a candidate.
 
 ## Setup
 
@@ -65,22 +90,23 @@ gymnasium + pydantic. The **training** stack (`transformers`, `peft`, `trl`, `da
 
 ## Committed artifacts (pipeline-validation scale)
 
-* `slm/data/sample_dataset.jsonl` + `.datasheet.json` — 175 examples (160 decisions across the
-  four household scenarios, 15 refusals), seed 20, 16 trials/candidate. Every scored household
-  prices healthcare (age-banded medical costs + Medicare) and 126/160 also carry child dependents
-  (0–3 kids at plausible ages). Regeneration is byte-identical, including across `--workers` values.
+* `slm/data/sample_dataset.jsonl` + `.datasheet.json` — 281 examples (233 decisions across the
+  six household scenarios after a 35% label cap, 48 refusals), seed 20, 16 trials/candidate.
+  Labels: `max_pretax_401k` 81, `max_roth_401k` 47, `age_glide` 35, `no_plan_lever` 27,
+  `contribution_waterfall` 21, `four_percent_drawdown` 20, `emergency_fund_first` 2; basis 89
+  clear / 117 equivalent / 27 no-viable. Regeneration is byte-identical, including across
+  `--workers` values.
 * `slm/reports/adviser_eval.json` (produced by `slm/reports/run_eval.py`) — oracle vs
   distilled-stub vs tool-loop on 32 held-out households (seed 777) plus the held-out
   `recession` economy, with per-condition heuristic baselines, parse/faithfulness/refusal rates.
 
-Two honest caveats, both artifacts of pipeline-validation scale:
+Two honest caveats:
 
-1. **Label skew.** At 16 trials many candidates still tie on the (now harder) households'
-   success rate, so the argmax often falls through to the median-terminal-wealth tie-break and
-   `max_roth_401k` wins 120/160 decision examples — down from 151/160 before children/healthcare
-   were priced, with the remaining 40 now spread across the other five levers. A production dataset
-   needs still-harder households (spouse/second earner, explicit housing), more trials, and scenario
-   spreads wide enough to separate the levers further.
+1. **Many near-ties.** About half the labels are `equivalent`: on many households the levers
+   (especially pre-tax vs Roth, both maxing the same 402(g) room) land within Monte Carlo noise.
+   The rationale says so instead of overstating the winner. `emergency_fund_first` rarely wins
+   outright because it scores identically to `contribution_waterfall` whenever the 6-month cushion
+   is already met (they are the RL planner baselines and are left as-is).
 2. **Cross-seed faithfulness.** The eval harness re-scores households on its own seeds, so the
    numeric-faithfulness gate demands that cited numbers reproduce across independent Monte Carlo
    draws. At 16 trials the noise on dollar medians exceeds the strict 2% tolerance, which is why
@@ -88,15 +114,18 @@ Two honest caveats, both artifacts of pipeline-validation scale:
    it — unit-tested) scores low here. At production trial counts (≥64) the gate tightens into
    the intended anti-hallucination check.
 
+An earlier version of this dataset was 81% `max_roth_401k`. The cause was in the RL action layer,
+not the data: pre-tax 401k transfers were not deducted (taxed going in and coming out) and 401k
+transfers were uncapped. Both are fixed; see `deepqlearning/envs/financial/actions.py`.
+
 ## Reproduce
 
 Everything is deterministic under a seed (same seed → byte-identical JSONL).
 
 ```bash
-# 1. Generate the committed dataset (pipeline-validation scale — ~2 min of Monte Carlo scoring).
-python -m slm.generate_data --scenarios basic,high_earner,low_earner,mid_career \
-    --per-scenario 40 --n-trials 16 --seed 20 --workers 4 \
-    --out slm/data/sample_dataset.jsonl \
+# 1. Generate the committed dataset (pipeline-validation scale — ~5 min of Monte Carlo scoring).
+python -m slm.generate_data --per-scenario 40 --n-trials 16 --seed 20 --workers 4 \
+    --max-label-share 0.35 --out slm/data/sample_dataset.jsonl \
     --scale-note "pipeline-validation scale (not a publishable adviser)"
 
 # 2. Produce the committed eval report (oracle / distilled-stub / tool-loop; no weights needed).
@@ -110,6 +139,32 @@ python -m slm.train slm/configs/train_smoke.yaml
 python -m slm.train slm/configs/train_default_qlora.yaml --validate-only
 python -m slm.train slm/configs/train_full_fsdp.yaml     --validate-only
 ```
+
+### Apple-silicon run (`configs/train_mac_lora.yaml`)
+
+Qwen2.5-0.5B-Instruct with LoRA (rank 16) in bf16 on MPS, one epoch over the full local dataset
+(`--per-scenario 500 --n-trials 64 --max-label-share 0.35`: 2,833 decisions + 48 refusals, ~80 min
+to generate with 14 workers). Training took 26 min on an M5 Pro (loss 3.64 -> 0.09). Evaluated with
+`--adviser hf --seed 777` (60 held-out households per condition, 16 trials) —
+`reports/adviser_eval_mac_lora.json`:
+
+| Adviser | Held-out seeds success | Recession success | Label agreement |
+|---|---|---|---|
+| Mac LoRA (0.5B) | 0.592 | 0.603 | 0.40 / 0.37 |
+| always `max_pretax_401k` | 0.596 | 0.605 | 0.43 / 0.42 |
+| always `max_roth_401k` | 0.574 | 0.590 | 0.18 / 0.17 |
+| best planner heuristic | 0.574 | 0.590 | — |
+| oracle (argmax) | 0.609 | 0.606 | — |
+
+Parse rate and held-out refusal rate are both 1.00, so format and scope discipline transfer. **The
+decision itself does not yet beat the majority lever**: the 0.5B model matches "always max the
+pre-tax 401k", which on its own beats every planner heuristic, and it never answers
+`no_plan_lever` (5-7% of held-out labels). Its rationale numbers are written without a simulator
+in the loop, so numeric faithfulness is 0.08-0.13 — use the tool-loop (`advise.py`) when cited
+numbers matter. Success rate also leaves little headroom (the oracle is 1.3 points above the
+majority lever) because most label differences are in terminal wealth, not solvency. Next levers:
+a larger base model or more epochs, more held-out households, and an outcome metric that weighs
+terminal wealth.
 
 ### Full local run (out of session scope — documented, not executed here)
 
