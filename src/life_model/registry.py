@@ -4,7 +4,7 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Generic, TypeVar
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     # Registry item types, referenced only as string type arguments in the registry bases below
@@ -35,10 +35,8 @@ if TYPE_CHECKING:
     from .people.person import Person
     from .work.job import Job  # noqa: F401
 
-T = TypeVar("T")
 
-
-class Registry(ABC, Generic[T]):
+class Registry[T](ABC):
     """Abstract base class for registries that manage relationships between entities"""
 
     def __init__(self):
@@ -84,7 +82,7 @@ class Registry(ABC, Generic[T]):
         return all_items
 
 
-class PersonRegistry(Registry[T]):
+class PersonRegistry[T](Registry[T]):
     """Registry that uses Person's unique_id as the key"""
 
     def _get_key(self, owner: "Person") -> str:

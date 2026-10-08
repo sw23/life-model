@@ -16,4 +16,4 @@ To work from a source checkout (editable install with development dependencies):
     cd life-model
     pip install -e . -r requirements-dev.txt
 
-life-model requires Python 3.11 or newer.
+life-model requires Python 3.12 or newer.

@@ -5,7 +5,7 @@ development setup and the tox targets used by CI.
 
 ## Development setup
 
-life-model uses a `src/` layout and requires **Python 3.11+**. Create a virtual
+life-model uses a `src/` layout and requires **Python 3.12+**. Create a virtual
 environment and install the package with its dev dependencies:
 
 ```bash
@@ -30,7 +30,7 @@ We use [tox](https://tox.wiki) as the local and CI runner. Common targets:
 
 | Command | What it does |
 | --- | --- |
-| `tox` | Unit tests on the current Python (`py311`–`py314`), excludes notebooks |
+| `tox` | Unit tests on the current Python (`py312`–`py314`), excludes notebooks |
 | `tox -e lint` | `ruff check` + `ruff format --check` on `src`, `dashboard`, `deepqlearning` |
 | `tox -e type` | `mypy` type check (lenient; non-blocking for now) |
 | `tox -e notebooks` | Executes `ExampleSimulation.ipynb` end-to-end (slow) |

@@ -8,7 +8,7 @@ dynamic = ["version"]
 description = "Modeling life events and how they impact finances"
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 authors = [{ name = "Spencer Williams", email = "sw23@users.noreply.github.com" }]
 dependencies = [
     "pandas",
@@ -23,7 +23,6 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
