@@ -64,7 +64,8 @@ def _equivalent_rationale(chosen: ScoredCandidate, runner: ScoredCandidate) -> s
     direction = "above" if delta_wealth >= 0 else "below"
     return (
         f"Over {chosen.n_trials} shared Monte Carlo trials, the top options are within simulation noise "
-        f"for this household: {_title(chosen.decision)} ({chosen.decision}) stays solvent to end of life "
+        f"on the simulator's retirement-security objective for this household: "
+        f"{_title(chosen.decision)} ({chosen.decision}) stays solvent to end of life "
         f"in {_pct(chosen.success_rate)}% of trials versus {_pct(runner.success_rate)}% for "
         f"{_title(runner.decision)} ({runner.decision}), and its median terminal net worth of "
         f"${chosen.net_worth_p50:,.0f} is ${abs(delta_wealth):,.0f} {direction} the alternative's "
@@ -83,11 +84,20 @@ def build_rationale(scored: list[ScoredCandidate], chosen_name: str) -> str:
         return _equivalent_rationale(chosen, runner)
     delta_wealth = chosen.net_worth_p50 - runner.net_worth_p50
     direction = "above" if delta_wealth >= 0 else "below"
+    if chosen_name != argmax_candidate(scored).decision:
+        lead = (
+            f"Over {chosen.n_trials} shared Monte Carlo trials, {_title(chosen_name)} ({chosen_name}) "
+            f"is not the simulator's top-scoring lever here"
+        )
+    else:
+        lead = (
+            f"Over {chosen.n_trials} shared Monte Carlo trials, {_title(chosen_name)} ({chosen_name}) "
+            f"scores best on the simulator's retirement-security objective (solvency first, then wealth "
+            f"left at the end of life), ahead of every alternative beyond simulation noise"
+        )
     return (
-        f"Over {chosen.n_trials} shared Monte Carlo trials, {_title(chosen_name)} "
-        f"({chosen_name}) is the strongest plan-level lever here: it keeps the household solvent "
-        f"to end of life in {_pct(chosen.success_rate)}% of trials, versus "
-        f"{_pct(runner.success_rate)}% for the next-best option, {_title(runner.decision)} "
+        f"{lead}: it keeps the household solvent to end of life in {_pct(chosen.success_rate)}% of trials, "
+        f"versus {_pct(runner.success_rate)}% for the next-best option, {_title(runner.decision)} "
         f"({runner.decision}). Its median terminal net worth is ${chosen.net_worth_p50:,.0f}, "
         f"${abs(delta_wealth):,.0f} {direction} the next-best lever's "
         f"${runner.net_worth_p50:,.0f}. These are simulator Monte Carlo outputs under stated "

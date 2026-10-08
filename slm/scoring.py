@@ -10,6 +10,12 @@ the same economy/mortality draws under every strategy, so the deltas the rationa
 attributable to the decision, not to lucky seeds. Scoring reuses the RL outcome machinery
 (``run_policy_episode``): per-trial real terminal net worth, ruin, and the utility return.
 
+The label is the candidate with the highest mean **utility return** under the reward preset (the
+objective the RL agents optimize: ruin-avoidance first, then the wealth left at death), and each
+candidate records its paired per-trial shortfall to that best with a bootstrap CI. A label is
+``clear`` only when every alternative's shortfall CI excludes zero; trials adaptively double
+while it does not (see :func:`score_household`).
+
 All figures are rounded deterministically (rates to 4 dp, dollars to 2 dp) so the scored records
 — and therefore the rationale numbers copied from them and the serialized JSONL — are
 byte-identical under the same seed. Trial counts are modest by design: they rank candidates (rank
@@ -22,7 +28,7 @@ from typing import Literal
 import numpy as np
 
 from deepqlearning.envs.financial.environment import FinancialLifeEnv
-from deepqlearning.evaluation.protocol import run_policy_episode
+from deepqlearning.evaluation.protocol import EpisodeOutcome, run_policy_episode
 
 from .candidates import CANDIDATE_POLICIES
 from .schema import ScoredCandidate
@@ -30,6 +36,10 @@ from .strategies import NO_LEVER, STRATEGY_NAMES
 
 # Economy is stochastic during scoring so candidates are judged across good and bad years.
 _DEFAULT_ECONOMY_MODE = "stochastic"
+
+# Paired-bootstrap settings for the gap-to-best CIs (a fixed seed keeps scoring byte-reproducible).
+BOOTSTRAP_RESAMPLES = 1000
+BOOTSTRAP_SEED = 0
 
 
 def make_scoring_env(household: dict, reward_preset: str) -> FinancialLifeEnv:
@@ -48,21 +58,61 @@ def _round_money(x: float) -> float:
     return round(float(x), 2)
 
 
-def score_candidate(env: FinancialLifeEnv, name: str, seeds: list[int]) -> ScoredCandidate:
-    """Score a single candidate strategy on ``env`` over the shared ``seeds``."""
+def _outcomes(env: FinancialLifeEnv, name: str, seeds: list[int]) -> list[EpisodeOutcome]:
     policy = CANDIDATE_POLICIES[name]
-    outcomes = [run_policy_episode(env, policy, seed) for seed in seeds]
-    net_worths = np.array([o.real_terminal_net_worth for o in outcomes], dtype=float)
-    returns = np.array([o.total_reward for o in outcomes], dtype=float)
-    return ScoredCandidate(
-        decision=name,
-        success_rate=_round_rate(np.mean([o.success for o in outcomes])),
-        mean_return=_round_money(returns.mean()),
-        net_worth_p10=_round_money(np.percentile(net_worths, 10)),
-        net_worth_p50=_round_money(np.percentile(net_worths, 50)),
-        net_worth_p90=_round_money(np.percentile(net_worths, 90)),
-        n_trials=len(seeds),
+    return [run_policy_episode(env, policy, seed) for seed in seeds]
+
+
+def paired_bootstrap_ci(diffs: np.ndarray, resamples: int = BOOTSTRAP_RESAMPLES, ci: float = 0.95) -> tuple:
+    """Percentile-bootstrap CI for the mean of paired differences (deterministic: fixed RNG)."""
+    diffs = np.asarray(diffs, dtype=float)
+    if diffs.size < 2 or np.all(diffs == diffs[0]):
+        m = float(diffs.mean()) if diffs.size else 0.0
+        return m, m
+    rng = np.random.default_rng(BOOTSTRAP_SEED)
+    means = diffs[rng.integers(0, diffs.size, size=(resamples, diffs.size))].mean(axis=1)
+    return float(np.percentile(means, (1 - ci) / 2 * 100)), float(np.percentile(means, (1 + ci) / 2 * 100))
+
+
+def _summarize(outcomes: dict[str, list[EpisodeOutcome]]) -> list[ScoredCandidate]:
+    """Score every candidate from its per-trial outcomes, including the paired gap to the best."""
+    returns = {name: np.array([o.total_reward for o in outs], dtype=float) for name, outs in outcomes.items()}
+    base = {}
+    for name, outs in outcomes.items():
+        net_worths = np.array([o.real_terminal_net_worth for o in outs], dtype=float)
+        base[name] = {
+            "success_rate": _round_rate(np.mean([o.success for o in outs])),
+            "mean_return": _round_money(returns[name].mean()),
+            "net_worth_p10": _round_money(np.percentile(net_worths, 10)),
+            "net_worth_p50": _round_money(np.percentile(net_worths, 50)),
+            "net_worth_p90": _round_money(np.percentile(net_worths, 90)),
+        }
+    best = max(
+        base,
+        key=lambda n: (base[n]["mean_return"], base[n]["success_rate"], base[n]["net_worth_p50"], _neg_name(n)),
     )
+    scored = []
+    for name, outs in outcomes.items():
+        diffs = returns[best] - returns[name]
+        low, high = paired_bootstrap_ci(diffs)
+        scored.append(
+            ScoredCandidate(
+                decision=name,
+                n_trials=len(outs),
+                return_std=_round_rate(returns[name].std()),
+                gap_to_best=_round_rate(diffs.mean()),
+                gap_ci_low=_round_rate(low),
+                gap_ci_high=_round_rate(high),
+                in_top_set=bool(name == best or low <= 0.0),
+                **base[name],
+            )
+        )
+    return scored
+
+
+def score_candidate(env: FinancialLifeEnv, name: str, seeds: list[int]) -> ScoredCandidate:
+    """Score a single candidate strategy on ``env`` over ``seeds`` (no paired comparison)."""
+    return _summarize({name: _outcomes(env, name, seeds)})[0]
 
 
 def score_household(
@@ -70,33 +120,42 @@ def score_household(
     seeds: list[int],
     reward_preset: str,
     candidate_names: list[str] | None = None,
+    *,
+    min_trials: int | None = None,
 ) -> list[ScoredCandidate]:
     """Score every candidate strategy on one household over shared trial seeds.
+
+    With ``min_trials`` set, scoring is **adaptive**: it starts with the first ``min_trials``
+    seeds and, while the top options are statistically equivalent, doubles the trial count (up to
+    ``len(seeds)``), so trials are spent where the decision is close. Without it every seed is used.
 
     Returns the scored candidates in the canonical strategy order (not sorted by score), so the
     serialized ``decision_space`` / ``scored_alternatives`` ordering is stable across runs.
     """
     names = candidate_names or list(STRATEGY_NAMES)
     env = make_scoring_env(household, reward_preset)
-    return [score_candidate(env, name, seeds) for name in names]
+    n = len(seeds) if min_trials is None else max(1, min(min_trials, len(seeds)))
+    outcomes = {name: _outcomes(env, name, seeds[:n]) for name in names}
+    while True:
+        scored = _summarize(outcomes)
+        if n >= len(seeds) or decision_basis(scored) != "equivalent":
+            return scored
+        grown = min(2 * n, len(seeds))
+        for name in names:
+            outcomes[name].extend(_outcomes(env, name, seeds[n:grown]))
+        n = grown
 
 
 def argmax_candidate(scored: list[ScoredCandidate]) -> ScoredCandidate:
-    """The winning candidate: highest success rate, breaking ties by median terminal wealth then
-    by name (fully deterministic)."""
-    return max(scored, key=lambda c: (c.success_rate, c.net_worth_p50, _neg_name(c.decision)))
+    """The winning candidate: highest mean return on the reward preset's objective (the paired
+    trials make the comparison fair), breaking ties by success rate, median terminal wealth, then
+    name (fully deterministic)."""
+    return max(scored, key=lambda c: (c.mean_return, c.success_rate, c.net_worth_p50, _neg_name(c.decision)))
 
 
 # Labeling thresholds. A household where even the best lever is solvent in at most this share of
 # trials has no lever worth recommending (the shortfall is structural).
 NO_VIABLE_MAX_SUCCESS = 0.10
-# A winner is "clear" when it beats the runner-up's success rate by this many standard errors (an
-# unpaired two-proportion bound, conservative for shared seeds) and by at least two trials...
-SUCCESS_Z = 2.0
-# ...or, when success rates are not separable, by this share of the runner-up's median terminal
-# net worth (floored so near-zero medians do not make any gap "clear").
-WEALTH_MARGIN = 0.10
-WEALTH_FLOOR = 10_000.0
 
 DecisionBasis = Literal["clear", "equivalent", "no_viable"]
 
@@ -105,21 +164,21 @@ def decision_basis(scored: list[ScoredCandidate]) -> DecisionBasis:
     """How decisively the scores single out a lever.
 
     ``no_viable``: no lever keeps the household solvent in a meaningful share of trials.
-    ``clear``: the argmax beats the runner-up by more than Monte Carlo noise (success rate, or
-    median wealth when success rates tie). ``equivalent``: the top options are within noise.
+    ``clear``: every other candidate's paired return shortfall to the best has a 95% CI above zero
+    (the best is better than each alternative beyond Monte Carlo noise). ``equivalent``: some
+    alternative is within noise of the best (it is in the top set).
     """
-    best = argmax_candidate(scored)
-    if best.success_rate <= NO_VIABLE_MAX_SUCCESS:
+    if max(c.success_rate for c in scored) <= NO_VIABLE_MAX_SUCCESS:
         return "no_viable"
-    runner = argmax_candidate([c for c in scored if c.decision != best.decision])
-    n = best.n_trials
-    gap = best.success_rate - runner.success_rate
-    se = np.sqrt((best.success_rate * (1 - best.success_rate) + runner.success_rate * (1 - runner.success_rate)) / n)
-    if gap >= 2 / n and gap >= SUCCESS_Z * se:
-        return "clear"
-    if best.net_worth_p50 - runner.net_worth_p50 >= WEALTH_MARGIN * max(abs(runner.net_worth_p50), WEALTH_FLOOR):
+    best = argmax_candidate(scored)
+    if all(not c.in_top_set for c in scored if c.decision != best.decision):
         return "clear"
     return "equivalent"
+
+
+def top_set(scored: list[ScoredCandidate]) -> list[str]:
+    """Names of the candidates within Monte Carlo noise of the best (including the best)."""
+    return [c.decision for c in scored if c.in_top_set]
 
 
 def label_decision(scored: list[ScoredCandidate]) -> str:

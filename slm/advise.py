@@ -10,7 +10,8 @@ The distilled model answers directly (mode a). The **tool-loop** (mode b) wraps 
 decision, ``slm`` scores every candidate with a fresh Monte Carlo run, the scoreboard is fed back
 for up to a fixed iteration budget, and — because ``trust_simulation`` is on by default — the loop
 never ships a decision the simulator shows is dominated by more than a margin, and it always
-rewrites the rationale from the fresh simulation numbers. That sidesteps hallucinated figures
+rewrites the rationale from the fresh simulation numbers. "Dominated" means outside the top set:
+worse than the best on paired trials beyond Monte Carlo noise. That sidesteps hallucinated figures
 entirely: the shipped numbers are, by construction, the simulator's.
 
 Crucially the tool-loop is *itself* an ``AdviserModel`` (``generate(messages) -> text``), so it
@@ -52,8 +53,9 @@ class ToolLoopConfig:
     n_trials: int = 16
     reward_preset: str = "retirement_security"
     seed: int = 0
-    # If the drafted decision's success rate is more than this below the simulator's best, adopt
-    # the simulator's best instead (the simulator-grounded correction).
+    # If the drafted decision is outside the simulator's top set (worse than the best beyond Monte
+    # Carlo noise on paired trials) and its mean return trails the best by more than this, adopt the
+    # simulator's label instead (the simulator-grounded correction).
     dominance_margin: float = 0.0
     trust_simulation: bool = True
 
@@ -142,7 +144,10 @@ class ToolLoopAdviser:
             elif (
                 decision is None
                 or decision not in by_name
-                or by_name[decision].success_rate < by_name[argmax].success_rate - self.config.dominance_margin
+                or (
+                    not by_name[decision].in_top_set
+                    and by_name[argmax].mean_return - by_name[decision].mean_return > self.config.dominance_margin
+                )
             ):
                 decision = label
         elif decision is None:

@@ -78,6 +78,15 @@ class ScoredCandidate(StrictModel):
     net_worth_p50: float
     net_worth_p90: float
     n_trials: int = Field(ge=1)
+    # Paired comparison with the household's best candidate (highest mean return) on the same
+    # trials: the mean per-trial return shortfall ``best - this`` and its bootstrap 95% CI. A
+    # candidate is in the top set when that CI does not exclude zero (it is within noise of the
+    # best). Defaults keep rows written before these fields existed valid.
+    return_std: float = 0.0
+    gap_to_best: float = 0.0
+    gap_ci_low: float = 0.0
+    gap_ci_high: float = 0.0
+    in_top_set: bool = True
 
 
 class Provenance(StrictModel):
@@ -147,3 +156,6 @@ class Datasheet(StrictModel):
     # mean best-lever success rate, the share of households whose best lever is solvent in at most
     # half the trials, and the share with no viable lever (slm.households documents the targets).
     solvency_by_scenario: dict[str, dict[str, float]] = Field(default_factory=dict)
+    # Adaptive scoring: trials start at ``min_trials_per_candidate`` and double, up to
+    # ``n_trials_per_candidate``, while the top options are within noise (None = fixed count).
+    min_trials_per_candidate: int | None = None

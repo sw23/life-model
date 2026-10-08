@@ -202,10 +202,10 @@ def _balance_labels(examples: list[AdviceExample], max_share: float) -> tuple[li
     return kept, len(examples) - len(kept)
 
 
-def _score_worker(args: tuple[dict, list[int], str]) -> list[ScoredCandidate]:
+def _score_worker(args: tuple[dict, list[int], str, int | None]) -> list[ScoredCandidate]:
     """Top-level (picklable) scoring worker for the process pool (mirrors montecarlo._run_trial)."""
-    household, seeds, reward_preset = args
-    return score_household(household, seeds, reward_preset)
+    household, seeds, reward_preset, min_trials = args
+    return score_household(household, seeds, reward_preset, min_trials=min_trials)
 
 
 def generate_examples(
@@ -217,6 +217,7 @@ def generate_examples(
     include_refusals: bool = True,
     workers: int = 1,
     max_label_share: float | None = None,
+    min_trials: int | None = None,
 ) -> list[AdviceExample]:
     """Generate the full example list deterministically (in-scope decisions + refusals).
 
@@ -224,7 +225,9 @@ def generate_examples(
     order-preserving whether run sequentially (``workers=1``) or across a process pool, so the
     output is byte-identical regardless of ``workers``. Pool failures fall back to sequential
     scoring (as in :mod:`life_model.montecarlo`). ``max_label_share`` (if set) caps any one label's
-    share of the decision examples (see :func:`_balance_labels`).
+    share of the decision examples (see :func:`_balance_labels`). ``min_trials`` (if set) makes
+    scoring adaptive: households start at ``min_trials`` and double toward ``n_trials`` while the
+    label is within noise (see :func:`slm.scoring.score_household`).
     """
     provenance = Provenance(
         generation_seed=generation_seed,
@@ -234,7 +237,7 @@ def generate_examples(
         reward_preset=reward_preset,
     )
     items = _sample_households(scenarios, n_per_scenario, generation_seed)
-    work = [(h, _trial_seeds(generation_seed, idx, n_trials), reward_preset) for _, h, idx in items]
+    work = [(h, _trial_seeds(generation_seed, idx, n_trials), reward_preset, min_trials) for _, h, idx in items]
 
     if workers == 1:
         scored_lists = [_score_worker(a) for a in work]
@@ -291,6 +294,7 @@ def build_datasheet(
     scale_note: str,
     max_label_share: float | None = None,
     n_dropped_for_balance: int = 0,
+    min_trials: int | None = None,
 ) -> Datasheet:
     """Build the dataset-level provenance + statistics record."""
     n_decision = sum(1 for e in examples if e.kind == "decision")
@@ -320,6 +324,7 @@ def build_datasheet(
         max_label_share=max_label_share,
         n_dropped_for_balance=n_dropped_for_balance,
         solvency_by_scenario=solvency_by_scenario(examples),
+        min_trials_per_candidate=min_trials,
         created_utc=datetime.datetime.now(datetime.UTC).replace(microsecond=0).isoformat(),
     )
 
@@ -336,10 +341,19 @@ def write_dataset(
     include_refusals: bool = True,
     workers: int = 1,
     max_label_share: float | None = None,
+    min_trials: int | None = None,
 ) -> Datasheet:
     """Generate a dataset, write the JSONL and datasheet, and return the datasheet."""
     examples = generate_examples(
-        scenarios, n_per_scenario, n_trials, generation_seed, reward_preset, include_refusals, workers, max_label_share
+        scenarios,
+        n_per_scenario,
+        n_trials,
+        generation_seed,
+        reward_preset,
+        include_refusals,
+        workers,
+        max_label_share,
+        min_trials=min_trials,
     )
     n_kept = sum(1 for e in examples if e.kind == "decision")
     with open(out_path, "w") as fh:
@@ -354,6 +368,7 @@ def write_dataset(
         scale_note=scale_note,
         max_label_share=max_label_share,
         n_dropped_for_balance=len(scenarios) * n_per_scenario - n_kept,
+        min_trials=min_trials,
     )
     if datasheet_path is None:
         datasheet_path = out_path.rsplit(".", 1)[0] + ".datasheet.json"
@@ -367,7 +382,13 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate simulator-verified adviser data.")
     parser.add_argument("--scenarios", default=",".join(DEFAULT_SCENARIOS), help="Comma-separated household scenarios.")
     parser.add_argument("--per-scenario", type=int, default=25, help="Households per scenario.")
-    parser.add_argument("--n-trials", type=int, default=24, help="Monte Carlo trials per candidate.")
+    parser.add_argument("--n-trials", type=int, default=24, help="Monte Carlo trials per candidate (the maximum).")
+    parser.add_argument(
+        "--min-trials",
+        type=int,
+        default=None,
+        help="Adaptive scoring: start here and double toward --n-trials while the label is within noise.",
+    )
     parser.add_argument("--seed", type=int, default=20, help="Generation master seed.")
     parser.add_argument("--reward-preset", default=DEFAULT_REWARD_PRESET)
     parser.add_argument("--out", default="slm/data/dataset.jsonl", help="Output JSONL path.")
@@ -402,6 +423,7 @@ def main(argv: list[str] | None = None) -> None:
         include_refusals=not args.no_refusals,
         workers=args.workers,
         max_label_share=args.max_label_share,
+        min_trials=args.min_trials,
     )
     print(
         f"Wrote {datasheet.n_examples} examples "

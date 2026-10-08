@@ -68,8 +68,10 @@ def test_trust_simulation_corrects_dominated_pick():
     scored = score_household(household, seeds, "retirement_security")
     best = argmax_candidate(scored)
     chosen = next(c for c in scored if c.decision == decision)
-    # The shipped decision is never worse than the simulator's best on success rate.
+    # The shipped decision is never worse than the simulator's best on success rate, and it is
+    # within Monte Carlo noise of the best on the paired-return objective (the top set).
     assert chosen.success_rate >= best.success_rate - 1e-9
+    assert chosen.in_top_set
 
 
 def test_tool_loop_defers_refusal_to_model():

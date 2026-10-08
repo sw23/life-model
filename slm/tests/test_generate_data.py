@@ -62,7 +62,9 @@ def test_rationale_reproducible_from_stored_scores(examples):
         assert recomputed == ex.rationale
 
 
-def test_chosen_is_argmax_success_rate_or_no_lever(examples):
+def test_chosen_is_argmax_mean_return_or_no_lever(examples):
+    # The label is the highest mean utility return on the paired trials (the reward preset's
+    # objective), not the highest success rate.
     for ex in examples:
         if ex.kind != "decision":
             continue
@@ -74,7 +76,8 @@ def test_chosen_is_argmax_success_rate_or_no_lever(examples):
             continue
         assert ex.decision_basis != "no_viable"
         chosen = next(c for c in ex.scored_alternatives if c.decision == ex.chosen_decision)
-        assert chosen.success_rate == best_rate
+        assert chosen.mean_return == max(c.mean_return for c in ex.scored_alternatives)
+        assert chosen.gap_to_best == 0.0 and chosen.in_top_set
 
 
 def test_decision_examples_parse_and_are_in_scope(examples):

@@ -41,7 +41,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from .adviser import AdviserModel, ScriptedAdviserModel, StubAdviserModel
-from .faithfulness import is_faithful
+from .faithfulness import is_consistent, is_faithful
 from .generate_data import DEFAULT_SCENARIOS, _sample_households, _to_profile, _trial_seeds
 from .prompts import (
     OUT_OF_SCOPE_DOMAINS,
@@ -54,7 +54,7 @@ from .prompts import (
 from .provenance import config_hash, simulator_commit
 from .rationales import rationale_of
 from .schema import ScoredCandidate
-from .scoring import argmax_candidate, label_decision, score_household
+from .scoring import argmax_candidate, label_decision, paired_bootstrap_ci, score_household
 from .serializer import render_household
 from .strategies import NO_LEVER, NO_LEVER_DEFAULT_PLAN, STRATEGY_NAMES
 
@@ -78,6 +78,13 @@ class HouseholdResult:
     argmax_decision: str
     faithful: bool
     label: str = ""
+    # Mean utility return of every candidate on this household (the regret baseline), the return
+    # of what the adviser's answer executes (the default plan when unparsed or abstaining), and
+    # whether the answer is in the top set / within Monte Carlo noise of the scored numbers.
+    returns: dict = field(default_factory=dict)
+    executed: str = ""
+    in_top_set: bool = False
+    consistent: bool = True
 
 
 def _scored_by_name(scored: list[ScoredCandidate]) -> dict[str, ScoredCandidate]:
@@ -140,9 +147,10 @@ class AdviserEvaluator:
                 heuristic_success[n].append(by_name[n].success_rate)
                 heuristic_p50[n].append(by_name[n].net_worth_p50)
 
+            returns = {c.decision: c.mean_return for c in scored}
             if decision is not None and (decision in by_name or decision == NO_LEVER):
-                adviser_stats = by_name[NO_LEVER_DEFAULT_PLAN if decision == NO_LEVER else decision]
-                faithful = is_faithful(answer, scored, decision)
+                executed = NO_LEVER_DEFAULT_PLAN if decision == NO_LEVER else decision
+                adviser_stats = by_name[executed]
                 results.append(
                     HouseholdResult(
                         household_text,
@@ -151,12 +159,31 @@ class AdviserEvaluator:
                         adviser_stats.success_rate,
                         adviser_stats.net_worth_p50,
                         argmax,
-                        faithful,
+                        is_faithful(answer, scored, decision),
                         label,
+                        returns=returns,
+                        executed=executed,
+                        # Abstaining is "in the top set" exactly when the label is no_plan_lever.
+                        in_top_set=(label == NO_LEVER) if decision == NO_LEVER else by_name[decision].in_top_set,
+                        consistent=is_consistent(answer, scored, decision),
                     )
                 )
             else:
-                results.append(HouseholdResult(household_text, False, None, None, None, argmax, True, label))
+                # An unparseable answer executes the default plan for regret (it is not free).
+                results.append(
+                    HouseholdResult(
+                        household_text,
+                        False,
+                        None,
+                        None,
+                        None,
+                        argmax,
+                        True,
+                        label,
+                        returns=returns,
+                        executed=NO_LEVER_DEFAULT_PLAN,
+                    )
+                )
 
         return self._summarize(results, heuristic_success, heuristic_p50, oracle_success)
 
@@ -179,7 +206,11 @@ class AdviserEvaluator:
         }
         best_name = max(heuristics, key=lambda n: heuristics[n]["mean_success_rate"])
         best_success = heuristics[best_name]["mean_success_rate"]
+        regret_block = self._regret_summary(results)
         return {
+            **regret_block,
+            "top_set_agreement_rate": float(np.mean([r.in_top_set for r in parsed])) if parsed else 0.0,
+            "numeric_consistency_rate": float(np.mean([r.consistent for r in parsed])) if parsed else 1.0,
             "n_households": len(results),
             "parse_rate": parse_rate,
             "adviser_mean_success_rate": adviser_success,
@@ -197,6 +228,60 @@ class AdviserEvaluator:
                 (float(np.mean(oracle_success)) if oracle_success else 0.0)
                 >= max(h["mean_success_rate"] for h in heuristics.values())
             ),
+        }
+
+    @staticmethod
+    def _regret_summary(results: list[HouseholdResult]) -> dict:
+        """Regret vs the per-household oracle, for the adviser and for every constant answer.
+
+        Regret on a household = oracle mean return - the executed answer's mean return (>= 0);
+        normalized regret divides by the oracle-to-worst span (0 when every option ties). The
+        adviser is compared with each constant policy by the paired per-household regret
+        difference, with a household-bootstrap 95% CI; "beats" requires the CI to exclude zero.
+        """
+        if not results:
+            return {}
+        names = list(results[0].returns)
+        oracle = np.array([max(r.returns.values()) for r in results])
+        span = oracle - np.array([min(r.returns.values()) for r in results])
+        safe_span = np.where(span > 1e-9, span, 1.0)
+
+        def regret_of(executed: list[str]) -> np.ndarray:
+            return oracle - np.array([r.returns[e] for r, e in zip(results, executed)])
+
+        def block(regret: np.ndarray) -> dict:
+            low, high = paired_bootstrap_ci(regret)
+            return {
+                "mean_regret": float(regret.mean()),
+                "regret_ci_low": low,
+                "regret_ci_high": high,
+                "normalized_regret": float(np.mean(np.where(span > 1e-9, regret / safe_span, 0.0))),
+            }
+
+        adviser_regret = regret_of([r.executed for r in results])
+        policies = {name: regret_of([name] * len(results)) for name in names}
+        policy_blocks = {name: block(regret) for name, regret in policies.items()}
+
+        def versus(name: str) -> dict:
+            low, high = paired_bootstrap_ci(policies[name] - adviser_regret)
+            return {
+                "policy": name,
+                "mean_regret_advantage": float((policies[name] - adviser_regret).mean()),
+                "ci_low": low,
+                "ci_high": high,
+                "adviser_better": bool(low > 0.0),
+            }
+
+        heuristic_names = [n for n in HEURISTIC_NAMES if n in policies]
+        best_heuristic = min(heuristic_names, key=lambda n: policy_blocks[n]["mean_regret"])
+        best_constant = min(names, key=lambda n: policy_blocks[n]["mean_regret"])
+        return {
+            "adviser_regret": block(adviser_regret),
+            "constant_policy_regret": policy_blocks,
+            "best_heuristic_by_regret": best_heuristic,
+            "best_constant_policy": best_constant,
+            "adviser_vs_best_heuristic": versus(best_heuristic),
+            "adviser_vs_best_constant": versus(best_constant),
         }
 
     def evaluate_refusals(self, adviser: AdviserModel) -> dict:
@@ -273,6 +358,20 @@ def format_report(report: dict) -> str:
         lines.append("")
         lines.append(f"[{cond_name}] n={cond['n_households']}")
         lines.append(f"  parse_rate            {cond['parse_rate']:.2f}")
+        if "adviser_regret" in cond:
+            reg = cond["adviser_regret"]
+            lines.append(
+                f"  adviser regret        {reg['mean_regret']:.3f} [{reg['regret_ci_low']:.3f}, "
+                f"{reg['regret_ci_high']:.3f}] normalized {reg['normalized_regret']:.3f}"
+            )
+            for key in ("adviser_vs_best_constant", "adviser_vs_best_heuristic"):
+                v = cond[key]
+                lines.append(
+                    f"  vs {v['policy']:<22s} advantage {v['mean_regret_advantage']:+.3f} "
+                    f"[{v['ci_low']:+.3f}, {v['ci_high']:+.3f}] better={v['adviser_better']}"
+                )
+            lines.append(f"  top-set agreement     {cond['top_set_agreement_rate']:.2f}")
+            lines.append(f"  numeric consistency   {cond['numeric_consistency_rate']:.2f}")
         lines.append(f"  adviser success       {cond['adviser_mean_success_rate']:.3f}")
         lines.append(f"  best heuristic ({cond['best_heuristic']}) {cond['best_heuristic_mean_success_rate']:.3f}")
         lines.append(f"  beats best heuristic  {cond['adviser_beats_best_heuristic']}")

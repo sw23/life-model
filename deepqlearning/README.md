@@ -274,8 +274,9 @@ the bar the agent must beat, not "do nothing":
 - `emergency_fund_first` — fill a 6-month cash buffer before investing.
 
 Each is a deterministic function of the seeded state that emits only legal actions (tested on 50
-random seeds). The simple `do_nothing` / `always_max_401k` / `save_25_percent` policies remain as
-regression detectors.
+random seeds). `always_max_401k` is part of the bar too (`PLANNER_BASELINES`): it scored at least
+as well as every planner heuristic, and a bar that leaves out the strongest scripted policy
+certifies nothing. `do_nothing` / `save_25_percent` remain as regression detectors.
 
 ## 🔬 Evaluation protocol & reading the report
 
@@ -289,10 +290,24 @@ table (`--protocol-eval`):
   `recession`) — the out-of-distribution test.
 
 Per policy it reports **mean return ± bootstrap 95% CI, ruin rate, success rate** (stayed solvent
-to the end of life), and **terminal real net-worth percentiles**. "Intelligent" is defined
-operationally on the `train` condition for the default preset: the agent's mean return exceeds
-every planner heuristic's **and** its CI does not overlap the best heuristic's. The held-out gap is
-reported, not gated.
+to the end of life), **terminal real net-worth percentiles**, and the per-episode returns.
+"Intelligent" is defined operationally on the `train` condition for the default preset: the agent's
+mean return exceeds every policy in the bar **and** the paired per-episode gap to the best of them
+has a bootstrap 95% CI above zero (every policy runs on the same seeds, so the paired test is the
+right one; whether the two unpaired CIs overlap is still reported). The held-out gap is reported,
+not gated.
+
+**Pooling pre-registered seeds.** One training seed cannot settle whether an algorithm works:
+results vary more across training seeds than across evaluation episodes. Train with `--seed 0` ...
+`--seed 4` (fixed in advance) and pool the protocol reports:
+
+```bash
+python -m deepqlearning.evaluation.pool_seeds results/protocol_report_financial_basic_ppo_s*_retirement_security.json \
+    --out reports/retirement_security_ppo/pooled_report.json
+```
+
+The pooled verdict is a Student-t 95% interval over the per-seed paired gaps to the best policy in
+the bar, so it carries training-seed variance.
 
 ### Committed report (default preset)
 

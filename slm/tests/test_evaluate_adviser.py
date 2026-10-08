@@ -121,3 +121,21 @@ def test_strategy_titles_are_not_cited_numbers():
 
     text = "Accumulate then 4%-rule drawdown (four_percent_drawdown) is solvent in 50% of trials."
     assert cited_percentages(text) == [50]
+
+
+def test_oracle_has_zero_regret_and_full_top_set_agreement(oracle_report):
+    cond = oracle_report["conditions"]["held_out_seeds"]
+    assert cond["adviser_regret"]["mean_regret"] == pytest.approx(0.0)
+    assert cond["top_set_agreement_rate"] == 1.0
+    for block in cond["constant_policy_regret"].values():
+        assert block["mean_regret"] >= -1e-9
+        assert 0.0 <= block["normalized_regret"] <= 1.0
+    # The oracle is never worse than any constant answer.
+    assert cond["adviser_vs_best_constant"]["mean_regret_advantage"] >= -1e-9
+
+
+def test_constant_adviser_regret_equals_its_policy_row(stub_report):
+    cond = stub_report["conditions"]["held_out_seeds"]
+    row = cond["constant_policy_regret"]["contribution_waterfall"]
+    assert cond["adviser_regret"]["mean_regret"] == pytest.approx(row["mean_regret"])
+    assert "adviser regret" in format_report(stub_report)
