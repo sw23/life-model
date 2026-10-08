@@ -15,7 +15,7 @@ imports so importing this module never pulls in torch or transformers.
 from typing import Protocol, runtime_checkable
 
 from .prompts import format_decision_answer, format_refusal_answer
-from .strategies import STRATEGY_NAMES, decision_space
+from .strategies import STRATEGY_NAMES, answer_space
 
 Messages = list[dict[str, str]]
 
@@ -50,7 +50,7 @@ class StubAdviserModel:
 
     def __init__(self, fixed_decision: str | None = None, rationale: str = "Stubbed rationale."):
         self.fixed_decision = fixed_decision or STRATEGY_NAMES[0]
-        if self.fixed_decision not in decision_space():
+        if self.fixed_decision not in answer_space():
             raise ValueError(f"unknown strategy {self.fixed_decision!r}")
         self.rationale = rationale
 

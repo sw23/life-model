@@ -21,7 +21,8 @@ from slm.evaluate_adviser import AdviserEvaluator, format_report
 from slm.faithfulness import is_faithful
 from slm.generate_data import _sample_households, _trial_seeds
 from slm.rationales import build_rationale, rationale_of
-from slm.scoring import argmax_candidate, score_household
+from slm.scoring import argmax_candidate, decision_basis, label_decision, score_household
+from slm.strategies import NO_LEVER
 
 
 @pytest.fixture(scope="module")
@@ -86,3 +87,29 @@ def test_rationale_of_matches_build_rationale():
     scored = score_household(household, seeds, "retirement_security")
     chosen = argmax_candidate(scored).decision
     assert rationale_of(scored) == build_rationale(scored, chosen)
+
+
+def test_no_lever_answer_runs_the_default_plan(evaluator):
+    # An always-abstaining adviser is scored as the default plan, so abstaining cannot game outcomes.
+    abstain = evaluator.run(StubAdviserModel(fixed_decision=NO_LEVER), include_oracle=False)
+    default = evaluator.run(StubAdviserModel(fixed_decision="contribution_waterfall"), include_oracle=False)
+    a, d = abstain["conditions"]["held_out_seeds"], default["conditions"]["held_out_seeds"]
+    assert a["parse_rate"] == 1.0 and a["abstain_rate"] == 1.0
+    assert a["adviser_mean_success_rate"] == d["adviser_mean_success_rate"]
+    assert a["label_agreement_rate"] == a["label_abstain_rate"]
+
+
+def test_no_lever_rationale_is_faithful():
+    # Find a household with no viable lever and check its rationale passes the numeric gate.
+    for seed in range(40):
+        household = _sample_households(["low_earner"], 1, seed)[0][1]
+        household["initial_spending"] = household["initial_salary"] * 1.2  # spends more than it earns
+        scored = score_household(household, _trial_seeds(seed, 0, 4), "retirement_security")
+        if decision_basis(scored) == "no_viable":
+            assert label_decision(scored) == NO_LEVER
+            rationale = build_rationale(scored, NO_LEVER)
+            assert "no strategy on the menu keeps this household solvent" in rationale
+            assert is_faithful(rationale, scored, NO_LEVER)
+            assert not is_faithful(rationale + " Success is 97%.", scored, NO_LEVER)
+            return
+    pytest.fail("no insolvent household found")

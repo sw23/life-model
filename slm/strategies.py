@@ -80,9 +80,26 @@ STRATEGY_NAMES: tuple[str, ...] = tuple(s.name for s in STRATEGIES)
 STRATEGY_BY_NAME: dict[str, Strategy] = {s.name: s for s in STRATEGIES}
 
 
+#: The one non-strategy answer: no lever on the menu keeps the household solvent, so the adviser says
+#: so instead of crowning the least-bad strategy. It is not executable; the eval harness runs the
+#: default plan (``NO_LEVER_DEFAULT_PLAN``) for it, so abstaining never beats a lever that helps.
+NO_LEVER = "no_plan_lever"
+NO_LEVER_TITLE = "No plan-level lever is sufficient"
+NO_LEVER_DESCRIPTION = (
+    "Every strategy on the menu leaves the household short in nearly all trials; the gap is spending "
+    "versus income, which these levers do not change."
+)
+NO_LEVER_DEFAULT_PLAN = "contribution_waterfall"
+
+
 def decision_space() -> list[str]:
     """The canonical ordered list of recommendable strategy names."""
     return list(STRATEGY_NAMES)
+
+
+def answer_space() -> list[str]:
+    """Every answer the adviser may give: the strategies plus ``NO_LEVER``."""
+    return [*STRATEGY_NAMES, NO_LEVER]
 
 
 def describe(name: str) -> str:

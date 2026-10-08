@@ -17,6 +17,8 @@ stability), they are not tight confidence intervals, and the datasheet records t
 precision claims stay honest.
 """
 
+from typing import Literal
+
 import numpy as np
 
 from deepqlearning.envs.financial.environment import FinancialLifeEnv
@@ -24,7 +26,7 @@ from deepqlearning.evaluation.protocol import run_policy_episode
 
 from .candidates import CANDIDATE_POLICIES
 from .schema import ScoredCandidate
-from .strategies import STRATEGY_NAMES
+from .strategies import NO_LEVER, STRATEGY_NAMES
 
 # Economy is stochastic during scoring so candidates are judged across good and bad years.
 _DEFAULT_ECONOMY_MODE = "stochastic"
@@ -83,6 +85,46 @@ def argmax_candidate(scored: list[ScoredCandidate]) -> ScoredCandidate:
     """The winning candidate: highest success rate, breaking ties by median terminal wealth then
     by name (fully deterministic)."""
     return max(scored, key=lambda c: (c.success_rate, c.net_worth_p50, _neg_name(c.decision)))
+
+
+# Labeling thresholds. A household where even the best lever is solvent in at most this share of
+# trials has no lever worth recommending (the shortfall is structural).
+NO_VIABLE_MAX_SUCCESS = 0.10
+# A winner is "clear" when it beats the runner-up's success rate by this many standard errors (an
+# unpaired two-proportion bound, conservative for shared seeds) and by at least two trials...
+SUCCESS_Z = 2.0
+# ...or, when success rates are not separable, by this share of the runner-up's median terminal
+# net worth (floored so near-zero medians do not make any gap "clear").
+WEALTH_MARGIN = 0.10
+WEALTH_FLOOR = 10_000.0
+
+DecisionBasis = Literal["clear", "equivalent", "no_viable"]
+
+
+def decision_basis(scored: list[ScoredCandidate]) -> DecisionBasis:
+    """How decisively the scores single out a lever.
+
+    ``no_viable``: no lever keeps the household solvent in a meaningful share of trials.
+    ``clear``: the argmax beats the runner-up by more than Monte Carlo noise (success rate, or
+    median wealth when success rates tie). ``equivalent``: the top options are within noise.
+    """
+    best = argmax_candidate(scored)
+    if best.success_rate <= NO_VIABLE_MAX_SUCCESS:
+        return "no_viable"
+    runner = argmax_candidate([c for c in scored if c.decision != best.decision])
+    n = best.n_trials
+    gap = best.success_rate - runner.success_rate
+    se = np.sqrt((best.success_rate * (1 - best.success_rate) + runner.success_rate * (1 - runner.success_rate)) / n)
+    if gap >= 2 / n and gap >= SUCCESS_Z * se:
+        return "clear"
+    if best.net_worth_p50 - runner.net_worth_p50 >= WEALTH_MARGIN * max(abs(runner.net_worth_p50), WEALTH_FLOOR):
+        return "clear"
+    return "equivalent"
+
+
+def label_decision(scored: list[ScoredCandidate]) -> str:
+    """The training label: the argmax lever, or ``NO_LEVER`` when no lever is viable."""
+    return NO_LEVER if decision_basis(scored) == "no_viable" else argmax_candidate(scored).decision
 
 
 def _neg_name(name: str) -> tuple:

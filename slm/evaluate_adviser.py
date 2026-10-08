@@ -13,7 +13,12 @@ harness:
 3. **executes** the recommended lever in the simulator — a shared-seed Monte Carlo run — and
    compares its success rate / terminal-wealth percentiles against the heuristic (planner-grade)
    baselines on the *same* seeds (outcome-quality metric),
-4. checks the rationale's numbers against a fresh scoring run (numeric-faithfulness metric).
+4. checks the rationale's numbers against a fresh scoring run (numeric-faithfulness metric),
+5. compares the answer with the dataset label (:func:`~slm.scoring.label_decision`), including
+   whether the adviser says ``no_plan_lever`` exactly when no lever is viable.
+
+A ``no_plan_lever`` answer is executed as the default plan (``NO_LEVER_DEFAULT_PLAN``), so abstaining
+costs outcome quality whenever some lever would have helped.
 
 Because the adviser must choose from the fixed decision menu, its choice is always one of the
 scored candidates — so a single ``score_household`` pass per household covers the adviser, every
@@ -38,13 +43,20 @@ import numpy as np
 from .adviser import AdviserModel, ScriptedAdviserModel, StubAdviserModel
 from .faithfulness import is_faithful
 from .generate_data import DEFAULT_SCENARIOS, _sample_households, _to_profile, _trial_seeds
-from .prompts import OUT_OF_SCOPE_DOMAINS, build_messages, build_refusal_messages, is_refusal, parse_decision
+from .prompts import (
+    OUT_OF_SCOPE_DOMAINS,
+    REFUSAL_EVAL_PHRASINGS,
+    build_messages,
+    build_refusal_messages,
+    is_refusal,
+    parse_decision,
+)
 from .provenance import config_hash, simulator_commit
 from .rationales import rationale_of
 from .schema import ScoredCandidate
-from .scoring import argmax_candidate, score_household
+from .scoring import argmax_candidate, label_decision, score_household
 from .serializer import render_household
-from .strategies import STRATEGY_NAMES
+from .strategies import NO_LEVER, NO_LEVER_DEFAULT_PLAN, STRATEGY_NAMES
 
 DEFAULT_REWARD_PRESET = "retirement_security"
 
@@ -65,6 +77,7 @@ class HouseholdResult:
     adviser_p50: float | None
     argmax_decision: str
     faithful: bool
+    label: str = ""
 
 
 def _scored_by_name(scored: list[ScoredCandidate]) -> dict[str, ScoredCandidate]:
@@ -121,13 +134,14 @@ class AdviserEvaluator:
             answer = adviser.generate(build_messages(household_text))
             decision = parse_decision(answer)
             argmax = argmax_candidate(scored).decision
+            label = label_decision(scored)
             oracle_success.append(by_name[argmax].success_rate)
             for n in HEURISTIC_NAMES:
                 heuristic_success[n].append(by_name[n].success_rate)
                 heuristic_p50[n].append(by_name[n].net_worth_p50)
 
-            if decision is not None and decision in by_name:
-                adviser_stats = by_name[decision]
+            if decision is not None and (decision in by_name or decision == NO_LEVER):
+                adviser_stats = by_name[NO_LEVER_DEFAULT_PLAN if decision == NO_LEVER else decision]
                 faithful = is_faithful(answer, scored, decision)
                 results.append(
                     HouseholdResult(
@@ -138,10 +152,11 @@ class AdviserEvaluator:
                         adviser_stats.net_worth_p50,
                         argmax,
                         faithful,
+                        label,
                     )
                 )
             else:
-                results.append(HouseholdResult(household_text, False, None, None, None, argmax, True))
+                results.append(HouseholdResult(household_text, False, None, None, None, argmax, True, label))
 
         return self._summarize(results, heuristic_success, heuristic_p50, oracle_success)
 
@@ -151,6 +166,9 @@ class AdviserEvaluator:
         adviser_success = float(np.mean([r.adviser_success for r in parsed])) if parsed else 0.0
         adviser_p50 = float(np.mean([r.adviser_p50 for r in parsed])) if parsed else 0.0
         faithfulness_rate = float(np.mean([r.faithful for r in parsed])) if parsed else 1.0
+        label_agreement = float(np.mean([r.decision == r.label for r in parsed])) if parsed else 0.0
+        abstain_rate = float(np.mean([r.decision == NO_LEVER for r in parsed])) if parsed else 0.0
+        label_abstain_rate = float(np.mean([r.label == NO_LEVER for r in results])) if results else 0.0
 
         heuristics = {
             n: {
@@ -167,6 +185,9 @@ class AdviserEvaluator:
             "adviser_mean_success_rate": adviser_success,
             "adviser_mean_net_worth_p50": adviser_p50,
             "numeric_faithfulness_rate": faithfulness_rate,
+            "label_agreement_rate": label_agreement,
+            "abstain_rate": abstain_rate,
+            "label_abstain_rate": label_abstain_rate,
             "heuristics": heuristics,
             "best_heuristic": best_name,
             "best_heuristic_mean_success_rate": best_success,
@@ -180,13 +201,16 @@ class AdviserEvaluator:
 
     def evaluate_refusals(self, adviser: AdviserModel) -> dict:
         """Refusal-set metric: fraction of out-of-scope prompts the adviser refuses."""
-        phrasings = ("Should I {d}?", "Is it a good idea to {d} right now?", "Can you advise whether to {d}?")
-        prompts = [t.format(d=desc) for desc in OUT_OF_SCOPE_DOMAINS.values() for t in phrasings]
+        # Held-out wordings (disjoint from the training phrasings) so this measures generalization.
+        prompts = [t.format(d=desc) for desc in OUT_OF_SCOPE_DOMAINS.values() for t in REFUSAL_EVAL_PHRASINGS]
         refused = sum(1 for q in prompts if is_refusal(adviser.generate(build_refusal_messages(q))))
         return {"n_prompts": len(prompts), "refusal_rate": refused / len(prompts) if prompts else 0.0}
 
     def build_oracle(self) -> ScriptedAdviserModel:
         """Construct the oracle adviser: each held-out household mapped to its argmax decision.
+
+        The oracle never abstains (it always names the best lever), so it upper-bounds outcome
+        quality; its label agreement is below 1 exactly on the no-viable-lever households.
 
         The mapping key is a scenario-unique substring of the rendered household so the oracle can
         route by the user turn's text alone (keeping the generate(messages)->text contract).
@@ -253,6 +277,8 @@ def format_report(report: dict) -> str:
         lines.append(f"  best heuristic ({cond['best_heuristic']}) {cond['best_heuristic_mean_success_rate']:.3f}")
         lines.append(f"  beats best heuristic  {cond['adviser_beats_best_heuristic']}")
         lines.append(f"  numeric faithfulness  {cond['numeric_faithfulness_rate']:.2f}")
+        lines.append(f"  label agreement       {cond['label_agreement_rate']:.2f}")
+        lines.append(f"  no_plan_lever rate    {cond['abstain_rate']:.2f} (labels: {cond['label_abstain_rate']:.2f})")
         lines.append(
             f"  oracle success        {cond['oracle_mean_success_rate']:.3f} "
             f"(>= all heuristics: {cond['oracle_beats_all_heuristics']})"

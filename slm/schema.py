@@ -92,6 +92,9 @@ class AdviceExample(StrictModel):
     question: str
     decision_space: list[str] = Field(default_factory=list)
     chosen_decision: str | None = None
+    # How decisively the scores pick the label (slm.scoring.decision_basis): "clear", "equivalent",
+    # or "no_viable" (the label is then slm.strategies.NO_LEVER). None on refusals.
+    decision_basis: Literal["clear", "equivalent", "no_viable"] | None = None
     scored_alternatives: list[ScoredCandidate] = Field(default_factory=list)
 
     rationale: str
@@ -124,3 +127,8 @@ class Datasheet(StrictModel):
     teacher_gating: str
     scale_note: str
     created_utc: str
+    # Label composition after balancing, and how many decision examples balancing dropped.
+    label_counts: dict[str, int] = Field(default_factory=dict)
+    decision_basis_counts: dict[str, int] = Field(default_factory=dict)
+    max_label_share: float | None = None
+    n_dropped_for_balance: int = 0

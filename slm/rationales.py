@@ -7,7 +7,9 @@
 
 The rationale is a pure function of the stored :class:`~slm.schema.ScoredCandidate` records: it
 compares the chosen (argmax) lever against the next-best one and cites the success-rate and
-median-terminal-wealth figures straight from the scoring run. Because every number is copied from
+median-terminal-wealth figures straight from the scoring run. Its wording follows the
+:func:`~slm.scoring.decision_basis`: a clear winner is called the strongest lever, statistically
+indistinguishable options are called equivalent, and ``NO_LEVER`` says no lever is sufficient. Because every number is copied from
 a stored score, faithfulness is guaranteed at data time — the generator test recomputes the exact
 string from the stored scores, and the eval harness re-derives the same numbers from a fresh
 scoring run (numeric-faithfulness gate).
@@ -16,8 +18,8 @@ scoring run (numeric-faithfulness gate).
 import re
 
 from .schema import ScoredCandidate
-from .scoring import argmax_candidate
-from .strategies import STRATEGY_BY_NAME
+from .scoring import argmax_candidate, decision_basis
+from .strategies import NO_LEVER, STRATEGY_BY_NAME
 
 
 def _pct(success_rate: float) -> int:
@@ -40,10 +42,45 @@ def rationale_of(scored: list[ScoredCandidate]) -> str:
     return build_rationale(scored, argmax_candidate(scored).decision)
 
 
+def _worst(scored: list[ScoredCandidate]) -> ScoredCandidate:
+    return min(scored, key=lambda c: (c.success_rate, c.net_worth_p50))
+
+
+def _no_lever_rationale(scored: list[ScoredCandidate]) -> str:
+    best = argmax_candidate(scored)
+    worst = _worst(scored)
+    return (
+        f"Over {best.n_trials} shared Monte Carlo trials, no strategy on the menu keeps this household "
+        f"solvent: the best option, {_title(best.decision)} ({best.decision}), stays solvent to end of "
+        f"life in only {_pct(best.success_rate)}% of trials and the weakest in {_pct(worst.success_rate)}%, "
+        f"and even the best option's median terminal net worth is ${best.net_worth_p50:,.0f}. The "
+        f"shortfall is spending relative to income, which none of these levers changes. These are "
+        f"simulator Monte Carlo outputs under stated assumptions, not guarantees."
+    )
+
+
+def _equivalent_rationale(chosen: ScoredCandidate, runner: ScoredCandidate) -> str:
+    delta_wealth = chosen.net_worth_p50 - runner.net_worth_p50
+    direction = "above" if delta_wealth >= 0 else "below"
+    return (
+        f"Over {chosen.n_trials} shared Monte Carlo trials, the top options are within simulation noise "
+        f"for this household: {_title(chosen.decision)} ({chosen.decision}) stays solvent to end of life "
+        f"in {_pct(chosen.success_rate)}% of trials versus {_pct(runner.success_rate)}% for "
+        f"{_title(runner.decision)} ({runner.decision}), and its median terminal net worth of "
+        f"${chosen.net_worth_p50:,.0f} is ${abs(delta_wealth):,.0f} {direction} the alternative's "
+        f"${runner.net_worth_p50:,.0f}. It is listed for that slight edge, but either is a reasonable "
+        f"choice. These are simulator Monte Carlo outputs under stated assumptions, not guarantees."
+    )
+
+
 def build_rationale(scored: list[ScoredCandidate], chosen_name: str) -> str:
     """Build the counterfactual rationale for ``chosen_name`` from the stored scores."""
+    if chosen_name == NO_LEVER:
+        return _no_lever_rationale(scored)
     chosen = next(c for c in scored if c.decision == chosen_name)
     runner = runner_up(scored, chosen_name)
+    if chosen_name == argmax_candidate(scored).decision and decision_basis(scored) == "equivalent":
+        return _equivalent_rationale(chosen, runner)
     delta_wealth = chosen.net_worth_p50 - runner.net_worth_p50
     direction = "above" if delta_wealth >= 0 else "below"
     return (
@@ -78,6 +115,9 @@ def faithfulness_targets(scored: list[ScoredCandidate], chosen_name: str) -> tup
     Used by the eval harness: re-derive these from a fresh scoring run and confirm the
     adviser's rationale cites matching numbers within tolerance.
     """
+    if chosen_name == NO_LEVER:
+        best = argmax_candidate(scored)
+        return [_pct(best.success_rate), _pct(_worst(scored).success_rate)], [round(best.net_worth_p50)]
     chosen = next(c for c in scored if c.decision == chosen_name)
     runner = runner_up(scored, chosen_name)
     delta = abs(chosen.net_worth_p50 - runner.net_worth_p50)

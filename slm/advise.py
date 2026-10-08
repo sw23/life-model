@@ -31,9 +31,9 @@ from life_model.people.person import GenderAtBirth
 from .adviser import AdviserModel, Messages
 from .prompts import format_decision_answer, parse_decision
 from .rationales import build_rationale
-from .scoring import argmax_candidate, score_household
+from .scoring import argmax_candidate, label_decision, score_household
 from .serializer import parse_household
-from .strategies import STRATEGY_BY_NAME
+from .strategies import NO_LEVER, STRATEGY_BY_NAME
 
 _MENU_MARKER = "Decision menu"
 
@@ -113,6 +113,7 @@ class ToolLoopAdviser:
         scored = score_household(household, seeds, self.config.reward_preset)
         by_name = {c.decision: c for c in scored}
         argmax = argmax_candidate(scored).decision
+        label = label_decision(scored)
 
         # Draft, then revise up to the iteration budget, feeding the scoreboard back each round.
         convo: list[dict[str, str]] = list(messages)
@@ -125,16 +126,20 @@ class ToolLoopAdviser:
                 decision = revised
 
         # Simulator-grounded correction: never ship a decision the simulator shows is dominated by
-        # more than the margin; fall back to the simulated best.
+        # more than the margin, nor a no_plan_lever the simulator contradicts (some lever is viable);
+        # fall back to the simulated label.
         if self.config.trust_simulation:
-            if (
+            if decision == NO_LEVER:
+                if label != NO_LEVER:
+                    decision = label
+            elif (
                 decision is None
                 or decision not in by_name
                 or by_name[decision].success_rate < by_name[argmax].success_rate - self.config.dominance_margin
             ):
-                decision = argmax
+                decision = label
         elif decision is None:
-            decision = argmax
+            decision = label
 
         # Ship the fresh simulation's own numbers, so the rationale is faithful by construction.
         rationale = build_rationale(scored, decision)

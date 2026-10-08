@@ -55,3 +55,7 @@ def test_parse_decision_rejects_unknown_strategy():
 def test_all_strategy_names_parse():
     for name in STRATEGY_NAMES:
         assert parse_decision(f"DECISION: {name}\nRATIONALE: x") == name
+
+
+def test_parse_decision_accepts_no_plan_lever():
+    assert parse_decision("DECISION: no_plan_lever\nRATIONALE: x") == "no_plan_lever"
