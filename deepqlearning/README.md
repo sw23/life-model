@@ -84,8 +84,8 @@ environment it is training on.
 
 **Learning quality is open work.** The tests check that every algorithm trains end to end
 without diverging; none asserts that an algorithm learns a good policy, since the financial
-environment has no known optimal policy. Observed learning on it is weak so far, and more
-exploration is the expected next step.
+environment has no known optimal policy. Pooled over five pre-registered seeds, neither DQN nor
+PPO beats always maxing the pre-tax 401k (see the algorithm sweep below).
 
 ## 🎯 The financial objective — what "good" means
 
@@ -316,55 +316,42 @@ python -m deepqlearning.evaluation.pool_seeds results/protocol_report_financial_
 The pooled verdict is a Student-t 95% interval over the per-seed paired gaps to the best policy in
 the bar, so it carries training-seed variance.
 
-### Committed report (default preset)
+### Committed reports and the algorithm sweep (default preset)
 
-`reports/retirement_security/` holds a committed run against the current simulator (see
-`protocol_table.txt` / `protocol_report.json`, `run_metadata` labels it): DQN, seed 0, a 200k-step
-budget that early-stopped at 170k steps / 3,797 episodes, reproducible with
+Every committed report was regenerated on the retirement-income world (Social Security, employer
+match, starting balances, economy-linked 401k growth, scenario overlays, after-tax bequest; see the
+fidelity notes above) with `--protocol-n-eval 200`. Seeds 0-4 were fixed before the sweep ran;
+`reports/algorithm_sweep.txt` lists every run and the pooled verdicts, and
+`reports/retirement_security/` (DQN) and `reports/retirement_security_ppo/` (PPO) hold the seed-0
+protocol report, the pooled report, and the policy-analysis artifacts. Reproduce one run with
 
 ```bash
 python -m deepqlearning.train --env financial:basic --algo dqn --total-env-steps 200000 \
-    --num-envs 8 --reward-preset retirement_security --protocol-eval --seed 0
+    --num-envs 8 --reward-preset retirement_security --protocol-eval --protocol-n-eval 200 --seed 0
 ```
 
-Seed 0 was fixed as the report seed **before** the first five-seed sweep ran (`seed_sweep.txt`), so
-the committed numbers are not cherry-picked. Every report here was regenerated after the RL action
-layer started treating pre-tax 401k transfers as deductible and capping 401k transfers at the
-402(g) limit (previously pre-tax money was taxed going in and coming out, which handicapped every
-heuristic that saves pre-tax). Mean return, agent vs the best planner heuristic (n=50 per condition):
+Train condition, mean return of the agent vs `always_max_401k` (33.50, the best policy in the bar),
+with the paired-gap 95% CI:
 
-| Seed | Steps | Train | Held-out seeds | Recession |
-|---|---|---|---|---|
-| 0 (committed) | 170k | 26.29 vs 30.13 | 27.48 vs 27.60 | 27.23 vs 29.79 |
-| 1 | 115k | 32.01 vs 30.13 | 30.10 vs 27.60 | 32.83 vs 29.79 |
-| 2 | 45k | 30.02 vs 30.13 | 27.52 vs 27.60 | 29.73 vs 29.79 |
-| 3 | 100k | 30.62 vs 30.13 | 28.00 vs 27.60 | 30.38 vs 29.79 |
-| 4 | 55k | 30.15 vs 30.13 | 27.62 vs 27.60 | 29.81 vs 29.79 |
+| Seed | DQN | PPO |
+|---|---|---|
+| 0 | 34.48, gap [-0.61, +2.27] | 33.50, gap [-0.00, +0.01] |
+| 1 | 33.20, gap [-0.37, -0.23] | 33.40, gap [-0.65, +0.23] |
+| 2 | 33.59, gap [+0.02, +0.18] — passes | 33.42, gap [-0.61, +0.24] |
+| 3 | 30.78, gap [-4.89, -0.76] | 33.44, gap [-0.07, -0.05] |
+| 4 | 33.49, gap [-0.03, -0.00] | 34.30, gap [+0.63, +0.98] — passes |
+| **Pooled (t95 over seeds)** | **-0.39 [-2.11, +1.33]: not intelligent** | **+0.11 [-0.36, +0.59]: not intelligent** |
 
-DQN varies widely by seed. Seed 1 beats the best heuristic on every condition (+1.9 train, +2.5
-held-out seeds, +3.0 recession), seeds 3 and 4 edge it on average, seed 2 converges to
-heuristic-like play, and the committed seed 0 lands below it. **No seed separates its 95% CI from
-the best heuristic's at n=50, so the strict verdict stays `False` for DQN.** Larger evaluation
-budgets (`--protocol-n-eval`) or more seeds are the levers to try.
+One run per algorithm clears the paired per-run bar, and pooling over the pre-registered seeds says
+neither algorithm reliably beats always maxing the 401k. Most runs converge to, or near, that
+policy. Two runs that beat it on mean return did so partly by **spending more**: DQN seed 0 has the
+highest mean return but a 4% ruin rate and a median estate of $564k against always-max's $966k
+(`protocol_table.txt`). The objective rewards consumption, so that trade can be rational under it,
+but it is not the "save smarter" behavior the planner bar is about.
 
-### PPO report and the algorithm sweep
-
-`reports/retirement_security_ppo/` holds the PPO run with the same settings and seed convention
-(`--algo ppo ... --seed 0`, early-stopped at 130k steps). After the 401k fix, seed 0 converges to
-heuristic-level play: train 30.13 vs 30.13, held-out seeds 27.60 vs 27.60, recession 29.82 vs
-29.79, verdict `False`.
-
-PPO can still clear the strict bar — on another seed. `reports/algorithm_sweep.txt` lists every run
-(DQN 5 seeds, REINFORCE and PPO 3 each). **PPO seed 1 is CI-separated on the train condition**
-(36.62, 95% CI [33.76, 39.20], vs the best heuristic's 30.13 [28.05, 32.01]) and beats every
-heuristic on held-out seeds (31.95 vs 27.60) and the recession (35.61 vs 29.79). PPO seed 2 and
-REINFORCE seeds 1-2 converge to heuristic-level play; REINFORCE seed 0 beats the heuristics on
-average. Before the fix the CI-separated PPO seed was seed 0 — one of three either way.
-
-An independent Stable-Baselines3 cross-check (`reports/sb3_cross_check/`, seed 0, no action
-masking) agrees on PPO: SB3 PPO 33.20 with no ruin. SB3 DQN collapsed on this seed (-4.30, 68%
-ruin; it was 28.02 with 12% ruin before the fix), a reminder that unmasked off-policy training on
-this env is fragile.
+An independent Stable-Baselines3 cross-check (`reports/sb3_cross_check/`, seed 0, 200k timesteps,
+no action masking, n=50) agrees: SB3 PPO 34.49 and SB3 DQN 34.17, both with no ruin, against
+always-max's 34.66 on the same 50 seeds.
 
 ## 🏋️ Training-stack features
 

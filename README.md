@@ -118,7 +118,7 @@ This package supports a comprehensive range of financial modeling components:
 - [x] **Payment Services** - Intelligent bill payment with account prioritization
 - [x] **Tax Optimization** - Strategic withdrawal and contribution planning
 - [x] **Reinforcement Learning** - DQN / REINFORCE / PPO agents (`deepqlearning/`) that learn an in-episode financial policy, evaluated against planner heuristics with an outcome-based protocol
-- [x] **Simulation-Grounded Adviser** - A language-model adviser (`slm/`) that maps a household to a recommended plan-level strategy with a Monte-Carlo-certified rationale (educational decision support, not financial advice; see `slm/README.md`)
+- [x] **Simulation-Grounded Adviser** - A language-model adviser (`slm/`) that maps a household to a recommended retirement plan (savings rate, 401k routing, Social Security claiming age, drawdown) with a Monte-Carlo-certified rationale (educational decision support, not financial advice; see `slm/README.md`)
 
 ## Examples and Documentation
 

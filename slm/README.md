@@ -108,84 +108,125 @@ The schema / serializer / scoring / eval / tool-loop paths need only the core si
 gymnasium + pydantic. The **training** stack (`transformers`, `peft`, `trl`, `datasets`,
 `accelerate`) is required only for `slm.train` and for running a real local model.
 
-## Committed artifacts (pipeline-validation scale)
+## Committed artifacts
 
-> The sample dataset, datasheet and eval reports in `data/` and `reports/` predate dataset
-> schema v2 (the compositional plan menu) and are regenerated in the next commit.
+* `data/sample_dataset.jsonl` + `.datasheet.json` — pipeline-validation scale: 240 decisions (40
+  households per scenario, adaptive 8-32 trials, 35% label cap) + 48 refusals, seed 20. Basis 159
+  clear / 80 equivalent / 1 no-viable.
+* `reports/adviser_eval.json` + `adviser_eval_summary.txt` — every adviser on the same 72 held-out
+  households (seed 777, 12 per scenario) under held-out seeds and the held-out `recession`
+  overlay, 32 shared trials per plan, produced by `reports/run_eval.py`.
 
+The local training set (`data/dataset.jsonl`, gitignored, regenerable byte-for-byte): 700
+households per scenario, adaptive 16-64 trials, 4,200 decisions + 48 refusals. Basis 3,122 clear
+(74%) / 1,065 equivalent (25%) / 13 no-viable (0.3%); the most common label is the default plan at
+18%. Per-scenario mean best-plan success is 0.92-0.99 except `low_earner` (0.69).
+
+## Results
+
+Normalized regret = (best scored plan's return − the answer's) / (best − worst), averaged over
+households; "vs best constant" is the paired regret advantage over the best single answer given to
+every household (`save10_pretax_claimret_conventional`, mean regret 2.51 on held-out seeds), with
+a household-bootstrap 95% CI (* = above zero).
+
+| Adviser | Normalized regret (seeds / recession) | vs best constant (seeds) | Top-set agreement | Parse | Refusal |
+|---|---|---|---|---|---|
+| oracle (best scored plan) | 0.000 / 0.000 | +2.51* | 1.00 | 1.00 | 1.00 |
+| **tabular** (gradient-boosted trees on the household fields) | **0.142 / 0.138** | **+1.90*** | 0.78 | 1.00 | 1.00 |
+| **tool loop** (fixed stub + simulator in the loop) | 0.225 / 0.241 | +1.13* | 0.75 | 1.00 | 1.00 |
+| fixed stub (`save0_roth_claim70_conventional`) | 0.351 / 0.324 | −1.45 | 0.64 | 1.00 | 1.00 |
+| SFT, Qwen2.5-1.5B LoRA | 0.387 / 0.321 | −1.16 | 0.39 | 1.00 | 1.00 |
+| SFT + DPO, Qwen2.5-1.5B LoRA | 0.379 / 0.391 | −1.29 | 0.60 | 1.00 | 0.83 |
+| zero-shot Qwen2.5-1.5B | 0.524 / 0.383 | −1.47 | 0.00 | 0.99 | 0.12 |
+| zero-shot Qwen2.5-0.5B | 0.387 / 0.321 (never parses; runs the default plan) | −1.16 | 0.00 | 0.00 | 0.00 |
+
+What this says:
+
+1. **The labels carry learnable signal.** A small tabular model reading the same facts the language
+   model reads cuts regret by more than half against every constant answer, in both conditions.
+   The world (Social Security, match, balances, overlays), the evidence-backed labels and the plan
+   menu do what they were meant to: the decision now depends on the household.
+2. **The simulator in the loop works.** The tool loop starts from a fixed, mediocre plan and lands
+   within noise of the best plan for 75% of households.
+3. **The fine-tuned 1.5B model does not beat a constant answer.** SFT converged to the default plan
+   for every household (its regret is identical to always-default); DPO on decision pairs moved
+   answers around but not toward lower regret, and cost some refusal discipline. Format and scope
+   discipline transfer (parse 1.00, SFT refusal 1.00). The hosted upper bound (`--advisers api`)
+   was not run: no API key in the run environment.
+
+How the SFT runs failed, so the next run does not repeat it:
+
+* **Full-text loss** (the default before this change): the 1.5B model emitted one constant plan,
+  switching which one between checkpoints. Training only on the answer (`completion_only_loss`)
+  did not change that.
+* **The plan token is a few percent of the answer.** Before training, Qwen2.5-1.5B puts ~80% on
+  `save1…` after `DECISION: save`; after 100 unweighted steps it was still ~60%. The rationale's
+  simulator numbers dominate the loss. `decision_weight: 10` fixed the prior (the model learned
+  the majority answer) but over 500 steps it never started conditioning on the household, and
+  the regret-proxy early stop kept the always-default adapter.
+* **What carries the signal is non-linear.** A spending-share threshold rule predicts the savings
+  lever 78% of the time against 75% for the majority, and the scenario's most common label is no
+  better than the default plan; the tabular model's gain comes from interactions across fields.
+  Roughly 4,000 examples is little data for a 1.5B model to learn that from text.
+* **Full-answer DPO on MPS exhausted unified memory** (~37 GB wired, 70 s/step) and was stopped;
+  decision-only pairs with `PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.5` and gradient checkpointing ran
+  at ~18 s/step under the cap.
+
+Next levers, in the order the evidence points: much more data (generation, not training, is the
+bottleneck: ~40 core-seconds per household), a decision-first target (decide, then a short
+rationale, or let the tool loop write the rationale), the tabular adviser's prediction as a tool
+the language model can call, and a larger base model on a CUDA machine
+(`train_default_qlora.yaml`, not run here).
 
 ## Reproduce
 
 Everything is deterministic under a seed (same seed → byte-identical JSONL).
 
 ```bash
-# 1. Generate the committed dataset (pipeline-validation scale — ~5 min of Monte Carlo scoring).
-python -m slm.generate_data --per-scenario 40 --n-trials 16 --seed 20 --workers 4 \
+# 1. The committed sample (pipeline-validation scale, ~15 min on 3 workers).
+python -m slm.generate_data --per-scenario 40 --n-trials 32 --min-trials 8 --seed 20 --workers 3 \
     --max-label-share 0.35 --out slm/data/sample_dataset.jsonl \
     --scale-note "pipeline-validation scale (not a publishable adviser)"
 
-# 2. Produce the committed eval report (oracle / distilled-stub / tool-loop; no weights needed).
-python slm/reports/run_eval.py
+# 2. The local training set (~4 h on 10 workers).
+python -m slm.generate_data --per-scenario 700 --n-trials 64 --min-trials 16 --seed 20 --workers 10 \
+    --max-label-share 0.35 --out slm/data/dataset.jsonl
 
-# 3. (Optional, needs the training stack) Smoke-fine-tune a ~135M model over ~50 examples —
-#    also runnable as the slow test: pytest slm/tests/test_train_smoke_slow.py -m slow
+# A serializer change needs no new simulation: re-render the stored profiles.
+python -m slm.generate_data --rerender slm/data/dataset.jsonl --out /tmp/dataset.jsonl
+
+# 3. SFT then DPO on Apple silicon (Qwen2.5-1.5B-Instruct, LoRA r16). Cap MPS memory for DPO.
+python -m slm.train slm/configs/train_mac_lora.yaml
+PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.5 PYTORCH_MPS_LOW_WATERMARK_RATIO=0.4 \
+    python -m slm.train slm/configs/train_mac_dpo.yaml
+
+# 4. The committed report (needs scikit-learn for the tabular adviser; ~2.5 h, mostly generation).
+PYTHONPATH=src:. python slm/reports/run_eval.py --workers 8 --advisers "oracle,stub,tool_loop,tabular,api,\
+hf:zero_shot_0.5b=Qwen/Qwen2.5-0.5B-Instruct,hf:zero_shot_1.5b=Qwen/Qwen2.5-1.5B-Instruct,\
+hf:sft_1.5b=Qwen/Qwen2.5-1.5B-Instruct@slm/checkpoints/mac_lora/best,\
+hf:sft_dpo_1.5b=Qwen/Qwen2.5-1.5B-Instruct@slm/checkpoints/mac_lora/best+slm/checkpoints/mac_dpo/best"
+
+# 5. Smoke-fine-tune a ~135M model, and validate the CUDA / LLM-readiness configs.
 python -m slm.train slm/configs/train_smoke.yaml
-
-# 4. Validate the full-run / LLM-readiness configs without executing them.
 python -m slm.train slm/configs/train_default_qlora.yaml --validate-only
 python -m slm.train slm/configs/train_full_fsdp.yaml     --validate-only
 ```
 
-### Apple-silicon run (`configs/train_mac_lora.yaml`)
-
-Qwen2.5-0.5B-Instruct with LoRA (rank 16) in bf16 on MPS, one epoch over the full local dataset
-(`--per-scenario 500 --n-trials 64 --max-label-share 0.35`: 2,833 decisions + 48 refusals, ~80 min
-to generate with 14 workers). Training took 26 min on an M5 Pro (loss 3.64 -> 0.09). Evaluated with
-`--adviser hf --seed 777` (60 held-out households per condition, 16 trials) —
-`reports/adviser_eval_mac_lora.json`:
-
-| Adviser | Held-out seeds success | Recession success | Label agreement |
-|---|---|---|---|
-| Mac LoRA (0.5B) | 0.592 | 0.603 | 0.40 / 0.37 |
-| always `max_pretax_401k` | 0.596 | 0.605 | 0.43 / 0.42 |
-| always `max_roth_401k` | 0.574 | 0.590 | 0.18 / 0.17 |
-| best planner heuristic | 0.574 | 0.590 | — |
-| oracle (argmax) | 0.609 | 0.606 | — |
-
-Parse rate and held-out refusal rate are both 1.00, so format and scope discipline transfer. **The
-decision itself does not yet beat the majority lever**: the 0.5B model matches "always max the
-pre-tax 401k", which on its own beats every planner heuristic, and it never answers
-`no_plan_lever` (5-7% of held-out labels). Its rationale numbers are written without a simulator
-in the loop, so numeric faithfulness is 0.08-0.13 — use the tool-loop (`advise.py`) when cited
-numbers matter. Success rate also leaves little headroom (the oracle is 1.3 points above the
-majority lever) because most label differences are in terminal wealth, not solvency. Next levers:
-a larger base model or more epochs, more held-out households, and an outcome metric that weighs
-terminal wealth.
-
-### Full local run (out of session scope — documented, not executed here)
-
-```bash
-# Generate O(10^4-10^5) examples (Monte Carlo scoring dominates cost — use collect_data=False,
-# modest trial counts for ranking, and workers for parallelism):
-python -m slm.generate_data --per-scenario 4000 --n-trials 64 --seed 20 --workers 8 \
-    --out slm/data/dataset.jsonl
-
-# QLoRA-train the default SLM (Qwen2.5-7B-Instruct, Apache-2.0), then evaluate on held-out
-# households + a held-out economy scenario and commit the report (not the weights):
-python -m slm.train slm/configs/train_default_qlora.yaml
-python -m slm.evaluate_adviser --seed 777 --out slm/reports/adviser_eval.json   # via slm.backends for a real model
-```
+Training writes `<output_dir>/best` (the adapter with the lowest validation regret proxy: answers
+on held-out training households scored against their stored Monte Carlo results, no simulation)
+and a `train_config.json` with the proxy history.
 
 ## Model license
 
-The default target `Qwen/Qwen2.5-7B-Instruct` is **Apache-2.0** (redistributable and
-fine-tunable). The smoke target `HuggingFaceTB/SmolLM2-135M-Instruct` is **Apache-2.0**. Record the
+The default target `Qwen/Qwen2.5-7B-Instruct` and the Mac target `Qwen/Qwen2.5-1.5B-Instruct` are
+**Apache-2.0** (redistributable and fine-tunable; Qwen2.5-3B is not — it carries the Qwen research
+license). The smoke target `HuggingFaceTB/SmolLM2-135M-Instruct` is **Apache-2.0**. Record the
 license of any model you swap in here. **Weights are never committed** — only configs and reports,
 plus a small representative dataset sample (< 5 MB). The datasheet records the generation seed,
 simulator commit, config hash, and trial counts so any run is auditable and reproducible.
 
 ## Deferred
 
-RL fine-tuning (GRPO with a Monte Carlo reward), DPO on the stored scored alternatives, multi-turn
-advising dialogues, and RAG over tax documents. The schema already stores scored alternatives per
-example, so DPO/GRPO can consume this data later without regeneration.
+RL fine-tuning (GRPO with a Monte Carlo reward), multi-turn advising dialogues, and RAG over tax
+documents. DPO on the stored scored alternatives is implemented (`objective: dpo`); GRPO can
+consume the same stored alternatives without regeneration.

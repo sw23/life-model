@@ -62,6 +62,44 @@ def _social_security_clause(profile: HouseholdProfile) -> str:
     )
 
 
+def starting_outlay(profile: HouseholdProfile) -> float:
+    """Start-year total outlay: base spending plus the simulator's own start-year child and medical
+    costs (the generator carves both out of the sampled spending, so the stated spending excludes them)."""
+    from life_model.config.financial_config import default_financial_config
+    from life_model.dependents.child import Child
+
+    cfg = default_financial_config()
+    child = 0.0
+    for age in profile.children_ages:
+        if age < cfg.dependents.adult_age:
+            child += (
+                cfg.dependents.childcare_annual_cost
+                if age < Child.CHILDCARE_END_AGE
+                else cfg.dependents.school_age_annual_cost
+            )
+    medical = 0.0
+    if profile.models_healthcare:
+        medical = next(
+            (float(b.annual_cost) for b in cfg.healthcare.medical_cost_bands if profile.person_start_age <= b.max_age),
+            0.0,
+        )
+    return profile.initial_spending + child + medical
+
+
+def _ratios_clause(profile: HouseholdProfile) -> str:
+    """Derived key ratios (each a deterministic function of the stated fields), so a reader need not
+    divide dollar figures to see how stretched the household is."""
+    salary = max(profile.initial_salary, 1.0)
+    outlay = starting_outlay(profile)
+    invested = profile.initial_401k_pretax + profile.initial_401k_roth + profile.initial_brokerage
+    months = profile.initial_bank_balance / max(outlay / 12.0, 1.0)
+    return (
+        f"Key ratios: total outlay (spending plus starting child and medical costs) is "
+        f"{round(100 * outlay / salary)}% of salary, invested savings are {invested / salary:.1f}x salary, "
+        f"and cash covers {months:.1f} months of outlay. "
+    )
+
+
 def render_household(profile: HouseholdProfile) -> str:
     """Render a household profile as a faithful natural-language paragraph."""
     years_to_retirement = max(0, profile.person_retirement_age - profile.person_start_age)
@@ -91,6 +129,7 @@ def render_household(profile: HouseholdProfile) -> str:
         f"{_match_clause(profile)}"
         f"{_retirement_spending_clause(profile)}"
         f"{_social_security_clause(profile)}"
+        f"{_ratios_clause(profile)}"
         f"Economic outlook: {economy}. "
         f"{children_clause}"
         f"{healthcare_clause}"

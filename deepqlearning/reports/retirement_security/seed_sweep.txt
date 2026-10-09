@@ -1,9 +1,0 @@
-DQN seed sweep — financial:basic, retirement_security, 200k-step budget with early stopping,
-protocol n=50 per condition (master_seed 12345). Mean return: agent vs best planner heuristic.
-
-seed    steps            train   held-out seeds        recession  CIs separate
-   0   170000   26.29 vs 30.13   27.48 vs 27.60   27.23 vs 29.79  False
-   1   115000   32.01 vs 30.13   30.10 vs 27.60   32.83 vs 29.79  False
-   2    45000   30.02 vs 30.13   27.52 vs 27.60   29.73 vs 29.79  False
-   3   100000   30.62 vs 30.13   28.00 vs 27.60   30.38 vs 29.79  False
-   4    55000   30.15 vs 30.13   27.62 vs 27.60   29.81 vs 29.79  False

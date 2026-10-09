@@ -46,7 +46,12 @@ class HFAdviserModel:
         if adapter_path:
             from peft import PeftModel
 
-            self.model = PeftModel.from_pretrained(self.model, adapter_path)
+            # "sft_dir,dpo_dir": merge every adapter but the last (a DPO adapter is trained on top of
+            # the merged SFT model), then attach the last.
+            paths = [p for p in str(adapter_path).split(",") if p]
+            for path in paths[:-1]:
+                self.model = PeftModel.from_pretrained(self.model, path).merge_and_unload()
+            self.model = PeftModel.from_pretrained(self.model, paths[-1])
         self.model.eval()
         self.max_new_tokens = max_new_tokens
 

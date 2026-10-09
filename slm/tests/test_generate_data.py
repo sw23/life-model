@@ -174,3 +174,15 @@ def test_balance_caps_every_label(examples):
     assert dropped == len(skewed) - len(kept) > 0
     assert max(counts.values()) <= 0.5 * len(kept) + 1
     assert counts["age_glide"] == sum(e.chosen_decision == "age_glide" for e in skewed)  # minority untouched
+
+
+def test_rerender_is_identity_on_fresh_examples(examples):
+    from slm.generate_data import rerender_example
+
+    assert [rerender_example(e) for e in examples] == list(examples)
+
+
+def test_household_text_states_key_ratios(examples):
+    decision = next(e for e in examples if e.kind == "decision")
+    assert "Key ratios: total outlay" in decision.household_text
+    assert "x salary" in decision.household_text

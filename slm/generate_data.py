@@ -145,6 +145,31 @@ def _decision_example(
     )
 
 
+def rerender_example(example: AdviceExample) -> AdviceExample:
+    """Rebuild a decision example's household text and prompt from its stored profile with the
+    current serializer (scores, label and rationale unchanged; refusals returned as-is).
+
+    The text is a pure function of the stored profile, so a serializer change does not need a new
+    Monte Carlo run: re-rendering an old file gives exactly what regeneration would write.
+    """
+    if example.kind != "decision" or example.household is None:
+        return example
+    household_text = render_household(example.household)
+    question = build_decision_question(household_text)
+    answer = example.messages[-1].content
+    return example.model_copy(
+        update={
+            "household_text": household_text,
+            "question": question,
+            "messages": [
+                ChatMessage(role="system", content=SYSTEM_PROMPT),
+                ChatMessage(role="user", content=question),
+                ChatMessage(role="assistant", content=answer),
+            ],
+        }
+    )
+
+
 def _refusal_examples(provenance: Provenance) -> list[AdviceExample]:
     """Explicit out-of-scope refusal examples, so scope discipline is trained, not just prompted."""
     # Several phrasings per topic, with rotating refusal wording, give the behavior linguistic
@@ -398,6 +423,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--datasheet", default=None, help="Datasheet path (defaults next to --out).")
     parser.add_argument("--scale-note", default="pipeline-validation scale")
     parser.add_argument("--no-refusals", action="store_true", help="Skip refusal examples.")
+    parser.add_argument(
+        "--rerender",
+        default=None,
+        help="Re-render an existing JSONL's household text with the current serializer into --out (no scoring).",
+    )
     parser.add_argument("--workers", type=int, default=1, help="Process-pool size for scoring (1 = sequential).")
     parser.add_argument(
         "--max-label-share",
@@ -410,6 +440,13 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> None:
     args = _parse_args(argv)
+    if args.rerender:
+        with open(args.rerender) as fh:
+            examples = [rerender_example(AdviceExample.model_validate_json(line)) for line in fh if line.strip()]
+        with open(args.out, "w") as fh:
+            fh.write(examples_to_jsonl(examples))
+        print(f"Re-rendered {len(examples)} examples from {args.rerender} to {args.out}")
+        return
     scenarios = [s.strip() for s in args.scenarios.split(",") if s.strip()]
     unknown = [s for s in scenarios if s not in SLM_SCENARIOS]
     if unknown:

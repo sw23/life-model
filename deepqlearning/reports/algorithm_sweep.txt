@@ -1,22 +1,34 @@
-Algorithm sweep — financial:basic, retirement_security, 200k-step budget with early stopping,
-protocol n=50 per condition (master_seed 12345). Mean return: agent vs best planner heuristic.
-Seed 0 is the committed seed for each algorithm (a convention fixed before the first, DQN, sweep ran).
-verdict: INTELLIGENT = beats every planner heuristic on the train condition with a non-overlapping
-95% CI; 'beats mean' = beats every heuristic on the train condition, CIs overlap; '-' = does not.
+Algorithm sweep - financial:basic, retirement_security, 200k-step budget with early stopping,
+protocol n=200 per condition (master_seed 12345). Mean return: agent vs best policy in the bar
+(PLANNER_BASELINES, which now includes always_max_401k). Seeds 0-4 were fixed in advance and are
+pooled below; seed 0 is the committed per-run report.
+verdict: INTELLIGENT = beats every policy in the bar on train with a paired-gap 95% CI above zero;
+'beats mean' = beats every policy on train, CI includes zero; '-' = does not.
 
-algo       seed   steps            train   held-out seeds        recession  verdict
-dqn           0  170000   26.29 vs 30.13   27.48 vs 27.60   27.23 vs 29.79  -
-dqn           1  115000   32.01 vs 30.13   30.10 vs 27.60   32.83 vs 29.79  beats mean
-dqn           2   45000   30.02 vs 30.13   27.52 vs 27.60   29.73 vs 29.79  -
-dqn           3  100000   30.62 vs 30.13   28.00 vs 27.60   30.38 vs 29.79  beats mean
-dqn           4   55000   30.15 vs 30.13   27.62 vs 27.60   29.81 vs 29.79  beats mean
-reinforce     0  100000   32.47 vs 30.13   29.38 vs 27.60   31.94 vs 29.79  beats mean
-reinforce     1   45000   29.94 vs 30.13   27.51 vs 27.60   29.73 vs 29.79  -
-reinforce     2   50000   30.14 vs 30.13   27.61 vs 27.60   29.81 vs 29.79  beats mean
-ppo           0  130000   30.13 vs 30.13   27.60 vs 27.60   29.82 vs 29.79  -
-ppo           1  145000   36.62 vs 30.13   31.95 vs 27.60   35.61 vs 29.79  INTELLIGENT
-ppo           2   50000   30.05 vs 30.13   27.60 vs 27.60   29.86 vs 29.79  -
+algo       seed             train    held-out seeds         recession      paired gap CI  verdict
+dqn           0    34.48 vs 33.50    34.22 vs 34.13    34.53 vs 34.15      [-0.61,+2.27]  beats mean
+dqn           1    33.20 vs 33.50    33.58 vs 34.13    33.78 vs 34.15      [-0.37,-0.23]  -
+dqn           2    33.59 vs 33.50    33.99 vs 34.13    34.39 vs 34.15      [+0.02,+0.18]  INTELLIGENT
+dqn           3    30.78 vs 33.50    32.08 vs 34.13    31.13 vs 34.15      [-4.89,-0.76]  -
+dqn           4    33.49 vs 33.50    34.12 vs 34.13    34.16 vs 34.15      [-0.03,-0.00]  -
+ppo           0    33.50 vs 33.50    34.13 vs 34.13    34.16 vs 34.15      [-0.00,+0.01]  beats mean
+ppo           1    33.40 vs 33.50    34.09 vs 34.13    34.06 vs 34.15      [-0.65,+0.23]  -
+ppo           2    33.42 vs 33.50    33.95 vs 34.13    34.13 vs 34.15      [-0.61,+0.24]  -
+ppo           3    33.44 vs 33.50    34.07 vs 34.13    34.11 vs 34.15      [-0.07,-0.05]  -
+ppo           4    34.30 vs 33.50    34.63 vs 34.13    34.60 vs 34.15      [+0.63,+0.98]  INTELLIGENT
 
-Stable-Baselines3 cross-check (sb3_cross_check/, seed 0, 200k timesteps, no action masking; train condition only):
-  SB3 DQN: mean -4.30 vs best heuristic 30.13, ruin 0.68
-  SB3 PPO: mean 33.20 vs best heuristic 30.13, ruin 0.00
+== dqn pooled over 5 pre-registered seeds
+Pooled protocol — preset=retirement_security runs=5 n_eval=200
+condition          best in bar               gap mean         t95 interval runs > best
+train              always_max_401k              -0.39       [-2.11, +1.33]     2/5
+held_out_seeds     always_max_401k              -0.53       [-1.63, +0.57]     1/5
+held_out_scenario  always_max_401k              -0.55       [-2.30, +1.20]     3/5
+Pooled verdict (train t95 interval above zero): INTELLIGENT=False
+
+== ppo pooled over 5 pre-registered seeds
+Pooled protocol — preset=retirement_security runs=5 n_eval=200
+condition          best in bar               gap mean         t95 interval runs > best
+train              always_max_401k              +0.11       [-0.36, +0.59]     2/5
+held_out_seeds     always_max_401k              +0.05       [-0.28, +0.38]     2/5
+held_out_scenario  always_max_401k              +0.06       [-0.21, +0.34]     2/5
+Pooled verdict (train t95 interval above zero): INTELLIGENT=False

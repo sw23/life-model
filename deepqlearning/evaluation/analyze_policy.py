@@ -39,7 +39,7 @@ import numpy as np
 from deepqlearning.algos import ALGORITHMS
 from deepqlearning.algos.base import Algorithm
 from deepqlearning.envs.financial.actions import ActionType
-from deepqlearning.envs.financial.environment import OBS_VERSION, FinancialLifeEnv
+from deepqlearning.envs.financial.environment import OBS_VERSION, FinancialLifeEnv, FinancialLifeEnvGenerator
 from deepqlearning.training.rollout import rollout
 
 # Coarse action categories for a readable heatmap.
@@ -237,10 +237,13 @@ def main() -> None:
     parser.add_argument("--reward-preset", default="retirement_security")
     parser.add_argument("--out-dir", default=None, help="Output dir (default: next to the checkpoint)")
     parser.add_argument("--episodes", type=int, default=50)
+    parser.add_argument("--scenario", default="basic", help="Household scenario the checkpoint was trained on")
     args = parser.parse_args()
 
-    env_config = {"reward_preset": args.reward_preset}
-    env = FinancialLifeEnv(env_config)
+    # Rebuild the exact env the trainer used (financial:<scenario>: the scenario's point household
+    # plus the named-env settings), not the bare FinancialLifeEnv defaults.
+    env = FinancialLifeEnvGenerator.create_scenario_env(args.scenario, {"reward_preset": args.reward_preset})
+    env_config = dict(env.config)
     algo_config = {"num_envs": 1} if args.algo == "ppo" else {}
     if args.algo == "dqn":
         algo_config["obs_version"] = OBS_VERSION
