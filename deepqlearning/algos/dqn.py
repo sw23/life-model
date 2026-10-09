@@ -30,7 +30,7 @@ from .replay import Experience, NStepAccumulator, PrioritizedReplayBuffer, Repla
 # Identifies the checkpoint format: reward shaping, observation layout, action space, and tensor
 # layout. A checkpoint whose version differs from the code refuses to load rather than silently
 # misaligning its weights against a different observation/action space (see ``load``).
-MODEL_VERSION = 4
+MODEL_VERSION = 5
 
 
 class DQNAgent(Algorithm):
@@ -313,6 +313,7 @@ class DQNAgent(Algorithm):
         """
         filepath = str(filepath)
         checkpoint = {
+            "algo": self.name,
             "model_version": MODEL_VERSION,
             "obs_version": self.obs_version,
             "q_network_state_dict": self.q_network.state_dict(),
@@ -324,6 +325,7 @@ class DQNAgent(Algorithm):
         torch.save(checkpoint, filepath)
 
         history = {
+            "algo": self.name,
             "model_version": MODEL_VERSION,
             "obs_version": self.obs_version,
             "config": self.config,
@@ -360,6 +362,12 @@ class DQNAgent(Algorithm):
             checkpoint = torch.load(filepath, map_location=self.device, weights_only=False)
             legacy_checkpoint = True
 
+        algo = checkpoint.get("algo", self.name)  # DQN checkpoints predating the key are DQN's
+        if algo != self.name:
+            raise ValueError(
+                f"Checkpoint {filepath!r} was written by algorithm {algo!r}, but this is {self.name!r}. "
+                "Checkpoints are not portable across algorithms."
+            )
         version = checkpoint.get("model_version")
         obs_version = checkpoint.get("obs_version")
         if legacy_checkpoint:

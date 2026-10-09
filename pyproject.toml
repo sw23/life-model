@@ -8,12 +8,12 @@ dynamic = ["version"]
 description = "Modeling life events and how they impact finances"
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 authors = [{ name = "Spencer Williams", email = "sw23@users.noreply.github.com" }]
 dependencies = [
     "pandas",
     "matplotlib",
-    "mesa>=3.3",
+    "mesa>=3.5",
     "networkx",
     "pyyaml",
     "pydantic>=2",
@@ -23,7 +23,6 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
@@ -95,7 +94,8 @@ omit = [
 ]
 
 [tool.coverage.report]
-fail_under = 84
+# Ratcheted to lock in current coverage (Plan 13 target was 85).
+fail_under = 88
 exclude_lines = [
     "pragma: no cover",
     "def __repr__",
@@ -109,3 +109,10 @@ exclude_lines = [
     "while 0:",
     "while False:",
 ]
+
+# Per-package coverage floors (combined line + branch percent), checked by
+# scripts/check_coverage_floors.py after the unit tests in tox.
+[tool.life_model.coverage_floors]
+tax = 90
+services = 90
+people = 90

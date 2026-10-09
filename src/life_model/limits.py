@@ -16,6 +16,11 @@ def job_401k_contrib_limit(age: int, config: "FinancialConfig | None" = None) ->
     return _fin(config).get_job_401k_contrib_limit(age)
 
 
+def job_401k_annual_additions_limit(config: "FinancialConfig | None" = None) -> int:
+    """Get the 415(c) overall annual-additions limit (employee + employer, per plan)."""
+    return _fin(config).get_job_401k_annual_additions_limit()
+
+
 def federal_retirement_age(config: "FinancialConfig | None" = None) -> float:
     """Get federal retirement age"""
     return _fin(config).retirement.federal_retirement_age

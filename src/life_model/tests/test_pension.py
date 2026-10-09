@@ -98,6 +98,26 @@ class TestPension(unittest.TestCase):
         # Benefit was level while not in pay; COLA only compounds once benefits have started.
         self.assertAlmostEqual(pension.benefit_amount, 10200, places=2)
 
+    def test_accrual_formula_sets_benefit(self):
+        """years_of_service x multiplier% x final_salary: 30 x 1.5% x $80k = $36k a year."""
+        person = self._person(age=66, retirement_age=65)
+        pension = Pension(
+            person, "MegaCorp", vesting_years=5, years_of_service=30, benefit_multiplier=1.5, final_salary=80000
+        )
+        self.assertAlmostEqual(pension.get_annual_benefit(), 36000, places=6)
+
+    def test_unvested_pension_pays_nothing(self):
+        person = self._person(age=66, retirement_age=65)
+        pension = Pension(person, "MegaCorp", vesting_years=5, benefit_amount=24000, years_of_service=3)
+        self.assertFalse(pension.is_vested)
+        self.assertFalse(pension.is_eligible())
+        self.assertEqual(pension.get_annual_benefit(), 0.0)
+
+    def test_partial_accrual_arguments_rejected(self):
+        person = self._person(age=66, retirement_age=65)
+        with self.assertRaises(ValueError):
+            Pension(person, "MegaCorp", vesting_years=5, benefit_multiplier=1.5)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 from ..model import round_money
 from ..tax.credits import child_tax_credit
+from ..tax.deductions import deductible_charity, senior_deduction, settle_charitable_carryforwards
 from ..tax.federal import FilingStatus, get_federal_standard_deduction
 from ..tax.income import IncomeType
 from ..tax.state import state_income_tax_for_unit
@@ -49,7 +50,8 @@ class TaxUnit:
             raise ValueError("TaxUnit requires at least one member")
         self.members = members
         self.filing_status = members[0].filing_status
-        self.config = members[0].model.config
+        # The year's tax parameters (brackets, deductions, wage base) for this settlement.
+        self.config = members[0].model.year_config
         # A tax unit files in a single state — the head's. No part-year/multi-state.
         self.state = members[0].state
         self._warn_if_mixed_states()
@@ -138,16 +140,17 @@ class TaxUnit:
         return self.federal_deductions_combined(0.0, 0.0)
 
     def _prospective_withdrawal_allocation(self, amount: float) -> dict[int, float]:
-        """Predict how ``withdraw_from_pretax_401ks`` would split ``amount`` across members.
+        """Predict how ``withdraw_from_pretax_accounts`` would split ``amount`` across members.
 
         Mirrors the withdrawal order exactly (members in sequence, each up to their combined
-        pre-tax balance) without moving any money, so income-dependent deductions can be
-        evaluated during sizing against the same per-member incomes settlement will see.
+        pre-tax 401k + Traditional IRA balance) without moving any money, so income-dependent
+        deductions and early-withdrawal penalties can be evaluated during sizing against the same
+        per-member amounts settlement will see.
         """
         allocation: dict[int, float] = {}
         remaining = amount
         for member in self.members:
-            available = sum(acct.pretax_balance for acct in member.all_retirement_accounts)
+            available = member.pretax_account_balance
             take = min(remaining, available)
             allocation[member.unique_id] = take
             remaining -= take
@@ -158,7 +161,7 @@ class TaxUnit:
 
         - The 7.5%-of-income medical floor depends on ordinary income, so a prospective
           401k withdrawal (``additional_income``) changes the deduction. It is allocated across
-          members exactly as ``withdraw_from_pretax_401ks`` will split it, so each member's floor
+          members exactly as ``withdraw_from_pretax_accounts`` will split it, so each member's floor
           matches what settlement will see — otherwise sizing over-estimates the medical deduction
           and the shortfall lands as phantom year-end debt.
         - The unit's state income tax (``state_income_tax_paid``) enters the head's SALT
@@ -166,14 +169,30 @@ class TaxUnit:
 
         With both arguments 0 this is the plain standard-vs-itemized comparison.
         """
+        standard_deduction, itemized = self._deduction_choice(additional_income, state_income_tax_paid)
+        agi = self.agi(additional_income)
+        year = self.members[0].model.year
+        senior = senior_deduction(self.members, self.filing_status, agi, year, self.config)
+        return max(standard_deduction, itemized) + senior
+
+    def _deduction_choice(self, additional_income: float = 0.0, state_income_tax_paid: float = 0.0):
+        """``(standard, itemized)`` for the return; itemized includes charity capped at its AGI limit."""
         standard_deduction = get_federal_standard_deduction(self.filing_status, self.config)
+        if self.filing_status == FilingStatus.MARRIED_FILING_SEPARATELY:
+            standard_deduction = self.members[0].standard_deduction
         allocation = self._prospective_withdrawal_allocation(additional_income) if additional_income > 0 else None
         itemized = 0.0
         for index, member in enumerate(self.members):
             member_income = allocation[member.unique_id] if allocation else 0.0
             member_state_tax = state_income_tax_paid if index == 0 else 0.0
-            itemized += member.itemized_deductions(member_state_tax, member_income)
-        return max(standard_deduction, itemized)
+            itemized += member.itemized_deductions(member_state_tax, member_income, include_charitable=False)
+        itemized += deductible_charity(self.members, self.agi(additional_income), self.config)
+        return standard_deduction, itemized
+
+    def agi(self, additional_income: float = 0.0) -> float:
+        """The return's adjusted gross income: ordinary income (already net of above-the-line
+        deductions) plus preferential income, with an optional prospective ordinary amount."""
+        return max(self.taxable_income + self.preferential_income + additional_income, 0.0)
 
     @property
     def num_qualifying_children(self) -> int:
@@ -279,6 +298,14 @@ class TaxUnit:
             taxes.credits += child_tax_credit(
                 num_children, ordinary_income, taxes.federal, self.filing_status, self.config
             )
+        # Early-withdrawal penalties are additional federal tax (added after the credit so the
+        # nonrefundable CTC cannot offset them): those already on members' ledgers plus the ones a
+        # prospective pre-tax draw of ``additional_income`` would trigger, split across members in
+        # the order the draw will actually happen.
+        taxes.federal += sum(m.income.penalties for m in self.members)
+        if additional_income > 0:
+            allocation = self._prospective_withdrawal_allocation(additional_income)
+            taxes.federal += sum(m.prospective_penalty(allocation.get(m.unique_id, 0.0)) for m in self.members)
         return taxes
 
     def withdraw_from_pretax_401ks(self, amount: float) -> float:
@@ -287,6 +314,18 @@ class TaxUnit:
             if amount <= 0:
                 break
             amount -= member.withdraw_from_pretax_401ks(amount)
+        return amount
+
+    def withdraw_from_pretax_accounts(self, amount: float) -> float:
+        """Withdraw ``amount`` from members' pre-tax 401ks then Traditional IRAs, member by member.
+
+        Returns the amount not withdrawn. This order is what ``_prospective_withdrawal_allocation``
+        predicts during sizing.
+        """
+        for member in self.members:
+            if amount <= 0:
+                break
+            amount -= member.withdraw_from_pretax_accounts(amount)
         return amount
 
     def pay_bills(self, amount: float) -> float:
@@ -326,6 +365,19 @@ class TaxUnit:
             short_term += member_short
             remaining -= take
         return long_term, short_term
+
+    def _draw_hsa_for_medical(self, bills: float) -> None:
+        """When bills exceed the bank, first reimburse this year's medical costs from HSAs.
+
+        A qualified medical distribution is entirely tax-free, so it is the cheapest money to spend:
+        it comes before brokerage sales and pre-tax withdrawals. Bounded by the shortfall, each
+        member's medical costs, and their HSA balances. (With enough cash the HSA is left to grow.)
+        """
+        shortfall = bills - self.bank_account_balance
+        for member in self.members:
+            if shortfall <= 0:
+                break
+            shortfall -= member.reimburse_medical_from_hsas(shortfall)
 
     def _draw_from_brokerage(self, bills: float) -> None:
         """Sell taxable brokerage to cover ``bills`` + the tax the sale triggers, before any
@@ -467,7 +519,12 @@ class TaxUnit:
 
         # Personal debt carried by members is settled exactly once (fixes double-pay / phantom
         # debt): zero it here and fold it into this year's bills.
+        # The carried balance accrues a year of interest (credit-card-like by default) before it
+        # is repaid: unpaid bills are a real liability, not a free loan.
+        debt_rate = self.config.debt.effective_unpaid_balance_interest_rate / 100
         existing_debt = sum(m.debt for m in self.members)
+        carried_interest_by_member = {m.unique_id: m.debt * debt_rate for m in self.members}
+        existing_debt += sum(carried_interest_by_member.values())
         for member in self.members:
             member.debt = 0
 
@@ -496,11 +553,13 @@ class TaxUnit:
             student_loan_interest = sum(sl.interest_paid_this_year for sl in member.student_loans)
             deduction_limit = self.config.debt.student_loan.interest_deduction_limit
             student_loan_deduction = min(student_loan_interest, deduction_limit)
+            if self.filing_status == FilingStatus.MARRIED_FILING_SEPARATELY:
+                student_loan_deduction = 0.0  # not allowed on a separate return (IRC §221(e)(2))
             if student_loan_deduction > 0:
                 member.income.add(IncomeType.ORDINARY, -student_loan_deduction)
 
             housing_by_member[member.unique_id] = member_housing
-            interest_by_member[member.unique_id] = member_interest
+            interest_by_member[member.unique_id] = member_interest + carried_interest_by_member[member.unique_id]
             debt_payment_by_member[member.unique_id] = member_debt_paid
 
         total_spending = sum(spending_by_member.values())
@@ -512,6 +571,7 @@ class TaxUnit:
         # any brokerage needed to cover bills + the capital-gains tax the sale triggers before the
         # pre-tax 401k is considered. Proceeds land in the bank, so the 401k solve below naturally
         # sizes against the topped-up balance (and does nothing when brokerage already covered it).
+        self._draw_hsa_for_medical(bills)
         self._draw_from_brokerage(bills)
 
         # Net capital gains and losses once — after the brokerage sale — so brokerage gains net
@@ -525,14 +585,18 @@ class TaxUnit:
         # Record this year's AGI on every member. Each member records the AGI of the
         # return they filed — the unit's full AGI, not a per-member split — because Medicare/IRMAA
         # later compares the return's MAGI against filing-status thresholds with a two-year
-        # lookback. Recorded after withdrawal solving so 401k distributions are included.
-        # Preferential income is excluded from ``taxable_income`` (it has its own rate schedule) but
-        # is fully part of AGI — leaving it out here would understate MAGI and silently under-charge
-        # the IRMAA surcharges Medicare reads off this history.
-        agi = max(self.taxable_income + self.preferential_income - self.federal_deductions, 0.0)
+        # lookback. Recorded after withdrawal solving so 401k distributions are included. AGI is
+        # gross income less above-the-line adjustments only: the standard/itemized deductions come
+        # after AGI, so subtracting them (as this once did) understated MAGI and the surcharges.
+        agi = self.agi()
         year = self.members[0].model.year
         for member in self.members:
             member.agi_history[year] = agi
+
+        # Charity above the AGI limit carries forward; consume/record carryforwards exactly once.
+        standard_deduction, itemized = self._deduction_choice(0.0, taxes.state)
+        settle_charitable_carryforwards(self.members, agi, year, self.config)
+        itemized_claimed = itemized if itemized > standard_deduction else 0.0
 
         # Pay everything from the combined accounts exactly once; a shortfall becomes new debt.
         # Refundable credits can make the net due negative (a refund): deposit it instead of
@@ -546,10 +610,13 @@ class TaxUnit:
         self.members[0].debt += shortfall
 
         self._record_stats(taxes, spending_by_member, housing_by_member, interest_by_member)
+        # Which deduction the return took: the itemized amount, or 0 when it took the standard one.
+        self.members[0].stat_itemized_deductions = itemized_claimed
 
     def _solve_withdrawals_and_taxes(self, bills: float) -> TaxesDue:
-        """Withdraw enough pre-tax 401k to cover bills + the taxes the withdrawal itself triggers
-        when the bank can't, then return the final taxes due.
+        """Withdraw enough pre-tax money (401k, then Traditional IRA) to cover bills + the taxes
+        and penalties the withdrawal itself triggers when the bank can't, then return the final
+        taxes due.
 
         The gross withdrawal is sized by a fixed-point iteration rather than a max-marginal-rate
         buffer: ``gross = bills + taxes(gross) - bank_balance``. Because the marginal tax rate is
@@ -558,11 +625,14 @@ class TaxUnit:
         """
         gross = self._size_gross_withdrawal(bills)
         if gross > 0:
-            self.withdraw_from_pretax_401ks(gross)
+            self.withdraw_from_pretax_accounts(gross)
         return self.get_income_taxes_due()
 
     def _size_gross_withdrawal(self, bills: float) -> float:
-        """Pure fixed-point solve for the pre-tax 401k withdrawal needed to cover bills + taxes.
+        """Pure fixed-point solve for the pre-tax withdrawal needed to cover bills + taxes.
+
+        Penalties scale linearly with the draw (10% below 59.5), so the map stays a contraction as
+        long as marginal tax plus penalty stays below 100%.
 
         Side-effect-free: computes the gross amount without moving any money.
         """
@@ -598,6 +668,7 @@ class TaxUnit:
             member.stat_taxes_paid_medicare = 0.0
             member.stat_taxes_paid_niit = 0.0
             member.stat_capital_gains = 0.0
+            member.stat_itemized_deductions = 0.0
 
         for member in self.members:
             totals = member.income.totals_by_type()

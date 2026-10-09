@@ -67,8 +67,10 @@ class TestJobContributionRouting(unittest.TestCase):
         job = Job(person, "Co", "Dev", Salary(model=person.model, base=1_000_000))
         account = Job401kAccount(job=job, pretax_contrib_percent=50, average_growth=0)
         job.pre_step()
-        # A 50% deferral on a $1M salary is far above any annual 401k limit, so it is capped.
-        limit = job_401k_contrib_limit(person.age)
+        # A 50% deferral on a $1M salary is far above any annual 401k limit, so it is capped at the
+        # model's own (fixture) limit, not the packaged default.
+        limit = job_401k_contrib_limit(person.age, person.model.config)
+        self.assertEqual(limit, 20000)
         self.assertEqual(account.pretax_balance, limit)
         self.assertEqual(job.stat_retirement_contrib, limit)
         self.assertLess(account.pretax_balance, 500000)

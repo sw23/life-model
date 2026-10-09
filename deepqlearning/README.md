@@ -43,7 +43,7 @@ entry point arrange that themselves.
 
 | Name | Domain | Observation | Actions | Notes |
 |------|--------|-------------|---------|-------|
-| `financial` (= `financial:basic`) | financial | `Box(34,)` | `Discrete(52)` | one simulated year per step |
+| `financial` (= `financial:basic`) | financial | `Box(38,)` | `Discrete(52)` | one simulated year per step |
 | `financial:high_earner`, `financial:low_earner`, `financial:mid_career` | financial | " | " | different point households |
 
 ```python
@@ -84,8 +84,8 @@ environment it is training on.
 
 **Learning quality is open work.** The tests check that every algorithm trains end to end
 without diverging; none asserts that an algorithm learns a good policy, since the financial
-environment has no known optimal policy. Observed learning on it is weak so far, and more
-exploration is the expected next step.
+environment has no known optimal policy. Pooled over five pre-registered seeds, neither DQN nor
+PPO beats always maxing the pre-tax 401k (see the algorithm sweep below).
 
 ## 🎯 The financial objective — what "good" means
 
@@ -114,7 +114,9 @@ Select a preset with `--reward-preset` (CLI) or `reward_preset` in the env confi
 ### Domain randomization
 
 `env.reset(seed=..., options={"randomize": True, "scenario": "basic"})` draws the episode's
-household — start age, retirement age, salary, spending, bank balance, gender — from seeded
+household — start age, retirement age, salary, spending, bank balance, gender, an employer match offer,
+age-calibrated starting 401k/brokerage balances (a fraction of the "1x salary by 30 ... 8x by 60"
+planner benchmark), and the retirement spending ratio — from seeded
 distributions around the scenario's point values (`EpisodeSampler` in
 `envs/financial/scenarios.py`). The same seed always reproduces the same household and trajectory;
 without options the fixed point household is reproduced exactly. A scenario can also carry named
@@ -135,8 +137,28 @@ Each step is one simulated year: the agent picks one flat discrete action, then 
   seeded via the model RNG); dying runs the model's full death machinery (life insurance,
   estate settlement) inside the reward-visible world.
 - **The economy is stochastic by default.** Correlated equity/bond/inflation draws each year
-  (seeded, reproducible); `{"economy_mode": "fixed"}` restores constant rates for unit tests,
-  and `economy_scenario` applies a named scenario (e.g. `recession`).
+  (seeded, reproducible); `{"economy_mode": "fixed"}` restores constant rates for unit tests.
+  The 401k grows with the economy's equity return like every other account (it was pinned at a
+  fixed 6%), spending grows with inflation, and wages with the economy's wage growth.
+- **Named economy scenarios are overlays.** `economy_scenario` (e.g. `recession`) layers the
+  scenario on the stochastic economy (`envs/financial/economy_overlay.py`): level overrides shift
+  the draws for `scenario_regime_years` (default 10) and path overrides script their listed
+  years, so trials still differ. `{"scenario_overlay": False}` restores the core semantics, where
+  the scenario replaces the economy with a deterministic one.
+- **Retirement income.** The person has Social Security (on by default; claimed at the
+  retirement age clipped to 62-70, or `ss_claim_age`) from an earnings record synthesized back to
+  `career_start_age` at today's salary indexed by the average wage index — a flat real career.
+  Bank-to-401k deferrals earn the household's employer match (`employer_match_rate` per dollar on
+  deferrals up to `employer_match_cap` x pay, deposited pre-tax, 415(c)-capped). Households can
+  start with 401k / brokerage balances, and base spending steps down to
+  `retirement_spending_ratio` of its working level at retirement.
+- **After-tax terminal wealth.** With `bequest_pretax_tax_rate` set (0.22 in every named
+  `financial:*` env; 0.0 in the bare `FinancialLifeEnv()` used by unit tests), the bequest the
+  reward values and the terminal net worth the protocol reports count pre-tax 401k, traditional
+  IRA and HSA balances net of that tax, since heirs pay it. Counting them at face value made
+  deferring tax look like creating wealth. Ruin is still decided on raw net worth.
+- **Savings boost.** `savings_boost_pct` cuts working-years spending by that many points of
+  salary and restores it at retirement (a plan lever the SLM adviser uses).
 - **Early-withdrawal penalties** (10% before age 59.5 on tax-advantaged accounts) are applied
   at the action level, pending the core penalty backlog item.
 
@@ -170,7 +192,7 @@ Legality is decided solely by each action's `can_execute` via `env.get_legal_act
 bucket that maps to $0 is illegal, and a property test enforces that every legal action
 executes successfully.
 
-### Observation space — `Box(34,)` (OBS_VERSION 2)
+### Observation space — `Box(38,)` (OBS_VERSION 4)
 
 Finite, documented bounds; observations are clipped into them. Money features are in **real**
 (inflation-deflated, start-of-episode) dollars normalized by $1M. See `OBS_SPEC` in
@@ -183,8 +205,9 @@ Finite, documented bounds; observations are clipped into them. Money features ar
 | Derived | net worth, savings rate, debt/income, retirement readiness (4% rule), emergency-fund years, income/spending |
 | Tax position | projected taxable income for the upcoming year (wages + RMD), $ headroom to the next federal bracket edge (/$100k), marginal rate |
 | Retirement timing | years to 59.5 (/35), years to RMD start (/50), projected RMD (real $M) |
-| Contribution room | IRA remaining-room fraction, HSA remaining-room fraction |
+| Contribution room | IRA remaining-room fraction (one limit shared by Roth and Traditional), HSA remaining-room fraction; both reset each year |
 | Market (realized, no lookahead) | time progress, last year's inflation, equity return, bond return (each %/100), log cumulative-inflation deflator |
+| Retirement income | Social Security benefit (real $/100k: paid once claiming, else earned so far, in current wage-indexed dollars), years to the claim age (/50), employer match rate and cap |
 
 The tax-position features are *projections* for the upcoming year: the income ledger is settled
 and cleared inside `model.step()`, so intra-year "income so far" is never observable at the
@@ -222,6 +245,8 @@ python -m deepqlearning.train --env financial:basic --algo dqn --eval-only \
 | `--tensorboard <dir>`, `--plot-results`, `--save-plots` | Optional logging and figures |
 | `--set SECTION.KEY=VALUE` | Repeatable config override; `SECTION` is `algo` (default), `env`, or `train` |
 | `--reward-preset`, `--protocol-eval`, `--protocol-n-eval`, `--compare-baselines` | **Financial only** — rejected on other environments |
+| `--seed N` | Seed Python, NumPy, PyTorch and the training envs for a reproducible run; outputs get a `_s<N>` suffix |
+| `--warm-start-teacher NAME`, `--warm-start-seeds K` | **Financial, DQN only** — seed the replay buffer with K episodes of a scripted baseline before training (off by default) |
 
 `--set` values are parsed as JSON when possible, so types come through:
 `--set learning_rate=3e-4 --set hidden_sizes='[256,256]' --set use_dueling=false --set env.economy_mode=fixed`.
@@ -229,7 +254,7 @@ python -m deepqlearning.train --env financial:basic --algo dqn --eval-only \
 Outputs are keyed `{env}_{algo}` under `models/`, `results/`, and `plots/`, so runs of different
 pairings never overwrite each other.
 
-> **Checkpoint compatibility:** DQN checkpoints carry `MODEL_VERSION` (currently **4**) and the
+> **Checkpoint compatibility:** DQN checkpoints carry `MODEL_VERSION` (currently **5**) and the
 > environment's `obs_version`, saved as tensor-only `.pt` files plus a `.history.json` sidecar so
 > they load under modern PyTorch defaults (`torch.load(..., weights_only=True)`). Loading a
 > checkpoint from a different version **fails with a clear error** — a checkpoint's weights are tied
@@ -256,8 +281,9 @@ the bar the agent must beat, not "do nothing":
 - `emergency_fund_first` — fill a 6-month cash buffer before investing.
 
 Each is a deterministic function of the seeded state that emits only legal actions (tested on 50
-random seeds). The simple `do_nothing` / `always_max_401k` / `save_25_percent` policies remain as
-regression detectors.
+random seeds). `always_max_401k` is part of the bar too (`PLANNER_BASELINES`): it scored at least
+as well as every planner heuristic, and a bar that leaves out the strongest scripted policy
+certifies nothing. `do_nothing` / `save_25_percent` remain as regression detectors.
 
 ## 🔬 Evaluation protocol & reading the report
 
@@ -271,24 +297,61 @@ table (`--protocol-eval`):
   `recession`) — the out-of-distribution test.
 
 Per policy it reports **mean return ± bootstrap 95% CI, ruin rate, success rate** (stayed solvent
-to the end of life), and **terminal real net-worth percentiles**. "Intelligent" is defined
-operationally on the `train` condition for the default preset: the agent's mean return exceeds
-every planner heuristic's **and** its CI does not overlap the best heuristic's. The held-out gap is
-reported, not gated.
+to the end of life), **terminal real net-worth percentiles**, and the per-episode returns.
+"Intelligent" is defined operationally on the `train` condition for the default preset: the agent's
+mean return exceeds every policy in the bar **and** the paired per-episode gap to the best of them
+has a bootstrap 95% CI above zero (every policy runs on the same seeds, so the paired test is the
+right one; whether the two unpaired CIs overlap is still reported). The held-out gap is reported,
+not gated.
 
-### Committed report (default preset)
+**Pooling pre-registered seeds.** One training seed cannot settle whether an algorithm works:
+results vary more across training seeds than across evaluation episodes. Train with `--seed 0` ...
+`--seed 4` (fixed in advance) and pool the protocol reports:
 
-`reports/retirement_security/` holds a full committed run (see `protocol_table.txt` /
-`protocol_report.json`) from a **moderate** vectorized run — 40k env steps / 872 episodes / seed 0
-/ ~43 s (labeled in the report's `run_metadata`). In that run the agent's **mean return beats every
-planner heuristic on all three conditions** (train 31.5 vs 30.1 best heuristic; held-out seeds
-+1.0; recession 30.1 vs 29.7), at 0% ruin and 100% success — **but the 95% CIs overlap at n=50, so
-the strict statistical-separation verdict is `False`.** Tellingly, the agent reaches higher utility
-with *lower* median net worth (~$335k vs ~$900k for the hoarding heuristics): under
-`retirement_security` it consumes rather than hoards, which is exactly the behavior the utility
-reward is meant to produce. This is an honest snapshot — a full-scale run (below) is expected to
-widen the gap; the "beats every heuristic with separated CIs" claim will only be made here once a
-committed report shows it.
+```bash
+python -m deepqlearning.evaluation.pool_seeds results/protocol_report_financial_basic_ppo_s*_retirement_security.json \
+    --out reports/retirement_security_ppo/pooled_report.json
+```
+
+The pooled verdict is a Student-t 95% interval over the per-seed paired gaps to the best policy in
+the bar, so it carries training-seed variance.
+
+### Committed reports and the algorithm sweep (default preset)
+
+Every committed report was regenerated on the retirement-income world (Social Security, employer
+match, starting balances, economy-linked 401k growth, scenario overlays, after-tax bequest; see the
+fidelity notes above) with `--protocol-n-eval 200`. Seeds 0-4 were fixed before the sweep ran;
+`reports/algorithm_sweep.txt` lists every run and the pooled verdicts, and
+`reports/retirement_security/` (DQN) and `reports/retirement_security_ppo/` (PPO) hold the seed-0
+protocol report, the pooled report, and the policy-analysis artifacts. Reproduce one run with
+
+```bash
+python -m deepqlearning.train --env financial:basic --algo dqn --total-env-steps 200000 \
+    --num-envs 8 --reward-preset retirement_security --protocol-eval --protocol-n-eval 200 --seed 0
+```
+
+Train condition, mean return of the agent vs `always_max_401k` (33.50, the best policy in the bar),
+with the paired-gap 95% CI:
+
+| Seed | DQN | PPO |
+|---|---|---|
+| 0 | 34.48, gap [-0.61, +2.27] | 33.50, gap [-0.00, +0.01] |
+| 1 | 33.20, gap [-0.37, -0.23] | 33.40, gap [-0.65, +0.23] |
+| 2 | 33.59, gap [+0.02, +0.18] — passes | 33.42, gap [-0.61, +0.24] |
+| 3 | 30.78, gap [-4.89, -0.76] | 33.44, gap [-0.07, -0.05] |
+| 4 | 33.49, gap [-0.03, -0.00] | 34.30, gap [+0.63, +0.98] — passes |
+| **Pooled (t95 over seeds)** | **-0.39 [-2.11, +1.33]: not intelligent** | **+0.11 [-0.36, +0.59]: not intelligent** |
+
+One run per algorithm clears the paired per-run bar, and pooling over the pre-registered seeds says
+neither algorithm reliably beats always maxing the 401k. Most runs converge to, or near, that
+policy. Two runs that beat it on mean return did so partly by **spending more**: DQN seed 0 has the
+highest mean return but a 4% ruin rate and a median estate of $564k against always-max's $966k
+(`protocol_table.txt`). The objective rewards consumption, so that trade can be rational under it,
+but it is not the "save smarter" behavior the planner bar is about.
+
+An independent Stable-Baselines3 cross-check (`reports/sb3_cross_check/`, seed 0, 200k timesteps,
+no action masking, n=50) agrees: SB3 PPO 34.49 and SB3 DQN 34.17, both with no ruin, against
+always-max's 34.66 on the same 50 seeds.
 
 ## 🏋️ Training-stack features
 
@@ -320,6 +383,7 @@ python sb3/cross_check.py --algo dqn --timesteps 200000
 ```bash
 python -m deepqlearning.evaluation.analyze_policy \
     --checkpoint models/financial_basic_dqn.pt --reward-preset retirement_security
+# any algorithm: --algo ppo --checkpoint models/financial_basic_ppo_s0.pt
 ```
 
 It writes a **policy heatmap** (dominant action over an age × wealth-decile grid), a

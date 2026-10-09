@@ -1,0 +1,35 @@
+# DPO pass on top of the Mac SFT adapter: preference pairs from the stored scored alternatives
+# (the label's answer over the worst plan outside the top set). The SFT adapter is merged into the
+# base model first, so the SFT model is the DPO reference policy; the result is a second adapter.
+#
+#   python -m slm.train slm/configs/train_mac_dpo.yaml
+#   # evaluate: hf:mac_dpo=Qwen/Qwen2.5-1.5B-Instruct@slm/checkpoints/mac_lora/best+slm/checkpoints/mac_dpo/best
+model_id: Qwen/Qwen2.5-1.5B-Instruct     # Apache-2.0
+dataset_path: slm/data/dataset.jsonl
+output_dir: slm/checkpoints/mac_dpo
+objective: dpo
+init_adapter: slm/checkpoints/mac_lora/best
+dpo_beta: 0.1
+# Decision-line pairs only, half an epoch: full-answer DPO on MPS reached ~37 GB wired memory and
+# ~70 s/step before it was stopped. Run with PYTORCH_MPS_HIGH_WATERMARK_RATIO set (see slm/README.md)
+# so an over-allocation raises instead of swapping the machine.
+dpo_decision_only: true
+epochs: 0.5
+per_device_batch_size: 1
+grad_accum: 8
+learning_rate: 0.00002
+warmup_ratio: 0.05
+seq_len: 1280
+precision: bf16
+attn_implementation: sdpa
+gradient_checkpointing: true    # activations for the ~830-token prompt otherwise exceed the MPS cap
+lora:
+  rank: 16
+  alpha: 32
+  dropout: 0.05
+  target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+validation_fraction: 0.05
+regret_eval_examples: 40
+regret_eval_steps: 100
+early_stopping_patience: 3
+report_to: none

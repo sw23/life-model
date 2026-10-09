@@ -203,6 +203,32 @@ which keeps accounts pure-appreciation.
 States tax capital gains as ordinary income by default; set `capital_gains_taxable:
 false` on a state pack for the exceptions.
 
+## Retirement and health accounts
+
+Contribution limits are enforced per person per year and reset at year end:
+
+- `retirement.job_401k_contrib_limit` — the 402(g) elective-deferral limit (`base`, plus
+  `catch_up_amount` from `catch_up_age`), shared across all of a person's jobs, and the 415(c)
+  `annual_additions_limit` that caps employee plus employer money per plan.
+- `retirement.ira.contribution_limit` — one limit shared by a person's Roth and Traditional
+  IRAs.
+- `accounts.hsa` — `contribution_limit` (self-only) or `contribution_limit_family`, plus
+  `catch_up_amount` from `catch_up_age`. Employer contributions count against the same limit.
+
+Tax treatment follows the account type. Traditional IRA and personal HSA contributions are
+deductible; pre-tax 401k, Traditional IRA and RMD distributions are ordinary income. Two
+statutory additional taxes are settled as federal tax with the year's return:
+
+- `retirement.early_withdrawal_penalty_rate` (10%) on pre-tax distributions and non-qualified
+  Roth IRA earnings taken before `retirement.federal_retirement_age` (59.5). Exceptions such as
+  age-55 separation and substantially equal payments are not modeled.
+- `accounts.hsa.non_medical_penalty_rate` (20%) on non-medical HSA distributions before
+  `accounts.hsa.non_medical_penalty_age` (65).
+
+When a year's bills exceed the bank balance, settlement sells brokerage holdings first, then
+draws pre-tax 401ks and Traditional IRAs, sizing the draw to cover the tax and penalty it
+triggers.
+
 ## Stock compensation
 
 `equity_comp.default_schedule` names the vesting preset a `StockPlan` uses when it is

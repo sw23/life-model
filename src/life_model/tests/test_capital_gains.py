@@ -347,8 +347,8 @@ class TestAgiIncludesGains(unittest.TestCase):
 
         TaxUnit([person]).settle_year()
 
-        # $150k of total income less the $10k fixture standard deduction.
-        self.assertAlmostEqual(person.agi_history[2020], 140000.0, places=2)
+        # AGI is all $150k: the standard deduction comes after AGI (Form 1040 line 11 vs 12).
+        self.assertAlmostEqual(person.agi_history[2020], 150000.0, places=2)
 
 
 class TestBasisStepUpAtDeath(unittest.TestCase):
@@ -484,3 +484,48 @@ class TestBrokerageFundsSpending(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestRothVersusBrokerageOverThirtyYears(unittest.TestCase):
+    """Plan 22 acceptance: identical saving into a Roth IRA vs a taxable brokerage diverges as the
+    tax code says it should over a 30-year horizon."""
+
+    def _run(self, use_roth: bool):
+        from ..account.roth_IRA import RothIRA
+        from ..work.job import Job, Salary
+
+        model = LifeModel(start_year=2020, end_year=2050, config=_fixture_config())
+        person = Person(Family(model), "Saver", age=35, retirement_age=65, spending=Spending(model, base=60000))
+        BankAccount(person, "Bank", balance=50000, interest_rate=0)
+        Job(person, "Co", "Dev", Salary(model, base=120000, yearly_increase=0, yearly_bonus=0))
+        if use_roth:
+            account = RothIRA(person, growth_rate=7.0)
+        else:
+            account = BrokerageAccount(person, "Broker", growth_rate=7.0, dividend_yield=2.0)
+        for _year in range(30):
+            person.deduct_from_bank_accounts(6000)
+            if use_roth:
+                account.contribute(6000)  # the fixture IRA limit
+            else:
+                account.deposit(6000)
+            model.step()
+        taxes = sum(model.datacollector.get_model_vars_dataframe()["Taxes"])
+        return model, person, account, taxes
+
+    def test_divergence(self):
+        _m, roth_person, roth, roth_taxes = self._run(use_roth=True)
+        _m, brk_person, brokerage, brk_taxes = self._run(use_roth=False)
+
+        # Same total return: dividends are carved out of the return and reinvested.
+        self.assertAlmostEqual(roth.balance, brokerage.balance, delta=1e-6 * roth.balance)
+        # The taxable account paid tax on its dividends along the way.
+        self.assertGreater(brk_taxes, roth_taxes)
+        # At exit (age 65) the Roth comes out tax-free; the brokerage sale realizes the embedded gain.
+        self.assertGreater(roth_person.age, 59.5)
+        roth_person.withdraw_from_roth_iras(roth.balance)
+        self.assertEqual(roth_person.income.ordinary_taxable, 0)
+        self.assertEqual(roth_person.preferential_income, 0)
+        gain = brokerage.unrealized_gain
+        self.assertGreater(gain, 0)
+        brk_person.withdraw_from_brokerage_accounts(brokerage.balance)
+        self.assertAlmostEqual(brk_person.preferential_income, gain, places=2)

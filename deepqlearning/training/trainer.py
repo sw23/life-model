@@ -76,6 +76,8 @@ class Trainer:
         self.episode_rewards: list[float] = []
         self.eval_rewards: list[float] = []
         self.best_eval = -float("inf")
+        # True once training has moved past the last saved best checkpoint.
+        self._best_is_stale = False
         self._collected_steps = 0
 
     def _make_tensorboard_writer(self):
@@ -206,8 +208,10 @@ class Trainer:
                         self.best_eval = eval_reward
                         rounds_without_improve = 0
                         self.algo.save(self.config["model_save_path"])
+                        self._best_is_stale = False
                     else:
                         rounds_without_improve += 1
+                        self._best_is_stale = True
                         if rounds_without_improve >= self.config["early_stop_patience"]:
                             print(f"  early stopping: no eval improvement in {rounds_without_improve} rounds")
                             break
@@ -215,6 +219,12 @@ class Trainer:
             venv.close()
             if self.writer is not None:
                 self.writer.close()
+
+        # Hand back the best policy, not the last one: the final weights can be well past the eval
+        # peak (early stopping fires only after ``early_stop_patience`` non-improving rounds), and
+        # callers evaluate whatever weights the algorithm holds when train() returns.
+        if self.best_eval > -float("inf") and self._best_is_stale:
+            self.algo.load(self.config["model_save_path"])
 
         return {
             "collected_env_steps": self._collected_steps,

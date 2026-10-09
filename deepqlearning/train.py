@@ -188,6 +188,7 @@ def run_protocol_report(agent, env_config, preset, out_path, n_eval, master_seed
     print("\n" + format_comparison_table(report))
     with open(out_path, "w") as f:
         json.dump(report, f, indent=2)
+        f.write("\n")  # end-of-file newline (pre-commit)
     print(f"\nProtocol report saved to {out_path}")
     return report
 
@@ -233,6 +234,23 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--compare-baselines", action="store_true", help="Score the scripted baselines on the eval seeds"
     )
+    parser.add_argument(
+        "--warm-start-teacher",
+        type=str,
+        default=None,
+        help="Seed the DQN replay buffer with this scripted baseline's experience before training "
+        "(financial envs, off-policy algorithms only; off by default)",
+    )
+    parser.add_argument(
+        "--warm-start-seeds", type=int, default=20, help="Teacher episodes to roll for --warm-start-teacher"
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Seed Python, NumPy, PyTorch and the training environments so a run is reproducible; "
+        "output files get a _s<seed> suffix",
+    )
     return parser
 
 
@@ -245,6 +263,8 @@ def _reject_financial_only_flags(args, parser) -> None:
         used.append("--compare-baselines")
     if args.reward_preset != parser.get_default("reward_preset"):
         used.append("--reward-preset")
+    if args.warm_start_teacher:
+        used.append("--warm-start-teacher")
     if used:
         parser.error(f"{', '.join(used)} apply to financial environments only, but --env is {args.env!r}")
 
@@ -267,6 +287,17 @@ def main():
     for directory in ("models", "plots", "results"):
         Path(BASE_PATH, directory).mkdir(exist_ok=True)
     run_key = f"{args.env.replace(':', '_')}_{args.algo}"
+    if args.seed is not None:
+        # Network initialization and exploration draw from these generators; the environments are
+        # seeded through the trainers' base_seed below.
+        import random
+
+        import torch
+
+        random.seed(args.seed)
+        np.random.seed(args.seed)
+        torch.manual_seed(args.seed)
+        run_key += f"_s{args.seed}"
     model_path = str(BASE_PATH / "models" / f"{run_key}.pt")
 
     # Build the environment first: the algorithm is sized from its spaces.
@@ -291,6 +322,14 @@ def main():
     if args.load_model:
         algo.load(args.load_model)
 
+    if args.warm_start_teacher:
+        if args.algo != "dqn":
+            parser.error("--warm-start-teacher needs an off-policy algorithm with a replay buffer (--algo dqn)")
+        from deepqlearning.training.warm_start import warm_start_replay
+
+        stored = warm_start_replay(algo, env, args.warm_start_teacher, args.warm_start_seeds)
+        print(f"Warm-started replay with {stored} transitions from {args.warm_start_teacher!r}")
+
     # The exact config the env was built with, so the vector trainer and the protocol rebuild it
     # faithfully rather than falling back to the registry defaults.
     resolved_env_config = dict(getattr(env, "config", env_config))
@@ -300,6 +339,7 @@ def main():
         print("Starting training...")
         if args.episodes:
             episode_config = {
+                "base_seed": args.seed,
                 "num_episodes": args.episodes,
                 "save_freq": 100,
                 "eval_freq": 50,
@@ -317,9 +357,11 @@ def main():
             results_path = BASE_PATH / "results" / f"training_results_{run_key}.json"
             with open(results_path, "w") as f:
                 json.dump(trainer.get_training_stats(), f, indent=2)
+                f.write("\n")  # end-of-file newline (pre-commit)
             print(f"Training results saved to {results_path}")
         else:
             vector_config = {
+                "base_seed": 0 if args.seed is None else args.seed * 1000,
                 "num_envs": args.num_envs,
                 "backend": args.backend,
                 "total_env_steps": args.total_env_steps,
@@ -347,6 +389,7 @@ def main():
     eval_path = BASE_PATH / "results" / f"evaluation_results_{run_key}.json"
     with open(eval_path, "w") as f:
         json.dump(eval_results, f, indent=2)
+        f.write("\n")  # end-of-file newline (pre-commit)
     print(f"Evaluation results saved to {eval_path}")
 
     # Statistical protocol report: agent vs every baseline on shared seeds.

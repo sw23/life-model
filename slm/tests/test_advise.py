@@ -37,13 +37,17 @@ def test_tool_loop_is_adviser_model():
 
 
 def test_tool_loop_is_deterministic():
-    loop = ToolLoopAdviser(StubAdviserModel(fixed_decision="age_glide"), ToolLoopConfig(n_trials=4, max_iters=1))
+    loop = ToolLoopAdviser(
+        StubAdviserModel(fixed_decision="save5_pretax_claimret_conventional"), ToolLoopConfig(n_trials=4, max_iters=1)
+    )
     messages = build_messages(_household_text())
     assert loop.generate(messages) == loop.generate(messages)
 
 
 def test_tool_loop_output_parses_and_is_faithful():
-    loop = ToolLoopAdviser(StubAdviserModel(fixed_decision="age_glide"), ToolLoopConfig(n_trials=6, max_iters=1))
+    loop = ToolLoopAdviser(
+        StubAdviserModel(fixed_decision="save5_pretax_claimret_conventional"), ToolLoopConfig(n_trials=6, max_iters=1)
+    )
     text = loop.generate(build_messages(_household_text()))
     decision = parse_decision(text)
     assert decision is not None
@@ -58,7 +62,7 @@ def test_trust_simulation_corrects_dominated_pick():
     # A stub that always picks the weak "save_25_percent"-like lever is corrected to
     # the simulator's best when trust_simulation is on.
     loop = ToolLoopAdviser(
-        StubAdviserModel(fixed_decision="max_roth_401k"),
+        StubAdviserModel(fixed_decision="save0_roth_claimret_conventional"),
         ToolLoopConfig(n_trials=8, max_iters=1, trust_simulation=True),
     )
     text = loop.generate(build_messages(_household_text()))
@@ -68,8 +72,10 @@ def test_trust_simulation_corrects_dominated_pick():
     scored = score_household(household, seeds, "retirement_security")
     best = argmax_candidate(scored)
     chosen = next(c for c in scored if c.decision == decision)
-    # The shipped decision is never worse than the simulator's best on success rate.
+    # The shipped decision is never worse than the simulator's best on success rate, and it is
+    # within Monte Carlo noise of the best on the paired-return objective (the top set).
     assert chosen.success_rate >= best.success_rate - 1e-9
+    assert chosen.in_top_set
 
 
 def test_tool_loop_defers_refusal_to_model():

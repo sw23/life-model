@@ -20,7 +20,8 @@ from life_model.account.hsa import HealthSavingsAccount
 from life_model.account.job401k import Job401kAccount
 from life_model.account.roth_IRA import RothIRA
 from life_model.account.traditional_IRA import TraditionalIRA
-from life_model.base_classes import FinancialAccount
+from life_model.base_classes import FinancialAccount, TaxAdvantagedAccount
+from life_model.limits import job_401k_annual_additions_limit
 from life_model.model import LifeModel
 from life_model.people.person import Person
 
@@ -89,16 +90,11 @@ _WITHDRAW_HELPERS = {
     ActionType.WITHDRAW_HSA: Person.withdraw_from_hsas,
 }
 
-# Withdrawals from these account types incur a 10% early-withdrawal penalty before age 59.5.
-_PENALIZED_WITHDRAWALS = frozenset(
-    {
-        ActionType.WITHDRAW_401K_PRETAX,
-        ActionType.WITHDRAW_401K_ROTH,
-        ActionType.WITHDRAW_IRA_TRADITIONAL,
-        ActionType.WITHDRAW_IRA_ROTH,
-        ActionType.WITHDRAW_HSA,
-    }
-)
+# Early-withdrawal penalties for pre-tax 401k, Traditional IRA, Roth IRA earnings and non-medical HSA
+# withdrawals are charged by the core model on the income ledger and settled as federal tax at year
+# end. Roth 401k basis is not tracked in the core, so its penalty stays at the action level: 10% of
+# the whole withdrawal before age 59.5 (a conservative stand-in for the pro-rata earnings rule).
+_PENALIZED_WITHDRAWALS = frozenset({ActionType.WITHDRAW_401K_ROTH})
 
 TRANSFER_ACTIONS = frozenset(_TRANSFER_TARGETS)
 WITHDRAWAL_ACTIONS = frozenset(_WITHDRAW_SOURCES)
@@ -194,13 +190,67 @@ def _first_account(person: Person, account_cls: type[FinancialAccount]) -> Finan
     return accounts[0] if accounts else None
 
 
+_401K_DEFERRALS = frozenset({ActionType.TRANSFER_BANK_TO_401K_PRETAX, ActionType.TRANSFER_BANK_TO_401K_ROTH})
+
+
 def _remaining_contribution_room(account: FinancialAccount) -> float:
     """Remaining annual contribution room for capped accounts (IRA/HSA); ``inf`` if uncapped."""
-    if isinstance(account, (TraditionalIRA, RothIRA)):
-        return max(0.0, account.contribution_limit - account.contributions_this_year)
-    if isinstance(account, HealthSavingsAccount):
-        return max(0.0, account.contribution_limit - account.annual_contributions)
+    if isinstance(account, TaxAdvantagedAccount):
+        return account.remaining_contribution_room()
     return float("inf")
+
+
+@dataclass(frozen=True)
+class EmployerMatch:
+    """An employer 401k match: ``rate`` of each elective deferral dollar, up to ``cap`` x pay a year.
+
+    ``EmployerMatch(0.5, 0.06)`` is "50 cents per dollar on the first 6% of pay" (a 3%-of-pay
+    maximum). The match is deposited pre-tax whether the deferral was pre-tax or Roth (the
+    long-standing plan default), is not income to the employee, and is capped so employee plus
+    employer additions stay within the 415(c) limit.
+    """
+
+    rate: float = 0.0
+    cap: float = 0.0
+
+    @property
+    def active(self) -> bool:
+        return self.rate > 0 and self.cap > 0
+
+    def max_match(self, pay: float) -> float:
+        """The most the employer adds in a year for ``pay`` of compensation."""
+        return self.rate * self.cap * pay if self.active else 0.0
+
+    def match_for(self, person: Person, deferral: float) -> float:
+        """Employer dollars earned by deferring ``deferral`` more this year (call before recording it)."""
+        if not self.active or deferral <= 0:
+            return 0.0
+        pay = _current_pay(person)
+        before = person.elective_deferrals_ytd
+        cap_dollars = self.cap * pay
+        matched_before = self.rate * min(before, cap_dollars)
+        matched_after = self.rate * min(before + deferral, cap_dollars)
+        additions_room = job_401k_annual_additions_limit(person.model.config) - (before + deferral) - matched_before
+        return max(0.0, min(matched_after - matched_before, additions_room))
+
+
+NO_MATCH = EmployerMatch()
+
+
+def _current_pay(person: Person) -> float:
+    """This year's compensation from jobs the person has not retired from."""
+    return sum(job.salary.base + job.salary.bonus for job in person.jobs if not job.retired)
+
+
+def _remaining_401k_deferral_room(person: Person) -> float:
+    """Elective-deferral room left this year: the shared 402(g) limit, capped by pay not yet deferred.
+
+    A bank-to-401k transfer stands in for a payroll deferral, so it obeys the same rules as
+    ``Job.pre_step``: one 402(g) limit across all jobs (payroll deferrals included), and nothing
+    without current compensation (a retiree has none).
+    """
+    pay = _current_pay(person)
+    return max(0.0, min(person.remaining_401k_elective_room(), pay - person.elective_deferrals_ytd))
 
 
 @dataclass
@@ -216,6 +266,8 @@ class ActionResult:
     amount_transferred: float = 0.0
     fees_paid: float = 0.0
     message: str = ""
+    #: Employer 401k match deposited alongside an elective deferral (pre-tax side).
+    employer_match: float = 0.0
 
 
 class FinancialAction(ABC):
@@ -242,6 +294,12 @@ class FinancialAction(ABC):
 class TransferAction(FinancialAction):
     """Move money from the bank account into a retirement/investment account."""
 
+    def __init__(
+        self, action_type: ActionType, person: Person, amount: float | None = None, match: EmployerMatch = NO_MATCH
+    ):
+        super().__init__(action_type, person, amount)
+        self.match = match
+
     def _target(self) -> FinancialAccount | None:
         return _first_account(self.person, _TRANSFER_TARGETS[self.action_type])
 
@@ -250,7 +308,11 @@ class TransferAction(FinancialAction):
         target = self._target()
         if target is None:
             return 0.0
-        return min(self.amount, self.person.bank_account_balance, _remaining_contribution_room(target))
+        if self.action_type in _401K_DEFERRALS:
+            room = _remaining_401k_deferral_room(self.person)
+        else:
+            room = _remaining_contribution_room(target)
+        return min(self.amount, self.person.bank_account_balance, room)
 
     def can_execute(self) -> bool:
         return self._transferable() > 0
@@ -262,15 +324,29 @@ class TransferAction(FinancialAction):
 
         target = self._target()
         self.person.deduct_from_bank_accounts(amount)
+        # Employer match earned by this deferral (computed before the deferral is recorded).
+        employer_match = self.match.match_for(self.person, amount) if self.action_type in _401K_DEFERRALS else 0.0
 
         if self.action_type == ActionType.TRANSFER_BANK_TO_401K_PRETAX:
+            # A pre-tax deferral comes out of this year's taxable wages (like Job.pre_step), so it
+            # is recorded as an above-the-line deduction; without it the money was taxed going in
+            # (as salary) and again coming out (as a distribution).
             target.pretax_balance += amount
+            self.person.income.add_deduction(amount)
+            self.person.record_401k_elective_deferral(amount)
         elif self.action_type == ActionType.TRANSFER_BANK_TO_401K_ROTH:
             target.roth_balance += amount
+            self.person.record_401k_elective_deferral(amount)
+        elif isinstance(target, TaxAdvantagedAccount):
+            # A contribution (counts against the annual limit and carries its tax treatment),
+            # not a plain deposit.
+            target.contribute(amount)
         else:
             target.deposit(amount)
 
-        return ActionResult(success=True, amount_transferred=amount)
+        if employer_match > 0:
+            target.pretax_balance += employer_match
+        return ActionResult(success=True, amount_transferred=amount, employer_match=employer_match)
 
 
 class WithdrawalAction(FinancialAction):
@@ -278,9 +354,9 @@ class WithdrawalAction(FinancialAction):
 
     Execution goes through the person-level helpers (``_WITHDRAW_HELPERS``), so taxable
     withdrawals create income-ledger entries and are taxed at year-end settlement inside
-    ``model.step()`` — not instantly. The early-withdrawal penalty stays at the action level
-    (deducted from the bank after the helper's deposit) until the core penalty backlog item
-    lands.
+    ``model.step()`` — not instantly. Early-withdrawal penalties are likewise recorded by the core
+    model and settled at year end, except for Roth 401k withdrawals (see ``_PENALIZED_WITHDRAWALS``),
+    whose penalty is still deducted from the bank here.
     """
 
     def _available(self) -> float:
@@ -342,11 +418,15 @@ class RetirementAction(FinancialAction):
 
 
 def build_action(
-    action_type: ActionType, person: Person, amount: float | None = None, percentage_change: float = 0.05
+    action_type: ActionType,
+    person: Person,
+    amount: float | None = None,
+    percentage_change: float = 0.05,
+    match: EmployerMatch = NO_MATCH,
 ) -> FinancialAction | None:
     """Construct the :class:`FinancialAction` for ``action_type`` (``None`` for NO_ACTION)."""
     if action_type in TRANSFER_ACTIONS:
-        return TransferAction(action_type, person, amount if amount is not None else 1000.0)
+        return TransferAction(action_type, person, amount if amount is not None else 1000.0, match=match)
     if action_type in WITHDRAWAL_ACTIONS:
         return WithdrawalAction(action_type, person, amount if amount is not None else 1000.0)
     if action_type in SPENDING_ACTIONS:
@@ -359,8 +439,9 @@ def build_action(
 class ActionExecutor:
     """Executes actions and reports whether they are legal."""
 
-    def __init__(self, model: LifeModel):
+    def __init__(self, model: LifeModel, *, employer_match: EmployerMatch = NO_MATCH):
         self.model = model
+        self.employer_match = employer_match
 
     def execute_action(
         self, person: Person, action_type: ActionType, amount: float | None = None, **kwargs
@@ -368,7 +449,9 @@ class ActionExecutor:
         """Execute a financial action."""
         if action_type == ActionType.NO_ACTION:
             return ActionResult(success=True, message="No action taken")
-        action = build_action(action_type, person, amount, kwargs.get("percentage_change", 0.05))
+        action = build_action(
+            action_type, person, amount, kwargs.get("percentage_change", 0.05), match=self.employer_match
+        )
         if action is None:
             return ActionResult(success=False, message=f"Action {action_type} not implemented")
         return action.execute()

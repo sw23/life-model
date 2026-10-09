@@ -11,6 +11,7 @@ from ..model import Event, LifeModel, LifeModelAgent
 from ..services.debt_service import DebtService
 from ..services.payment_service import PaymentService
 from ..services.tax_calculation_service import TaxCalculationService
+from ..tax.deductions import deductible_charity, senior_deduction
 from ..tax.federal import FilingStatus, get_federal_standard_deduction
 from ..tax.income import IncomeLedger, IncomeType
 from ..tax.state import state_income_tax_for_unit
@@ -25,6 +26,25 @@ if TYPE_CHECKING:
 
 
 class Person(LifeModelAgent):
+    STATS_OWNED = frozenset(
+        {
+            "stat_bank_balance",
+            "stat_brokerage_balance",
+            "stat_money_spent",
+            "stat_taxes_paid",
+            "stat_taxes_paid_federal",
+            "stat_taxes_paid_state",
+            "stat_taxes_paid_ss",
+            "stat_taxes_paid_medicare",
+            "stat_taxes_paid_niit",
+            "stat_housing_costs",
+            "stat_interest_paid",
+            "stat_ss_income",
+            "stat_capital_gains",
+            "stat_itemized_deductions",
+        }
+    )
+
     # Age first in pre_step so income/RMD calculations see the current-year age.
     STEP_PRIORITY: ClassVar[dict[str, int]] = {"pre_step": -20}
 
@@ -85,6 +105,10 @@ class Person(LifeModelAgent):
         # Per-year record of this member's share of the tax unit's AGI, stamped during
         # ``TaxUnit.settle_year``. Medicare/IRMAA reads this with a two-year lookback.
         self.agi_history: dict[int, float] = {}
+        # Medical costs reimbursed tax-free from HSAs this year (reset in post_step).
+        self.hsa_medical_reimbursed = 0.0
+        # Charitable gifts above the AGI limit, carried forward as (year given, amount).
+        self.charitable_carryforwards: list[tuple[int, float]] = []
         # Capital losses beyond the year's $3,000 ordinary offset, carried to future years. The
         # income ledger is cleared every post_step and tax units are rebuilt every year, so the
         # person is the only durable home for it.
@@ -96,6 +120,10 @@ class Person(LifeModelAgent):
         # Cash held when the person has no bank account (see receive_cash).
         self.cash = 0.0
         self._warned_no_bank_account = False
+        # Elective 401k deferrals (pre-tax + Roth employee contributions) made this year, aggregated
+        # across all of the person's jobs so two jobs can't each use the full 402(g) limit. Reset in
+        # post_step.
+        self._elective_deferrals_ytd = 0.0
 
         self.stat_money_spent = 0.0
         self.stat_taxes_paid = 0.0
@@ -242,7 +270,21 @@ class Person(LifeModelAgent):
         (their age-capped deductibility is a documented simplification/backlog).
         """
         agents = [*self.medical_costs, *self.medicare, *self.long_term_care]
-        return sum(agent.stat_medical_costs for agent in agents)
+        # Costs reimbursed tax-free from an HSA can't also be deducted (IRC §213 / §223(f)(1)).
+        return max(0.0, sum(agent.stat_medical_costs for agent in agents) - self.hsa_medical_reimbursed)
+
+    def reimburse_medical_from_hsas(self, amount: float) -> float:
+        """Reimburse up to ``amount`` of this year's medical costs tax-free from HSAs into the bank.
+
+        Limited to the year's not-yet-reimbursed medical costs. Returns the amount reimbursed.
+        """
+        amount = min(amount, self.unreimbursed_medical_expenses)
+        if amount <= 0:
+            return 0.0
+        withdrawn = amount - self._withdraw_sequence((hsa.withdraw_medical for hsa in self.hsas), amount)
+        self.hsa_medical_reimbursed += withdrawn
+        self.receive_cash(withdrawn, source="HSA medical reimbursement")
+        return withdrawn
 
     def medical_expense_deduction_with(self, additional_income: float = 0.0) -> float:
         """Itemizable unreimbursed medical: the excess over the AGI floor (IRC §213(a)).
@@ -270,7 +312,9 @@ class Person(LifeModelAgent):
         """Itemizable unreimbursed medical with no prospective income (see the ``_with`` method)."""
         return self.medical_expense_deduction_with(0.0)
 
-    def itemized_deductions(self, state_income_tax_paid: float = 0.0, additional_income: float = 0.0) -> float:
+    def itemized_deductions(
+        self, state_income_tax_paid: float = 0.0, additional_income: float = 0.0, *, include_charitable: bool = True
+    ) -> float:
         """Calculate total itemized deductions.
 
         Includes:
@@ -283,11 +327,16 @@ class Person(LifeModelAgent):
         - Unreimbursed medical expenses above the 7.5%-of-income floor;
           ``additional_income`` (a prospective 401k withdrawal being sized) raises that floor so
           sized taxes equal settled taxes.
+
+        ``include_charitable=False`` leaves charity out so a return can add it back capped at its AGI
+        limit (see :mod:`life_model.tax.deductions`).
         """
-        itemized = self.charitable_deductions
+        itemized = self.charitable_deductions if include_charitable else 0.0
         itemized += self.medical_expense_deduction_with(additional_income)
 
         federal = self.model.config.tax.federal
+        # A separate return gets half of the joint mortgage-debt and SALT limits.
+        limit_share = 0.5 if self.filing_status == FilingStatus.MARRIED_FILING_SEPARATELY else 1.0
         salt_paid = state_income_tax_paid
         for home in self.homes:
             mortgage = getattr(home, "mortgage", None)
@@ -296,14 +345,14 @@ class Person(LifeModelAgent):
                 # the share attributable to the first $750k of acquisition debt.
                 interest = mortgage.interest_paid_this_year
                 acquisition_debt = mortgage.loan_amount
-                debt_limit = federal.mortgage_interest_debt_limit
+                debt_limit = federal.mortgage_interest_debt_limit * limit_share
                 if acquisition_debt > debt_limit:
                     interest *= debt_limit / acquisition_debt
                 itemized += interest
             salt_paid += home.property_tax_for_year
 
         # SALT deduction (property tax + state income tax) is capped.
-        itemized += min(salt_paid, federal.salt_deduction_cap)
+        itemized += min(salt_paid, federal.salt_deduction_cap * limit_share)
 
         return itemized
 
@@ -325,19 +374,74 @@ class Person(LifeModelAgent):
         ``additional_income`` (a prospective 401k withdrawal being sized) raises the medical-expense
         floor so sized taxes equal settled taxes.
         """
-        standard_deduction = get_federal_standard_deduction(self.filing_status, self.model.config)
-        return max(standard_deduction, self.itemized_deductions(state_income_tax_paid, additional_income))
+        agi = self.agi(additional_income)
+        itemized = self.itemized_deductions(state_income_tax_paid, additional_income, include_charitable=False)
+        itemized += deductible_charity([self], agi, self.model.year_config)
+        senior = senior_deduction([self], self.filing_status, agi, self.model.year, self.model.year_config)
+        return max(self.standard_deduction, itemized) + senior
+
+    def agi(self, additional_income: float = 0.0) -> float:
+        """Adjusted gross income on this person's own return (ordinary income is already net of
+        above-the-line deductions), with an optional prospective ordinary amount."""
+        return max(self.taxable_income + self.preferential_income + additional_income, 0.0)
 
     @property
     def federal_deductions(self) -> float:
         """Get federal deductions - use greater of standard or itemized (property-only SALT)"""
-        standard_deduction = get_federal_standard_deduction(self.filing_status, self.model.config)
-        itemized_deductions = self.total_itemized_deductions
-        return max(standard_deduction, itemized_deductions)
+        return self.federal_deductions_with_state_tax(0.0)
+
+    @property
+    def standard_deduction(self) -> float:
+        """This year's standard deduction for the person's filing status.
+
+        Zero for a separate filer whose spouse itemizes: if one spouse itemizes on a separate
+        return, the other must too (IRC §63(c)(6)(A)).
+        """
+        if self.filing_status == FilingStatus.MARRIED_FILING_SEPARATELY and self._spouse_itemizes_separately():
+            return 0.0
+        return get_federal_standard_deduction(self.filing_status, self.model.year_config)
+
+    def _spouse_itemizes_separately(self) -> bool:
+        """Whether this person's living spouse files separately and itemizes (property-only SALT)."""
+        spouse = self.spouse
+        if spouse is None or spouse.is_deceased or spouse.filing_status != FilingStatus.MARRIED_FILING_SEPARATELY:
+            return False
+        own_standard = get_federal_standard_deduction(spouse.filing_status, spouse.model.year_config)
+        return spouse.total_itemized_deductions > own_standard
 
     @property
     def all_retirement_accounts(self) -> list[Job401kAccount]:
-        return [x.retirement_account for x in self.jobs if x.retirement_account is not None]
+        """All 401k accounts owned by this person (registry-backed)."""
+        return self.model.registries.job_401k_accounts.get_items(self)
+
+    @property
+    def all_tax_advantaged_accounts(self) -> list:
+        """All tax-advantaged accounts (HSA, Roth IRA, Traditional IRA) owned by this person."""
+        return [*self.hsas, *self.roth_iras, *self.traditional_iras]
+
+    def remaining_401k_elective_room(self) -> float:
+        """Remaining 402(g) elective-deferral room this year, aggregated across all jobs."""
+        from ..limits import job_401k_contrib_limit
+
+        limit = job_401k_contrib_limit(self.age, self.model.year_config)
+        return max(0.0, limit - self._elective_deferrals_ytd)
+
+    @property
+    def elective_deferrals_ytd(self) -> float:
+        """Elective 401k deferrals recorded so far this year (all jobs, pre-tax + Roth)."""
+        return self._elective_deferrals_ytd
+
+    def record_401k_elective_deferral(self, amount: float) -> None:
+        """Record an elective 401k deferral against this year's aggregated 402(g) room."""
+        self._elective_deferrals_ytd += amount
+
+    @property
+    def ira_contributions_ytd(self) -> float:
+        """Total contributions made to all of this person's IRAs (Roth + Traditional) this year.
+
+        Used to enforce the single IRA contribution limit shared across account types.
+        """
+        return sum(a.contributions_ytd for a in (*self.roth_iras, *self.traditional_iras))
 
     @property
     def is_retired(self) -> bool:
@@ -425,6 +529,25 @@ class Person(LifeModelAgent):
         """
         return self._withdraw_sequence((account.deduct_roth for account in self.all_retirement_accounts), amount)
 
+    def deduct_from_roth_iras(self, amount: float) -> float:
+        """Deducts money from Roth IRAs, taking only what can come out tax-free.
+
+        This runs on the bill-payment path, after the year's taxes are computed, so it must not
+        create taxable income: before 59.5 only contribution basis is drawn; from 59.5 the whole
+        balance is a qualified, tax-free distribution.
+
+        Args:
+            amount (float): Amount to deduct.
+
+        Returns:
+            float: Amount that could not be deducted.
+        """
+        withdrawers = (
+            (lambda remaining, a=account: a.withdraw(min(remaining, a.tax_free_withdrawable())))
+            for account in self.roth_iras
+        )
+        return self._withdraw_sequence(withdrawers, amount)
+
     def withdraw_from_pretax_401ks(self, amount: float) -> float:
         """Withdraws money from pre-tax 401ks into the bank account.
 
@@ -439,8 +562,82 @@ class Person(LifeModelAgent):
         withdrawn = amount - self.deduct_from_pretax_401ks(amount)
         # Pre-tax 401k distributions are ordinary income but are NOT FICA wages.
         self.income.add(IncomeType.PRETAX_DISTRIBUTION, withdrawn)
+        self._charge_early_withdrawal_penalty(withdrawn)
         self.receive_cash(withdrawn)
         return withdrawn
+
+    @property
+    def spendable_resources(self) -> float:
+        """Everything year-end settlement can draw to pay this person's bills: bank, brokerage,
+        pre-tax 401k/IRA/HSA, Roth 401k and Roth IRA balances."""
+        roth_401k = sum(a.roth_balance for a in self.all_retirement_accounts)
+        roth_ira = sum(a.balance for a in self.roth_iras)
+        return self.bank_account_balance + self.brokerage_balance + self.pretax_account_balance + roth_401k + roth_ira
+
+    @property
+    def pretax_account_balance(self) -> float:
+        """Combined balance of the taxable-on-withdrawal sources settlement draws: 401k pre-tax
+        sub-balances, Traditional IRAs, and HSAs (non-medical use)."""
+        return sum(balance for balance, _penalty in self._pretax_sources())
+
+    def _pretax_sources(self) -> list[tuple[float, float]]:
+        """``(balance, penalty_rate)`` for each taxable source, in draw order: pre-tax 401ks, then
+        Traditional IRAs (10% before 59.5), then HSAs as non-medical distributions (20% before 65).
+        Every one is fully taxable as ordinary income."""
+        config = self.model.config
+        retirement_penalty = (
+            config.retirement.early_withdrawal_penalty_rate if self.age < federal_retirement_age(config) else 0.0
+        )
+        hsa_config = config.accounts.hsa
+        hsa_penalty = hsa_config.non_medical_penalty_rate if self.age < hsa_config.non_medical_penalty_age else 0.0
+        return [
+            (sum(a.pretax_balance for a in self.all_retirement_accounts), retirement_penalty),
+            (sum(a.balance for a in self.traditional_iras), retirement_penalty),
+            (sum(a.balance for a in self.hsas), hsa_penalty),
+        ]
+
+    def prospective_penalty(self, amount: float) -> float:
+        """Additional tax a settlement draw of ``amount`` would incur, walking the sources in the
+        order :meth:`withdraw_from_pretax_accounts` drains them (side-effect free)."""
+        penalty = 0.0
+        remaining = amount
+        for balance, rate in self._pretax_sources():
+            if remaining <= 0:
+                break
+            take = min(remaining, balance)
+            penalty += take * rate / 100
+            remaining -= take
+        return penalty
+
+    def withdraw_from_pretax_accounts(self, amount: float) -> float:
+        """Withdraw from pre-tax 401ks, then Traditional IRAs, then HSAs (non-medical), into the bank.
+
+        This is the order the tax unit's settlement solver assumes when it sizes a pre-tax draw.
+
+        Returns:
+            float: Amount actually withdrawn.
+        """
+        withdrawn = self.withdraw_from_pretax_401ks(amount)
+        if amount - withdrawn > 0:
+            withdrawn += self.withdraw_from_traditional_iras(amount - withdrawn)
+        if amount - withdrawn > 0:
+            withdrawn += self.withdraw_from_hsas(amount - withdrawn)
+        return withdrawn
+
+    def early_withdrawal_penalty(self, amount: float) -> float:
+        """Additional tax a pre-tax distribution of ``amount`` would incur at this person's age.
+
+        IRC §72(t): distributions before the federal retirement age (59.5) carry the configured
+        additional tax. Exceptions (age-55 separation, SEPP, disability, ...) are not modeled.
+        """
+        config = self.model.config
+        if amount <= 0 or self.age >= federal_retirement_age(config):
+            return 0.0
+        return amount * config.retirement.early_withdrawal_penalty_rate / 100
+
+    def _charge_early_withdrawal_penalty(self, amount: float) -> None:
+        """Record the early-withdrawal additional tax for a pre-tax distribution on the ledger."""
+        self.income.add_penalty(self.early_withdrawal_penalty(amount))
 
     # ------------------------------------------------------------------
     # Person-level withdrawal helpers.
@@ -450,42 +647,31 @@ class Person(LifeModelAgent):
     # tax unit settles the year inside model.step(). Taxes therefore bite at year-end settlement,
     # not at the moment of withdrawal — that is the simulator's actual semantics.
     #
-    # Early-withdrawal penalties are intentionally NOT applied here; they remain the caller's
-    # concern until the core penalty backlog item lands.
+    # Early-withdrawal penalties are recorded on the ledger as additional federal tax: 10% on
+    # pre-tax 401k/IRA distributions and non-qualified Roth IRA earnings before age 59.5, 20% on
+    # non-medical HSA distributions before 65. Roth 401k withdrawals are not penalized here
+    # because Roth 401k basis is not tracked.
     # ------------------------------------------------------------------
-
-    def _owned_accounts_of_type(self, account_cls) -> list:
-        """This person's accounts of ``account_cls``, discovered by scanning the model's agents
-        (IRA/HSA/brokerage accounts reference ``person`` directly and are not registry-backed)."""
-        return [a for a in self.model.agents if isinstance(a, account_cls) and getattr(a, "person", None) is self]
 
     @property
     def traditional_iras(self):
-        """Get all Traditional IRA accounts for this person."""
-        from ..account.traditional_IRA import TraditionalIRA
-
-        return self._owned_accounts_of_type(TraditionalIRA)
+        """Get all Traditional IRA accounts for this person from the registry."""
+        return self.model.registries.traditional_iras.get_items(self)
 
     @property
     def roth_iras(self):
-        """Get all Roth IRA accounts for this person."""
-        from ..account.roth_IRA import RothIRA
-
-        return self._owned_accounts_of_type(RothIRA)
+        """Get all Roth IRA accounts for this person from the registry."""
+        return self.model.registries.roth_iras.get_items(self)
 
     @property
     def hsas(self):
-        """Get all Health Savings Accounts for this person."""
-        from ..account.hsa import HealthSavingsAccount
-
-        return self._owned_accounts_of_type(HealthSavingsAccount)
+        """Get all Health Savings Accounts for this person from the registry."""
+        return self.model.registries.hsa_accounts.get_items(self)
 
     @property
     def brokerage_accounts(self):
-        """Get all brokerage accounts for this person."""
-        from ..account.brokerage import BrokerageAccount
-
-        return self._owned_accounts_of_type(BrokerageAccount)
+        """Get all brokerage accounts for this person from the registry."""
+        return self.model.registries.brokerage_accounts.get_items(self)
 
     def withdraw_from_roth_401ks(self, amount: float) -> float:
         """Withdraws money from Roth 401ks into the bank account.
@@ -511,11 +697,15 @@ class Person(LifeModelAgent):
         """
         withdrawn = amount - self._withdraw_sequence((acct.withdraw for acct in self.traditional_iras), amount)
         self.income.add(IncomeType.PRETAX_DISTRIBUTION, withdrawn)
+        self._charge_early_withdrawal_penalty(withdrawn)
         self.receive_cash(withdrawn)
         return withdrawn
 
     def withdraw_from_roth_iras(self, amount: float) -> float:
-        """Withdraws money from Roth IRAs into the bank account (tax-free distribution).
+        """Withdraws money from Roth IRAs into the bank account.
+
+        Basis comes out first, tax-free; earnings withdrawn before 59.5 are taxed and penalized by
+        the account itself (see :meth:`RothIRA.withdraw`).
 
         Returns:
             float: Amount actually withdrawn.
@@ -525,15 +715,15 @@ class Person(LifeModelAgent):
         return withdrawn
 
     def withdraw_from_hsas(self, amount: float) -> float:
-        """Withdraws money from HSAs into the bank account.
+        """Withdraws money from HSAs into the bank account as a non-medical distribution.
 
-        Modeled as a qualified-medical (tax-free) distribution; taxing non-medical HSA
-        withdrawals is a documented simplification pending the core penalty backlog item.
+        Cash moved to the bank is not tied to a medical bill (the simulation pays medical costs
+        through spending), so it is ordinary income plus the 20% additional tax before 65.
 
         Returns:
             float: Amount actually withdrawn.
         """
-        withdrawn = amount - self._withdraw_sequence((acct.withdraw for acct in self.hsas), amount)
+        withdrawn = amount - self._withdraw_sequence((acct.withdraw_non_medical for acct in self.hsas), amount)
         self.receive_cash(withdrawn)
         return withdrawn
 
@@ -643,18 +833,24 @@ class Person(LifeModelAgent):
         totals[IncomeType.PRETAX_DISTRIBUTION] = totals.get(IncomeType.PRETAX_DISTRIBUTION, 0.0) + additional_income
         total_income = ordinary_income + self.preferential_income
         legacy_agi = max(total_income - self.federal_deductions_with_state_tax(0.0, additional_income), 0)
-        state_tax = state_income_tax_for_unit(totals, self.filing_status, self.state, legacy_agi, self.model.config)
+        state_tax = state_income_tax_for_unit(
+            totals, self.filing_status, self.state, legacy_agi, self.model.year_config
+        )
         deductions = self.federal_deductions_with_state_tax(state_tax, additional_income)
-        return compute_taxes(
+        taxes = compute_taxes(
             ordinary_income,
             deductions,
             self.filing_status,
             [self.fica_wages],
-            self.model.config,
+            self.model.year_config,
             state_tax=state_tax,
             preferential_income=self.preferential_income,
             net_investment_income=self.income.net_investment_income,
         )
+        # Early-withdrawal penalties are additional federal tax: those already on the ledger plus
+        # the one a prospective pre-tax withdrawal of ``additional_income`` would trigger.
+        taxes.federal += self.income.penalties + self.prospective_penalty(additional_income)
+        return taxes
 
     def get_married(self, spouse: "Person", link_spouse: bool = True):
         """Get married.
@@ -747,8 +943,9 @@ class Person(LifeModelAgent):
                 job.retire()
             self.retirement_triggered = True
 
-        if not self._retirement_age_event_logged and self.age >= int(federal_retirement_age()):
-            self.model.event_log.add(Event(f"{self.name} reached retirement age (age {federal_retirement_age()})"))
+        retirement_age = federal_retirement_age(self.model.config)
+        if not self._retirement_age_event_logged and self.age >= int(retirement_age):
+            self.model.event_log.add(Event(f"{self.name} reached retirement age (age {retirement_age})"))
             self._retirement_age_event_logged = True
 
     def die(self):
@@ -828,16 +1025,9 @@ class Person(LifeModelAgent):
         return None
 
     def _settle_annuities_on_death(self, inheritor: Optional["Person"]):
-        from ..insurance.annuity import AnnuityPayoutType
-
+        """Apply each owned annuity's death terms (see :meth:`Annuity.settle_owner_death`)."""
         for annuity in list(self.model.registries.annuities.get_items(self)):
-            continues = annuity.payout_type == AnnuityPayoutType.JOINT_AND_SURVIVOR or (
-                annuity.payout_type == AnnuityPayoutType.LIFE_WITH_PERIOD_CERTAIN
-                and getattr(annuity, "remaining_period_certain_payments", 0) > 0
-            )
-            if not (continues and inheritor is not None):
-                # Life-only, or no beneficiary to continue payments: the annuity stops.
-                annuity.is_active = False
+            annuity.settle_owner_death(inheritor)
 
     def _charge_end_of_life_costs(self):
         """Charge funeral and final-year medical costs against the estate.
@@ -1160,12 +1350,14 @@ class Person(LifeModelAgent):
         if self in self.family.members:
             self.family.members.remove(self)
         # Zero the deceased's own statistics so the model's per-agent sums exclude them.
-        for stat in (*LifeModel.STATS, *LifeModel.EXTRA_STATS):
-            setattr(self, stat.name, 0)
+        for name in self.STATS_OWNED:
+            setattr(self, name, 0)
         self.remove()
 
     def post_step(self):
         self.income.clear()
+        self.hsa_medical_reimbursed = 0.0
+        self._elective_deferrals_ytd = 0.0
 
 
 class Spending(LifeModelAgent):

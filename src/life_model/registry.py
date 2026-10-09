@@ -4,15 +4,39 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Generic, TypeVar
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    # Registry item types, referenced only as string type arguments in the registry bases below
+    # (ruff does not count those as uses; mypy needs them resolved).
+    from .account.bank import BankAccount  # noqa: F401
+    from .account.brokerage import BrokerageAccount  # noqa: F401
+    from .account.hsa import HealthSavingsAccount  # noqa: F401
+    from .account.job401k import Job401kAccount  # noqa: F401
+    from .account.pension import Pension  # noqa: F401
+    from .account.roth_IRA import RothIRA  # noqa: F401
+    from .account.traditional_IRA import TraditionalIRA  # noqa: F401
+    from .charity.daf import DonorAdvisedFund  # noqa: F401
+    from .charity.donation import Donation  # noqa: F401
+    from .debt.car_loan import CarLoan  # noqa: F401
+    from .debt.credit_card import RevolvingDebt  # noqa: F401
+    from .debt.student_loan import StudentLoan  # noqa: F401
+    from .dependents.child import Child  # noqa: F401
+    from .dependents.plan529 import Plan529  # noqa: F401
+    from .estate.trust import Trust  # noqa: F401
+    from .healthcare.long_term_care import LongTermCare  # noqa: F401
+    from .healthcare.medical_costs import MedicalCosts  # noqa: F401
+    from .healthcare.medicare import Medicare  # noqa: F401
+    from .housing.apartment import Apartment  # noqa: F401
+    from .housing.home import Home, Mortgage  # noqa: F401
+    from .insurance.annuity import Annuity  # noqa: F401
+    from .insurance.general_insurance import Insurance  # noqa: F401
+    from .insurance.life_insurance import LifeInsurance  # noqa: F401
     from .people.person import Person
+    from .work.job import Job  # noqa: F401
 
-T = TypeVar("T")
 
-
-class Registry(ABC, Generic[T]):
+class Registry[T](ABC):
     """Abstract base class for registries that manage relationships between entities"""
 
     def __init__(self):
@@ -58,7 +82,7 @@ class Registry(ABC, Generic[T]):
         return all_items
 
 
-class PersonRegistry(Registry[T]):
+class PersonRegistry[T](Registry[T]):
     """Registry that uses Person's unique_id as the key"""
 
     def _get_key(self, owner: "Person") -> str:
@@ -67,6 +91,26 @@ class PersonRegistry(Registry[T]):
 
 class BankAccountRegistry(PersonRegistry["BankAccount"]):
     """Registry for managing BankAccount relationships"""
+
+
+class BrokerageAccountRegistry(PersonRegistry["BrokerageAccount"]):
+    """Registry for managing BrokerageAccount relationships"""
+
+
+class HSARegistry(PersonRegistry["HealthSavingsAccount"]):
+    """Registry for managing Health Savings Account relationships"""
+
+
+class RothIRARegistry(PersonRegistry["RothIRA"]):
+    """Registry for managing Roth IRA relationships"""
+
+
+class TraditionalIRARegistry(PersonRegistry["TraditionalIRA"]):
+    """Registry for managing Traditional IRA relationships"""
+
+
+class Job401kRegistry(PersonRegistry["Job401kAccount"]):
+    """Registry for managing 401k account relationships"""
 
 
 class JobRegistry(PersonRegistry["Job"]):
@@ -150,6 +194,11 @@ class ModelRegistries:
 
     def __init__(self):
         self.bank_accounts = BankAccountRegistry()
+        self.brokerage_accounts = BrokerageAccountRegistry()
+        self.hsa_accounts = HSARegistry()
+        self.roth_iras = RothIRARegistry()
+        self.traditional_iras = TraditionalIRARegistry()
+        self.job_401k_accounts = Job401kRegistry()
         self.jobs = JobRegistry()
         self.homes = HomeRegistry()
         self.apartments = ApartmentRegistry()
@@ -176,6 +225,11 @@ class ModelRegistries:
     def clear_all(self, owner: "Person") -> None:
         """Clear all registries for a specific owner"""
         self.bank_accounts.clear(owner)
+        self.brokerage_accounts.clear(owner)
+        self.hsa_accounts.clear(owner)
+        self.roth_iras.clear(owner)
+        self.traditional_iras.clear(owner)
+        self.job_401k_accounts.clear(owner)
         self.jobs.clear(owner)
         self.homes.clear(owner)
         self.apartments.clear(owner)
@@ -200,6 +254,11 @@ class ModelRegistries:
         """All registries in the container, for owner-agnostic bulk operations."""
         return [
             self.bank_accounts,
+            self.brokerage_accounts,
+            self.hsa_accounts,
+            self.roth_iras,
+            self.traditional_iras,
+            self.job_401k_accounts,
             self.jobs,
             self.homes,
             self.apartments,

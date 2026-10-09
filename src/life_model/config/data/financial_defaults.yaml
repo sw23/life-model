@@ -72,6 +72,20 @@ tax:
     # vintage: 2026, source: IRC §163(h)(3) (TCJA acquisition-debt limit); §164(b)(6) SALT cap (OBBBA)
     mortgage_interest_debt_limit: 750000
     salt_deduction_cap: 40000
+    # vintage: statutory, source: OBBBA §70103 (IRC §151(d)(5)(C)), tax years 2025-2028
+    senior_deduction:
+      amount: 6000
+      age: 65
+      first_year: 2025
+      last_year: 2028
+      phaseout_rate: 6.0
+      phaseout_start_single: 75000
+      phaseout_start_married_filing_jointly: 150000
+    # vintage: statutory, source: IRC §170(b)(1)(G) (60% cash limit, permanent under OBBBA),
+    # §170(d)(1) five-year carryover
+    charitable:
+      cash_agi_limit_percent: 60.0
+      carryforward_years: 5
     # vintage: 2026, source: IRC §2010 unified credit (post-OBBBA ~$15M); §2001(c) top estate-tax rate 40%
     estate_tax_exemption: 15000000
     estate_tax_rate: 40.0  # percentage
@@ -212,11 +226,16 @@ tax:
 
 retirement:
   federal_retirement_age: 59.5
+  # vintage: statutory (unindexed), source: IRC §72(t) 10% additional tax on early distributions
+  early_withdrawal_penalty_rate: 10.0
   # vintage: 2026, source: IRS Notice 2025-67 (IR-2025-111)
   job_401k_contrib_limit:
     base: 24500
     catch_up_age: 50
     catch_up_amount: 8000
+    # 415(c)(1)(A) overall annual-additions limit (employee + employer contributions per plan).
+    # vintage: 2026, source: IRS Notice 2025-67 (IRB 2025-49), up from $70,000 in 2025
+    annual_additions_limit: 72000
   ira:
     contribution_limit: 7500
     default_growth_rate: 7.0  # percentage
@@ -508,6 +527,13 @@ accounts:
     contribution_limit: 4400  # self-only
     contribution_limit_family: 8750
     default_employer_contribution: 0
+    # vintage: statutory (unindexed), source: IRC §223(b)(3) age-55 catch-up
+    catch_up_age: 55
+    catch_up_amount: 1000
+    # vintage: statutory (unindexed), source: IRC §223(f)(4) 20% additional tax on non-medical
+    # distributions, waived at Medicare age (65)
+    non_medical_penalty_rate: 20.0
+    non_medical_penalty_age: 65
   plan_529:
     annual_contribution_limit: 19000  # per beneficiary (2025/2026 gift tax exclusion)
     lifetime_contribution_limit: 500000  # typical state limit
@@ -525,6 +551,9 @@ insurance:
     cash_value_premium_fraction_first_year: 0.3  # fraction of premium to cash value in year 1
     cash_value_premium_fraction_later: 0.6  # fraction of premium to cash value after year 1
     loan_to_value_ratio: 0.9  # max fraction of available cash value borrowable
+    # Term-life premium multiplier by attained age (interpolated). Modeling assumption shaped like
+    # level-term rate curves; not a published table, so no vintage stamp.
+    term_age_multipliers: {20: 1.0, 25: 1.1, 30: 1.3, 35: 1.6, 40: 2.1, 45: 2.8, 50: 3.8, 55: 5.2, 60: 7.1, 65: 10.0, 70: 15.0, 75: 23.0, 80: 35.0, 85: 55.0}
   annuity:
     default_interest_rate: 3.0  # percentage
     default_payout_start_age: 65
@@ -545,6 +574,21 @@ debt:
   student_loan:
     # vintage: 2025, source: IRC §221 above-the-line interest deduction (MAGI phase-out ignored)
     interest_deduction_limit: 2500  # dollars per year
+    # vintage: 2026, source: One Big Beautiful Bill Act Repayment Assistance Plan; studentaid.gov.
+    # Income-driven plan for federal loans made from July 2026 (opt in per loan).
+    repayment_assistance_plan:
+      income_step: 10000  # 1% of AGI per full $10k step above the first ...
+      rate_step_percent: 1.0
+      max_rate_percent: 10.0  # ... capped at 10% of AGI above $100k
+      minimum_annual: 120.0  # AGI at or below $10k
+      minimum_monthly: 10.0
+      dependent_credit_monthly: 50.0
+      principal_match_monthly: 50.0
+      forgiveness_years: 30
+      forgiveness_taxable: true  # ARPA §9675 exclusion ended with 2025 discharges
+  # Interest on unpaid bills carried into the next year (Person.debt). Modeling assumption, not a
+  # published figure: null charges the credit-card rate above.
+  unpaid_balance_interest_rate: null
 
 housing:
   # PMI charged yearly while loan-to-value exceeds the threshold, then auto-dropped.

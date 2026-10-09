@@ -21,7 +21,8 @@ from slm.evaluate_adviser import AdviserEvaluator, format_report
 from slm.faithfulness import is_faithful
 from slm.generate_data import _sample_households, _trial_seeds
 from slm.rationales import build_rationale, rationale_of
-from slm.scoring import argmax_candidate, score_household
+from slm.scoring import argmax_candidate, decision_basis, label_decision, score_household
+from slm.strategies import NO_LEVER, NO_LEVER_DEFAULT_PLAN
 
 
 @pytest.fixture(scope="module")
@@ -37,7 +38,7 @@ def oracle_report(evaluator):
 
 @pytest.fixture(scope="module")
 def stub_report(evaluator):
-    return evaluator.run(StubAdviserModel(fixed_decision="contribution_waterfall"), include_oracle=False)
+    return evaluator.run(StubAdviserModel(fixed_decision=NO_LEVER_DEFAULT_PLAN), include_oracle=False)
 
 
 def test_oracle_beats_all_heuristics(oracle_report):
@@ -59,7 +60,7 @@ def test_parse_and_refusal_rates(stub_report):
 
 
 def test_report_is_deterministic(evaluator, stub_report):
-    b = evaluator.run(StubAdviserModel(fixed_decision="contribution_waterfall"), include_oracle=False)
+    b = evaluator.run(StubAdviserModel(fixed_decision=NO_LEVER_DEFAULT_PLAN), include_oracle=False)
     a = {k: v for k, v in stub_report.items() if k != "created_utc"}
     b = {k: v for k, v in b.items() if k != "created_utc"}
     assert a == b
@@ -86,3 +87,71 @@ def test_rationale_of_matches_build_rationale():
     scored = score_household(household, seeds, "retirement_security")
     chosen = argmax_candidate(scored).decision
     assert rationale_of(scored) == build_rationale(scored, chosen)
+
+
+def test_no_lever_answer_runs_the_default_plan(evaluator):
+    # An always-abstaining adviser is scored as the default plan, so abstaining cannot game outcomes.
+    abstain = evaluator.run(StubAdviserModel(fixed_decision=NO_LEVER), include_oracle=False)
+    default = evaluator.run(StubAdviserModel(fixed_decision=NO_LEVER_DEFAULT_PLAN), include_oracle=False)
+    a, d = abstain["conditions"]["held_out_seeds"], default["conditions"]["held_out_seeds"]
+    assert a["parse_rate"] == 1.0 and a["abstain_rate"] == 1.0
+    assert a["adviser_mean_success_rate"] == d["adviser_mean_success_rate"]
+    assert a["label_agreement_rate"] == a["label_abstain_rate"]
+
+
+def test_no_lever_rationale_is_faithful():
+    # Find a household with no viable lever and check its rationale passes the numeric gate.
+    for seed in range(40):
+        household = _sample_households(["low_earner"], 1, seed)[0][1]
+        household["initial_spending"] = household["initial_salary"] * 1.2  # spends more than it earns
+        scored = score_household(household, _trial_seeds(seed, 0, 4), "retirement_security")
+        if decision_basis(scored) == "no_viable":
+            assert label_decision(scored) == NO_LEVER
+            rationale = build_rationale(scored, NO_LEVER)
+            assert "no strategy on the menu keeps this household solvent" in rationale
+            assert is_faithful(rationale, scored, NO_LEVER)
+            assert not is_faithful(rationale + " Success is 97%.", scored, NO_LEVER)
+            return
+    pytest.fail("no insolvent household found")
+
+
+def test_strategy_titles_are_not_cited_numbers():
+    # A plan title names the 12% bracket; that 12% is not a claimed success rate.
+    from slm.rationales import cited_percentages
+    from slm.strategies import STRATEGY_BY_NAME
+
+    name = "save0_split_claimret_bracketfill"
+    text = f"{STRATEGY_BY_NAME[name].title} ({name}) is solvent in 50% of trials."
+    assert "12%" in text
+    assert cited_percentages(text) == [50]
+
+
+def test_oracle_has_zero_regret_and_full_top_set_agreement(oracle_report):
+    cond = oracle_report["conditions"]["held_out_seeds"]
+    assert cond["adviser_regret"]["mean_regret"] == pytest.approx(0.0)
+    assert cond["top_set_agreement_rate"] == 1.0
+    for block in cond["constant_policy_regret"].values():
+        assert block["mean_regret"] >= -1e-9
+        assert 0.0 <= block["normalized_regret"] <= 1.0
+    # The oracle is never worse than any constant answer.
+    assert cond["adviser_vs_best_constant"]["mean_regret_advantage"] >= -1e-9
+
+
+def test_constant_adviser_regret_equals_its_policy_row(stub_report):
+    cond = stub_report["conditions"]["held_out_seeds"]
+    row = cond["constant_policy_regret"][NO_LEVER_DEFAULT_PLAN]
+    assert cond["adviser_regret"]["mean_regret"] == pytest.approx(row["mean_regret"])
+    assert "adviser regret" in format_report(stub_report)
+
+
+def test_prepared_pool_matches_sequential_and_is_reused():
+    seq = AdviserEvaluator(scenarios=["basic"], n_per_scenario=2, n_trials=3, master_seed=5, held_out_scenario=None)
+    pooled = AdviserEvaluator(
+        scenarios=["basic"], n_per_scenario=2, n_trials=3, master_seed=5, held_out_scenario=None, workers=2
+    )
+    pooled.prepare()
+    assert len(pooled._cache) == 2
+    stub = StubAdviserModel(fixed_decision="save10_roth_claim70_bracketfill")
+    a = {k: v for k, v in seq.run(stub, include_oracle=False).items() if k != "created_utc"}
+    b = {k: v for k, v in pooled.run(stub, include_oracle=False).items() if k != "created_utc"}
+    assert a == b

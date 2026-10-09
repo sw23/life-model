@@ -36,10 +36,10 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 import matplotlib.pyplot as plt
 import numpy as np
 
+from deepqlearning.algos import ALGORITHMS
 from deepqlearning.algos.base import Algorithm
-from deepqlearning.algos.dqn import DQNAgent
 from deepqlearning.envs.financial.actions import ActionType
-from deepqlearning.envs.financial.environment import OBS_VERSION, FinancialLifeEnv
+from deepqlearning.envs.financial.environment import OBS_VERSION, FinancialLifeEnv, FinancialLifeEnvGenerator
 from deepqlearning.training.rollout import rollout
 
 # Coarse action categories for a readable heatmap.
@@ -187,6 +187,7 @@ def lifetime_trace(
 
     with open(out_json, "w") as f:
         json.dump(rows, f, indent=2)
+        f.write("\n")  # end-of-file newline (pre-commit)
 
     ages = [r["age"] for r in rows]
     nets = [r["net_worth"] for r in rows]
@@ -224,6 +225,7 @@ def analyze(agent: Algorithm, env_config: dict | None, out_dir: str, n_episodes:
     }
     with open(os.path.join(out_dir, "analysis_manifest.json"), "w") as f:
         json.dump(manifest, f, indent=2)
+        f.write("\n")  # end-of-file newline (pre-commit)
     print(f"Policy analysis artifacts written to {out_dir}")
     return manifest
 
@@ -231,14 +233,21 @@ def analyze(agent: Algorithm, env_config: dict | None, out_dir: str, n_episodes:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate policy-analysis artifacts for a checkpoint")
     parser.add_argument("--checkpoint", required=True, help="Path to a trained .pt checkpoint")
+    parser.add_argument("--algo", default="dqn", choices=sorted(ALGORITHMS), help="Algorithm that wrote the checkpoint")
     parser.add_argument("--reward-preset", default="retirement_security")
     parser.add_argument("--out-dir", default=None, help="Output dir (default: next to the checkpoint)")
     parser.add_argument("--episodes", type=int, default=50)
+    parser.add_argument("--scenario", default="basic", help="Household scenario the checkpoint was trained on")
     args = parser.parse_args()
 
-    env_config = {"reward_preset": args.reward_preset}
-    env = FinancialLifeEnv(env_config)
-    agent = DQNAgent(env.observation_space, env.action_space, {"obs_version": OBS_VERSION})
+    # Rebuild the exact env the trainer used (financial:<scenario>: the scenario's point household
+    # plus the named-env settings), not the bare FinancialLifeEnv defaults.
+    env = FinancialLifeEnvGenerator.create_scenario_env(args.scenario, {"reward_preset": args.reward_preset})
+    env_config = dict(env.config)
+    algo_config = {"num_envs": 1} if args.algo == "ppo" else {}
+    if args.algo == "dqn":
+        algo_config["obs_version"] = OBS_VERSION
+    agent = ALGORITHMS[args.algo](env.observation_space, env.action_space, algo_config)
     agent.load(args.checkpoint)
     out_dir = args.out_dir or os.path.join(os.path.dirname(os.path.abspath(args.checkpoint)), "analysis")
     analyze(agent, env_config, out_dir, n_episodes=args.episodes)

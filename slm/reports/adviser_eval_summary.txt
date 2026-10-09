@@ -1,0 +1,24 @@
+[held_out_seeds]
+adviser                                    parse norm.regret          regret [95% CI]   vs best constant top-set  dims consist
+oracle                                      1.00       0.000      0.000 [0.000,0.000]            +2.511*    1.00  0.85    1.00
+stub (save0_roth_claim70_conventional)      1.00       0.351      3.965 [2.468,5.569]            -1.453     0.64  0.50    1.00
+tool_loop (save0_roth_claim70_conventional)  1.00       0.225      1.380 [0.727,2.196]            +1.133*    0.75  0.82    0.86
+tabular (gradient-boosted trees)            1.00       0.142      0.610 [0.325,0.979]            +1.901*    0.78  0.81    1.00
+zero_shot_0.5b                              0.00       0.387      3.674 [2.341,5.067]            -1.163     0.00  0.00    1.00
+zero_shot_1.5b                              0.99       0.524      3.980 [2.709,5.370]            -1.469     0.00  0.06    0.65
+sft_1.5b                                    1.00       0.387      3.674 [2.341,5.067]            -1.163     0.39  0.70    0.38
+sft_dpo_1.5b                                1.00       0.379      3.798 [2.368,5.359]            -1.286     0.60  0.53    0.28
+
+[held_out_scenario]
+adviser                                    parse norm.regret          regret [95% CI]   vs best constant top-set  dims consist
+oracle                                      1.00       0.000      0.000 [0.000,0.000]            +2.100*    1.00  0.86    1.00
+stub (save0_roth_claim70_conventional)      1.00       0.324      3.032 [1.910,4.347]            -0.930     0.67  0.52    1.00
+tool_loop (save0_roth_claim70_conventional)  1.00       0.241      1.735 [1.042,2.586]            +0.366     0.71  0.80    0.78
+tabular (gradient-boosted trees)            1.00       0.138      0.744 [0.387,1.224]            +1.356*    0.85  0.79    1.00
+zero_shot_0.5b                              0.00       0.321      2.752 [1.774,3.829]            -0.652     0.00  0.00    1.00
+zero_shot_1.5b                              1.00       0.383      2.891 [1.948,3.990]            -0.791     0.00  0.00    0.83
+sft_1.5b                                    1.00       0.321      2.752 [1.774,3.829]            -0.652     0.38  0.73    0.36
+sft_dpo_1.5b                                1.00       0.391      3.138 [2.052,4.375]            -1.037     0.61  0.54    0.35
+
+* = regret advantage over the best constant answer has a 95% CI above zero
+refusal rate: oracle=1.00, stub (save0_roth_claim70_conventional)=1.00, tool_loop (save0_roth_claim70_conventional)=1.00, tabular (gradient-boosted trees)=1.00, zero_shot_0.5b=0.00, zero_shot_1.5b=0.12, sft_1.5b=1.00, sft_dpo_1.5b=0.83

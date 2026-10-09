@@ -300,6 +300,58 @@ class TestYearIndexedTax(unittest.TestCase):
         self.assertEqual(projected.standard_deduction.single, 12950)  # earliest (2022)
 
 
+class TestYearConfig(unittest.TestCase):
+    """Simulated years read tax parameters and limits from the year table (Plan 05 D2)."""
+
+    def test_published_year_values_are_in_effect(self):
+        from ..model import LifeModel
+        from ..tax.federal import FilingStatus, get_federal_standard_deduction
+
+        model = LifeModel(start_year=2024, end_year=2025)
+        view = model.config_for_year(2024)
+        self.assertEqual(get_federal_standard_deduction(FilingStatus.SINGLE, view), 14600)
+        self.assertEqual(view.tax.fica.social_security_max_income, 168600)
+        self.assertEqual(view.retirement.job_401k_contrib_limit.base, 23000)
+
+    def test_future_years_are_inflation_indexed_by_default(self):
+        from ..model import LifeModel
+
+        model = LifeModel(start_year=2030, end_year=2031)
+        self.assertGreater(model.config_for_year(2030).tax.federal.standard_deduction.single, 16100)
+
+    def test_frozen_projection_keeps_latest_values(self):
+        from ..model import LifeModel
+
+        config = FinancialConfig()
+        config.apply_scenario("frozen", {"tax_years_projection": "frozen"})
+        model = LifeModel(start_year=2030, end_year=2031, config=config)
+        self.assertEqual(model.config_for_year(2030).tax.federal.standard_deduction.single, 16100)
+
+    def test_scenario_static_override_applies_to_every_year(self):
+        """Regression: high_tax's static brackets must reach simulated years, not just the fallback."""
+        from ..model import LifeModel
+        from ..tax.federal import FilingStatus, get_federal_tax_brackets
+
+        model = LifeModel(start_year=2024, end_year=2025, scenario="high_tax")
+        for year in (2022, 2024, 2026, 2035):
+            first_rate = get_federal_tax_brackets(FilingStatus.SINGLE, model.config_for_year(year))[0][2]
+            self.assertEqual(first_rate, 15, msg=f"year {year}")
+
+    def test_fica_and_aime_share_the_wage_base(self):
+        from ..account.bank import BankAccount
+        from ..insurance.social_security import SocialSecurity
+        from ..model import LifeModel
+        from ..people.family import Family
+        from ..people.person import Person, Spending
+
+        model = LifeModel(start_year=2030, end_year=2031)
+        person = Person(Family(model), "W", 40, 65, Spending(model, 0))
+        BankAccount(person, "Bank", balance=0)
+        ss = SocialSecurity(person=person, withdrawal_start_age=67)
+        ss.add_income_for_year(10_000_000, 2030)
+        self.assertEqual(ss.income_history[-1].amount, model.config_for_year(2030).tax.fica.social_security_max_income)
+
+
 class TestPlan529ConfigFlows(unittest.TestCase):
     """Regression: the accounts.plan_529 block is validated and reaches consumers."""
 

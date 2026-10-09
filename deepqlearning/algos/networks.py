@@ -5,7 +5,7 @@
 
 """Network bodies shared by the algorithms.
 
-The financial environment's observation is a flat ``Box(34,)`` vector, so every network here is
+The financial environment's observation is a flat ``Box(N,)`` vector (``len(OBS_SPEC)`` features), so every network here is
 an MLP. The builders
 size the network from the observation space alone, so an algorithm never has to know which
 environment it is training on.

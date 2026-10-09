@@ -1,0 +1,104 @@
+{
+  "bar": [
+    "always_max_401k",
+    "contribution_waterfall",
+    "age_glide",
+    "four_percent_drawdown",
+    "emergency_fund_first"
+  ],
+  "conditions": {
+    "held_out_scenario": {
+      "best_in_bar": "always_max_401k",
+      "best_in_bar_mean_return": 34.14889419,
+      "gap_mean": -0.549666882000001,
+      "gap_t95_high": 1.197599417337789,
+      "gap_t95_low": -2.296933181337791,
+      "per_run_agent_mean_return": [
+        34.534913235,
+        33.780780959999994,
+        34.390409090000006,
+        31.133745085,
+        34.156288169999996
+      ],
+      "per_run_gap_vs_best": [
+        0.3860190449999976,
+        -0.36811323000000584,
+        0.24151490000000564,
+        -3.015149104999999,
+        0.0073939799999962474
+      ],
+      "runs_beating_best_on_mean": 3,
+      "seed_averaged_agent_gap": -0.5496668819999994,
+      "seed_averaged_agent_gap_ci": [
+        -1.1635973137499993,
+        0.008824883725000204
+      ]
+    },
+    "held_out_seeds": {
+      "best_in_bar": "always_max_401k",
+      "best_in_bar_mean_return": 34.125839475,
+      "gap_mean": -0.5264289120000001,
+      "gap_t95_high": 0.5725745575532581,
+      "gap_t95_low": -1.6254323815532583,
+      "per_run_agent_mean_return": [
+        34.220999145,
+        33.58126516,
+        33.994327524999996,
+        32.07709108,
+        34.123369905
+      ],
+      "per_run_gap_vs_best": [
+        0.09515967000000103,
+        -0.5445743149999984,
+        -0.1315119500000037,
+        -2.048748394999997,
+        -0.0024695700000023635
+      ],
+      "runs_beating_best_on_mean": 1,
+      "seed_averaged_agent_gap": -0.5264289120000001,
+      "seed_averaged_agent_gap_ci": [
+        -1.160028676325,
+        0.05305399585000032
+      ]
+    },
+    "train": {
+      "best_in_bar": "always_max_401k",
+      "best_in_bar_mean_return": 33.497566084999995,
+      "gap_mean": -0.3897377159999976,
+      "gap_t95_high": 1.3320131727455422,
+      "gap_t95_low": -2.1114886047455377,
+      "per_run_agent_mean_return": [
+        34.48062647,
+        33.19926477,
+        33.594458785,
+        30.77944435,
+        33.485347469999994
+      ],
+      "per_run_gap_vs_best": [
+        0.9830603850000017,
+        -0.29830131499999624,
+        0.09689270000000505,
+        -2.718121734999997,
+        -0.012218615000001876
+      ],
+      "runs_beating_best_on_mean": 2,
+      "seed_averaged_agent_gap": -0.38973771600000007,
+      "seed_averaged_agent_gap_ci": [
+        -0.9867329672500003,
+        0.11794501997499951
+      ]
+    }
+  },
+  "master_seed": 12345,
+  "n_eval": 200,
+  "n_runs": 5,
+  "reward_preset": "retirement_security",
+  "runs": [
+    "dqn_s0",
+    "dqn_s1",
+    "dqn_s2",
+    "dqn_s3",
+    "dqn_s4"
+  ],
+  "verdict_intelligent_pooled": false
+}

@@ -11,6 +11,7 @@ import numpy as np
 from gymnasium.utils.env_checker import check_env
 
 from deepqlearning.envs import registry
+from deepqlearning.envs.financial.environment import OBS_SPEC
 from deepqlearning.envs.registry import (
     EnvSpec,
     make_env,
@@ -65,7 +66,7 @@ class TestVectorEnv(unittest.TestCase):
         try:
             self.assertEqual(venv.num_envs, 3)
             obs, _ = venv.reset(seed=[0, 1, 2])
-            self.assertEqual(np.asarray(obs).shape, (3, 34))
+            self.assertEqual(np.asarray(obs).shape, (3, len(OBS_SPEC)))
         finally:
             venv.close()
 

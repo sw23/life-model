@@ -114,3 +114,49 @@ class TestBracketMathProperties(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def _bracket_rows(thresholds: list[int], rates: list[float]) -> list[list[float]]:
+    """``[lower, upper, rate]`` rows in the published convention: lower = previous upper + 1."""
+    rows, lower = [], 0
+    for upper, rate in zip(thresholds, rates, strict=False):
+        rows.append([lower, upper, rate])
+        lower = upper + 1
+    rows.append([lower, float("inf"), rates[-1]])
+    return rows
+
+
+class TestFederalAndStateBracketEnginesAgree(unittest.TestCase):
+    """Plan 17: the federal and state-pack bracket paths must produce the same tax for the same table."""
+
+    @settings(max_examples=150, deadline=None)
+    @given(
+        thresholds=st.lists(st.integers(1_000, 1_000_000), min_size=1, max_size=6, unique=True),
+        rates=st.lists(st.floats(0, 50, allow_nan=False), min_size=7, max_size=7),
+        income=st.floats(0, 3_000_000, allow_nan=False),
+    )
+    def test_same_table_same_tax(self, thresholds, rates, income):
+        from itertools import pairwise
+
+        from hypothesis import assume
+
+        from ..tax.income import IncomeType
+        from ..tax.state import state_income_tax_for_unit
+
+        thresholds = sorted(thresholds)
+        assume(all(b > a + 1 for a, b in pairwise(thresholds)))
+        rows = _bracket_rows(thresholds, rates[: len(thresholds) + 1])
+
+        config = FinancialConfig()
+        config.apply_scenario(
+            "same_table",
+            {
+                "tax": {
+                    "federal": {"tax_brackets": {"single": rows}},
+                    "state": {"packs": {"CA": {"brackets": {"single": rows}, "standard_deduction": {"single": 0}}}},
+                }
+            },
+        )
+        federal = federal_income_tax(income, FilingStatus.SINGLE, config)
+        state = state_income_tax_for_unit({IncomeType.WAGES: income}, FilingStatus.SINGLE, "CA", income, config)
+        self.assertAlmostEqual(federal, state, delta=1e-6 * max(1.0, federal))

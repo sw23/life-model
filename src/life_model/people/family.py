@@ -9,6 +9,8 @@ from .tax_unit import TaxUnit
 
 
 class Family(LifeModelAgent):
+    STATS_OWNED = frozenset({"stat_debt"})
+
     def __init__(self, model: LifeModel, *args):
         """Family
 
@@ -22,7 +24,7 @@ class Family(LifeModelAgent):
     @property
     def federal_deductions(self) -> float:
         """Get federal deductions - use greater of standard or itemized"""
-        standard_deduction = get_federal_standard_deduction(self.filing_status, self.model.config)
+        standard_deduction = get_federal_standard_deduction(self.filing_status, self.model.year_config)
         itemized_deductions = self.total_itemized_deductions
         return max(standard_deduction, itemized_deductions)
 

@@ -68,13 +68,14 @@ class TestLifeInsurance(unittest.TestCase):
             person=self.john, policy_type=LifeInsuranceType.TERM, death_benefit=500000, monthly_premium=50
         )
 
-        initial_balance = self.john.bank_account_balance
+        initial_bills = self.john.spending.get_yearly_spending()
         result = policy.make_premium_payment()
 
         self.assertTrue(result)
         self.assertEqual(policy.total_premiums_paid, 600)
         self.assertEqual(policy.consecutive_missed_payments, 0)
-        self.assertEqual(self.john.bank_account_balance, initial_balance - 600)
+        # The premium is a bill paid at year-end settlement (Plan 15 D3), not an immediate debit.
+        self.assertEqual(self.john.spending.get_yearly_spending(), initial_bills + 600)
 
     def test_premium_payment_insufficient_funds(self):
         """Test premium payment with insufficient funds"""
@@ -86,11 +87,14 @@ class TestLifeInsurance(unittest.TestCase):
             monthly_premium=1000,  # $12000/year - more than bank balance
         )
 
+        initial_balance = self.john.bank_account_balance
         result = policy.make_premium_payment()
 
         self.assertFalse(result)
         self.assertEqual(policy.consecutive_missed_payments, 1)
-        self.assertEqual(self.john.bank_account_balance, 0)  # All money used for partial payment
+        # A missed premium is not partially paid: the insurer doesn't keep money for no coverage.
+        self.assertEqual(self.john.bank_account_balance, initial_balance)
+        self.assertEqual(policy.total_premiums_paid, 0)
 
     def test_policy_lapse_after_missed_payments(self):
         """Test policy lapse after consecutive missed payments"""
@@ -584,3 +588,25 @@ class TestLifeInsuranceLoansAndSurrender(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestLifePremiumBillPath(unittest.TestCase):
+    """Plan 15 D3: life premiums settle through the bill path like every other premium."""
+
+    def test_cash_poor_retiree_funds_premium_from_401k_instead_of_lapsing(self):
+        from ..account.job401k import Job401kAccount
+        from ..work.job import Job, Salary
+
+        model = LifeModel(start_year=2026, end_year=2026)
+        person = Person(Family(model), "R", age=66, retirement_age=60, spending=Spending(model, 0))
+        BankAccount(person, "Bank", balance=0, interest_rate=0)
+        job = Job(person, "Co", "Retired", Salary(model, base=0))
+        k401 = Job401kAccount(job=job, pretax_balance=200000, average_growth=0)
+        policy = LifeInsurance(person, LifeInsuranceType.TERM, 250000, 100, 20, max_missed_payments=1)
+
+        model.step()
+
+        self.assertTrue(policy.is_active)
+        self.assertEqual(policy.consecutive_missed_payments, 0)
+        self.assertLess(k401.pretax_balance, 200000)  # the premium (and its tax) came from the 401k
+        self.assertEqual(person.debt, 0)

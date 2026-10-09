@@ -33,7 +33,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.abspath(os.path.join(_HERE, "..", "..")))
 sys.path.insert(0, os.path.abspath(os.path.join(_HERE, "..", "..", "src")))
 
-from deepqlearning.envs.financial.environment import FinancialLifeEnv
+from deepqlearning.envs.financial.environment import FinancialLifeEnv, FinancialLifeEnvGenerator
 from deepqlearning.envs.financial.rewards import DEFAULT_PRESET
 from deepqlearning.evaluation.protocol import EvalProtocol, run_policy_episode
 
@@ -73,7 +73,8 @@ def main() -> None:
     from stable_baselines3 import DQN, PPO
 
     def make_env():
-        return FinancialLifeEnv({"reward_preset": args.reward_preset})
+        # The same env the in-house trainer uses for financial:basic (point household + named-env settings).
+        return FinancialLifeEnvGenerator.create_scenario_env("basic", {"reward_preset": args.reward_preset})
 
     Algo = DQN if args.algo == "dqn" else PPO
     print(f"Training SB3 {args.algo.upper()} for {args.timesteps} timesteps on preset {args.reward_preset}")
@@ -81,7 +82,9 @@ def main() -> None:
     model.learn(total_timesteps=args.timesteps)
 
     # Score the SB3 agent alongside the baselines with the same protocol.
-    protocol = EvalProtocol(env_config={}, reward_preset=args.reward_preset, n_eval=args.n_eval, master_seed=12345)
+    protocol = EvalProtocol(
+        env_config=dict(make_env().config), reward_preset=args.reward_preset, n_eval=args.n_eval, master_seed=12345
+    )
     env = make_env()
     seeds = protocol._conditions()["train"]["seeds"]
     outcomes = [run_policy_episode(env, sb3_policy(model), s) for s in seeds]
@@ -97,6 +100,7 @@ def main() -> None:
     }
     with open(args.report, "w") as f:
         json.dump(report, f, indent=2)
+        f.write("\n")
     print(f"\nSB3 {args.algo.upper()} mean return (train): {sb3_mean:.2f}")
     print(f"Cross-check report written to {args.report}")
 

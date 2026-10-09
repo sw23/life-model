@@ -322,3 +322,50 @@ class TestSocialSecurityPerModelConfig(unittest.TestCase):
             get_cost_of_living_adj(future), default_financial_config().social_security.long_run_cost_of_living_adj
         )
         self.assertEqual(get_normal_retirement_age(custom), get_normal_retirement_age())
+
+
+class TestSocialSecurityFollowsTheEconomy(unittest.TestCase):
+    """Projections past the published SSA tables use the economy's realized rates (Plan 10 D3)."""
+
+    def setUp(self):
+        config = FinancialConfig()
+        config.apply_scenario("econ", {"economy": {"inflation": 4.0, "wage_growth": 5.0}})
+        self.model = LifeModel(start_year=2027, end_year=2040, config=config)
+        self.ss = self.model.config.social_security
+
+    def test_cola_uses_realized_inflation_then_the_long_run_assumption(self):
+        from ..insurance.social_security import get_cost_of_living_adj
+
+        economy = self.model.economy
+        self.assertEqual(get_cost_of_living_adj(2027, self.model.config, economy=economy), 4.0)
+        # 2030 has not been simulated yet: the configured long-run assumption, no draw ahead.
+        self.assertEqual(
+            get_cost_of_living_adj(2030, self.model.config, economy=economy), self.ss.long_run_cost_of_living_adj
+        )
+        self.assertNotIn(2030, economy._rates_by_year)
+
+    def test_wage_index_uses_realized_wage_growth(self):
+        from ..insurance.social_security import get_avg_wage_index
+
+        last = self.ss.last_avg_wage_index_year
+        base = self.ss.avg_wage_index[last]
+        long_run = 1 + self.ss.last_avg_wage_index_increase / 100
+        # Years between the table and the start year aren't simulated: long-run growth; 2027: 5%.
+        expected = base * long_run ** (2026 - last) * 1.05
+        self.assertAlmostEqual(
+            get_avg_wage_index(2027, self.model.config, economy=self.model.economy), expected, places=4
+        )
+
+    def test_bend_points_scale_with_the_wage_index(self):
+        from ..insurance.social_security import get_avg_wage_index, get_bend_points
+
+        economy = self.model.economy
+        last = self.ss.last_bend_points_year
+        bp0, bp1 = self.ss.bend_points[last]
+        year = last + 3
+        ratio = get_avg_wage_index(year - 2, self.model.config, economy=economy) / get_avg_wage_index(
+            last - 2, self.model.config, economy=economy
+        )
+        projected = get_bend_points(year, self.model.config, economy=economy)
+        self.assertAlmostEqual(projected[0], bp0 * ratio, places=6)
+        self.assertAlmostEqual(projected[1], bp1 * ratio, places=6)

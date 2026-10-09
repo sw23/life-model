@@ -21,6 +21,7 @@ from deepqlearning.evaluation.protocol import (
 _REQUIRED_STAT_KEYS = {
     "n",
     "mean_return",
+    "returns",
     "ci_low",
     "ci_high",
     "ruin_rate",

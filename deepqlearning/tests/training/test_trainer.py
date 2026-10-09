@@ -14,9 +14,11 @@ import torch
 
 from deepqlearning.algos.dqn import DQNAgent
 from deepqlearning.algos.ppo import PPOAgent
-from deepqlearning.envs.financial.environment import FinancialLifeEnv
+from deepqlearning.envs.financial.environment import OBS_SPEC, FinancialLifeEnv
 from deepqlearning.envs.registry import make_vector_env
 from deepqlearning.training.trainer import Trainer
+
+OBS_DIM = len(OBS_SPEC)
 
 # A ten-year horizon, so episodes end (and autoreset) many times within a short run.
 _SHORT_EPISODES = {"person_start_age": 25, "person_max_age": 35}
@@ -58,7 +60,7 @@ class TestTrainerLoop(unittest.TestCase):
         # Exercises the collect -> observe -> update loop and the NEXT_STEP autoreset bookkeeping
         # end to end. Short-horizon episodes make autoresets happen many times in 200 steps.
         torch.manual_seed(0)
-        algo = PPOAgent(34, 52, {"n_steps": 16, "num_envs": 2, "epochs": 2, "minibatches": 2, "verbose": False})
+        algo = PPOAgent(OBS_DIM, 52, {"n_steps": 16, "num_envs": 2, "epochs": 2, "minibatches": 2, "verbose": False})
         trainer = Trainer(
             algo,
             "financial",
@@ -81,7 +83,7 @@ class TestTrainerLoop(unittest.TestCase):
     def test_dqn_runs_over_two_financial_envs(self):
         torch.manual_seed(0)
         algo = DQNAgent(
-            34,
+            OBS_DIM,
             52,
             {
                 "hidden_sizes": [32, 32],
@@ -109,10 +111,55 @@ class TestTrainerLoop(unittest.TestCase):
         self.assertGreater(len(algo.replay_buffer), 0)
 
     def test_unknown_lr_schedule_is_rejected(self):
-        algo = DQNAgent(34, 52, {"verbose": False})
+        algo = DQNAgent(OBS_DIM, 52, {"verbose": False})
         with self.assertRaises(ValueError):
             Trainer(algo, "financial", {}, {"lr_schedule": "exponential"})
 
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestTrainerKeepsBestCheckpoint(unittest.TestCase):
+    def test_best_weights_are_restored_after_training(self):
+        """Eval peaks in the first round then declines: train() must return the peak weights."""
+        torch.manual_seed(0)
+        algo = DQNAgent(
+            OBS_DIM,
+            52,
+            {
+                "hidden_sizes": [32, 32],
+                "min_replay_size": 32,
+                "batch_size": 16,
+                "n_step": 1,
+                "use_prioritized_replay": False,
+                "verbose": False,
+            },
+        )
+        trainer = Trainer(
+            algo,
+            "financial",
+            _SHORT_EPISODES,
+            {
+                "num_envs": 2,
+                "total_env_steps": 400,
+                "eval_freq_steps": 100,
+                "print_freq_steps": 1_000_000,
+                "early_stop_patience": 100,
+                "model_save_path": os.path.join(tempfile.mkdtemp(), "dqn.pt"),
+            },
+        )
+        scores = iter([10.0, 1.0, 1.0, 1.0, 1.0, 1.0])
+        trainer._evaluate = lambda: next(scores)
+        saved = {}
+        original_save = algo.save
+
+        def recording_save(path):
+            saved["weights"] = {k: v.clone() for k, v in algo.q_network.state_dict().items()}
+            original_save(path)
+
+        algo.save = recording_save
+        trainer.train()
+
+        final = algo.q_network.state_dict()
+        self.assertTrue(all(torch.equal(final[k], saved["weights"][k]) for k in final))

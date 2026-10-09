@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 from enum import Enum
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from ..config.financial_config import resolve_financial_config as _fin
 from ..model import Event, LifeModel, LifeModelAgent
@@ -89,6 +89,10 @@ def calculate_annuity_factor(
     period_certain_years: int = 0,
     gender: GenderAtBirth | None = None,
     config: "FinancialConfig | None" = None,
+    *,
+    joint_age: int | None = None,
+    joint_gender: GenderAtBirth | None = None,
+    survivor_percent: float = 100.0,
 ) -> float:
     """Calculate annuity factor using actuarial principles
 
@@ -99,9 +103,14 @@ def calculate_annuity_factor(
         period_certain_years: Years of guaranteed payments for period certain
         gender: Gender for mortality calculations
         config: Per-model config. Defaults to the packaged defaults.
+        joint_age: JOINT_AND_SURVIVOR only: the joint annuitant's age.
+        joint_gender: JOINT_AND_SURVIVOR only: the joint annuitant's gender.
+        survivor_percent: JOINT_AND_SURVIVOR only: share of the payment continued to the joint
+            annuitant after the primary annuitant's death (contingent form).
 
     Returns:
-        Annuity factor (present value of $1 annuity)
+        Annuity factor (present value of $1 annuity). With ``interest_rate=0`` it is the expected
+        number of full monthly payments.
     """
     annuity_config = _fin(config).insurance.annuity
     max_age = annuity_config.max_projection_age
@@ -111,10 +120,10 @@ def calculate_annuity_factor(
     monthly_rate = interest_rate / 100 / 12
     annuity_factor = 0.0
 
-    def _monthly_survival(current_age: float) -> float:
+    def _monthly_survival(current_age: float, who: GenderAtBirth | None = gender) -> float:
         age_int = int(current_age)
-        if gender is not None:
-            annual_mortality = get_chance_of_mortality(age_int, gender)
+        if who is not None:
+            annual_mortality = get_chance_of_mortality(age_int, who)
         else:
             male_rate = get_chance_of_mortality(age_int, GenderAtBirth.MALE)
             female_rate = get_chance_of_mortality(age_int, GenderAtBirth.FEMALE)
@@ -164,6 +173,25 @@ def calculate_annuity_factor(
                 if survival_probability < survival_cutoff:
                     break
 
+    elif payout_type == AnnuityPayoutType.JOINT_AND_SURVIVOR:
+        # Contingent joint-and-survivor: the full payment while the primary annuitant lives, then
+        # ``survivor_percent`` of it while the joint annuitant survives them. With independent
+        # lives, month m is worth p1 + s x (1 - p1) x p2 payments.
+        if joint_age is None:
+            raise ValueError("A joint-and-survivor annuity factor needs the joint annuitant's age")
+        share = survivor_percent / 100
+        p1 = p2 = 1.0
+        months = (max_age - min(age, joint_age)) * 12
+        for month in range(months):
+            age1 = age + month / 12
+            age2 = joint_age + month / 12
+            expected = p1 + share * (1 - p1) * p2
+            annuity_factor += expected * (1 + monthly_rate) ** (-month)
+            p1 = p1 * _monthly_survival(age1) if age1 < max_age else 0.0
+            p2 = p2 * _monthly_survival(age2, joint_gender) if age2 < max_age else 0.0
+            if p1 + share * (1 - p1) * p2 < survival_cutoff:
+                break
+
     else:
         # For other types, use simplified calculation
         life_expectancy = calculate_life_expectancy(age, gender, config)
@@ -190,6 +218,9 @@ class Annuity(LifeModelAgent):
         period_certain_years: int | None = None,
         surrender_charge_years: int | None = None,
         surrender_charge_rate: float | None = None,
+        *,
+        joint_annuitant: Person | None = None,
+        survivor_percent: float = 100.0,
     ):
         """Models an annuity for a person
 
@@ -204,6 +235,10 @@ class Annuity(LifeModelAgent):
             period_certain_years: Years of guaranteed payments for period certain. Configured default if None.
             surrender_charge_years: Years during which surrender charges apply. Configured default if None.
             surrender_charge_rate: Annual surrender charge rate percentage. Configured default if None.
+            joint_annuitant: JOINT_AND_SURVIVOR only: the second life. Defaults to the owner's spouse
+                at annuitization; annuitizing without one raises ``ValueError``.
+            survivor_percent: JOINT_AND_SURVIVOR only: share of the payment continued to the joint
+                annuitant after the owner dies (e.g. 50.0 for joint-and-50%-survivor).
 
         Note:
             Payout taxation uses a simplified exclusion-ratio model (basis / expected total
@@ -238,10 +273,17 @@ class Annuity(LifeModelAgent):
         # Cost basis (after-tax investment in the contract) used for exclusion-ratio taxation.
         self.basis = initial_balance
 
+        self.joint_annuitant = joint_annuitant
+        self.survivor_percent = survivor_percent
+        # Set when the owner dies and payments continue: period-certain payments run out the
+        # guarantee; a joint-and-survivor contract pays the survivor share.
+        self.annuitant_deceased = False
+        self.survivor_phase = False
+
         # State tracking
         self.is_active = True
         self.is_annuitized = False
-        self.annuitization_year = None
+        self.annuitization_year: int | None = None
         self.purchase_year = self.model.year
         self.remaining_period_certain_payments = 0
 
@@ -318,14 +360,14 @@ class Annuity(LifeModelAgent):
             self.stat_surrender_charges_paid += surrender_charge
 
         net_withdrawal = withdrawal_amount - surrender_charge
-        # Reduce cost basis pro-rata so remaining gains stay correctly attributed.
-        if self.balance > 0:
-            self.basis -= self.basis * (withdrawal_amount / self.balance)
+        # Before annuitization gains come out first (IRC §72(e)): the amount received is ordinary
+        # income up to the contract's gain, and only the rest returns basis.
+        taxable = min(net_withdrawal, max(0.0, self.balance - self.basis))
+        self.basis = max(0.0, self.basis - (net_withdrawal - taxable))
         self.balance -= withdrawal_amount
+        self._tax_distribution(taxable)
 
-        # Add to person's bank account
-        if hasattr(self.person, "bank_accounts") and self.person.bank_accounts:
-            self.person.bank_accounts[0].deposit(net_withdrawal)
+        self.person.receive_cash(net_withdrawal, source="annuity withdrawal")
 
         if surrender_charge > 0:
             self.model.event_log.add(
@@ -339,6 +381,24 @@ class Annuity(LifeModelAgent):
 
         return net_withdrawal
 
+    def _tax_distribution(self, taxable: float) -> None:
+        """Record a pre-annuitization distribution's gain: ordinary income, plus the 10% additional
+        tax before the federal retirement age (IRC §72(q), same rate as §72(t))."""
+        if taxable <= 0:
+            return
+        self.person.income.add(IncomeType.ORDINARY, taxable)
+        self.stat_taxable_payouts += taxable
+        self.person.income.add_penalty(self.person.early_withdrawal_penalty(taxable))
+
+    def _joint_life(self) -> Person:
+        """The joint annuitant for a JOINT_AND_SURVIVOR contract (defaults to the living spouse)."""
+        joint = self.joint_annuitant or self.person.spouse
+        if joint is None or joint.is_deceased:
+            raise ValueError(
+                f"{self.person.name}'s joint-and-survivor annuity needs a living joint annuitant (e.g. a spouse)"
+            )
+        return joint
+
     def annuitize(self) -> bool:
         """Convert the annuity to income payments"""
         if self.is_annuitized or not self.is_active or self.balance <= 0:
@@ -351,6 +411,15 @@ class Annuity(LifeModelAgent):
         self.annuitization_year = self.model.year
 
         gender = getattr(self.person, "gender", None)
+        joint_kwargs: dict[str, Any] = {}
+        if self.payout_type == AnnuityPayoutType.JOINT_AND_SURVIVOR:
+            joint = self._joint_life()
+            self.joint_annuitant = joint
+            joint_kwargs = {
+                "joint_age": joint.age,
+                "joint_gender": getattr(joint, "gender", None),
+                "survivor_percent": self.survivor_percent,
+            }
 
         # Calculate monthly payout if not specified
         if self.monthly_payout is None:
@@ -363,6 +432,7 @@ class Annuity(LifeModelAgent):
                 period_certain_years=self.period_certain_years,
                 gender=gender,
                 config=self.model.config,
+                **joint_kwargs,
             )
 
             # Calculate monthly payment: balance divided by annuity factor
@@ -385,7 +455,7 @@ class Annuity(LifeModelAgent):
 
         # Exclusion ratio: the after-tax basis divided by the expected total payout. Each payout's
         # gains portion (1 - exclusion_ratio) is taxable ordinary income (simplified model).
-        expected_months = self._expected_payout_months(gender)
+        expected_months = self._expected_payout_months(gender, **joint_kwargs)
         expected_total_payout = (self.monthly_payout or 0.0) * expected_months
         if expected_total_payout > 0:
             self.exclusion_ratio = min(1.0, self.basis / expected_total_payout)
@@ -397,8 +467,13 @@ class Annuity(LifeModelAgent):
         )
         return True
 
-    def _expected_payout_months(self, gender: GenderAtBirth | None) -> float:
-        """Expected number of monthly payouts, used for the exclusion ratio."""
+    def _expected_payout_months(self, gender: GenderAtBirth | None, **joint_kwargs) -> float:
+        """Expected number of (full) monthly payouts, used for the exclusion ratio."""
+        if self.payout_type == AnnuityPayoutType.JOINT_AND_SURVIVOR:
+            # The undiscounted factor is the expected number of full payments over both lives.
+            return calculate_annuity_factor(
+                self.person.age, 0.0, self.payout_type, gender=gender, config=self.model.config, **joint_kwargs
+            )
         life_months = calculate_life_expectancy(self.person.age, gender, self.model.config) * 12
         if self.payout_type == AnnuityPayoutType.LIFE_WITH_PERIOD_CERTAIN:
             return max(life_months, self.period_certain_years * 12)
@@ -420,7 +495,19 @@ class Annuity(LifeModelAgent):
             self.is_active = False
             return 0.0
 
-        payout = min(self.monthly_payout or 0.0, self.annuitized_reserve)
+        if (
+            self.annuitant_deceased
+            and self.payout_type == AnnuityPayoutType.LIFE_WITH_PERIOD_CERTAIN
+            and self.remaining_period_certain_payments <= 0
+        ):
+            # The annuitant died and the guaranteed period has run out: the contract is complete.
+            self.is_active = False
+            return 0.0
+
+        scheduled = self.monthly_payout or 0.0
+        if self.survivor_phase:
+            scheduled *= self.survivor_percent / 100
+        payout = min(scheduled, self.annuitized_reserve)
         if payout <= 0:
             return 0.0
 
@@ -455,9 +542,10 @@ class Annuity(LifeModelAgent):
 
         self.stat_surrender_charges_paid += surrender_charge
 
-        # Add to person's bank account
-        if self.person.bank_accounts:
-            self.person.bank_accounts[0].deposit(net_value)
+        # The gain over basis is ordinary income (a loss is not deducted).
+        self._tax_distribution(max(0.0, net_value - self.basis))
+        self.basis = 0.0
+        self.person.receive_cash(net_value, source="annuity surrender")
 
         self.model.event_log.add(
             Event(f"{self.person.name} surrendered annuity for ${net_value:,.0f} (${surrender_charge:,.0f} charge)")
@@ -501,6 +589,53 @@ class Annuity(LifeModelAgent):
         if self.is_annuitized and self.is_active:
             for _ in range(12):
                 self.make_payout()
+
+    def settle_owner_death(self, inheritor: Person | None) -> None:
+        """Apply the contract's death terms when its current owner dies.
+
+        - Accumulation phase: the contract value is paid to the inheritor as a death benefit, its
+          gain taxed to them as ordinary income (it would otherwise vanish with the owner).
+        - Life only: payments stop.
+        - Life with period certain: the rest of the guarantee is paid to the inheritor, then stops.
+        - Joint and survivor: the joint annuitant receives ``survivor_percent`` of the payment for
+          life; at the survivor's own death the contract ends.
+        """
+        owner = self.person
+        if not self.is_active:
+            return
+        registry = self.model.registries.annuities
+        if not self.is_annuitized:
+            if inheritor is not None and self.balance > 0:
+                gain = max(0.0, self.balance - self.basis)
+                if gain > 0:
+                    inheritor.income.add(IncomeType.ORDINARY, gain)
+                inheritor.receive_cash(self.balance, source=f"{owner.name}'s annuity death benefit")
+                self.balance = 0.0
+            self.is_active = False
+            registry.unregister(owner, self)
+            return
+        if self.payout_type == AnnuityPayoutType.JOINT_AND_SURVIVOR:
+            joint = self.joint_annuitant
+            if self.survivor_phase or joint is None or joint is owner or joint.is_deceased:
+                self.is_active = False
+                registry.unregister(owner, self)
+                return
+            # Continue to the joint annuitant (not the residual inheritor) at the survivor share.
+            registry.unregister(owner, self)
+            registry.register(joint, self)
+            self.person = joint
+            self.annuitant_deceased = True
+            self.survivor_phase = True
+            return
+        if (
+            self.payout_type == AnnuityPayoutType.LIFE_WITH_PERIOD_CERTAIN
+            and self.remaining_period_certain_payments > 0
+            and inheritor is not None
+        ):
+            self.annuitant_deceased = True  # the estate transfer moves it to the inheritor
+            return
+        self.is_active = False
+        registry.unregister(owner, self)
 
     def _repr_html_(self):
         desc = "<ul>"

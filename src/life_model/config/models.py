@@ -25,6 +25,8 @@ class StandardDeductionConfig(StrictModel):
     # Optional: HEAD_OF_HOUSEHOLD falls back to `single` when absent, so existing scenarios and
     # the frozen test fixture load unchanged.
     head_of_household: int | None = Field(default=None, ge=0)
+    # Optional: MARRIED_FILING_SEPARATELY defaults to half the joint amount (IRC §63(c)(2)).
+    married_filing_separately: int | None = Field(default=None, ge=0)
 
 
 class TaxBracketsConfig(StrictModel):
@@ -32,6 +34,10 @@ class TaxBracketsConfig(StrictModel):
     married_filing_jointly: list[list[int | float]]
     # Optional: HEAD_OF_HOUSEHOLD falls back to `single` when absent.
     head_of_household: list[list[int | float]] | None = None
+    # Optional: MARRIED_FILING_SEPARATELY defaults to the joint brackets with every threshold halved,
+    # which is how the separate-return table is defined (IRC §1(d)); 2026's published separate
+    # table (Rev. Proc. 2025-32: 37% above $384,350 = $768,700 / 2) matches.
+    married_filing_separately: list[list[int | float]] | None = None
 
 
 class NIITConfig(StrictModel):
@@ -47,6 +53,7 @@ class NIITConfig(StrictModel):
     single: int = Field(default=200000, ge=0)
     married_filing_jointly: int = Field(default=250000, ge=0)
     head_of_household: int = Field(default=200000, ge=0)
+    married_filing_separately: int = Field(default=125000, ge=0)
 
     def threshold_for(self, filing_status) -> int:
         """MAGI threshold above which the surtax applies, for a filing status."""
@@ -54,6 +61,8 @@ class NIITConfig(StrictModel):
             return self.married_filing_jointly
         if filing_status.value == 3:
             return self.head_of_household
+        if filing_status.value == 4:
+            return self.married_filing_separately
         return self.single
 
 
@@ -71,6 +80,32 @@ def _default_capital_gains_brackets() -> "TaxBracketsConfig":
     )
 
 
+class SeniorDeductionConfig(StrictModel):
+    """OBBBA's temporary deduction for people 65 and older (taken whether or not one itemizes).
+
+    Each eligible individual gets ``amount``, reduced by ``phaseout_rate`` percent of the return's
+    MAGI above the filing-status threshold. Married couples must file jointly to claim it.
+    """
+
+    # vintage: statutory, source: OBBBA §70103 (IRC §151(d)(5)(C)); tax years 2025-2028
+    amount: int = Field(default=6000, ge=0)
+    age: int = Field(default=65, ge=0)
+    first_year: int = 2025
+    last_year: int = 2028
+    phaseout_rate: float = Field(default=6.0, ge=0, le=100)
+    phaseout_start_single: int = Field(default=75000, ge=0)
+    phaseout_start_married_filing_jointly: int = Field(default=150000, ge=0)
+
+
+class CharitableConfig(StrictModel):
+    """AGI limit on deductible cash gifts to public charities (incl. donor-advised funds)."""
+
+    # vintage: statutory, source: IRC §170(b)(1)(G) 60% cash limit (made permanent by OBBBA);
+    # §170(d)(1) five-year carryover of the excess
+    cash_agi_limit_percent: float = Field(default=60.0, ge=0, le=100)
+    carryforward_years: int = Field(default=5, ge=0)
+
+
 class FederalTaxConfig(StrictModel):
     standard_deduction: StandardDeductionConfig
     tax_brackets: TaxBracketsConfig
@@ -85,6 +120,8 @@ class FederalTaxConfig(StrictModel):
     # vintage: 2026, source: IRC §163(h)(3) TCJA acquisition-debt limit; §164(b)(6) SALT cap (OBBBA).
     mortgage_interest_debt_limit: int = Field(default=750000, ge=0)
     salt_deduction_cap: int = Field(default=40000, ge=0)
+    senior_deduction: SeniorDeductionConfig = Field(default_factory=SeniorDeductionConfig)
+    charitable: CharitableConfig = Field(default_factory=CharitableConfig)
     # Estate transfer parameters (defaults let existing configs load without these keys).
     # The unified exemption shelters estate value below it; transfers to a surviving spouse are
     # fully sheltered by the unlimited marital deduction regardless of the exemption.
@@ -277,6 +314,8 @@ class StateTaxConfig(StrictModel):
 class MedicareThresholdConfig(StrictModel):
     single: int = Field(ge=0)
     married_filing_jointly: int = Field(ge=0)
+    # vintage: statutory, source: IRC §3101(b)(2)(B) (not inflation-indexed)
+    married_filing_separately: int = Field(default=125000, ge=0)
 
 
 class FICATaxConfig(StrictModel):
@@ -297,6 +336,8 @@ class Job401kContribLimitConfig(StrictModel):
     base: int = Field(ge=0)
     catch_up_age: int = Field(ge=0)
     catch_up_amount: int = Field(ge=0)
+    # 415(c) overall annual-additions limit (employee + employer, per employer plan).
+    annual_additions_limit: int = Field(ge=0)
 
 
 class IRAConfig(StrictModel):
@@ -306,6 +347,9 @@ class IRAConfig(StrictModel):
 
 class RetirementConfig(StrictModel):
     federal_retirement_age: float = Field(ge=0)
+    # Additional tax on early (pre-``federal_retirement_age``) distributions from pre-tax accounts and
+    # on non-qualified Roth IRA earnings (IRC §72(t)). Statutory, unindexed.
+    early_withdrawal_penalty_rate: float = Field(default=10.0, ge=0, le=100)
     job_401k_contrib_limit: Job401kContribLimitConfig
     ira: IRAConfig
     rmd_distribution_periods: list[list[float]]
@@ -321,6 +365,10 @@ class SocialSecurityBenefitTaxationConfig(StrictModel):
     upper_threshold_single: int = Field(ge=0)
     lower_threshold_married_filing_jointly: int = Field(ge=0)
     upper_threshold_married_filing_jointly: int = Field(ge=0)
+    # A separate filer who lived with their spouse has a base amount of zero (IRC §86(c)(1)(C)(ii)),
+    # so benefits are taxable from the first dollar of provisional income.
+    lower_threshold_married_filing_separately: int = Field(default=0, ge=0)
+    upper_threshold_married_filing_separately: int = Field(default=0, ge=0)
     lower_inclusion_rate: float = Field(ge=0, le=1)
     upper_inclusion_rate: float = Field(ge=0, le=1)
 
@@ -370,8 +418,14 @@ class BrokerageAccountConfig(StrictModel):
 
 class HSAAccountConfig(StrictModel):
     contribution_limit: int = Field(ge=0)
+    catch_up_age: int = Field(ge=0)
+    catch_up_amount: int = Field(ge=0)
     contribution_limit_family: int = Field(ge=0)
     default_employer_contribution: int = Field(ge=0)
+    # Non-medical distributions are ordinary income plus this additional tax below the penalty age
+    # (IRC §223(f)(2), (f)(4)). Statutory, unindexed.
+    non_medical_penalty_rate: float = Field(default=20.0, ge=0, le=100)
+    non_medical_penalty_age: int = Field(default=65, ge=0)
 
 
 class Plan529Config(StrictModel):
@@ -403,6 +457,27 @@ class LifeInsuranceConfig(StrictModel):
     cash_value_premium_fraction_later: float = Field(ge=0, le=1)
     # Maximum fraction of available cash value that can be borrowed against.
     loan_to_value_ratio: float = Field(ge=0, le=1)
+    # Default term-life premium multipliers by attained age (premium = base x multiplier, linearly
+    # interpolated between ages). A modeling assumption shaped like level-term rate curves, not a
+    # published table.
+    term_age_multipliers: dict[int, float] = Field(
+        default_factory=lambda: {
+            20: 1.0,
+            25: 1.1,
+            30: 1.3,
+            35: 1.6,
+            40: 2.1,
+            45: 2.8,
+            50: 3.8,
+            55: 5.2,
+            60: 7.1,
+            65: 10.0,
+            70: 15.0,
+            75: 23.0,
+            80: 35.0,
+            85: 55.0,
+        }
+    )
 
 
 class AnnuityConfig(StrictModel):
@@ -434,15 +509,52 @@ class CreditCardConfig(StrictModel):
     default_minimum_payment_floor: float = Field(default=25.0, ge=0)
 
 
+class RepaymentAssistancePlanConfig(StrictModel):
+    """The Repayment Assistance Plan (RAP), the income-driven plan for federal loans from July 2026.
+
+    Annual payment = ``rate_step_percent`` percent x AGI for each full ``income_step`` of AGI, capped at
+    ``max_rate_percent`` percent (1% for $10,001-20,000 ... 10% above $100,000), with ``minimum_annual``
+    at or below the first step; less ``dependent_credit_monthly`` per dependent per month, floored
+    at ``minimum_monthly``. Interest the payment doesn't cover is waived; if principal falls by less
+    than ``principal_match_monthly`` in a month, the government makes up the difference (up to the
+    payment). The balance left after ``forgiveness_years`` of payments is forgiven.
+    """
+
+    # vintage: 2026, source: One Big Beautiful Bill Act (Repayment Assistance Plan), studentaid.gov
+    income_step: int = Field(default=10000, gt=0)
+    rate_step_percent: float = Field(default=1.0, ge=0)
+    max_rate_percent: float = Field(default=10.0, ge=0, le=100)
+    minimum_annual: float = Field(default=120.0, ge=0)
+    minimum_monthly: float = Field(default=10.0, ge=0)
+    dependent_credit_monthly: float = Field(default=50.0, ge=0)
+    principal_match_monthly: float = Field(default=50.0, ge=0)
+    forgiveness_years: int = Field(default=30, ge=0)
+    # The American Rescue Plan exclusion of forgiven student debt covered discharges before 2026
+    # (ARPA §9675); IDR forgiveness after that is ordinary income.
+    forgiveness_taxable: bool = True
+
+
 class StudentLoanConfig(StrictModel):
     # Above-the-line student-loan interest deduction (IRC §221). The MAGI phase-out is not
     # modeled; this is a flat cap. vintage: 2025, source: IRC §221 (statutory, unindexed cap).
     interest_deduction_limit: float = Field(default=2500.0, ge=0)
+    repayment_assistance_plan: RepaymentAssistancePlanConfig = Field(default_factory=RepaymentAssistancePlanConfig)
 
 
 class DebtConfig(StrictModel):
     credit_card: CreditCardConfig
     student_loan: StudentLoanConfig = Field(default_factory=StudentLoanConfig)
+    # Annual interest (percent) on bills a household could not pay, carried into the next year as
+    # ``Person.debt``. None means the credit-card rate: an unpaid shortfall is effectively financed
+    # on a card.
+    unpaid_balance_interest_rate: float | None = Field(default=None, ge=0)
+
+    @property
+    def effective_unpaid_balance_interest_rate(self) -> float:
+        """The configured unpaid-balance rate, or the credit-card rate when unset."""
+        if self.unpaid_balance_interest_rate is not None:
+            return self.unpaid_balance_interest_rate
+        return self.credit_card.default_interest_rate
 
 
 class Section121ExclusionConfig(StrictModel):
@@ -623,6 +735,10 @@ class MedicareIRMAATierConfig(StrictModel):
 
 class MedicareConfig(StrictModel):
     eligibility_age: int = Field(default=65, ge=0)
+    # A separate filer who lived with their spouse skips the middle IRMAA tiers: above the first
+    # single threshold they pay the second-highest tier, and the highest tier from this MAGI.
+    # vintage: 2026, source: SSA POMS HI 01101.020 / CMS 2026 Part B premiums ($391,000)
+    irmaa_mfs_top_threshold: float = Field(default=391000, ge=0)
     # Part A is premium-free for people with sufficient work history (documented simplification).
     part_b_base_monthly_premium: float = Field(default=202.90, ge=0)
     part_d_base_monthly_premium: float = Field(default=34.50, ge=0)
@@ -753,3 +869,6 @@ class FinancialConfigModel(StrictModel):
     dependents: DependentsConfig = Field(default_factory=DependentsConfig)
     equity_comp: EquityCompConfig = Field(default_factory=EquityCompConfig)
     tax_years: dict[int, YearlyTaxParameters]
+    # How simulated years after the last published ``tax_years`` entry are treated: indexed by the
+    # economy's realized inflation (IRS-style rounding), or frozen at the last published values.
+    tax_years_projection: Literal["inflation_indexed", "frozen"] = "inflation_indexed"

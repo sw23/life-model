@@ -10,7 +10,8 @@ The distilled model answers directly (mode a). The **tool-loop** (mode b) wraps 
 decision, ``slm`` scores every candidate with a fresh Monte Carlo run, the scoreboard is fed back
 for up to a fixed iteration budget, and — because ``trust_simulation`` is on by default — the loop
 never ships a decision the simulator shows is dominated by more than a margin, and it always
-rewrites the rationale from the fresh simulation numbers. That sidesteps hallucinated figures
+rewrites the rationale from the fresh simulation numbers. "Dominated" means outside the top set:
+worse than the best on paired trials beyond Monte Carlo noise. That sidesteps hallucinated figures
 entirely: the shipped numbers are, by construction, the simulator's.
 
 Crucially the tool-loop is *itself* an ``AdviserModel`` (``generate(messages) -> text``), so it
@@ -31,9 +32,9 @@ from life_model.people.person import GenderAtBirth
 from .adviser import AdviserModel, Messages
 from .prompts import format_decision_answer, parse_decision
 from .rationales import build_rationale
-from .scoring import argmax_candidate, score_household
+from .scoring import argmax_candidate, label_decision, score_household
 from .serializer import parse_household
-from .strategies import STRATEGY_BY_NAME
+from .strategies import NO_LEVER, STRATEGY_BY_NAME
 
 _MENU_MARKER = "Decision menu"
 
@@ -52,8 +53,9 @@ class ToolLoopConfig:
     n_trials: int = 16
     reward_preset: str = "retirement_security"
     seed: int = 0
-    # If the drafted decision's success rate is more than this below the simulator's best, adopt
-    # the simulator's best instead (the simulator-grounded correction).
+    # If the drafted decision is outside the simulator's top set (worse than the best beyond Monte
+    # Carlo noise on paired trials) and its mean return trails the best by more than this, adopt the
+    # simulator's label instead (the simulator-grounded correction).
     dominance_margin: float = 0.0
     trust_simulation: bool = True
 
@@ -74,6 +76,13 @@ def _household_from_text(text: str) -> dict:
         "initial_spending": float(parsed["initial_spending"]),
         "children_ages": list(parsed["children_ages"]),
         "models_healthcare": parsed["models_healthcare"],
+        "employer_match_rate": float(parsed["employer_match_rate"]),
+        "employer_match_cap": float(parsed["employer_match_cap"]),
+        "initial_401k_pretax": float(parsed["initial_401k_pretax"]),
+        "initial_401k_roth": float(parsed["initial_401k_roth"]),
+        "initial_brokerage": float(parsed["initial_brokerage"]),
+        "ss_claim_age": parsed["ss_claim_age"],
+        "retirement_spending_ratio": float(parsed["retirement_spending_ratio"]),
     }
     if parsed["economy_scenario"] is not None:
         household["economy_scenario"] = parsed["economy_scenario"]
@@ -113,6 +122,7 @@ class ToolLoopAdviser:
         scored = score_household(household, seeds, self.config.reward_preset)
         by_name = {c.decision: c for c in scored}
         argmax = argmax_candidate(scored).decision
+        label = label_decision(scored)
 
         # Draft, then revise up to the iteration budget, feeding the scoreboard back each round.
         convo: list[dict[str, str]] = list(messages)
@@ -125,16 +135,23 @@ class ToolLoopAdviser:
                 decision = revised
 
         # Simulator-grounded correction: never ship a decision the simulator shows is dominated by
-        # more than the margin; fall back to the simulated best.
+        # more than the margin, nor a no_plan_lever the simulator contradicts (some lever is viable);
+        # fall back to the simulated label.
         if self.config.trust_simulation:
-            if (
+            if decision == NO_LEVER:
+                if label != NO_LEVER:
+                    decision = label
+            elif (
                 decision is None
                 or decision not in by_name
-                or by_name[decision].success_rate < by_name[argmax].success_rate - self.config.dominance_margin
+                or (
+                    not by_name[decision].in_top_set
+                    and by_name[argmax].mean_return - by_name[decision].mean_return > self.config.dominance_margin
+                )
             ):
-                decision = argmax
+                decision = label
         elif decision is None:
-            decision = argmax
+            decision = label
 
         # Ship the fresh simulation's own numbers, so the rationale is faithful by construction.
         rationale = build_rationale(scored, decision)

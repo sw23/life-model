@@ -7,7 +7,7 @@ The package provides comprehensive models of people, jobs, accounts, insurance, 
 ## Key Features
 - **Comprehensive Financial Modeling**: Model families, individuals, jobs, various account types, insurance policies, debt, taxes, and more
 - **Interactive Dashboard**: Web-based interface using Solara for real-time financial simulations and visualizations
-- **Deep Learning Integration**: Train AI agents using deep Q-learning to optimize financial decision-making
+- **Deep Learning Integration**: Train reinforcement-learning agents (DQN, REINFORCE, PPO) to optimize financial decisions, and build a simulation-grounded language-model adviser whose advice is scored by the simulator
 - **Flexible Configuration**: YAML-based configuration system for different economic scenarios
 
 ## Motivation
@@ -47,6 +47,13 @@ python -m deepqlearning.train --env financial:mid_career --algo ppo --total-env-
 See [deepqlearning/README.md](deepqlearning/README.md) for the environment registry, the algorithm
 interface, and the evaluation protocol.
 
+### Language-Model Adviser
+[`slm/`](slm/README.md) turns the simulator into a data generator and verifier for a small language
+model that gives household financial-decision advice: every candidate decision is scored by Monte
+Carlo simulation, so rationales are certified by the simulator rather than asserted, and out-of-scope
+questions are refused. It is educational decision support, not financial advice; see the
+[slm README](slm/README.md) for the pipeline, evaluation, and training configurations.
+
 ## Modeling Status
 This package supports a comprehensive range of financial modeling components:
 
@@ -58,12 +65,12 @@ This package supports a comprehensive range of financial modeling components:
 
 ### Accounts & Investments
 - [x] **Bank Accounts** - Checking/savings with interest
-- [x] **401k Plans** - Traditional and Roth with employer matching
-- [x] **Traditional & Roth IRAs** - Individual retirement accounts
-- [x] **HSA** - Health Savings Accounts
+- [x] **401k Plans** - Traditional and Roth with employer matching, one elective limit across jobs, 415(c) cap
+- [x] **Traditional & Roth IRAs** - Deductible Traditional IRAs with RMDs; Roth IRAs drawn basis-first; one shared limit
+- [x] **HSA** - Deductible, invested, family tier and catch-up; non-medical withdrawals taxed
 - [x] **529 Plans** - Education savings accounts
 - [x] **Brokerage Accounts** - Taxable investment accounts
-- [x] **Pensions** - Defined benefit retirement plans with COLA and survivor elections
+- [x] **Pensions** - Defined benefit retirement plans with vesting, accrual formula, COLA and survivor elections
 - [x] **Trust Accounts** - Revocable and irrevocable trusts for estate planning
 
 ### Insurance & Protection
@@ -84,7 +91,8 @@ This package supports a comprehensive range of financial modeling components:
 - [x] **State Taxes** - Per-state tax packs (progressive brackets or flat rate, retirement/Social Security exemptions, SALT integration) with per-person residency
 - [x] **FICA Taxes** - Social Security and Medicare taxes
 - [x] **Capital Gains** - Short-term and long-term capital gains
-- [x] **Required Minimum Distributions (RMDs)** - Retirement account distributions
+- [x] **Required Minimum Distributions (RMDs)** - From 401ks and Traditional IRAs
+- [x] **Early-Withdrawal Penalties** - 10% before 59½ on pre-tax and non-qualified Roth IRA draws; 20% on non-medical HSA draws before 65
 
 ### Housing & Lifestyle
 - [x] **Home Ownership** - Purchase, mortgage, appreciation, and selling
@@ -110,7 +118,7 @@ This package supports a comprehensive range of financial modeling components:
 - [x] **Payment Services** - Intelligent bill payment with account prioritization
 - [x] **Tax Optimization** - Strategic withdrawal and contribution planning
 - [x] **Reinforcement Learning** - DQN / REINFORCE / PPO agents (`deepqlearning/`) that learn an in-episode financial policy, evaluated against planner heuristics with an outcome-based protocol
-- [x] **Simulation-Grounded Adviser** - A language-model adviser (`slm/`) that maps a household to a recommended plan-level strategy with a Monte-Carlo-certified rationale (educational decision support, not financial advice; see `slm/README.md`)
+- [x] **Simulation-Grounded Adviser** - A language-model adviser (`slm/`) that maps a household to a recommended retirement plan (savings rate, 401k routing, Social Security claiming age, drawdown) with a Monte-Carlo-certified rationale (educational decision support, not financial advice; see `slm/README.md`)
 
 ## Examples and Documentation
 
@@ -123,10 +131,11 @@ The interactive dashboard provides real-time visualization of financial simulati
 
 ### Reinforcement Learning
 The deep learning module includes:
-- Pre-configured training scenarios (basic, high_earner, low_earner)
-- 20+ financial actions for AI agents to learn
-- Customizable reward functions for different objectives
-- Training visualization and model evaluation tools
+- A registry of financial environments (`financial`, plus `basic`, `high_earner`, `low_earner`, `mid_career` households) with domain randomization and a stochastic economy
+- 16 financial action types (contributions, withdrawals, spending, early retirement), flattened into 52 discrete actions with amount buckets
+- Utility-based reward presets for different objectives
+- DQN, REINFORCE and PPO, planner-grade heuristic baselines, a statistical evaluation protocol, and policy-analysis reports
+- The simulation-grounded language-model adviser in [`slm/`](slm/README.md), which uses the same environment as its data generator
 
 ### Configuration System
 YAML-based configuration files packaged with life-model (in `src/life_model/config/data/scenarios/`) allow modeling of different economic conditions:

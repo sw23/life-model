@@ -48,8 +48,12 @@ class Stat:
         self.aggregator = aggregator or sum
 
     def model_reporter(self, model: "LifeModel"):
-        """Return the value of the stat for the model."""
-        return self.aggregator(getattr(agent, self.name) for agent in model.agents)
+        """Aggregate the stat over the agents whose class declares it in ``STATS_OWNED``.
+
+        Only owners are counted, so a stat can never be double counted by an agent type that
+        merely inherited a zero, and a write to an undeclared agent cannot leak into the total.
+        """
+        return self.aggregator(getattr(agent, self.name) for agent in model.agents if self.name in agent.STATS_OWNED)
 
 
 class MoneyStat(Stat):
@@ -65,7 +69,8 @@ class Event:
             message (str): Event description.
         """
         self.message = message
-        self.year = 0
+        # Stamped with the model year when the event is added to an EventLog.
+        self.year: int | None = None
 
     def _repr_html_(self):
         return f"<tr><td>{self.year}</td><td>{self.message}</td></tr>\n"
@@ -91,6 +96,33 @@ class EventLog:
     def add(self, event: Event):
         event.year = self.model.year
         self.list.append(event)
+
+
+def _optional_attribute(name: str) -> Callable:
+    """Agent reporter returning ``agent.<name>``, or None for agents without it.
+
+    Agents carry only the stats they own (``STATS_OWNED``). Mesa's string attribute reporters
+    return None for a missing attribute in 3.3 but raise from 3.5, so an explicit default keeps
+    per-agent collection working across the supported versions.
+    """
+
+    def reporter(agent):
+        return getattr(agent, name, None)
+
+    return reporter
+
+
+class LifeModelDataCollector(mesa.DataCollector):
+    """DataCollector with a public way to add an agent-level reporter after construction.
+
+    Mesa exposes this only through the private ``_new_agent_reporter`` (the method its own
+    constructor uses); keeping the call here confines the dependency to one place, covered by
+    ``test_collect_data``.
+    """
+
+    def add_agent_reporter(self, name: str, reporter) -> None:
+        """Collect ``reporter`` (an attribute name or a callable on the agent) as column ``name``."""
+        self._new_agent_reporter(name, reporter)
 
 
 class LifeModel(mesa.Model):
@@ -127,6 +159,7 @@ class LifeModel(mesa.Model):
         MoneyStat("stat_capital_gains", "Capital Gains"),  # Capital gains realized in a year
         MoneyStat("stat_stock_vested", "Stock Vested"),  # Value of stock compensation vesting in a year
         MoneyStat("stat_stock_unvested", "Stock Unvested"),  # Value of unvested stock grants at year end
+        MoneyStat("stat_itemized_deductions", "Itemized Deductions"),  # Itemized deductions claimed (0 = standard)
     ]
 
     def __init__(
@@ -156,7 +189,8 @@ class LifeModel(mesa.Model):
                 Intended for high-throughput consumers (e.g. RL rollouts) that never read the
                 collected frames. Defaults to True (keyword-only).
         """
-        super().__init__(seed=seed)  # Required in Mesa 3.0
+        # Mesa 3.5 deprecates ``seed=`` in favor of ``rng=``; both seed ``self.random`` identically.
+        super().__init__(rng=seed)
         if start_year is None:
             start_year = datetime.now().astimezone().year
 
@@ -168,6 +202,7 @@ class LifeModel(mesa.Model):
 
             config.apply_scenario(scenario, get_scenario(scenario))
         self.config = config
+        self._year_configs: dict[tuple[int, int], FinancialConfig] = {}
 
         # Initialize registries
         self.registries = ModelRegistries()
@@ -186,19 +221,24 @@ class LifeModel(mesa.Model):
         from .economy import EconomyModel
 
         self.economy = EconomyModel(self)
-        self.datacollector: mesa.DataCollector | None = None
+        self.datacollector: LifeModelDataCollector | None = None
         if collect_data:
-            self.datacollector = mesa.DataCollector(
+            self.datacollector = LifeModelDataCollector(
                 model_reporters={
                     "Year": "year",
                     **{x.title: lambda model, x=x: x.model_reporter(model) for x in self.STATS},
                     **{x.title: lambda model, x=x: x.model_reporter(model) for x in self.EXTRA_STATS},
                 },
                 agent_reporters={
-                    **{x.title: x.name for x in self.STATS},
-                    **{x.title: x.name for x in self.EXTRA_STATS},
+                    **{x.title: _optional_attribute(x.name) for x in self.STATS},
+                    **{x.title: _optional_attribute(x.name) for x in self.EXTRA_STATS},
                 },
             )
+
+    @classmethod
+    def stat_names(cls) -> frozenset[str]:
+        """Attribute names of every model-level stat (``STATS`` and ``EXTRA_STATS``)."""
+        return frozenset(stat.name for stat in (*cls.STATS, *cls.EXTRA_STATS))
 
     @classmethod
     def get_stat_by_name(cls, stat_name: str) -> Stat | None:
@@ -284,13 +324,41 @@ class LifeModel(mesa.Model):
         ``year`` (so a 50-year simulation doesn't apply frozen present-day brackets in 2050).
         Years within the published table are returned unchanged.
         """
+        return self.config.tax_year(year, inflation_factor=self._tax_projection_factor(year))
+
+    def _tax_projection_factor(self, year: int) -> float:
+        """Cumulative realized inflation from the last published tax year to ``year`` (1.0 if the
+        year is published, earlier, or the config freezes unpublished years)."""
         published_years = self.config.model.tax_years
         last_published = max(published_years) if published_years else year
+        if year <= last_published or self.config.model.tax_years_projection == "frozen":
+            return 1.0
         factor = 1.0
-        if year > last_published:
-            for y in range(last_published, year):
-                factor *= 1 + self.economy.inflation(y) / 100
-        return self.config.tax_year(year, inflation_factor=factor)
+        for y in range(last_published, year):
+            factor *= 1 + self.economy.inflation(y) / 100
+        return factor
+
+    def config_for_year(self, year: int) -> FinancialConfig:
+        """This model's config with ``year``'s tax parameters and contribution limits in effect.
+
+        Built from :meth:`tax_params_for_year` (published values, else the projection rule) and
+        cached per year. Tax and contribution-limit code reads this instead of the static config so
+        a multi-decade run applies each year's brackets, deductions, wage base and limits.
+        """
+        # Keyed on the underlying validated model too: applying a scenario replaces it, which must
+        # invalidate views built from the old values.
+        key = (year, id(self.config.model))
+        cached = self._year_configs.get(key)
+        if cached is None:
+            factor = self._tax_projection_factor(year)
+            cached = self.config.year_view(self.config.tax_year(year, inflation_factor=factor), factor)
+            self._year_configs[key] = cached
+        return cached
+
+    @property
+    def year_config(self) -> FinancialConfig:
+        """:meth:`config_for_year` for the current simulated year."""
+        return self.config_for_year(self.year)
 
     def run(self):
         """Run the simulation over the inclusive year range ``[start_year, end_year]``.
@@ -300,7 +368,7 @@ class LifeModel(mesa.Model):
         for _ in self.get_year_range():
             self.step()
 
-    def _require_datacollector(self) -> mesa.DataCollector:
+    def _require_datacollector(self) -> LifeModelDataCollector:
         """Return the DataCollector, or raise clearly when built with ``collect_data=False``."""
         if self.datacollector is None:
             raise ModelSetupException(
@@ -316,12 +384,8 @@ class LifeModel(mesa.Model):
             title (str): Title of the stat
             attr_name (str): Name of the attribute
         """
-        self._require_datacollector()._new_agent_reporter(title, attr_name)
-
-        # Set stat value to 0 for agents that don't have that attribute
-        for agent in self.agents:
-            if not hasattr(agent, attr_name):
-                setattr(agent, attr_name, 0)
+        # Agents without the attribute report None for it.
+        self._require_datacollector().add_agent_reporter(title, _optional_attribute(attr_name))
 
     def get_yearly_stat_df(
         self,
@@ -437,6 +501,21 @@ class LifeModelAgent(mesa.Agent):
     #   post_step: stat resets/escalators run at the default priority (0)
     STEP_PRIORITY: ClassVar[dict[str, int]] = {}
 
+    #: Model-level stats (``LifeModel.STATS`` / ``EXTRA_STATS`` names) this agent type reports.
+    #: Declared per class and merged down the inheritance chain by ``__init_subclass__``, so a
+    #: subclass lists only the stats it adds. Owned stats start at 0; model reporters sum only
+    #: over owners.
+    STATS_OWNED: ClassVar[frozenset[str]] = frozenset()
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        declared = frozenset(cls.__dict__.get("STATS_OWNED", frozenset()))
+        unknown = declared - LifeModel.stat_names()
+        if unknown:
+            raise TypeError(f"{cls.__name__}.STATS_OWNED names unknown model stats: {sorted(unknown)}")
+        inherited = frozenset().union(*(getattr(base, "STATS_OWNED", frozenset()) for base in cls.__bases__))
+        cls.STATS_OWNED = inherited | declared
+
     def __init__(self, model: LifeModel):
         """LifeModelAgent
 
@@ -445,11 +524,9 @@ class LifeModelAgent(mesa.Agent):
         """
         super().__init__(model)  # unique_id is now automatically assigned
 
-        # Initialize the stats
-        for stat in LifeModel.STATS:
-            setattr(self, stat.name, 0)
-        for stat in LifeModel.EXTRA_STATS:
-            setattr(self, stat.name, 0)
+        # Initialize the stats this agent type owns.
+        for name in self.STATS_OWNED:
+            setattr(self, name, 0)
 
     def pre_step(self):
         """Pre-step phase. Called for all agents before step phase."""

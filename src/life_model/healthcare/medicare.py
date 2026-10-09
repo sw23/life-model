@@ -38,6 +38,8 @@ from .inflation import medical_inflation_factor
 
 
 class Medicare(LifeModelAgent):
+    STATS_OWNED = frozenset({"stat_medical_costs"})
+
     def __init__(self, person: Person):
         """Model Medicare enrollment and premiums for a person.
 
@@ -77,6 +79,13 @@ class Medicare(LifeModelAgent):
         mfj = self.person.filing_status == FilingStatus.MARRIED_FILING_JOINTLY
         cpi = self.model.economy.cumulative_inflation(self.model.year)
         tiers = self.config.irmaa_tiers
+        if self.person.filing_status == FilingStatus.MARRIED_FILING_SEPARATELY and len(tiers) >= 3:
+            # Separate filers skip the middle tiers (SSA POMS HI 01101.020).
+            if magi <= tiers[1].magi_min_single * cpi:
+                return tiers[0]
+            if magi < self.config.irmaa_mfs_top_threshold * cpi:
+                return tiers[-2]
+            return tiers[-1]
         selected = tiers[0]
         for tier in tiers[1:]:
             threshold = tier.magi_min_married_filing_jointly if mfj else tier.magi_min_single

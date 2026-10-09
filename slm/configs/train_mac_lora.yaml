@@ -1,0 +1,36 @@
+# Apple-silicon config: the default pipeline at a size an M-series Mac trains in a few hours.
+# Same code path as train_default_qlora.yaml, minus 4-bit quantization (bitsandbytes needs CUDA):
+# a small instruct model with plain LoRA in bf16 on the Metal (MPS) backend.
+# License: Qwen/Qwen2.5-1.5B-Instruct is Apache-2.0 (the 3B model is not: Qwen research license).
+#
+#   python -m slm.generate_data --per-scenario 700 --n-trials 64 --min-trials 16 --seed 20 \
+#       --workers 10 --max-label-share 0.35 --out slm/data/dataset.jsonl
+#   python -m slm.train slm/configs/train_mac_lora.yaml
+#   python slm/reports/run_eval.py --advisers oracle,stub,hf:mac_lora=Qwen/Qwen2.5-1.5B-Instruct@slm/checkpoints/mac_lora/best
+model_id: Qwen/Qwen2.5-1.5B-Instruct     # Apache-2.0
+dataset_path: slm/data/dataset.jsonl
+output_dir: slm/checkpoints/mac_lora
+epochs: 2
+per_device_batch_size: 1
+grad_accum: 8
+learning_rate: 0.0001
+warmup_ratio: 0.03
+seq_len: 1280            # a full example (system + household + menu + answer) is ~1,000 tokens
+precision: bf16
+attn_implementation: sdpa
+gradient_checkpointing: false
+lora:
+  rank: 16
+  alpha: 32
+  dropout: 0.05
+  target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+# Quality controls: 5% of households held out; early stopping on the validation regret proxy
+# (answers scored against each example's stored Monte Carlo results; best adapter -> output_dir/best).
+# The decision line counts 10x in the loss (completion-only SFT): unweighted, the 1.5B model kept
+# its prior on the plan token and collapsed to one constant plan (see slm/README.md).
+decision_weight: 10
+validation_fraction: 0.05
+regret_eval_examples: 40
+regret_eval_steps: 100
+early_stopping_patience: 4
+report_to: none

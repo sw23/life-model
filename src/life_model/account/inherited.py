@@ -28,6 +28,8 @@ class InheritedPretaxAccount(Investment):
         heir uses the flat ten-year spread.
     """
 
+    STATS_OWNED = frozenset({"stat_useable_balance"})
+
     def __init__(self, beneficiary: Person, balance: float, decedent_name: str, years: int = 10):
         """Create an inherited pre-tax account for a non-spouse beneficiary.
 

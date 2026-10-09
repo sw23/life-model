@@ -8,8 +8,8 @@
 These non-learning policies give the RL agent something to beat. The simple ones
 (``do_nothing``, ``always_max_401k``, ``save_25_percent``) double as regression detectors — an
 agent that cannot beat "do nothing" on the same seeds is a sign the environment or agent is
-broken. The **planner-grade** policies are the real bar: they encode strategies a
-human advisor would recognize — a tax-advantaged contribution waterfall, an age-based savings
+broken. The **planner-grade** policies (plus ``always_max_401k``, the strongest scripted
+policy) are the real bar: they encode strategies a human advisor would recognize — a tax-advantaged contribution waterfall, an age-based savings
 glide path, a 4%-rule retirement drawdown with Roth-last ordering, and an emergency-fund-first
 rule. "Intelligent" is defined as beating *these* on the default objective.
 
@@ -173,9 +173,12 @@ BASELINES: dict[str, BaselinePolicy] = {
     "emergency_fund_first": emergency_fund_first_policy,
 }
 
-# The planner-grade policies that define the "intelligent" bar. The simple policies stay in
-# BASELINES as regression detectors but are not part of the bar.
+# The policies that define the "intelligent" bar: the planner-grade heuristics plus
+# ``always_max_401k``, which scored at least as well as every planner heuristic in the committed
+# reports — a bar that excludes the best scripted policy certifies nothing. The other simple
+# policies stay in BASELINES as regression detectors.
 PLANNER_BASELINES = (
+    "always_max_401k",
     "contribution_waterfall",
     "age_glide",
     "four_percent_drawdown",

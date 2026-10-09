@@ -147,3 +147,20 @@ class TestPolicyAlgorithmCheckpoints(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestDQNCheckpointRecordsAlgorithm(unittest.TestCase):
+    """Plan 23: DQN checkpoints carry the algorithm name like REINFORCE/PPO ones."""
+
+    def test_algo_key_written_and_cross_algorithm_load_refused(self):
+        dqn = DQNAgent(8, 4, {"verbose": False, "obs_version": None})
+        path = os.path.join(tempfile.mkdtemp(), "dqn.pt")
+        dqn.save(path)
+        self.assertEqual(torch.load(path, weights_only=True)["algo"], "dqn")
+        with self.assertRaises(ValueError):
+            PPOAgent(8, 4, {"verbose": False}).load(path)
+
+        reinforce_path = os.path.join(tempfile.mkdtemp(), "reinforce.pt")
+        ReinforceAgent(8, 4, {"verbose": False}).save(reinforce_path)
+        with self.assertRaises(ValueError):
+            DQNAgent(8, 4, {"verbose": False, "obs_version": None}).load(reinforce_path)

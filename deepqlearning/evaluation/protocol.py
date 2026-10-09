@@ -118,8 +118,9 @@ class EpisodeOutcome:
 def run_policy_episode(env: FinancialLifeEnv, policy: Policy, seed: int) -> EpisodeOutcome:
     """Run one episode under ``policy`` and return its outcome (reward + terminal financial state).
 
-    Terminal net worth is deflated to real (start-of-episode) dollars; when the person died it is
-    the estate value captured at death, not the ~0 post-dissolution net worth.
+    Terminal net worth is deflated to real (start-of-episode) dollars and is after tax on
+    tax-deferred balances; when the person died it is the estate value captured at death, not the
+    ~0 post-dissolution net worth.
     """
     env.reset(seed=seed)
     total_reward = 0.0
@@ -135,12 +136,13 @@ def run_policy_episode(env: FinancialLifeEnv, policy: Policy, seed: int) -> Epis
             break
 
     died_natural = bool(info.get("died_from_natural_causes"))
-    estate = info.get("estate_value_at_death")
-    nominal_net_worth = float(estate) if (died_natural and estate is not None) else env._calculate_net_worth()
+    # After-tax terminal wealth (tax-deferred balances valued net of the env's bequest tax rate);
+    # ruin is decided on raw net worth, matching the env's bankruptcy termination.
+    nominal_net_worth, raw_net_worth = env.terminal_wealth()
     deflator = env.model.economy.cumulative_inflation(env.model.year)
     real_net_worth = nominal_net_worth / max(deflator, 1e-9)
 
-    ruined = nominal_net_worth < env.BANKRUPTCY_THRESHOLD
+    ruined = raw_net_worth < env.BANKRUPTCY_THRESHOLD
     # Success = stayed solvent to the end of life (natural death, max age, or horizon) with a
     # positive estate — "alive to death, fully funded".
     success = (not ruined) and nominal_net_worth > 0.0
@@ -181,6 +183,8 @@ class PolicyStats:
     net_worth_p50: float
     net_worth_p90: float
     mean_steps: float
+    #: Per-episode returns in seed order, so policies on the same seeds can be compared pairwise.
+    returns: list[float] = field(default_factory=list)
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -202,6 +206,7 @@ def summarize(outcomes: list[EpisodeOutcome], resamples: int, ci: float, rng: np
         net_worth_p50=float(np.percentile(net_worths, 50)),
         net_worth_p90=float(np.percentile(net_worths, 90)),
         mean_steps=float(np.mean([o.steps for o in outcomes])),
+        returns=[round(float(r), 6) for r in returns],
     )
 
 
@@ -293,9 +298,12 @@ class EvalProtocol:
     def _intelligence_verdict(self, report: dict) -> dict:
         """Operational 'intelligent' verdict, computed on the train condition.
 
-        The agent is intelligent iff its mean return exceeds every planner heuristic's AND its CI
-        low is above the best heuristic's CI high (non-overlapping). The held-out-seeds gap is
-        reported for context but not gated.
+        The agent is intelligent iff its mean return exceeds every policy in the bar
+        (:data:`PLANNER_BASELINES`) AND the paired per-episode gap to the best of them has a
+        bootstrap 95% CI above zero. Every policy runs on the same seeds, so the paired gap is the
+        right test (two unpaired CIs failing to overlap is far more conservative and ignores the
+        pairing); the unpaired check is still reported. The held-out-seeds gap is reported for
+        context but not gated.
         """
         train = report["conditions"]["train"]
         agent_stats = train["agent"]
@@ -305,6 +313,10 @@ class EvalProtocol:
 
         beats_all = all(agent_stats["mean_return"] > s["mean_return"] for s in heuristics.values())
         ci_no_overlap = agent_stats["ci_low"] > best["ci_high"]
+        gap = np.array(agent_stats["returns"]) - np.array(best["returns"])
+        gap_low, gap_high = _bootstrap_ci(
+            gap, self.bootstrap_resamples, self.ci, np.random.default_rng(self.master_seed)
+        )
 
         held_out_gap = None
         if "held_out_seeds" in report["conditions"]:
@@ -319,7 +331,10 @@ class EvalProtocol:
             "best_heuristic_mean_return": best["mean_return"],
             "agent_beats_all_heuristics": bool(beats_all),
             "ci_does_not_overlap_best": bool(ci_no_overlap),
-            "verdict_intelligent": bool(beats_all and ci_no_overlap),
+            "paired_gap_vs_best": float(gap.mean()),
+            "paired_gap_ci_low": gap_low,
+            "paired_gap_ci_high": gap_high,
+            "verdict_intelligent": bool(beats_all and gap_low > 0.0),
             "held_out_seeds_gap_vs_best": held_out_gap,
         }
 
@@ -351,8 +366,9 @@ def format_comparison_table(report: dict) -> str:
             f"Intelligent verdict (train, {v['preset']}): "
             f"agent={v['agent_mean_return']:.2f} vs best heuristic "
             f"{v['best_heuristic']}={v['best_heuristic_mean_return']:.2f} | "
-            f"beats_all={v['agent_beats_all_heuristics']} ci_no_overlap={v['ci_does_not_overlap_best']} "
-            f"=> INTELLIGENT={v['verdict_intelligent']}"
+            f"beats_all={v['agent_beats_all_heuristics']} "
+            f"paired gap {v['paired_gap_vs_best']:+.2f} [{v['paired_gap_ci_low']:+.2f}, {v['paired_gap_ci_high']:+.2f}] "
+            f"(unpaired CIs disjoint={v['ci_does_not_overlap_best']}) => INTELLIGENT={v['verdict_intelligent']}"
         )
         if v["held_out_seeds_gap_vs_best"] is not None:
             lines.append(f"Held-out-seeds gap vs best heuristic: {v['held_out_seeds_gap_vs_best']:+.2f}")

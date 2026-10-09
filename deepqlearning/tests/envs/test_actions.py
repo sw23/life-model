@@ -173,7 +173,7 @@ class TestActionEffects(unittest.TestCase):
 
     def test_transfer_to_capped_account_is_limited_to_room(self):
         env = self._fresh_env()
-        room = env.traditional_ira.contribution_limit
+        room = env.traditional_ira.remaining_contribution_room()
         result = env.action_executor.execute_action(
             env.person, ActionType.TRANSFER_BANK_TO_IRA_TRADITIONAL, amount=room + 100000.0
         )
@@ -181,15 +181,27 @@ class TestActionEffects(unittest.TestCase):
         # Only up to the contribution room (and bank balance) can move.
         self.assertLessEqual(env.traditional_ira.balance, room + 1e-6)
 
-    def test_withdraw_401k_pretax_applies_early_penalty(self):
+    def test_withdraw_401k_pretax_records_early_penalty_for_settlement(self):
         env = self._fresh_env()
         env.job401k.pretax_balance = 10000.0
         bank_before = env.person.bank_account_balance
         result = env.action_executor.execute_action(env.person, ActionType.WITHDRAW_401K_PRETAX, amount=1000.0)
         self.assertTrue(result.success)
-        # Person is 25 (< 59.5), so a 10% penalty applies: only $900 reaches the bank.
+        # The gross reaches the bank; the person is 25 (< 59.5), so the core model records a 10%
+        # penalty that is paid as federal tax when the year settles.
+        self.assertAlmostEqual(result.fees_paid, 0.0)
+        self.assertAlmostEqual(env.person.bank_account_balance, bank_before + 1000.0)
+        self.assertAlmostEqual(env.person.income.penalties, 100.0)
+
+    def test_withdraw_401k_roth_penalty_stays_at_action_level(self):
+        env = self._fresh_env()
+        env.job401k.roth_balance = 10000.0
+        bank_before = env.person.bank_account_balance
+        result = env.action_executor.execute_action(env.person, ActionType.WITHDRAW_401K_ROTH, amount=1000.0)
+        self.assertTrue(result.success)
         self.assertAlmostEqual(result.fees_paid, 100.0)
         self.assertAlmostEqual(env.person.bank_account_balance, bank_before + 900.0)
+        self.assertAlmostEqual(env.person.income.penalties, 0.0)
 
     def test_retire_early_brings_retirement_age_forward(self):
         env = self._fresh_env()
@@ -243,6 +255,56 @@ class TestWithdrawalTaxDifferential(unittest.TestCase):
         result = env.action_executor.execute_action(env.person, ActionType.WITHDRAW_401K_ROTH, amount=10000.0)
         self.assertTrue(result.success)
         self.assertAlmostEqual(env.person.taxable_income, income_before)
+
+
+class TestContributionTaxTreatment(unittest.TestCase):
+    """Bank-to-401k transfers stand in for payroll deferrals: pre-tax ones are deductible, and both
+    kinds share the 402(g) elective-deferral limit (regression: pre-tax was taxed going in and
+    coming out, and 401k transfers were uncapped, so Roth always won)."""
+
+    def _fresh_env(self):
+        env = FinancialLifeEnv()
+        env.reset(seed=0)
+        env.person.deposit_into_bank_account(200000.0)  # enough cash that only the limit binds
+        return env
+
+    def test_pretax_transfer_is_deductible_roth_is_not(self):
+        pretax, roth = self._fresh_env(), self._fresh_env()
+        for env, action in (
+            (pretax, ActionType.TRANSFER_BANK_TO_401K_PRETAX),
+            (roth, ActionType.TRANSFER_BANK_TO_401K_ROTH),
+        ):
+            before = env.person.taxable_income
+            result = env.action_executor.execute_action(env.person, action, amount=5000.0)
+            self.assertTrue(result.success)
+            env.delta = env.person.taxable_income - before
+        self.assertAlmostEqual(pretax.delta, -5000.0)
+        self.assertAlmostEqual(roth.delta, 0.0)
+
+    def test_401k_transfers_share_the_402g_limit(self):
+        env = self._fresh_env()
+        room = env.person.remaining_401k_elective_room()
+        self.assertGreater(room, 0)
+        first = env.action_executor.execute_action(env.person, ActionType.TRANSFER_BANK_TO_401K_PRETAX, amount=1e9)
+        self.assertAlmostEqual(first.amount_transferred, room)
+        # The Roth side draws on the same (now exhausted) room.
+        self.assertFalse(env.action_executor.can_execute_action(env.person, ActionType.TRANSFER_BANK_TO_401K_ROTH))
+        self.assertAlmostEqual(env.job401k.pretax_balance, room)
+
+    def test_retiree_cannot_defer_into_the_401k(self):
+        env = self._fresh_env()
+        env.action_executor.execute_action(env.person, ActionType.RETIRE_EARLY)
+        for action in (ActionType.TRANSFER_BANK_TO_401K_PRETAX, ActionType.TRANSFER_BANK_TO_401K_ROTH):
+            self.assertFalse(env.action_executor.can_execute_action(env.person, action))
+
+    def test_pretax_deferral_lowers_that_years_income_tax(self):
+        taxes = {}
+        for action in (ActionType.TRANSFER_BANK_TO_401K_PRETAX, ActionType.TRANSFER_BANK_TO_401K_ROTH):
+            env = self._fresh_env()
+            env.step(encode_flat_action(action, 1.00))
+            taxes[action] = env.person.stat_taxes_paid
+        saved = taxes[ActionType.TRANSFER_BANK_TO_401K_ROTH] - taxes[ActionType.TRANSFER_BANK_TO_401K_PRETAX]
+        self.assertGreater(saved, 1000.0)
 
 
 if __name__ == "__main__":

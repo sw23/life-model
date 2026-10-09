@@ -36,7 +36,6 @@ class TestBrokerage(unittest.TestCase):
         self.assertEqual(brokerage.company, "Default Brokerage")
         self.assertEqual(brokerage.balance, 0)
         self.assertEqual(brokerage.growth_rate, 7.0)
-        self.assertEqual(brokerage.investments, [])
 
     def test_init_custom_values(self):
         """Test BrokerageAccount initialization with custom values."""
@@ -44,7 +43,6 @@ class TestBrokerage(unittest.TestCase):
         self.assertEqual(self.brokerage.company, "Test Brokerage")
         self.assertEqual(self.brokerage.balance, 10000.0)
         self.assertEqual(self.brokerage.growth_rate, 7.0)
-        self.assertEqual(self.brokerage.investments, [])
 
     def test_calculate_growth(self):
         """Test growth calculation."""
