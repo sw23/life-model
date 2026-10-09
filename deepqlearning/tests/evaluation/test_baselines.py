@@ -107,7 +107,12 @@ class TestAgentBeatsDoNothing(unittest.TestCase):
         np.random.seed(0)
         torch.manual_seed(0)
 
-        env = FinancialLifeEnv()
+        # Without Social Security, doing nothing runs out of money in some episodes, which is what
+        # makes "beats do_nothing" a meaningful sanity bar. With it on (the env default since the
+        # retirement-income world), do_nothing scores within ~0.5 of a 120-episode agent and the
+        # comparison is a coin flip across seeds and platforms (5/8 seeds locally, failing on CI);
+        # with it off the agent wins on 8/8 seeds by 7+ points.
+        env = FinancialLifeEnv({"social_security": False})
         state_size = env.observation_space.shape[0]
         action_size = env.action_space.n
         agent = DQNAgent(

@@ -100,6 +100,7 @@ def main() -> None:
     }
     with open(args.report, "w") as f:
         json.dump(report, f, indent=2)
+        f.write("\n")
     print(f"\nSB3 {args.algo.upper()} mean return (train): {sb3_mean:.2f}")
     print(f"Cross-check report written to {args.report}")
 
