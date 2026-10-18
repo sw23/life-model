@@ -39,6 +39,20 @@ Level = Literal["error", "warning"]
 ERROR: Level = "error"
 WARNING: Level = "warning"
 
+#: Warnings about a costly default the spec leaves in place (an assumption to confirm and report, not a
+#: typing mistake): :func:`validate_spec` returns them only with ``include_assumptions=True``, which the
+#: command line, ``life_model.validate`` / ``run`` / ``build`` and the MCP tools pass. Library callers that
+#: generate specs (the RL environment, the dashboard) get the original warnings only.
+ASSUMPTION_CODES = frozenset(
+    {
+        "default_child_costs",
+        "child_birth_month_assumed",
+        "no_health_coverage",
+        "cash_not_invested",
+        "ss_estimate_assumes_work",
+    }
+)
+
 #: Adults (for the "two adults not married" warning) are at least this old.
 ADULT_AGE = 18
 #: Relative difference between an entered mortgage balance and the amortized one that warns.
@@ -176,14 +190,19 @@ def _schema_findings(error: ValidationError) -> list[Finding]:
 
 
 def validate_spec(
-    spec: s.HouseholdSpec | dict | str, *, config: FinancialConfig | None = None, include_accepted: bool = False
+    spec: s.HouseholdSpec | dict | str,
+    *,
+    config: FinancialConfig | None = None,
+    include_accepted: bool = False,
+    include_assumptions: bool = False,
 ) -> list[Finding]:
     """Validate a spec (a ``HouseholdSpec``, a dict, or JSON text); returns every finding.
 
     Raw data that fails the schema returns the schema errors (the semantic checks need a valid
     spec). ``config`` supplies the state packs and Social Security ages (packaged defaults when
     None). Warnings whose code is in ``meta.accepted_warnings`` are dropped unless
-    ``include_accepted``.
+    ``include_accepted``; the assumption warnings (:data:`ASSUMPTION_CODES`) are returned only with
+    ``include_assumptions``.
     """
     if not isinstance(spec, s.HouseholdSpec):
         try:
@@ -199,6 +218,8 @@ def validate_spec(
     findings += not_yet_supported_findings(spec)
     findings += fraction_percent_findings(spec)
     findings += _SpecChecker(spec, config).run()
+    if not include_assumptions:
+        findings = [f for f in findings if f.code not in ASSUMPTION_CODES]
     if not include_accepted:
         accepted = set(spec.meta.accepted_warnings or ())
         findings = [f for f in findings if not (f.level == WARNING and f.code in accepted)]

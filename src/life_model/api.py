@@ -249,7 +249,9 @@ def validate(spec: SpecLike, *, scenario: str | None = None, include_accepted: b
             loaded = _replace_meta(loaded, scenario=scenario)
     except SpecValidationError as error:
         return list(error.findings)
-    return _scenario_findings(loaded) + list(validate_spec(loaded, include_accepted=include_accepted))
+    return _scenario_findings(loaded) + list(
+        validate_spec(loaded, include_accepted=include_accepted, include_assumptions=True)
+    )
 
 
 def build(
@@ -262,7 +264,7 @@ def build(
 ):
     """Build a ready-to-run :class:`~life_model.model.LifeModel` from ``spec`` (see :func:`run` for
     ``checks`` and ``collect``)."""
-    from .spec import WARNING, SpecValidationError, build_model, validate_spec
+    from .spec import WARNING, SpecValidationError, SpecWarning, build_model, validate_spec
 
     if checks not in CHECK_MODES:
         raise InputError(f"checks must be one of {CHECK_MODES}, got {checks!r}")
@@ -271,12 +273,20 @@ def build(
     if findings:
         raise SpecValidationError(findings)
     if checks == "strict":
-        strict = [f for f in validate_spec(spec) if f.level == WARNING]
+        strict = [f for f in validate_spec(spec, include_assumptions=True) if f.level == WARNING]
         if strict:
             raise SpecValidationError(strict)
     if collect not in COLLECT_MODES:
         raise InputError(f"collect must be one of {COLLECT_MODES}, got {collect!r}")
     model = build_model(spec, seed=seed, check=checks != "off", collect_data=collect_data, collect=collect)
+    if checks == "warn":
+        # The assumption warnings (a costly default left in place) are reported by the one-call functions
+        # and the command line; build_model itself (used by library callers) emits the others.
+        from .spec.validate import ASSUMPTION_CODES
+
+        for finding in validate_spec(spec, include_assumptions=True):
+            if finding.code in ASSUMPTION_CODES:
+                warnings.warn(f"{finding.path}: {finding.message}", SpecWarning, stacklevel=2)
     # The same mode runs the yearly invariant checker (life_model.invariants): strict raises
     # InvariantError at the first year with a violation, warn emits InvariantWarning.
     model.checks = checks
@@ -935,7 +945,7 @@ def reconcile(
     if checks == "strict":
         from .spec import WARNING, SpecValidationError, validate_spec
 
-        strict = [f for f in validate_spec(spec) if f.level == WARNING]
+        strict = [f for f in validate_spec(spec, include_assumptions=True) if f.level == WARNING]
         if strict:
             raise SpecValidationError(strict)
     return reconciliation.reconcile(spec, year, actuals=records, seed=seed, checks=checks)

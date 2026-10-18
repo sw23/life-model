@@ -67,7 +67,11 @@ installed package: outputs describe a household and belong in a git-ignored plac
 
 Prints every finding as `[level] path: message Fix: ...` (or `no findings`) and exits 2 when any
 finding is an error. Warnings the spec keeps on purpose (`meta.accepted_warnings: [code, ...]`) are
-left out and noted on a last line (`accepted` in the JSON payload); errors cannot be accepted. Schema errors (unknown keys, wrong types), validator errors (an unknown state,
+left out and noted on a last line (`accepted` in the JSON payload); errors cannot be accepted. The
+assumption warnings (a costly default left in place: `default_child_costs`, `no_health_coverage`,
+`cash_not_invested`, `ss_estimate_assumes_work`, `child_birth_month_assumed`) come from these
+functions and the command line; the lower-level `life_model.spec.validate_spec` returns them only
+with `include_assumptions=True`. Schema errors (unknown keys, wrong types), validator errors (an unknown state,
 an event before the start year, a field the engine cannot simulate yet) and warnings (0% spending
 growth, a rate that looks like a fraction) all come back with a stable `code`.
 
