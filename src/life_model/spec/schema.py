@@ -143,9 +143,10 @@ class Meta(SpecModel):
     )
     start: YearMonth | None = spec_field(
         None,
-        description="First simulated month (YYYY-MM) for a part-year first year.",
+        description="First simulated month (YYYY-MM), in start_year: a model started in October simulates "
+        "three months of its first year. Defaults to January of start_year.",
         unit="YYYY-MM",
-        not_yet_supported="Plan 32 D1",
+        core="LifeModel.start",
     )
     seed: int | None = spec_field(
         None, description="Random seed (stochastic economy and mortality draws).", core="LifeModel.seed"
@@ -253,9 +254,10 @@ class Relative(SpecModel):
 
 
 class At(SpecModel):
-    """When an event happens: exactly one of ``year``, ``age`` or ``relative``.
+    """When an event happens: exactly one of ``year``, ``age`` or ``relative``, plus an optional
+    ``month``.
 
-    Shorthand: an integer is a year (``at: 2030``).
+    Shorthand: an integer is a year (``at: 2030``); ``"2030-07"`` is July 2030.
 
     Age timing resolves through ``Person.get_year_at_age`` (the engine's own age semantics), so
     the builder needs no age arithmetic of its own; see :mod:`life_model.spec.events`.
@@ -269,9 +271,10 @@ class At(SpecModel):
     relative: Relative | None = spec_field(None, description="Relative to another event.")
     month: int | None = spec_field(
         None,
-        description="Month of the year (1-12).",
+        description="Month (1-12) the event happens in, within the resolved year. Defaults to the first simulated "
+        "month of that year (January), or for 'age' to the month the person reaches that age (their birth month).",
         unit="month",
-        not_yet_supported="Plan 32 D1",
+        core="LifeEvent.month",
         ge=1,
         le=12,
     )
@@ -1559,12 +1562,19 @@ class Person(SpecModel):
     id: Identifier = spec_field(description="Unique person id (referenced by relationships, events, trusts).")
     name: str = spec_field(description="Display name.", core="Person.name")
     age: Age = spec_field(
-        description="Age during the first simulated year (start_year); the person is age + 1 the year after.",
+        description="Age (completed years) in the first simulated month (meta.start, else January of start_year). "
+        "Without birth the birth month is taken to be January, so the person is age for the rest of the first "
+        "year and age + 1 the year after.",
         unit="age",
         core="Person.age",
     )
     birth: YearMonth | None = spec_field(
-        None, description="Birth month (exact ages).", unit="YYYY-MM", not_yet_supported="Plan 32 D4"
+        None,
+        description="Birth month (YYYY-MM) for exact ages: 59.5, the retirement month, Social Security and "
+        "Medicare start in the right month. Must agree with age. When missing, January is assumed (the "
+        "validator warns).",
+        unit="YYYY-MM",
+        core="Person.birth",
     )
     gender: Literal["male", "female", "other"] = spec_field(
         "other", description="Gender at birth for the mortality table ('other' blends).", core="Person.gender"

@@ -4,70 +4,82 @@
 
 Everything a run produces, column by column. `LifeModel.run()` returns a `RunResult`
 (`life_model.results`) holding all of it: `model_frame`, `agent_frame`, `tax_returns`, `ledger`,
-`events`, `balance_sheets`, `seed`, `spec`; `to_json` / `to_csv` / `to_parquet` / `load`,
-`real_dollars()` (money in start-year dollars) and `explain(year)`. Money is nominal dollars
-unless a result is `real`; rates are percents.
+`events`, `balance_sheets`, `monthly_balance_sheets`, `monthly_frame`, `seed`, `spec`; `to_json` /
+`to_csv` / `to_parquet` / `load`, `real_dollars()` (money in start-year dollars) and
+`explain(year)`. Money is nominal dollars unless a result is `real`; rates are percents.
+
+The engine steps one month at a time (`LifeModel.step()`); a year is the reporting cadence.
+Rows are collected at each year end (December), after the year's taxes are settled.
 
 ## Model frame (one row per year)
 
 `model.datacollector.get_model_vars_dataframe()` / `RunResult.model_frame`. Each column aggregates
 a stat over the agents that declare it in `STATS_OWNED` (a joint return's tax stats are split
 across both spouses, so the model total is the return's). `STATS` are the default columns of
-`get_yearly_stat_df`; `EXTRA_STATS` are collected too.
+`get_yearly_stat_df`; `EXTRA_STATS` are collected too. A **flow** stat (income, spending, taxes)
+accumulates month by month over the year and restarts at 0 each January (an agent removed during
+the year, such as a decedent, keeps its flows in that year's total); the others are balances read
+at the year end.
 
-| Column | Attribute | Set | Owners | Aggregate | Money | Description |
-| --- | --- | --- | --- | --- | --- | --- |
-| Year | `year` | | LifeModel | | no | The simulated year. |
-| Income | `stat_gross_income` | STATS | Job, StockPlan | sum | yes | Gross income made in the year (salary, bonus, RSU vests). |
-| Bank Balance | `stat_bank_balance` | STATS | Person | sum | yes | Bank account balances after the year's bills are paid. |
-| Brokerage Balance | `stat_brokerage_balance` | STATS | Person | sum | yes | Taxable brokerage balances at year end. |
-| 401k Balance | `stat_401k_balance` | STATS | Job401kAccount | sum | yes | 401k balances (pre-tax plus Roth) at year end. |
-| Useable Balance | `stat_useable_balance` | STATS | BankAccount, InheritedPretaxAccount, RetirementAccount | sum | yes | Balances usable without penalty (banks, 401ks past 59.5). |
-| Debt | `stat_debt` | STATS | Family | sum | yes | Unpaid-bills debt plus outstanding loan and mortgage balances. |
-| Taxes | `stat_taxes_paid` | STATS | Person | sum | yes | All taxes paid in the year: federal, state, payroll, NIIT, net of credits. |
-| Spending | `stat_money_spent` | STATS | Person | sum | yes | Living expenses plus one-time expenses charged in the year. |
-| 401k Contrib | `stat_retirement_contrib` | STATS | Job | sum | yes | Employee 401k deferrals (pre-tax and Roth) in the year. |
-| 401k Match | `stat_retirement_match` | STATS | Job | sum | yes | Employer 401k match in the year. |
-| RMDs | `stat_required_min_distrib` | STATS | Job401kAccount, TraditionalIRA | sum | yes | Required minimum distributions taken in the year. |
-| Housing | `stat_housing_costs` | STATS | Person | sum | yes | Mortgage payments, home expenses and rent paid in the year. |
-| Interest Paid | `stat_interest_paid` | STATS | Person | sum | yes | Interest charged on mortgages, loans and carried debt. |
-| SS Income | `stat_ss_income` | STATS | Person | sum | yes | Social Security benefits received in the year. |
-| Charity | `stat_charitable_donations` | STATS | Donation, DonorAdvisedFund | sum | yes | Charitable donations (direct and DAF grants) in the year. |
-| Federal Taxes | `stat_taxes_paid_federal` | EXTRA_STATS | Person | sum | yes | Federal income tax, including penalties. |
-| State Taxes | `stat_taxes_paid_state` | EXTRA_STATS | Person | sum | yes | State income tax. |
-| SS Taxes | `stat_taxes_paid_ss` | EXTRA_STATS | Person | sum | yes | Social Security payroll tax. |
-| Medicare Taxes | `stat_taxes_paid_medicare` | EXTRA_STATS | Person | sum | yes | Medicare payroll tax (incl. the additional tax). |
-| Life Ins Premiums | `stat_premium_payments` | EXTRA_STATS | LifeInsurance | sum | yes | Life insurance premiums paid in the year. |
-| Life Ins Cash Value | `stat_cash_value` | EXTRA_STATS | LifeInsurance | sum | yes | Whole-life cash value. |
-| Death Benefits | `stat_death_benefit_paid` | EXTRA_STATS | LifeInsurance | sum | yes | Life insurance death benefits paid out. |
-| Medical Costs | `stat_medical_costs` | EXTRA_STATS | LongTermCare, MedicalCosts, Medicare | sum | yes | Healthcare, Medicare and long-term-care costs. |
-| Dependent Costs | `stat_dependent_costs` | EXTRA_STATS | Child | sum | yes | Child and dependent costs charged in the year. |
-| Pension Income | `stat_pension_income` | EXTRA_STATS | Pension | sum | yes | Defined-benefit pension income received. |
-| NIIT | `stat_taxes_paid_niit` | EXTRA_STATS | Person | sum | yes | Net investment income tax. |
-| Capital Gains | `stat_capital_gains` | EXTRA_STATS | Person | sum | yes | Net capital gains realized (after loss netting). |
-| Stock Vested | `stat_stock_vested` | EXTRA_STATS | StockPlan | sum | yes | Value of stock compensation vesting in the year. |
-| Stock Unvested | `stat_stock_unvested` | EXTRA_STATS | StockPlan | sum | yes | Value of unvested stock grants at year end. |
-| Itemized Deductions | `stat_itemized_deductions` | EXTRA_STATS | Person | sum | yes | Itemized deductions claimed (0 when standard was taken). |
-| Credits | `stat_tax_credits` | EXTRA_STATS | Person | sum | yes | Tax credits (child tax credit, ...) claimed. |
-| Penalties | `stat_tax_penalties` | EXTRA_STATS | Person | sum | yes | Additional taxes (early-withdrawal penalties); part of Federal Taxes. |
-| Net Worth | `stat_net_worth` | EXTRA_STATS | Person | sum | yes | Assets minus liabilities at year end (the household balance sheet the conservation check uses). |
-| Traditional IRA Balance | `stat_traditional_ira_balance` | EXTRA_STATS | TraditionalIRA | sum | yes | Traditional IRA balances at year end. |
-| Roth IRA Balance | `stat_roth_ira_balance` | EXTRA_STATS | RothIRA | sum | yes | Roth IRA balances at year end. |
-| HSA Balance | `stat_hsa_balance` | EXTRA_STATS | HealthSavingsAccount | sum | yes | Health savings account balances at year end. |
-| 529 Balance | `stat_529_balance` | EXTRA_STATS | Plan529 | sum | yes | 529 education plan balances at year end. |
-| Inherited IRA Balance | `stat_inherited_ira_balance` | EXTRA_STATS | InheritedPretaxAccount | sum | yes | Inherited (10-year rule) IRA balances. |
-| Annuity Balance | `stat_annuity_balance` | EXTRA_STATS | Annuity | sum | yes | Annuity accumulation balances plus annuitized reserves. |
-| DAF Balance | `stat_daf_balance` | EXTRA_STATS | DonorAdvisedFund | sum | yes | Donor-advised fund balances (not counted in net worth). |
-| Trust Balance | `stat_trust_balance` | EXTRA_STATS | Trust | sum | yes | Trust balances (only revocable trusts count in net worth). |
-| Home Value | `stat_home_value` | EXTRA_STATS | Home | sum | yes | Market value of homes owned at year end. |
-| Home Equity | `stat_home_equity` | EXTRA_STATS | Home | sum | yes | Home value minus the mortgage balance. |
-| Mortgage Principal | `stat_mortgage_principal` | EXTRA_STATS | Mortgage | sum | yes | Mortgage balances at year end. |
-| AGI | `stat_agi` | EXTRA_STATS | Person | sum | yes | Adjusted gross income on the year's returns. |
-| Taxable Income | `stat_taxable_income` | EXTRA_STATS | Person | sum | yes | Taxable income on the year's returns. |
-| Marginal Rate | `stat_marginal_rate` | EXTRA_STATS | Person | max | no | Federal ordinary bracket rate (percent) of the last taxable dollar (max across returns). |
-| Standard Deduction Taken | `stat_standard_deduction_taken` | EXTRA_STATS | Person | max | no | Whether a return took the standard deduction (True if any did). |
-| Forced Sales | `stat_forced_sales` | EXTRA_STATS | Person | sum | yes | Brokerage holdings the payment waterfall sold to pay bills and taxes. |
-| Pre-tax Withdrawals | `stat_pretax_withdrawals` | EXTRA_STATS | Person | sum | yes | 401k/IRA/HSA money the payment waterfall withdrew to pay bills and taxes (RMDs excluded). |
+| Column | Attribute | Set | Owners | Aggregate | Money | Flow | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Year | `year` | | LifeModel | | no | | The simulated year. |
+| Income | `stat_gross_income` | STATS | Job, StockPlan | sum | yes | yes | Gross income made in the year (salary, bonus, RSU vests). |
+| Bank Balance | `stat_bank_balance` | STATS | Person | sum | yes |  | Bank account balances after the year's bills are paid. |
+| Brokerage Balance | `stat_brokerage_balance` | STATS | Person | sum | yes |  | Taxable brokerage balances at year end. |
+| 401k Balance | `stat_401k_balance` | STATS | Job401kAccount | sum | yes |  | 401k balances (pre-tax plus Roth) at year end. |
+| Useable Balance | `stat_useable_balance` | STATS | BankAccount, InheritedPretaxAccount, RetirementAccount | sum | yes |  | Balances usable without penalty (banks, 401ks past 59.5). |
+| Debt | `stat_debt` | STATS | Family | sum | yes |  | Unpaid-bills debt plus outstanding loan and mortgage balances. |
+| Taxes | `stat_taxes_paid` | STATS | Person | sum | yes | yes | All taxes paid in the year: federal, state, payroll, NIIT, net of credits. |
+| Spending | `stat_money_spent` | STATS | Person | sum | yes | yes | Living expenses plus one-time expenses charged in the year. |
+| 401k Contrib | `stat_retirement_contrib` | STATS | Job | sum | yes | yes | Employee 401k deferrals (pre-tax and Roth) in the year. |
+| 401k Match | `stat_retirement_match` | STATS | Job | sum | yes | yes | Employer 401k match in the year. |
+| RMDs | `stat_required_min_distrib` | STATS | Job401kAccount, TraditionalIRA | sum | yes | yes | Required minimum distributions taken in the year. |
+| Housing | `stat_housing_costs` | STATS | Person | sum | yes | yes | Mortgage payments, home expenses and rent paid in the year. |
+| Interest Paid | `stat_interest_paid` | STATS | Person | sum | yes | yes | Interest charged on mortgages, loans and carried debt. |
+| SS Income | `stat_ss_income` | STATS | Person | sum | yes | yes | Social Security benefits received in the year. |
+| Charity | `stat_charitable_donations` | STATS | Donation, DonorAdvisedFund | sum | yes | yes | Charitable donations (direct and DAF grants) in the year. |
+| Federal Taxes | `stat_taxes_paid_federal` | EXTRA_STATS | Person | sum | yes | yes | Federal income tax, including penalties. |
+| State Taxes | `stat_taxes_paid_state` | EXTRA_STATS | Person | sum | yes | yes | State income tax. |
+| SS Taxes | `stat_taxes_paid_ss` | EXTRA_STATS | Person | sum | yes | yes | Social Security payroll tax. |
+| Medicare Taxes | `stat_taxes_paid_medicare` | EXTRA_STATS | Person | sum | yes | yes | Medicare payroll tax (incl. the additional tax). |
+| Life Ins Premiums | `stat_premium_payments` | EXTRA_STATS | LifeInsurance | sum | yes | yes | Life insurance premiums paid in the year. |
+| Life Ins Cash Value | `stat_cash_value` | EXTRA_STATS | LifeInsurance | sum | yes |  | Whole-life cash value. |
+| Death Benefits | `stat_death_benefit_paid` | EXTRA_STATS | LifeInsurance | sum | yes | yes | Life insurance death benefits paid out. |
+| Medical Costs | `stat_medical_costs` | EXTRA_STATS | LongTermCare, MedicalCosts, Medicare | sum | yes | yes | Healthcare, Medicare and long-term-care costs. |
+| Dependent Costs | `stat_dependent_costs` | EXTRA_STATS | Child | sum | yes | yes | Child and dependent costs charged in the year. |
+| Pension Income | `stat_pension_income` | EXTRA_STATS | Pension | sum | yes | yes | Defined-benefit pension income received. |
+| NIIT | `stat_taxes_paid_niit` | EXTRA_STATS | Person | sum | yes | yes | Net investment income tax. |
+| Capital Gains | `stat_capital_gains` | EXTRA_STATS | Person | sum | yes | yes | Net capital gains realized (after loss netting). |
+| Stock Vested | `stat_stock_vested` | EXTRA_STATS | StockPlan | sum | yes | yes | Value of stock compensation vesting in the year. |
+| Stock Unvested | `stat_stock_unvested` | EXTRA_STATS | StockPlan | sum | yes |  | Value of unvested stock grants at year end. |
+| Itemized Deductions | `stat_itemized_deductions` | EXTRA_STATS | Person | sum | yes | yes | Itemized deductions claimed (0 when standard was taken). |
+| Credits | `stat_tax_credits` | EXTRA_STATS | Person | sum | yes | yes | Tax credits (child tax credit, ...) claimed. |
+| Penalties | `stat_tax_penalties` | EXTRA_STATS | Person | sum | yes | yes | Additional taxes (early-withdrawal penalties); part of Federal Taxes. |
+| Net Worth | `stat_net_worth` | EXTRA_STATS | Person | sum | yes |  | Assets minus liabilities at year end (the household balance sheet the conservation check uses). |
+| Traditional IRA Balance | `stat_traditional_ira_balance` | EXTRA_STATS | TraditionalIRA | sum | yes |  | Traditional IRA balances at year end. |
+| Roth IRA Balance | `stat_roth_ira_balance` | EXTRA_STATS | RothIRA | sum | yes |  | Roth IRA balances at year end. |
+| HSA Balance | `stat_hsa_balance` | EXTRA_STATS | HealthSavingsAccount | sum | yes |  | Health savings account balances at year end. |
+| 529 Balance | `stat_529_balance` | EXTRA_STATS | Plan529 | sum | yes |  | 529 education plan balances at year end. |
+| Inherited IRA Balance | `stat_inherited_ira_balance` | EXTRA_STATS | InheritedPretaxAccount | sum | yes |  | Inherited (10-year rule) IRA balances. |
+| Annuity Balance | `stat_annuity_balance` | EXTRA_STATS | Annuity | sum | yes |  | Annuity accumulation balances plus annuitized reserves. |
+| DAF Balance | `stat_daf_balance` | EXTRA_STATS | DonorAdvisedFund | sum | yes |  | Donor-advised fund balances (not counted in net worth). |
+| Trust Balance | `stat_trust_balance` | EXTRA_STATS | Trust | sum | yes |  | Trust balances (only revocable trusts count in net worth). |
+| Home Value | `stat_home_value` | EXTRA_STATS | Home | sum | yes |  | Market value of homes owned at year end. |
+| Home Equity | `stat_home_equity` | EXTRA_STATS | Home | sum | yes |  | Home value minus the mortgage balance. |
+| Mortgage Principal | `stat_mortgage_principal` | EXTRA_STATS | Mortgage | sum | yes |  | Mortgage balances at year end. |
+| AGI | `stat_agi` | EXTRA_STATS | Person | sum | yes | yes | Adjusted gross income on the year's returns. |
+| Taxable Income | `stat_taxable_income` | EXTRA_STATS | Person | sum | yes | yes | Taxable income on the year's returns. |
+| Marginal Rate | `stat_marginal_rate` | EXTRA_STATS | Person | max | no |  | Federal ordinary bracket rate (percent) of the last taxable dollar (max across returns). |
+| Standard Deduction Taken | `stat_standard_deduction_taken` | EXTRA_STATS | Person | max | no |  | Whether a return took the standard deduction (True if any did). |
+| Forced Sales | `stat_forced_sales` | EXTRA_STATS | Person | sum | yes | yes | Brokerage holdings the payment waterfall sold to pay bills and taxes. |
+| Pre-tax Withdrawals | `stat_pretax_withdrawals` | EXTRA_STATS | Person | sum | yes | yes | 401k/IRA/HSA money the payment waterfall withdrew to pay bills and taxes (RMDs excluded). |
+
+## Monthly frame (one row per month, `collect="month"`)
+
+`LifeModel(collect="month")`: `model.monthly_frame()` / `RunResult.monthly_frame` (None
+otherwise). The model frame's columns plus `Year` and `Month`, read at each month end: balances
+as of the month end, flows year to date (so each December row equals the year's model-frame row).
 
 ## Agent frame (one row per agent per year)
 
@@ -83,7 +95,7 @@ stat above is also an agent column (None for agents that do not own it), plus:
 | Salary | This year's base salary (`Salary` rows), read before the year-end raise. |
 | Spending Base | This year's base spending (`Spending` rows), read before the year-end increase. |
 
-`model.add_agent_stat(title, attr, pre_post=True)` adds a column read before the `post_step`
+`model.add_agent_stat(title, attr, pre_post=True)` adds a column read before the year-end
 escalators the same way.
 
 ## Tax returns
@@ -167,8 +179,8 @@ banks) and `Debt:<person>` (unpaid bills carried as debt, a liability).
 | --- | --- |
 | `seq` | Position in the ledger (0-based, increasing). |
 | `year` | Simulated year. |
-| `month` | Month (1-12) once the engine is monthly; empty for the annual engine. |
-| `stage` | Model stage that posted it (`pre_step`, `events`, `step`, `post_step`). |
+| `month` | Simulated month (1-12) it was posted in. |
+| `stage` | Model stage that posted it (`pre_step`, `events`, `step`, `post_step`, `on_year_start`, `on_year_end`). |
 | `kind` | Flow kind (below). |
 | `amount` | Dollars moved (negative only for corrections such as a payroll true-up). |
 | `from_account` | Household account the money left (empty for an inflow). |
@@ -211,16 +223,19 @@ banks) and `Debt:<person>` (unpaid bills carried as debt, a liability).
 ## Balance sheets and the conservation check
 
 `model.balance_sheets[year]` (opening and closing `BalanceSheet`, and the ledger range posted
-during the year) / `RunResult.balance_sheets`. `life_model.checks` asserts that each year's
-change in net worth equals the ledger's inflows minus outflows within $1.
+during the year) / `RunResult.balance_sheets`, and the same per month in
+`model.month_balance_sheets[(year, month)]` / `RunResult.monthly_balance_sheets` (with a `month`
+column). `life_model.checks` asserts that each year's (with `monthly=True`, each month's) change in
+net worth equals the ledger's inflows minus outflows within $1.
 
 | Column | Description |
 | --- | --- |
 | `year` | Simulated year. |
-| `opening_net_worth` | Household assets minus liabilities before the year's first stage. |
-| `closing_net_worth` | The same after the year's last stage (the `Net Worth` column). |
-| `inflows` | Ledger inflows posted during the year. |
-| `outflows` | Ledger outflows posted during the year. |
+| `month` | Simulated month (`monthly_balance_sheets` only). |
+| `opening_net_worth` | Household assets minus liabilities before the year's (month's) first stage. |
+| `closing_net_worth` | The same after its last stage (December's: the `Net Worth` column). |
+| `inflows` | Ledger inflows posted during the year (month). |
+| `outflows` | Ledger outflows posted during the year (month). |
 
 ## Events
 

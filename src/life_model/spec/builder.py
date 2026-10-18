@@ -272,12 +272,14 @@ def create_model(
         if overrides:
             # Keep the scenario name: the economy block refines the scenario rather than replacing it.
             config.apply_scenario(cast(str, config.scenario), {"economy": overrides})
+    start_month = int(meta.start.split("-")[1]) if meta.start is not None else None
     return model_cls(
         end_year=meta.end_year,
         start_year=meta.start_year,
         seed=meta.seed if seed is None else seed,
         config=config,
         collect_data=collect_data,
+        start_month=start_month,
     )
 
 
@@ -403,6 +405,7 @@ class _Builder:
             mortality_mode=MortalityMode(p.mortality),
             death_age=p.death_age,
             state=p.state if p.state is not None else self.spec.meta.default_state,
+            birth=p.birth,
         )
         person.spec_id = p.id
         self.built.people[p.id] = person

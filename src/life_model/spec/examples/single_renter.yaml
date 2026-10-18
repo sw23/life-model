@@ -13,6 +13,7 @@ people:
 - id: sam
   name: Sam
   age: 29
+  birth: '1996-08'
   retirement_age: 65
   state: CA
   mortality: stochastic

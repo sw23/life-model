@@ -20,7 +20,12 @@ def fixture_config() -> FinancialConfig:
 
 
 def minimal(**person_overrides) -> dict:
-    """A minimal valid spec as raw data: one person with a bank account and a job."""
+    """A minimal valid spec as raw data: one person with a bank account and a job.
+
+    The person is born in January of the year that makes them ``age`` in January 2026 (the same exact
+    ages as an age-only spec, without the validator's ``birth_assumed`` warning); pass ``birth=None``
+    to leave the birth month out.
+    """
     person = {
         "id": "alex",
         "name": "Alex",
@@ -31,6 +36,10 @@ def minimal(**person_overrides) -> dict:
         "accounts": [{"kind": "bank", "balance": 20000}],
     }
     person.update(person_overrides)
+    if "birth" not in person_overrides:
+        person["birth"] = f"{2026 - person['age']:04d}-01"
+    elif person["birth"] is None:
+        del person["birth"]
     return {"meta": {"name": "test", "start_year": 2026, "end_year": 2030}, "people": [person]}
 
 

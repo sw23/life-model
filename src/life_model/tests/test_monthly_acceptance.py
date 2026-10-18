@@ -92,6 +92,7 @@ def _spec_fixed(name: str) -> LifeModel:
     for person in data["people"]:
         person["mortality"] = "immortal"
         person.pop("death_age", None)
+        person.pop("birth", None)  # the annual engine's values are for the age-only example
     data["meta"]["end_year"] = data["meta"]["start_year"] + 19
     return build_model(HouseholdSpec.model_validate(data))
 

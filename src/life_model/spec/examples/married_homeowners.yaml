@@ -12,6 +12,7 @@ people:
 - id: john
   name: John
   age: 44
+  birth: '1981-06'
   gender: male
   retirement_age: 60
   spending:
@@ -102,6 +103,7 @@ people:
 - id: jane
   name: Jane
   age: 45
+  birth: '1980-11'
   gender: female
   retirement_age: 60
   spending:

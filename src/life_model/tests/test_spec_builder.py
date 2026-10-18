@@ -478,7 +478,7 @@ class TestEventActions(unittest.TestCase):
 
     def test_die_and_an_ordinary_event_at_the_same_age_land_in_the_same_year(self):
         data = minimal(jobs=[], retirement_age=60)
-        data["people"][0]["age"] = 80
+        data["people"][0].update(age=80, birth="1946-01")
         data["meta"]["end_year"] = 2040
         data["events"] = [
             {"at": {"age": 85}, "person": "alex", "action": "die"},
@@ -538,7 +538,7 @@ class TestEventActions(unittest.TestCase):
 
     def test_claim_by_year_starts_benefits_that_year(self):
         data = minimal(retirement_age=62, jobs=[])
-        data["people"][0]["age"] = 60
+        data["people"][0].update(age=60, birth="1966-01")
         data["people"][0]["social_security"] = {
             "claim_age": 67,
             "earnings_history": {y: 60000 for y in range(1990, 2026)},
@@ -555,3 +555,62 @@ class TestEventActions(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestMonthlyFields(unittest.TestCase):
+    """Plan 32: meta.start, Person.birth and At.month are supported."""
+
+    def test_start_birth_and_event_months_reach_the_model(self):
+        data = minimal(birth="1986-04", age=40)
+        data["meta"]["start"] = "2026-10"
+        data["events"] = [
+            {"at": {"year": 2027, "month": 6}, "person": "alex", "action": "one_time_expense", "amount": 500},
+            {"at": {"age": 42}, "person": "alex", "action": "one_time_expense", "amount": 700},
+            {"at": "2029-02", "person": "alex", "action": "one_time_expense", "amount": 900},
+        ]
+        built = build(data)
+        model, person = built.model, built.people["alex"]
+        self.assertEqual((model.start_year, model.start_month), (2026, 10))
+        self.assertEqual((person.birth_year, person.birth_month, person.birth_month_assumed), (1986, 4, False))
+        model.run()
+        expenses = {(e.year, e.month): e.amount for e in model.ledger if e.kind == "spending" and e.sink == "one time"}
+        # June 2027; Alex turns 42 in April 2028 (the birth month); February 2029.
+        self.assertEqual(expenses, {(2027, 6): 500, (2028, 4): 700, (2029, 2): 900})
+
+    def test_validator_checks_start_and_birth(self):
+        from ..spec import validate_spec
+
+        data = minimal(birth="1990-04")  # 35 in January 2026, not 40
+        self.assertIn("birth_age_mismatch", [f.code for f in validate_spec(data)])
+        data = minimal(birth=None)
+        findings = validate_spec(data)
+        self.assertEqual([f.code for f in findings], ["birth_assumed"])
+        self.assertIn("age 40 in 2026-01", findings[0].fix)
+        data = minimal()
+        data["meta"]["start"] = "2027-03"
+        self.assertIn("start_mismatch", [f.code for f in validate_spec(data)])
+        data = minimal()
+        data["meta"]["start"] = "2026-10"
+        data["events"] = [
+            {"at": {"year": 2026, "month": 3}, "person": "alex", "action": "one_time_expense", "amount": 1}
+        ]
+        self.assertIn("event_before_start", [f.code for f in validate_spec(data)])
+
+    def test_extracted_spec_keeps_start_birth_and_months(self):
+        from ..spec import spec_from_model
+
+        data = minimal(birth="1986-04", age=40)
+        data["meta"]["start"] = "2026-10"
+        data["events"] = [
+            {"at": {"year": 2027, "month": 6}, "person": "alex", "action": "one_time_expense", "amount": 500}
+        ]
+        model = build(data).model
+        spec = spec_from_model(model)
+        self.assertEqual(spec.meta.start, "2026-10")
+        self.assertEqual(spec.people[0].birth, "1986-04")
+        self.assertEqual(spec.events[0].at.month, 6)
+        for _ in range(4):
+            model.step()  # through January 2027
+        stepped = spec_from_model(model)
+        self.assertEqual((stepped.meta.start_year, stepped.meta.start), (2027, "2027-02"))
+        self.assertEqual((stepped.events[0].at.year, stepped.events[0].at.month), (2027, 6))

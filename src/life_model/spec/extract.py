@@ -143,6 +143,7 @@ class _Extractor:
             description=src.description if src is not None else None,
             as_of=src.as_of if src is not None else None,
             start_year=self.start,
+            start=f"{self.start}-{self.model.month:02d}" if self.model.month != 1 else None,
             end_year=max(self.model.end_year, self.start),
             seed=src.seed if src is not None else None,
             scenario=self.config.scenario,
@@ -202,6 +203,9 @@ class _Extractor:
             id=pid,
             name=person.name,
             age=person.age,
+            birth=None
+            if getattr(person, "birth_month_assumed", True)
+            else f"{person.birth_year:04d}-{person.birth_month:02d}",
             gender=person.gender.value,
             retirement_age=person.retirement_age,
             state=None if person.state == default_state else person.state,
@@ -711,7 +715,7 @@ class _Extractor:
         """
         from ..lifeevents import LifeEvents
 
-        years: dict[int, list[int]] = {}
+        years: dict[int, list[tuple[int, int | None]]] = {}
         sources: list = []
         for agent in self.model.agents:
             if isinstance(agent, LifeEvents):
@@ -722,18 +726,19 @@ class _Extractor:
                     if id(source) not in years:
                         years[id(source)] = []
                         sources.append(source)
-                    years[id(source)].append(life_event.year)
+                    years[id(source)].append((life_event.year, life_event.month))
         if not self.stepped:
             return sources
         retimed = []
         for source in sources:
             pending = years[id(source)]
             if isinstance(source, s.Marriage):
-                retimed.append(source.model_copy(update={"year": min(pending)}))
+                retimed.append(source.model_copy(update={"year": min(pending)[0]}))
                 continue
-            update: dict[str, Any] = {"at": s.At(year=min(pending))}
+            first_year, first_month = min(pending, key=lambda when: (when[0], when[1] or 0))
+            update: dict[str, Any] = {"at": s.At(year=first_year, month=first_month)}
             if isinstance(source, s.RecurringExpenseEvent):
-                update["until"] = s.At(year=max(pending))
+                update["until"] = s.At(year=max(year for year, _ in pending))
             retimed.append(source.model_copy(update=update))
         return retimed
 
