@@ -105,7 +105,8 @@ AgeFloat = Annotated[float, Field(ge=0, le=119)]
 #: A calendar year.
 Year = Annotated[int, Field(ge=1900, le=2200)]
 #: A spec identifier (referenced by other entries).
-Identifier = Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]+$", min_length=1, max_length=64)]
+# (Character class written so docutils does not read "..._]" as a hyperlink reference.)
+Identifier = Annotated[str, Field(pattern=r"^[-0-9A-Z_a-z]+$", min_length=1, max_length=64)]
 #: A ``YYYY-MM`` calendar month.
 YearMonth = Annotated[str, Field(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")]
 

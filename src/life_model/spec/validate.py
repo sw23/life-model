@@ -53,16 +53,11 @@ _INVESTMENT_KINDS = ("brokerage", "401k", "traditional_ira", "roth_ira", "hsa", 
 
 @dataclass(frozen=True)
 class Finding:
-    """One validation finding.
-
-    Attributes:
-        level: ``"error"`` (the household cannot be built as written) or ``"warning"``.
-        path: Location in the spec, e.g. ``people[0].accounts[1].interest_pct`` (for a model:
-            ``person[Alex].accounts[Checking]``).
-        message: What is wrong.
-        fix: How to fix it (None when obvious).
-        code: Stable machine-readable code, e.g. ``not_yet_supported`` or ``fraction_percent``.
-    """
+    """One validation finding: ``level`` is ``"error"`` (the household cannot be built as written) or
+    ``"warning"``; ``path`` locates it in the spec (e.g. ``people[0].accounts[1].interest_pct``; for
+    a model, ``person[Alex].bank_accounts``); ``message`` says what is wrong; ``fix`` how to fix it
+    (None when obvious); ``code`` is a stable machine-readable code such as ``not_yet_supported``
+    or ``fraction_percent``."""
 
     level: Level
     path: str
