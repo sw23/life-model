@@ -19,6 +19,31 @@ if TYPE_CHECKING:
     from .family import Family
     from .person import Person
 
+#: The household payment waterfall, in draw order (D4). ``bank`` is cash already in members' bank
+#: accounts; ``brokerage`` sells taxable holdings (gains taxed this year); ``roth_basis`` draws Roth
+#: IRA contribution basis of members under the federal retirement age (59.5), which is tax- and
+#: penalty-free; ``pretax`` draws 401k / Traditional IRA / HSA money (ordinary income, plus the
+#: early-withdrawal penalty when young); ``roth_earnings`` draws the remaining tax-free Roth money
+#: (Roth 401k balances, and whole Roth IRAs from 59.5).
+DEFAULT_WITHDRAWAL_ORDER: tuple[str, ...] = ("bank", "brokerage", "roth_basis", "pretax", "roth_earnings")
+
+
+def validate_withdrawal_order(order: "tuple[str, ...] | list[str] | None") -> tuple[str, ...]:
+    """Return ``order`` as a tuple, or the default when None.
+
+    A valid order names every source of :data:`DEFAULT_WITHDRAWAL_ORDER` exactly once, ``bank``
+    first (cash on hand is always spent before anything is sold or withdrawn).
+    """
+    if order is None:
+        return DEFAULT_WITHDRAWAL_ORDER
+    order = tuple(order)
+    if sorted(order) != sorted(DEFAULT_WITHDRAWAL_ORDER) or order[0] != "bank":
+        raise ValueError(
+            f"withdrawal_order must list each of {DEFAULT_WITHDRAWAL_ORDER} exactly once, starting with 'bank'; "
+            f"got {order}"
+        )
+    return order
+
 
 class TaxUnit:
     """A tax-filing unit: a single person, or a married couple filing jointly.
@@ -28,10 +53,13 @@ class TaxUnit:
       1. Gather every non-tax bill (discretionary spending, housing payments, apartment rent,
          and any personal debt carried by members) exactly once.
       2. Compute income taxes on the unit's combined taxable income.
-      3. Size a pre-tax 401k withdrawal (plus the taxes it triggers) if the combined bank
-         balance can't cover bills + taxes, and perform that withdrawal.
-      4. Pay bills + taxes from the members' combined accounts exactly once. Any shortfall
-         becomes new debt on the first member.
+      3. Fund bills + taxes through one household waterfall (``withdrawal_order``, default
+         :data:`DEFAULT_WITHDRAWAL_ORDER`): every member's bank, then every member's brokerage
+         (sized against the gains tax it triggers), then Roth basis of members under 59.5, then a
+         pre-tax withdrawal sized against the tax and penalty it triggers, then the remaining Roth
+         money. Each step moves only what the previous ones could not cover into the banks.
+      4. Pay bills + taxes from the members' combined banks exactly once. Any shortfall becomes new
+         debt on the first member.
 
     ``Family`` is only a container/aggregator built on top of tax units; it performs no
     tax math. This single abstraction is what makes married-couple housing, family debt,
@@ -45,10 +73,11 @@ class TaxUnit:
     unit members declare differing states so the order-dependence is visible rather than silent.
     """
 
-    def __init__(self, members: list["Person"]):
+    def __init__(self, members: list["Person"], *, withdrawal_order: "tuple[str, ...] | None" = None):
         if not members:
             raise ValueError("TaxUnit requires at least one member")
         self.members = members
+        self.withdrawal_order = validate_withdrawal_order(withdrawal_order)
         self.filing_status = members[0].filing_status
         # The year's tax parameters (brackets, deductions, wage base) for this settlement.
         self.config = members[0].model.year_config
@@ -86,6 +115,7 @@ class TaxUnit:
         """
         units: list[TaxUnit] = []
         seen = set()
+        order = getattr(family, "withdrawal_order", None)
         for member in family.members:
             if member.unique_id in seen:
                 continue
@@ -95,16 +125,30 @@ class TaxUnit:
                 and spouse is not None
                 and spouse in family.members
             ):
-                units.append(cls([member, spouse]))
+                units.append(cls([member, spouse], withdrawal_order=order))
                 seen.add(member.unique_id)
                 seen.add(spouse.unique_id)
             else:
-                unit = cls([member])
+                unit = cls([member], withdrawal_order=order)
                 if member.filing_status == FilingStatus.SINGLE and cls._has_dependent_child(member):
                     unit.filing_status = FilingStatus.HEAD_OF_HOUSEHOLD
                 units.append(unit)
                 seen.add(member.unique_id)
         return units
+
+    @classmethod
+    def for_member(cls, person: "Person") -> "TaxUnit":
+        """The filing unit ``person`` belongs to this year (with their spouse when filing jointly).
+
+        Mid-year purchases and other immediate payments go through this unit's :meth:`pay_bills`, so
+        they draw on the same household waterfall as year-end settlement.
+        """
+        family = getattr(person, "family", None)
+        if family is not None and person in family.members:
+            for unit in cls.build_units(family):
+                if person in unit.members:
+                    return unit
+        return cls([person], withdrawal_order=getattr(family, "withdrawal_order", None))
 
     @staticmethod
     def _has_dependent_child(member: "Person") -> bool:
@@ -329,12 +373,93 @@ class TaxUnit:
         return amount
 
     def pay_bills(self, amount: float) -> float:
-        """Pay ``amount`` from members' combined accounts. Returns the unpaid shortfall."""
+        """Pay ``amount`` now through the household waterfall. Returns the unpaid shortfall.
+
+        The immediate-payment entry point (a home's down payment, an estate tax, any mid-year
+        purchase): every member's bank first, then each later source of ``withdrawal_order`` raises
+        only what is still unpaid. Gains, pre-tax distributions and penalties this creates are on the
+        members' ledgers, so the year's settlement taxes them (and sizes any further draw for that
+        tax). Year-end settlement funds its bills with the sized version of the same order.
+        """
+        remaining = self._pay_from_banks(amount)
+        for source in self.withdrawal_order[1:]:
+            if remaining <= 0:
+                break
+            self._raise_cash(source, remaining)
+            remaining = self._pay_from_banks(remaining)
+        return max(0.0, remaining)
+
+    def _pay_from_banks(self, amount: float) -> float:
+        """Pay ``amount`` from every member's bank accounts, in member order. Returns the shortfall."""
         for member in self.members:
             if amount <= 0:
-                return 0
-            amount = member.pay_bills(amount)
+                return 0.0
+            amount = member.deduct_from_bank_accounts(amount)
         return amount
+
+    def _raise_cash(self, source: str, amount: float) -> float:
+        """Move up to ``amount`` from ``source`` (a non-bank waterfall step) into members' banks,
+        posting whatever the draw makes taxable. Unsized: the caller accounts for any tax. Returns
+        the amount raised."""
+        raised = 0.0
+        for member in self.members:
+            if raised >= amount:
+                break
+            want = amount - raised
+            if source == "brokerage":
+                raised += member.withdraw_from_brokerage_accounts(want)
+            elif source == "pretax":
+                raised += member.withdraw_from_pretax_accounts(want)
+            elif source == "roth_basis":
+                if self._under_retirement_age(member):
+                    raised += member.withdraw_tax_free_from_roth_iras(want)
+            elif source == "roth_earnings":
+                got = member.withdraw_from_roth_401ks(want)
+                if want - got > 0:
+                    got += member.withdraw_tax_free_from_roth_iras(want - got)
+                raised += got
+            else:  # pragma: no cover - validated in __init__
+                raise ValueError(f"Unknown withdrawal source {source!r}")
+        return raised
+
+    @staticmethod
+    def _under_retirement_age(member: "Person") -> bool:
+        from ..limits import federal_retirement_age
+
+        return member.age < federal_retirement_age(member.model.config)
+
+    def _fund_bills(self, bills: float) -> TaxesDue:
+        """Move enough money into the members' banks to pay ``bills`` + the year's taxes, walking
+        ``withdrawal_order``, and return the final taxes due.
+
+        Taxable steps are sized against the tax they trigger (brokerage: the gains; pre-tax: the
+        ordinary income and early-withdrawal penalty); tax-free Roth steps move exactly the
+        remaining gap. Capital gains and losses are netted once, right after the brokerage step
+        (so the pre-tax solve that follows in the default order reads netted gains).
+        """
+        netted = False
+        for source in self.withdrawal_order:
+            if source == "bank":
+                continue
+            if source == "brokerage":
+                self._draw_from_brokerage(bills)
+                # Net capital gains and losses once — after the brokerage sale — so brokerage gains
+                # net with RSU vests and any loss carryforward before later steps read the tax bases.
+                self._apply_capital_loss_netting()
+                netted = True
+            elif source == "pretax":
+                # Size and perform any pre-tax withdrawal against the tax and penalty it triggers.
+                gross = self._size_gross_withdrawal(bills)
+                if gross > 0:
+                    self.withdraw_from_pretax_accounts(gross)
+            else:
+                gap = bills + self.get_income_taxes_due().total - self.bank_account_balance
+                # Sub-cent gaps are fixed-point residue from the sized steps, not a real shortfall.
+                if gap >= 0.005:
+                    self._raise_cash(source, gap)
+        if not netted:
+            self._apply_capital_loss_netting()
+        return self.get_income_taxes_due()
 
     @property
     def brokerage_balance(self) -> float:
@@ -567,20 +692,12 @@ class TaxUnit:
         total_debt_payments = sum(debt_payment_by_member.values())
         bills = total_spending + total_housing + total_debt_payments + existing_debt
 
-        # Spending priority: bank first, then taxable brokerage, then retirement accounts. Draw
-        # any brokerage needed to cover bills + the capital-gains tax the sale triggers before the
-        # pre-tax 401k is considered. Proceeds land in the bank, so the 401k solve below naturally
-        # sizes against the topped-up balance (and does nothing when brokerage already covered it).
+        # Tax-free qualified HSA reimbursements of this year's medical costs come first, then the
+        # household waterfall (all banks, all brokerage, Roth basis under 59.5, pre-tax, remaining
+        # Roth) moves into the banks only what bills + taxes still need. Proceeds land in the bank,
+        # so each step sizes against the topped-up balance and does nothing once it is covered.
         self._draw_hsa_for_medical(bills)
-        self._draw_from_brokerage(bills)
-
-        # Net capital gains and losses once — after the brokerage sale — so brokerage gains net
-        # with RSU vests and any loss carryforward before the tax bases are read for the 401k
-        # solve. (Doing it here rather than up front keeps a single, all-in netting pass.)
-        self._apply_capital_loss_netting()
-
-        # Size and perform any pre-tax 401k withdrawal, then get the final taxes owed.
-        taxes = self._solve_withdrawals_and_taxes(bills)
+        taxes = self._fund_bills(bills)
 
         # Record this year's AGI on every member. Each member records the AGI of the
         # return they filed — the unit's full AGI, not a per-member split — because Medicare/IRMAA
@@ -598,12 +715,13 @@ class TaxUnit:
         settle_charitable_carryforwards(self.members, agi, year, self.config)
         itemized_claimed = itemized if itemized > standard_deduction else 0.0
 
-        # Pay everything from the combined accounts exactly once; a shortfall becomes new debt.
-        # Refundable credits can make the net due negative (a refund): deposit it instead of
-        # "paying" a negative bill (which would create negative debt).
+        # Pay everything from the combined banks exactly once; a shortfall becomes new debt (every
+        # source has already been drawn into the banks as far as it could be). Refundable credits
+        # can make the net due negative (a refund): deposit it instead of "paying" a negative bill
+        # (which would create negative debt).
         net_due = bills + taxes.total
         if net_due >= 0:
-            shortfall = round_money(self.pay_bills(net_due))
+            shortfall = round_money(max(0.0, self._pay_from_banks(net_due)))
         else:
             self.members[0].receive_cash(-net_due, source="refundable tax credits")
             shortfall = 0.0
@@ -612,21 +730,6 @@ class TaxUnit:
         self._record_stats(taxes, spending_by_member, housing_by_member, interest_by_member)
         # Which deduction the return took: the itemized amount, or 0 when it took the standard one.
         self.members[0].stat_itemized_deductions = itemized_claimed
-
-    def _solve_withdrawals_and_taxes(self, bills: float) -> TaxesDue:
-        """Withdraw enough pre-tax money (401k, then Traditional IRA) to cover bills + the taxes
-        and penalties the withdrawal itself triggers when the bank can't, then return the final
-        taxes due.
-
-        The gross withdrawal is sized by a fixed-point iteration rather than a max-marginal-rate
-        buffer: ``gross = bills + taxes(gross) - bank_balance``. Because the marginal tax rate is
-        piecewise-constant and below 100%, the map is a contraction and converges quickly. This
-        avoids the old heuristic's systematic over-withdrawal.
-        """
-        gross = self._size_gross_withdrawal(bills)
-        if gross > 0:
-            self.withdraw_from_pretax_accounts(gross)
-        return self.get_income_taxes_due()
 
     def _size_gross_withdrawal(self, bills: float) -> float:
         """Pure fixed-point solve for the pre-tax withdrawal needed to cover bills + taxes.

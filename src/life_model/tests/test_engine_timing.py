@@ -15,6 +15,8 @@ from pathlib import Path
 
 from ..account.bank import BankAccount
 from ..account.brokerage import BrokerageAccount, TaxLot
+from ..account.job401k import Job401kAccount
+from ..account.roth_IRA import RothIRA
 from ..config.financial_config import FinancialConfig
 from ..housing.apartment import Apartment
 from ..housing.home import Home, HomeExpenses, Mortgage
@@ -22,6 +24,7 @@ from ..lifeevents import LifeEvent, LifeEventRecord, LifeEvents
 from ..model import LifeModel
 from ..people.family import Family
 from ..people.person import Person, Spending
+from ..people.tax_unit import DEFAULT_WITHDRAWAL_ORDER, TaxUnit
 from ..tax.federal import FilingStatus
 from ..work.job import Job, Salary
 
@@ -314,6 +317,141 @@ class TestPastEvents(unittest.TestCase):
             warnings.simplefilter("always")
             LifeEvents(model, [LifeEvent(2040, "late", person.spending.add_expense, 1)])
         self.assertTrue(any("after the simulation's end year" in str(w.message) for w in caught))
+
+
+def _probe4_household(*, spouse_first=False, years=3):
+    """The review's probe 4: a married homeowner couple with a 401k and a taxable brokerage account,
+    whose combined bank comfortably covers every year's bills."""
+    model = LifeModel(start_year=2026, end_year=2026 + years - 1, config=_fixture_config())
+    family = Family(model)
+
+    def build_a():
+        a = Person(family, "A", age=40, retirement_age=65, spending=Spending(model, base=60000))
+        BankAccount(a, "Bank", balance=30000, interest_rate=0)
+        BrokerageAccount(a, "Fid", balance=300000, growth_rate=6, dividend_yield=0)
+        job = Job(a, "Co", "Eng", Salary(model, base=180000, yearly_bonus=10))
+        Job401kAccount(job=job, pretax_balance=200000, pretax_contrib_percent=10, average_growth=6)
+        return a
+
+    def build_b():
+        b = Person(family, "B", age=38, retirement_age=65, spending=Spending(model, base=20000))
+        BankAccount(b, "Bank", balance=20000, interest_rate=0)
+        Job(b, "Co2", "Mgr", Salary(model, base=120000))
+        return b
+
+    if spouse_first:
+        b = build_b()
+        a = build_a()
+    else:
+        a = build_a()
+        b = build_b()
+    a.get_married(b)
+    mortgage = Mortgage(loan_amount=480000, start_date=2024, length_years=30, yearly_interest_rate=6.5)
+    expenses = HomeExpenses(
+        model=model,
+        property_tax_percent=1.2,
+        home_insurance_percent=0.5,
+        maintenance_amount=3000,
+        maintenance_increase=2,
+        improvement_amount=0,
+        improvement_increase=0,
+        hoa_amount=0,
+        hoa_increase=0,
+    )
+    Home(a, "Home", 600000, 3.0, 120000, mortgage, expenses)
+    return model
+
+
+class TestHouseholdWaterfall(unittest.TestCase):
+    """Item 4 / D4: a married unit pays from all members' banks before selling anyone's brokerage."""
+
+    def test_married_couple_sells_no_brokerage_while_combined_bank_covers_bills(self):
+        model = _probe4_household()
+        model.run()
+        df = _frame(model)
+        self.assertTrue((df["Capital Gains"] == 0).all())
+        self.assertTrue((df["Brokerage Balance"].diff().dropna() > 0).all())  # only growth, no sales
+        self.assertTrue((df["Bank Balance"] > 0).all())
+
+    def test_result_independent_of_spouse_construction_order(self):
+        first = _probe4_household(spouse_first=False, years=5)
+        second = _probe4_household(spouse_first=True, years=5)
+        first.run()
+        second.run()
+        a = first.datacollector.get_model_vars_dataframe()
+        b = second.datacollector.get_model_vars_dataframe()
+        for column in a.columns:
+            for x, y in zip(a[column], b[column]):
+                self.assertAlmostEqual(float(x), float(y), delta=1e-6, msg=column)
+
+    def test_withdrawal_order_validation(self):
+        model = _model()
+        with self.assertRaises(ValueError):
+            Family(model, withdrawal_order=("brokerage", "bank", "roth_basis", "pretax", "roth_earnings"))
+        with self.assertRaises(ValueError):
+            Family(model, withdrawal_order=("bank", "brokerage", "pretax"))
+        self.assertEqual(Family(model).withdrawal_order, DEFAULT_WITHDRAWAL_ORDER)
+
+    def test_unit_pay_bills_uses_both_banks_before_brokerage(self):
+        model = _model()
+        family = Family(model)
+        a = _worker(model, family, name="A", salary=0, bank=1000)
+        b = _worker(model, family, name="B", salary=0, bank=5000)
+        a.get_married(b)
+        brokerage = BrokerageAccount(a, "Fid", balance=10000, growth_rate=0, dividend_yield=0)
+        unit = TaxUnit.for_member(a)
+        self.assertEqual(len(unit.members), 2)
+        self.assertEqual(unit.pay_bills(4000), 0)
+        self.assertEqual(a.bank_account_balance + b.bank_account_balance, 2000)
+        self.assertEqual(brokerage.balance, 10000)
+
+
+class TestRothBasisBeforePretax(unittest.TestCase):
+    """Item 10 / D4: under 59.5, penalty-free Roth basis is spent before a penalized pre-tax draw."""
+
+    def _saver(self, withdrawal_order=None):
+        model = _model(end_year=2026)
+        family = Family(model, withdrawal_order=withdrawal_order)
+        person = _worker(model, family, age=45, salary=0, spending=30000, bank=0)
+        job = Job(person, "Old", "Eng", Salary(model, base=0))
+        account = Job401kAccount(job=job, pretax_balance=200000, average_growth=0)
+        roth = RothIRA(person, balance=50000, growth_rate=0)
+        return model, person, account, roth
+
+    def test_roth_basis_pays_before_the_401k(self):
+        model, person, account, roth = self._saver()
+        model.run()
+        self.assertAlmostEqual(roth.balance, 20000, places=2)
+        self.assertEqual(account.pretax_balance, 200000)
+        self.assertEqual(person.stat_taxes_paid, 0)  # no 10% penalty, no ordinary income
+        self.assertEqual(person.debt, 0)
+
+    def test_pretax_first_order_keeps_old_behaviour_reachable(self):
+        order = ("bank", "brokerage", "pretax", "roth_basis", "roth_earnings")
+        model, person, account, roth = self._saver(withdrawal_order=order)
+        model.run()
+        self.assertEqual(roth.balance, 50000)
+        self.assertLess(account.pretax_balance, 200000 - 30000)  # grossed up for tax + penalty
+        self.assertGreater(person.stat_taxes_paid, 0)
+
+
+class TestMidYearPurchaseUsesHouseholdWaterfall(unittest.TestCase):
+    """Item 11 / D4: a purchase the bank and brokerage can't cover draws the 401k, not a credit card."""
+
+    def test_home_purchase_draws_the_401k_instead_of_creating_debt(self):
+        model = _model(end_year=2026)
+        person = _worker(model, age=62, salary=0, spending=0, bank=10000)
+        job = Job(person, "Old", "Eng", Salary(model, base=0))
+        account = Job401kAccount(job=job, pretax_balance=500000, average_growth=0)
+        home = _buy_home(person)  # at setup: purchase=True pays down + closing now
+        closing = 300000 * model.config.housing.closing_cost_percent / 100
+        self.assertEqual(person.debt, 0)
+        self.assertAlmostEqual(account.pretax_balance, 500000 - (60000 + closing - 10000), places=2)
+        model.run()
+        # The distribution was taxed with the year's return and the year's bills were paid.
+        self.assertGreater(person.stat_taxes_paid, 0)
+        self.assertEqual(person.debt, 0)
+        self.assertGreater(home.home_value, 0)
 
 
 if __name__ == "__main__":

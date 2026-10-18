@@ -37,3 +37,10 @@ run. The expected values are unchanged; only the inputs moved.
 No existing test's expected value changed. `LifeEvents` was never exercised by the suite; its new
 behaviour is pinned in `test_engine_timing.py` (`TestEventsStage`, `TestCreatedYear`,
 `TestPastEvents`).
+
+## Task 3 / D4 — household payment waterfall
+
+No existing test's expected value changed. New behaviour pinned in `TestHouseholdWaterfall`,
+`TestRothBasisBeforePretax` and `TestMidYearPurchaseUsesHouseholdWaterfall`. Probe 4 (married
+homeowners, 401k, brokerage) now sells $0 of brokerage in every year (before: $3.7k–$34k a year
+with $140k–$382k sitting in the bank).

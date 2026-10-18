@@ -553,6 +553,13 @@ class Person(LifeModelAgent):
         )
         return self._withdraw_sequence(withdrawers, amount)
 
+    def withdraw_tax_free_from_roth_iras(self, amount: float) -> float:
+        """Withdraw up to ``amount`` of tax-free Roth IRA money (basis before 59.5, everything from
+        59.5) into the bank. Returns the amount withdrawn."""
+        withdrawn = amount - self.deduct_from_roth_iras(amount)
+        self.receive_cash(withdrawn, source="Roth IRA")
+        return withdrawn
+
     def withdraw_from_pretax_401ks(self, amount: float) -> float:
         """Withdraws money from pre-tax 401ks into the bank account.
 
@@ -807,7 +814,11 @@ class Person(LifeModelAgent):
         self.receive_cash(amount)
 
     def pay_bills(self, spending_balance: float) -> float:
-        """Pays bills using payment service for optimal prioritization.
+        """Pays bills from this person's own accounts using the payment service.
+
+        Person-level only (bank, brokerage, Roth 401k, tax-free Roth IRA). The engine pays through
+        the household waterfall instead (:meth:`TaxUnit.pay_bills`, via ``TaxUnit.for_member``),
+        which uses a spouse's bank before anyone's brokerage and can draw pre-tax money.
 
         Args:
             spending_balance (float): Amount of money spent.
@@ -1334,7 +1345,9 @@ class Person(LifeModelAgent):
         taxable = max(0.0, taxable_base - exemption)
         estate_tax = taxable * (rate / 100)
         if estate_tax > 0:
-            inheritor.pay_bills(estate_tax)
+            from .tax_unit import TaxUnit
+
+            inheritor.debt += TaxUnit.for_member(inheritor).pay_bills(estate_tax)
             self.model.event_log.add(Event(f"Estate tax of ${estate_tax:,.0f} paid on {self.name}'s estate"))
 
     def _apply_survivor_adjustments(self, spouse: "Person"):

@@ -105,14 +105,19 @@ class Home(LifeModelAgent):
         return 0.0
 
     def buy(self):
-        """Withdraw the down payment and closing costs from the owner's accounts.
+        """Withdraw the down payment and closing costs from the owner's household.
 
-        Used when a home is purchased during the simulation (``purchase=True``). Any amount the
-        accounts can't cover becomes debt on the owner.
+        Used when a home is purchased during the simulation (``purchase=True``). The cash comes
+        through the household waterfall (:meth:`TaxUnit.pay_bills`): both spouses' banks, then
+        brokerage, Roth basis, pre-tax accounts and the remaining Roth money; the gains, ordinary
+        income and penalties it creates are taxed when the year settles. Any amount the household
+        can't cover becomes debt on the owner.
         """
+        from ..people.tax_unit import TaxUnit
+
         closing_costs = self.purchase_price * (self.model.config.housing.closing_cost_percent / 100)
         cash_needed = self.down_payment + closing_costs
-        shortfall = self.person.pay_bills(cash_needed)
+        shortfall = TaxUnit.for_member(self.person).pay_bills(cash_needed)
         self.person.debt += shortfall
         self.model.event_log.add(
             Event(
