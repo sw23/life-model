@@ -213,8 +213,8 @@ class LifeInsurance(LifeModelAgent):
         """Charge the yearly premium. Returns True if the policy stays paid up.
 
         An affordable premium goes through the tax unit's bill path (``spending.add_expense``), so it
-        is paid at year-end settlement like every other bill and can be funded by a sized
-        retirement withdrawal rather than lapsing a cash-poor retiree's policy. "Affordable" means
+        is paid with that month's bills like every other bill and can be funded by a retirement
+        withdrawal rather than lapsing a cash-poor retiree's policy. "Affordable" means
         the household's settlement-drawable resources cover it. Otherwise a whole-life policy pays
         from cash value; failing that the premium is missed (nothing is partially paid) and the
         policy lapses after ``max_missed_payments`` misses.

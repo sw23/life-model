@@ -386,7 +386,7 @@ class TaxAdvantagedAccount(Investment, ABC):
         beneficiary: Optional["Person"] = None,
     ):
         super().__init__(person, balance, growth_rate, asset_class, beneficiary=beneficiary)
-        # Contributions made this year (reset in post_step).
+        # Contributions made this year (reset at year end).
         self.contributions_ytd = 0.0
         # Cumulative contribution basis still in the account. Any opening balance is treated as
         # basis (contributions) rather than earnings; growth accrues to earnings, not basis.

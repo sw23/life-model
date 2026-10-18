@@ -140,7 +140,7 @@ class Donation(LifeModelAgent):
         self.make_donation()
 
     def step(self):
-        """No-op: donations are made in pre_step so they are deductible this year."""
+        """No-op: donations are made in pre_step (the year's first month)."""
 
     def post_step(self):
         """No-op: donation cash movement happens in pre_step."""

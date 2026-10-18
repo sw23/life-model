@@ -156,7 +156,7 @@ class Person(LifeModelAgent):
         #: The return this person was on each year (a :class:`~life_model.tax.return_record.TaxReturn`,
         #: shared by both spouses of a joint return), stamped during ``TaxUnit.settle_year``.
         self.tax_returns: dict = {}
-        # Medical costs reimbursed tax-free from HSAs this year (reset in post_step).
+        # Medical costs reimbursed tax-free from HSAs this year (reset at year end).
         self.hsa_medical_reimbursed = 0.0
         # Charitable gifts above the AGI limit, carried forward as (year given, amount).
         self.charitable_carryforwards: list[tuple[int, float]] = []
@@ -748,7 +748,7 @@ class Person(LifeModelAgent):
 
     @property
     def spendable_resources(self) -> float:
-        """Everything year-end settlement can draw to pay this person's bills: bank, brokerage,
+        """Everything the payment waterfall can draw to pay this person's bills: bank, brokerage,
         pre-tax 401k/IRA/HSA, Roth 401k and Roth IRA balances."""
         roth_401k = sum(a.roth_balance for a in self.all_retirement_accounts)
         roth_ira = sum(a.balance for a in self.roth_iras)
@@ -830,7 +830,7 @@ class Person(LifeModelAgent):
     #
     # Each helper mirrors withdraw_from_pretax_401ks: it moves money from the account type into
     # the bank and records the correct income-ledger entry, so the withdrawal is taxed when the
-    # tax unit settles the year inside model.step(). Taxes therefore bite at year-end settlement,
+    # tax unit settles the year in December. Taxes therefore bite at the year's settlement,
     # not at the moment of withdrawal — that is the simulator's actual semantics.
     #
     # Early-withdrawal penalties are recorded on the ledger as additional federal tax: 10% on

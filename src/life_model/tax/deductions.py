@@ -57,7 +57,7 @@ def deductible_charity(members: "list[Person]", agi: float, config: "FinancialCo
 
 
 def settle_charitable_carryforwards(members: "list[Person]", agi: float, year: int, config: "FinancialConfig") -> None:
-    """Consume carryforwards and record this year's excess, once, at year-end settlement.
+    """Consume carryforwards and record this year's excess, once, at the year's tax settlement.
 
     Current-year gifts are deducted first, then carryforwards oldest first (Treas. Reg. 1.170A-10).
     Carryforwards are used up even in a year the return takes the standard deduction, as the

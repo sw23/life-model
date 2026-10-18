@@ -50,18 +50,19 @@ def validate_withdrawal_order(order: "tuple[str, ...] | list[str] | None") -> tu
 class TaxUnit:
     """A tax-filing unit: a single person, or a married couple filing jointly.
 
-    The tax unit owns the year-end settlement for its members:
+    The tax unit pays its members' bills and settles their taxes:
 
-      1. Gather every non-tax bill (discretionary spending, housing payments, apartment rent,
-         and any personal debt carried by members) exactly once.
-      2. Compute income taxes on the unit's combined taxable income.
-      3. Fund bills + taxes through one household waterfall (``withdrawal_order``, default
-         :data:`DEFAULT_WITHDRAWAL_ORDER`): every member's bank, then every member's brokerage
-         (sized against the gains tax it triggers), then Roth basis of members under 59.5, then a
-         pre-tax withdrawal sized against the tax and penalty it triggers, then the remaining Roth
-         money. Each step moves only what the previous ones could not cover into the banks.
-      4. Pay bills + taxes from the members' combined banks exactly once. Any shortfall becomes new
-         debt on the first member.
+      1. Each month (:meth:`settle_month`), gather the month's non-tax bills (spending, housing
+         payments, apartment rent, loan payments, and personal debt carried by members) exactly once
+         and pay them through one household waterfall (``withdrawal_order``, default
+         :data:`DEFAULT_WITHDRAWAL_ORDER`): every member's bank, then every member's brokerage, then
+         Roth basis of members under 59.5, then pre-tax money, then the remaining Roth money. Each
+         step raises only what the previous ones could not cover; what a draw makes taxable is on the
+         members' ledgers for the year's return. A shortfall becomes debt on the first member.
+      2. In December (:meth:`settle_year`), compute income taxes on the unit's combined taxable
+         income for the year and fund them through the same waterfall, the taxable steps sized
+         against the tax they trigger (brokerage: the gains; pre-tax: the ordinary income and
+         penalty), then pay them from the members' combined banks.
 
     ``Family`` is only a container/aggregator built on top of tax units; it performs no
     tax math. This single abstraction is what makes married-couple housing, family debt,
@@ -152,7 +153,7 @@ class TaxUnit:
         """The filing unit ``person`` belongs to this year (with their spouse when filing jointly).
 
         Mid-year purchases and other immediate payments go through this unit's :meth:`pay_bills`, so
-        they draw on the same household waterfall as year-end settlement.
+        they draw on the same household waterfall as the month's bills.
         """
         family = getattr(person, "family", None)
         if family is not None and person in family.members:

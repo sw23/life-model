@@ -416,7 +416,11 @@ class LifeModel(mesa.Model):
         MoneyStat(
             "stat_gross_income", "Income", "Gross income made in the year (salary, bonus, RSU vests).", flow=True
         ),
-        MoneyStat("stat_bank_balance", "Bank Balance", "Bank account balances after the year's bills are paid."),
+        MoneyStat(
+            "stat_bank_balance",
+            "Bank Balance",
+            "Bank account balances at year end, after December's bills and the taxes.",
+        ),
         MoneyStat("stat_brokerage_balance", "Brokerage Balance", "Taxable brokerage balances at year end."),
         MoneyStat("stat_401k_balance", "401k Balance", "401k balances (pre-tax plus Roth) at year end."),
         MoneyStat(
