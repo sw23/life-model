@@ -162,8 +162,8 @@ year's settlement.
 
 ## Fixed-economy tolerance against the annual engine
 
-Measured with `economy.mode: fixed` and immortal people on the four example households cut to 20-50
-years and the four Plan 28 scenario households (the stochastic retiree under a fixed economy),
+Measured with `economy.mode: fixed` and immortal people on the example households (age-only, as
+before this plan added birth months to them; up to 50 years) and the four Plan 28 scenario households (the stochastic retiree under a fixed economy),
 against the pre-plan engine (`fourth-wave` at 2cb84b0, run in a scratch worktree). "Aligned" runs
 the monthly engine with every retirement age raised by 11/12 of a year, so a person retires in
 December of the year they reach their retirement age — the annual engine's last paid year — which
@@ -209,12 +209,12 @@ nine months before it (20% of it: $9,000). `TestSequenceOfReturns` pins the orde
 
 | Measurement | Before (annual engine) | After (monthly engine) |
 | --- | --- | --- |
-| Monte Carlo, 50 years, n=1000, process pool (single_renter spec, stochastic economy, 18 cores) | 6.4-6.9 s | 12.3 s (15.4 s before the balance-sheet and ledger-record optimizations) |
+| Monte Carlo, 50 years, n=1000, process pool (single_renter spec, stochastic economy, 18 cores) | 6.4-7.2 s | 12.3-13.0 s (15.4 s before the balance-sheet and ledger-record optimizations) |
 | One 50-year run of the same spec | 0.10 s | 0.19 s |
-| Core suite (`src/life_model/tests -m "not notebooks"`) | 1004 tests, 41 s | 1049 tests, 54 s |
-| RL + SLM suites (`-m "not slow and not notebooks"`) | 330 tests, 5 min 27 s | 330 tests, 7 min 34 s |
+| Core suite (`src/life_model/tests -m "not notebooks"`) | 1004 tests, 41 s | 1049 tests, 53 s |
+| Dashboard + RL + SLM suites (`-m "not slow and not notebooks"`) | 350 tests (+1 skipped), about 5.5 min | 351 tests (+1 skipped), 7 min 38 s |
 
-The Monte Carlo slowdown is 1.8-1.9x, well inside the 10x budget; per-month balance sheets (the
+The Monte Carlo slowdown is 1.7-2.0x, well inside the 10x budget; per-month balance sheets (the
 monthly conservation check) were the largest new cost and are built with cached imports now.
 
 ## Plan 26 D10 (`as_of` proration)
