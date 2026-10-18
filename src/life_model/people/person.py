@@ -112,6 +112,9 @@ class Person(LifeModelAgent):
         # Per-year record of this member's share of the tax unit's AGI, stamped during
         # ``TaxUnit.settle_year``. Medicare/IRMAA reads this with a two-year lookback.
         self.agi_history: dict[int, float] = {}
+        #: The return this person was on each year (a :class:`~life_model.tax.return_record.TaxReturn`,
+        #: shared by both spouses of a joint return), stamped during ``TaxUnit.settle_year``.
+        self.tax_returns: dict = {}
         # Medical costs reimbursed tax-free from HSAs this year (reset in post_step).
         self.hsa_medical_reimbursed = 0.0
         # Charitable gifts above the AGI limit, carried forward as (year given, amount).
@@ -363,6 +366,31 @@ class Person(LifeModelAgent):
 
         return itemized
 
+    def itemized_deduction_components(
+        self, state_income_tax_paid: float = 0.0, additional_income: float = 0.0
+    ) -> dict[str, float]:
+        """The non-charity parts of :meth:`itemized_deductions` by line, for the tax return record:
+        ``mortgage_interest`` (limited to the acquisition-debt cap), ``salt`` (after the cap) and
+        ``medical`` (above the floor). Charity is added per return (it is capped at the return's AGI)."""
+        federal = self.model.config.tax.federal
+        limit_share = 0.5 if self.filing_status == FilingStatus.MARRIED_FILING_SEPARATELY else 1.0
+        mortgage_interest = 0.0
+        salt_paid = state_income_tax_paid
+        for home in self.homes:
+            mortgage = getattr(home, "mortgage", None)
+            if mortgage:
+                interest = mortgage.interest_paid_this_year
+                debt_limit = federal.mortgage_interest_debt_limit * limit_share
+                if mortgage.loan_amount > debt_limit:
+                    interest *= debt_limit / mortgage.loan_amount
+                mortgage_interest += interest
+            salt_paid += home.property_tax_for_year
+        return {
+            "mortgage_interest": mortgage_interest,
+            "salt": min(salt_paid, federal.salt_deduction_cap * limit_share),
+            "medical": self.medical_expense_deduction_with(additional_income),
+        }
+
     def total_itemized_deductions_with(self, additional_income: float = 0.0) -> float:
         """Total itemized deductions with ``additional_income`` raising the medical floor.
 
@@ -575,7 +603,7 @@ class Person(LifeModelAgent):
         """
         withdrawn = amount - self.deduct_from_pretax_401ks(amount)
         # Pre-tax 401k distributions are ordinary income but are NOT FICA wages.
-        self.income.add(IncomeType.PRETAX_DISTRIBUTION, withdrawn)
+        self.income.add(IncomeType.PRETAX_DISTRIBUTION, withdrawn, source="401k")
         self._charge_early_withdrawal_penalty(withdrawn)
         self.receive_cash(withdrawn)
         return withdrawn
@@ -710,7 +738,7 @@ class Person(LifeModelAgent):
             float: Amount actually withdrawn.
         """
         withdrawn = amount - self._withdraw_sequence((acct.withdraw for acct in self.traditional_iras), amount)
-        self.income.add(IncomeType.PRETAX_DISTRIBUTION, withdrawn)
+        self.income.add(IncomeType.PRETAX_DISTRIBUTION, withdrawn, source="ira")
         self._charge_early_withdrawal_penalty(withdrawn)
         self.receive_cash(withdrawn)
         return withdrawn
@@ -1298,7 +1326,7 @@ class Person(LifeModelAgent):
             return
         mode = self.model.config.estate.inherited_pretax_mode
         if mode == "lump_sum":
-            beneficiary.income.add(IncomeType.PRETAX_DISTRIBUTION, amount)
+            beneficiary.income.add(IncomeType.PRETAX_DISTRIBUTION, amount, source="inherited")
             beneficiary.receive_cash(amount, source=f"inherited retirement from {self.name}")
         else:  # "ten_year"
             from ..account.inherited import InheritedPretaxAccount

@@ -114,7 +114,7 @@ class BrokerageAccount(Investment):
         self.balance += appreciation
 
         if dividend > 0:
-            self.person.income.add(IncomeType.QUALIFIED_DIVIDEND, dividend)
+            self.person.income.add(IncomeType.QUALIFIED_DIVIDEND, dividend, source="dividend")
             self.deposit(dividend)
 
         growth = appreciation + dividend
@@ -172,9 +172,9 @@ class BrokerageAccount(Investment):
         """
         withdrawn, long_term_gain, short_term_gain = self.sell(amount)
         if long_term_gain != 0:
-            self.person.income.add(IncomeType.LONG_TERM_CAPITAL_GAIN, long_term_gain)
+            self.person.income.add(IncomeType.LONG_TERM_CAPITAL_GAIN, long_term_gain, source="brokerage_sale")
         if short_term_gain != 0:
-            self.person.income.add(IncomeType.SHORT_TERM_CAPITAL_GAIN, short_term_gain)
+            self.person.income.add(IncomeType.SHORT_TERM_CAPITAL_GAIN, short_term_gain, source="brokerage_sale")
         return withdrawn
 
     def sell(self, amount: float) -> tuple[float, float, float]:

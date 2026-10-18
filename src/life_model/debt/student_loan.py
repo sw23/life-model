@@ -154,7 +154,7 @@ class StudentLoan(Loan):
             self.forgiven_amount = self.principal
             self.principal = 0.0
             if cfg.forgiveness_taxable:
-                self.person.income.add(IncomeType.ORDINARY, self.forgiven_amount)
+                self.person.income.add(IncomeType.ORDINARY, self.forgiven_amount, source="debt_forgiveness")
             self.model.event_log.add(
                 Event(f"{self.person.name}'s student loan forgiven: ${self.forgiven_amount:,.0f} after RAP payments")
             )

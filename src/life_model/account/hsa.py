@@ -77,7 +77,7 @@ class HealthSavingsAccount(TaxAdvantagedAccount):
         not deducted.
         """
         actual = super().contribute(amount)
-        self.person.income.add_deduction(actual)
+        self.person.income.add_deduction(actual, source="hsa_deduction")
         return actual
 
     def withdraw_medical(self, amount: float) -> float:
@@ -95,9 +95,11 @@ class HealthSavingsAccount(TaxAdvantagedAccount):
         withdrawn = self.withdraw(amount)
         if withdrawn > 0:
             hsa_config = self.model.config.accounts.hsa
-            self.person.income.add(IncomeType.PRETAX_DISTRIBUTION, withdrawn)
+            self.person.income.add(IncomeType.PRETAX_DISTRIBUTION, withdrawn, source="hsa")
             if self.person.age < hsa_config.non_medical_penalty_age:
-                self.person.income.add_penalty(withdrawn * hsa_config.non_medical_penalty_rate / 100)
+                self.person.income.add_penalty(
+                    withdrawn * hsa_config.non_medical_penalty_rate / 100, source="hsa_non_medical"
+                )
         return withdrawn
 
     def _repr_html_(self):

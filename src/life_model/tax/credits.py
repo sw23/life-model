@@ -56,8 +56,22 @@ def child_tax_credit(
     Returns:
         The total credit amount to record on ``TaxesDue.credits`` (>= 0).
     """
+    nonrefundable, refundable = child_tax_credit_parts(
+        num_qualifying_children, magi, federal_tax, filing_status, config
+    )
+    return nonrefundable + refundable
+
+
+def child_tax_credit_parts(
+    num_qualifying_children: int,
+    magi: float,
+    federal_tax: float,
+    filing_status: FilingStatus,
+    config: "FinancialConfig | None" = None,
+) -> tuple[float, float]:
+    """``(nonrefundable, refundable)`` portions of :func:`child_tax_credit` (same arguments)."""
     if num_qualifying_children <= 0:
-        return 0.0
+        return 0.0, 0.0
 
     dep = _fin(config).dependents
     credit = dep.ctc_per_child * num_qualifying_children
@@ -69,8 +83,8 @@ def child_tax_credit(
         steps = math.ceil(excess / 1000)
         credit -= steps * 1000 * (dep.ctc_phaseout_rate / 100)
     if credit <= 0:
-        return 0.0
+        return 0.0, 0.0
 
     nonrefundable = min(credit, max(federal_tax, 0.0))
     refundable = min(credit - nonrefundable, dep.ctc_refundable_max * num_qualifying_children)
-    return nonrefundable + refundable
+    return nonrefundable, refundable

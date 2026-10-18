@@ -6,7 +6,14 @@
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
-from .federal import FilingStatus, capital_gains_tax, federal_income_tax, net_investment_income_tax
+from .brackets import bracket_slices
+from .federal import (
+    FilingStatus,
+    capital_gains_tax,
+    federal_income_tax,
+    get_federal_tax_brackets,
+    net_investment_income_tax,
+)
 from .fica import (
     get_medicare_additional_rate,
     get_medicare_additional_rate_threshold,
@@ -35,6 +42,10 @@ class TaxesDue:
         refundable credit may exceed the federal liability, driving ``total`` negative (a refund).
         ``niit`` is the §1411 net investment income surtax, tracked separately from ``federal``
         because it has its own base and its own unindexed thresholds.
+
+        Besides the totals, :func:`compute_taxes` and ``TaxUnit.get_income_taxes_due`` record the
+        intermediate figures they computed the totals from (the attributes below), so a tax return
+        record can be built from exactly the numbers settlement used without recomputing anything.
         """
         self.federal = federal
         self.state = state
@@ -42,6 +53,48 @@ class TaxesDue:
         self.medicare = medicare
         self.credits = credits
         self.niit = niit
+
+        #: Ordinary income plus preferential income before deductions (the return's AGI base).
+        self.total_income = 0.0
+        #: Deductions applied (the larger of standard / itemized, plus any senior deduction).
+        self.deductions = 0.0
+        #: ``max(total_income - deductions, 0)``.
+        self.taxable_income = 0.0
+        #: The part of ``taxable_income`` taxed on the ordinary brackets.
+        self.taxable_ordinary = 0.0
+        #: The part of ``taxable_income`` taxed on the preferential (capital-gains) schedule.
+        self.taxable_preferential = 0.0
+        #: Tax on ``taxable_ordinary`` from the ordinary brackets.
+        self.ordinary_tax = 0.0
+        #: Tax on ``taxable_preferential`` stacked above ordinary income.
+        self.preferential_tax = 0.0
+        #: The ordinary bracket segments reached: ``(lower, upper, rate_percent, amount, tax)``.
+        self.ordinary_brackets: list[tuple[float, float, float, float, float]] = []
+        #: Social Security tax per worker, in the order of the wage list passed in.
+        self.ss_by_worker: list[float] = []
+        #: Medicare tax per worker (base rate, plus that worker's wage-share of the additional tax).
+        self.medicare_by_worker: list[float] = []
+        #: Additional Medicare tax on combined wages over the filing-status threshold.
+        self.additional_medicare = 0.0
+        #: Standard deduction, itemized deductions and senior deduction the unit compared/added.
+        self.standard_deduction = 0.0
+        self.itemized_deduction = 0.0
+        self.senior_deduction = 0.0
+        #: Credits by name (``child_tax_credit`` ...); they sum to ``credits``.
+        self.credits_detail: dict[str, float] = {}
+        #: Nonrefundable / refundable split of ``credits``.
+        self.nonrefundable_credits = 0.0
+        self.refundable_credits = 0.0
+        #: Additional taxes (early-withdrawal penalties) by source; included in ``federal``.
+        self.penalties_detail: dict[str, float] = {}
+        #: The state computation's breakdown (a :class:`~life_model.tax.state.StateTaxDetail`), when
+        #: the caller resolved one.
+        self.state_detail = None
+
+    @property
+    def penalties(self) -> float:
+        """Additional taxes (penalties) included in ``federal``."""
+        return sum(self.penalties_detail.values())
 
     @property
     def total(self) -> float:
@@ -96,31 +149,56 @@ def compute_taxes(
     taxable_gains = max(0.0, min(preferential_income, taxable_income))
     taxable_ordinary = taxable_income - taxable_gains
 
-    tax_federal = federal_income_tax(taxable_ordinary, filing_status, config)
-    tax_federal += capital_gains_tax(taxable_ordinary, taxable_gains, filing_status, config)
+    ordinary_tax = federal_income_tax(taxable_ordinary, filing_status, config)
+    preferential_tax = capital_gains_tax(taxable_ordinary, taxable_gains, filing_status, config)
+    tax_federal = ordinary_tax
+    tax_federal += preferential_tax
 
     # The surtax is levied on the lesser of net investment income and the amount by which MAGI
     # exceeds the threshold. MAGI is a pre-deduction figure, unlike the taxable-income base above.
     tax_niit = net_investment_income_tax(net_investment_income, total_income, filing_status, config)
 
-    adjusted_gross_income = taxable_income
     if state_tax is None:
-        # ``DEFAULT`` flat rate on the federal AGI base.
-        tax_state = state_income_tax(adjusted_gross_income, config)
+        # ``DEFAULT`` flat rate on the federal *taxable income* (post-deduction) base. (This local was
+        # once named ``adjusted_gross_income``, which it never was: it is after deductions.)
+        tax_state = state_income_tax(taxable_income, config)
     else:
         tax_state = state_tax
 
     # Social Security and base Medicare are per worker; the Additional Medicare surtax applies to
     # the unit's combined wages over the filing-status threshold.
-    tax_ss = sum(social_security_tax(wages, config) for wages in wage_incomes)
+    ss_by_worker = [social_security_tax(wages, config) for wages in wage_incomes]
+    tax_ss = sum(ss_by_worker)
     medicare_rate = get_medicare_rate(config)
-    tax_medicare = sum(wages * medicare_rate / 100 for wages in wage_incomes)
+    medicare_by_worker = [wages * medicare_rate / 100 for wages in wage_incomes]
+    tax_medicare = sum(medicare_by_worker)
     combined_wages = sum(wage_incomes)
     additional_threshold = get_medicare_additional_rate_threshold(filing_status, config)
+    additional_medicare = 0.0
     if combined_wages > additional_threshold:
-        tax_medicare += (combined_wages - additional_threshold) * get_medicare_additional_rate(config) / 100
+        additional_medicare = (combined_wages - additional_threshold) * get_medicare_additional_rate(config) / 100
+        tax_medicare += additional_medicare
+        # Attribute the surtax to workers by their share of the combined wages (reporting only).
+        medicare_by_worker = [
+            base + additional_medicare * wages / combined_wages
+            for base, wages in zip(medicare_by_worker, wage_incomes, strict=True)
+        ]
 
-    return TaxesDue(tax_federal, tax_state, tax_ss, tax_medicare, credits=credits, niit=tax_niit)
+    taxes = TaxesDue(tax_federal, tax_state, tax_ss, tax_medicare, credits=credits, niit=tax_niit)
+    taxes.total_income = total_income
+    taxes.deductions = deductions
+    taxes.taxable_income = taxable_income
+    taxes.taxable_ordinary = taxable_ordinary
+    taxes.taxable_preferential = taxable_gains
+    taxes.ordinary_tax = ordinary_tax
+    taxes.preferential_tax = preferential_tax
+    taxes.ordinary_brackets = bracket_slices(taxable_ordinary, get_federal_tax_brackets(filing_status, config))
+    taxes.ss_by_worker = ss_by_worker
+    taxes.medicare_by_worker = medicare_by_worker
+    taxes.additional_medicare = additional_medicare
+    if credits:
+        taxes.credits_detail = {"credits": credits}
+    return taxes
 
 
 def get_income_taxes_due(

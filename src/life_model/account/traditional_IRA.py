@@ -54,7 +54,7 @@ class TraditionalIRA(TaxAdvantagedAccount):
         Deductibility phase-outs for owners covered by a workplace plan are not modeled.
         """
         actual = super().contribute(amount)
-        self.person.income.add_deduction(actual)
+        self.person.income.add_deduction(actual, source="ira_deduction")
         return actual
 
     def pre_step(self):
@@ -65,7 +65,7 @@ class TraditionalIRA(TaxAdvantagedAccount):
         rmd = self.withdraw(required_min_distrib(self.person.age, self.balance, config=config, start_age=start_age))
         if rmd > 0:
             self.person.deposit_into_bank_account(rmd)
-            self.person.income.add(IncomeType.PRETAX_DISTRIBUTION, rmd)
+            self.person.income.add(IncomeType.PRETAX_DISTRIBUTION, rmd, source="rmd")
         self.stat_required_min_distrib = rmd
 
     def annual_contribution_limit(self) -> float:

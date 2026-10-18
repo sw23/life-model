@@ -226,6 +226,8 @@ class LifeModel(mesa.Model):
         self.end_year = end_year
         self.year = start_year
         self.event_log = EventLog(self)
+        #: Every settled return, keyed ``(year, unit_id)`` (see :mod:`life_model.tax.return_record`).
+        self.tax_returns: dict = {}
         self.simulated_years = []
         self._stages = list(self.STAGES)
         #: The stage currently executing (one of ``STAGES``), or None outside ``step()`` (model

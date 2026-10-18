@@ -87,6 +87,10 @@ class IncomeEntry:
     #: The gross amount received, for entries whose taxable ``amount`` is a derived share of it
     #: (Social Security benefits). 0.0 for every other entry.
     gross: float = 0.0
+    #: What produced the entry (e.g. ``"rmd"``, ``"annuity"``, ``"hsa_deduction"``,
+    #: ``"capital_loss_deduction"``). Tax computations ignore it; the year's tax return uses it to put
+    #: each entry on the right line (adjustments vs. other income, pensions vs. annuities, ...).
+    source: str | None = None
 
 
 class IncomeLedger:
@@ -95,20 +99,27 @@ class IncomeLedger:
     def __init__(self):
         self.entries: list[IncomeEntry] = []
         # Additional federal tax from early-withdrawal / non-qualified-distribution penalties (e.g.
-        # 10% on early pre-tax distributions, 20% on non-medical HSA distributions). Settled as
-        # federal tax with the year's return.
-        self.penalties = 0.0
+        # 10% on early pre-tax distributions, 20% on non-medical HSA distributions), by source.
+        # Settled as federal tax with the year's return.
+        self.penalties_by_source: dict[str, float] = {}
 
-    def add(self, income_type: IncomeType, amount: float, fica_wages: float = 0.0) -> None:
-        """Append an income entry."""
-        self.entries.append(IncomeEntry(income_type, amount, fica_wages))
+    @property
+    def penalties(self) -> float:
+        """Total additional federal tax (penalties) recorded this year."""
+        return sum(self.penalties_by_source.values())
+
+    def add(
+        self, income_type: IncomeType, amount: float, fica_wages: float = 0.0, *, source: str | None = None
+    ) -> None:
+        """Append an income entry (``source`` labels it for the tax return; keyword-only)."""
+        self.entries.append(IncomeEntry(income_type, amount, fica_wages, source=source))
 
     def add_social_security(self, gross: float) -> None:
         """Record Social Security benefits received (gross). The taxable portion depends on the
         whole return's provisional income, so it starts at 0 and the tax unit sets it at settlement
         (:meth:`set_taxable_social_security`)."""
         if gross > 0:
-            self.entries.append(IncomeEntry(IncomeType.SS_BENEFIT, 0.0, gross=gross))
+            self.entries.append(IncomeEntry(IncomeType.SS_BENEFIT, 0.0, gross=gross, source="social_security"))
 
     @property
     def social_security_benefits(self) -> float:
@@ -129,33 +140,34 @@ class IncomeLedger:
         for entry in benefit_entries:
             entry.amount = taxable * entry.gross / gross if gross > 0 else 0.0
 
-    def add_wages(self, ordinary_amount: float, fica_wages: float) -> None:
+    def add_wages(self, ordinary_amount: float, fica_wages: float, *, source: str = "wages") -> None:
         """Append earned income.
 
         Args:
             ordinary_amount: Wages included in ordinary taxable income (gross minus pre-tax deferrals).
             fica_wages: Wages subject to FICA (the full gross, including pre-tax deferrals).
         """
-        self.add(IncomeType.WAGES, ordinary_amount, fica_wages)
+        self.add(IncomeType.WAGES, ordinary_amount, fica_wages, source=source)
 
-    def add_deduction(self, amount: float) -> None:
+    def add_deduction(self, amount: float, *, source: str = "adjustment") -> None:
         """Record an above-the-line deduction (e.g. a deductible IRA or HSA contribution).
 
         Modeled as negative ordinary income, the same way the student-loan interest deduction is,
-        so it reduces the income-tax base (and AGI) without touching FICA wages.
+        so it reduces the income-tax base (and AGI) without touching FICA wages. ``source`` names
+        the adjustment on the tax return (``"ira_deduction"``, ``"hsa_deduction"``, ...).
         """
         if amount > 0:
-            self.add(IncomeType.ORDINARY, -amount)
+            self.add(IncomeType.ORDINARY, -amount, source=source)
 
-    def add_penalty(self, amount: float) -> None:
-        """Record an additional federal tax (10% early withdrawal, 20% HSA non-medical)."""
+    def add_penalty(self, amount: float, *, source: str = "early_withdrawal") -> None:
+        """Record an additional federal tax (10% early withdrawal, 20% HSA non-medical) by source."""
         if amount > 0:
-            self.penalties += amount
+            self.penalties_by_source[source] = self.penalties_by_source.get(source, 0.0) + amount
 
     def clear(self) -> None:
         """Reset the ledger for the next year (mirrors the old ``taxable_income = 0``)."""
         self.entries.clear()
-        self.penalties = 0.0
+        self.penalties_by_source = {}
 
     @property
     def ordinary_taxable(self) -> float:

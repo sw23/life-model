@@ -175,7 +175,7 @@ class Plan529(Investment):
         # ordinary income, and the penalty is debited from the owner.
         self.person.receive_cash(actual_withdrawal, source="529 non-qualified withdrawal")
         if earnings_withdrawn > 0:
-            self.person.income.add(IncomeType.ORDINARY, earnings_withdrawn)
+            self.person.income.add(IncomeType.ORDINARY, earnings_withdrawn, source="529_nonqualified")
         if penalty_amount > 0:
             self.person.deduct_from_bank_accounts(penalty_amount)
             self.stat_penalties_paid += penalty_amount

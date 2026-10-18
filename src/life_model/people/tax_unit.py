@@ -8,11 +8,12 @@ import warnings
 from typing import TYPE_CHECKING
 
 from ..model import round_money
-from ..tax.credits import child_tax_credit
+from ..tax.credits import child_tax_credit_parts
 from ..tax.deductions import deductible_charity, senior_deduction, settle_charitable_carryforwards
 from ..tax.federal import FilingStatus, get_federal_standard_deduction
 from ..tax.income import IncomeType
-from ..tax.state import state_income_tax_for_unit
+from ..tax.return_record import TaxReturn, build_tax_return
+from ..tax.state import StateTaxDetail, state_income_tax_detail
 from ..tax.tax import TaxesDue, compute_taxes
 
 if TYPE_CHECKING:
@@ -213,11 +214,18 @@ class TaxUnit:
 
         With both arguments 0 this is the plain standard-vs-itemized comparison.
         """
+        standard_deduction, itemized, senior = self._deduction_parts(additional_income, state_income_tax_paid)
+        return max(standard_deduction, itemized) + senior
+
+    def _deduction_parts(
+        self, additional_income: float = 0.0, state_income_tax_paid: float = 0.0
+    ) -> tuple[float, float, float]:
+        """``(standard, itemized, senior)``: the deduction is ``max(standard, itemized) + senior``."""
         standard_deduction, itemized = self._deduction_choice(additional_income, state_income_tax_paid)
         agi = self.agi(additional_income)
         year = self.members[0].model.year
         senior = senior_deduction(self.members, self.filing_status, agi, year, self.config)
-        return max(standard_deduction, itemized) + senior
+        return standard_deduction, itemized, senior
 
     def _deduction_choice(self, additional_income: float = 0.0, state_income_tax_paid: float = 0.0):
         """``(standard, itemized)`` for the return; itemized includes charity capped at its AGI limit."""
@@ -232,6 +240,17 @@ class TaxUnit:
             itemized += member.itemized_deductions(member_state_tax, member_income, include_charitable=False)
         itemized += deductible_charity(self.members, self.agi(additional_income), self.config)
         return standard_deduction, itemized
+
+    def itemized_components(self, state_income_tax_paid: float = 0.0) -> dict[str, float]:
+        """Itemized deductions by line for the return (state income tax in the head's SALT, charity
+        capped at the return's AGI limit). Reporting only: :meth:`_deduction_choice` is the value used."""
+        components = {"mortgage_interest": 0.0, "salt": 0.0, "medical": 0.0}
+        for index, member in enumerate(self.members):
+            member_state_tax = state_income_tax_paid if index == 0 else 0.0
+            for name, amount in member.itemized_deduction_components(member_state_tax).items():
+                components[name] += amount
+        components["charity"] = deductible_charity(self.members, self.agi(), self.config)
+        return components
 
     def agi(self, additional_income: float = 0.0) -> float:
         """The return's adjusted gross income: ordinary income (already net of above-the-line
@@ -285,6 +304,20 @@ class TaxUnit:
         """
         # Gains are part of the state base as much as the federal one, so the legacy flat-rate AGI
         # includes preferential income; the pack path picks it up through totals_by_type.
+        return self._state_income_tax_detail(
+            additional_income,
+            additional_preferential=additional_preferential,
+            additional_short_term=additional_short_term,
+        ).tax
+
+    def _state_income_tax_detail(
+        self,
+        additional_income: float = 0,
+        *,
+        additional_preferential: float = 0.0,
+        additional_short_term: float = 0.0,
+    ) -> StateTaxDetail:
+        """:meth:`state_income_tax_due` with the state computation's lines (the one computation)."""
         ordinary_bump = additional_income + additional_short_term
         total_income = (
             self.taxable_income
@@ -297,7 +330,7 @@ class TaxUnit:
         totals = self._state_income_totals(additional_income)
         totals[IncomeType.LONG_TERM_CAPITAL_GAIN] += additional_preferential
         totals[IncomeType.SHORT_TERM_CAPITAL_GAIN] += additional_short_term
-        return state_income_tax_for_unit(totals, self.filing_status, self.state, legacy_agi, self.config)
+        return state_income_tax_detail(totals, self.filing_status, self.state, legacy_agi, self.config)
 
     def taxable_social_security(self, additional_income: float = 0.0, additional_preferential: float = 0.0) -> float:
         """Taxable portion of the unit's Social Security benefits (IRC §86), side-effect free.
@@ -363,12 +396,14 @@ class TaxUnit:
         # lets the settlement solver size a brokerage draw against the tax the sale itself creates.
         ordinary_income = self.taxable_income + additional_income + additional_short_term
         wage_incomes = [m.fica_wages for m in self.members]
-        state_tax = self.state_income_tax_due(
+        state_detail = self._state_income_tax_detail(
             additional_income,
             additional_preferential=additional_preferential,
             additional_short_term=additional_short_term,
         )
-        deductions = self.federal_deductions_combined(additional_income + additional_short_term, state_tax)
+        state_tax = state_detail.tax
+        standard, itemized, senior = self._deduction_parts(additional_income + additional_short_term, state_tax)
+        deductions = max(standard, itemized) + senior
         taxes = compute_taxes(
             ordinary_income,
             deductions,
@@ -382,19 +417,34 @@ class TaxUnit:
         # Child Tax Credit: computed here (the only place with members, filing status, and AGI in
         # scope) and recorded on the credits stage. Because the withdrawal-sizing fixed point
         # consumes this method, credits automatically shrink sized 401k withdrawals.
+        taxes.state_detail = state_detail
+        taxes.standard_deduction = standard
+        taxes.itemized_deduction = itemized
+        taxes.senior_deduction = senior
         num_children = self.num_qualifying_children
         if num_children > 0:
-            taxes.credits += child_tax_credit(
+            nonrefundable, refundable = child_tax_credit_parts(
                 num_children, ordinary_income, taxes.federal, self.filing_status, self.config
             )
+            taxes.credits += nonrefundable + refundable
+            taxes.nonrefundable_credits += nonrefundable
+            taxes.refundable_credits += refundable
+            if nonrefundable + refundable > 0:
+                taxes.credits_detail["child_tax_credit"] = nonrefundable + refundable
         # Early-withdrawal penalties are additional federal tax (added after the credit so the
         # nonrefundable CTC cannot offset them): those already on members' ledgers plus the ones a
         # prospective pre-tax draw of ``additional_income`` would trigger, split across members in
         # the order the draw will actually happen.
         taxes.federal += sum(m.income.penalties for m in self.members)
+        for member in self.members:
+            for source, amount in member.income.penalties_by_source.items():
+                taxes.penalties_detail[source] = taxes.penalties_detail.get(source, 0.0) + amount
         if additional_income > 0:
             allocation = self._prospective_withdrawal_allocation(additional_income)
-            taxes.federal += sum(m.prospective_penalty(allocation.get(m.unique_id, 0.0)) for m in self.members)
+            prospective = sum(m.prospective_penalty(allocation.get(m.unique_id, 0.0)) for m in self.members)
+            taxes.federal += prospective
+            if prospective > 0:
+                taxes.penalties_detail["early_withdrawal (prospective)"] = prospective
         return taxes
 
     def withdraw_from_pretax_401ks(self, amount: float) -> float:
@@ -637,7 +687,7 @@ class TaxUnit:
         loss = -net
         offset = min(loss, self.config.tax.federal.capital_loss_ordinary_offset)
         if offset > 0:
-            self.members[0].income.add(IncomeType.ORDINARY, -offset)
+            self.members[0].income.add(IncomeType.ORDINARY, -offset, source="capital_loss_deduction")
 
         remaining = loss - offset
         if remaining <= 0:
@@ -658,7 +708,7 @@ class TaxUnit:
         for member in self.members:
             for income_type, amount in gains_by_member[member.unique_id].items():
                 if amount != 0:
-                    member.income.add(income_type, -amount)
+                    member.income.add(income_type, -amount, source="capital_loss_netting")
 
     def _reduce_gains(self, gains_by_member: "dict[int, dict[IncomeType, float]]", amount: float) -> None:
         """Post negative ledger entries cancelling ``amount`` of the unit's realized gains.
@@ -677,7 +727,7 @@ class TaxUnit:
                 if available <= 0:
                     continue
                 take = min(remaining, available)
-                member.income.add(income_type, -take)
+                member.income.add(income_type, -take, source="capital_loss_carryforward")
                 remaining -= take
 
     def settle_year(self):
@@ -726,7 +776,7 @@ class TaxUnit:
             if self.filing_status == FilingStatus.MARRIED_FILING_SEPARATELY:
                 student_loan_deduction = 0.0  # not allowed on a separate return (IRC §221(e)(2))
             if student_loan_deduction > 0:
-                member.income.add(IncomeType.ORDINARY, -student_loan_deduction)
+                member.income.add(IncomeType.ORDINARY, -student_loan_deduction, source="student_loan_interest")
 
             housing_by_member[member.unique_id] = member_housing
             interest_by_member[member.unique_id] = member_interest + carried_interest_by_member[member.unique_id]
@@ -743,6 +793,13 @@ class TaxUnit:
         # so each step sizes against the topped-up balance and does nothing once it is covered.
         self._draw_hsa_for_medical(bills)
         taxes = self._fund_bills(bills)
+
+        # The year's return, from exactly the taxes about to be paid and the ledger they came from.
+        tax_return = build_tax_return(self, taxes)
+        model = self.members[0].model
+        model.tax_returns[(tax_return.year, tax_return.unit_id)] = tax_return
+        for member in self.members:
+            member.tax_returns[tax_return.year] = tax_return
 
         # Record this year's AGI on every member. Each member records the AGI of the
         # return they filed — the unit's full AGI, not a per-member split — because Medicare/IRMAA
@@ -772,7 +829,7 @@ class TaxUnit:
             shortfall = 0.0
         self.members[0].debt += shortfall
 
-        self._record_stats(taxes, spending_by_member, housing_by_member, interest_by_member)
+        self._record_stats(taxes, spending_by_member, housing_by_member, interest_by_member, tax_return)
         # Which deduction the return took: the itemized amount, or 0 when it took the standard one.
         self.members[0].stat_itemized_deductions = itemized_claimed
 
@@ -800,6 +857,7 @@ class TaxUnit:
         spending_by_member: dict[int, float],
         housing_by_member: dict[int, float],
         interest_by_member: dict[int, float],
+        tax_return: "TaxReturn | None" = None,
     ):
         for member in self.members:
             member.stat_money_spent = spending_by_member[member.unique_id]

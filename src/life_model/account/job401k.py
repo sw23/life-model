@@ -268,7 +268,7 @@ class Job401kAccount(RetirementAccount):
         )
         self.person.deposit_into_bank_account(required_min_dist_amount)
         # RMDs are ordinary income, not FICA wages.
-        self.person.income.add(IncomeType.PRETAX_DISTRIBUTION, required_min_dist_amount)
+        self.person.income.add(IncomeType.PRETAX_DISTRIBUTION, required_min_dist_amount, source="rmd")
         self.stat_required_min_distrib = required_min_dist_amount
 
     def deduct_pretax(self, amount: float):

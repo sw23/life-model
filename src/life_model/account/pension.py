@@ -150,7 +150,7 @@ class Pension(Benefit):
         benefit = self.get_annual_benefit()
         self.stat_pension_income = benefit
         if benefit > 0:
-            self.person.income.add(IncomeType.PENSION, benefit)
+            self.person.income.add(IncomeType.PENSION, benefit, source="pension")
             self.person.receive_cash(benefit, source=f"pension from {self.company}")
 
     def step(self):

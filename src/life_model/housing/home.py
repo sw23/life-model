@@ -153,7 +153,7 @@ class Home(LifeModelAgent):
         if taxable_gain > 0:
             # A residence held long enough to qualify for §121 is by definition held over a year,
             # so the excess above the exclusion is always a long-term gain.
-            self.person.income.add(IncomeType.LONG_TERM_CAPITAL_GAIN, taxable_gain)
+            self.person.income.add(IncomeType.LONG_TERM_CAPITAL_GAIN, taxable_gain, source="home_sale")
 
         net_proceeds = sale_price - selling_costs - mortgage_payoff
         if self.mortgage is not None:

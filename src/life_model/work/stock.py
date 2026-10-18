@@ -294,7 +294,7 @@ class StockPlan(LifeModelAgent):
             # A vest is W-2 compensation: ordinary income and FICA wages alike. Social Security
             # accumulates it into the year's record and re-clamps the total to the wage base, so
             # adding it on top of salary is safe.
-            self.owner.income.add_wages(ordinary_amount=vested, fica_wages=vested)
+            self.owner.income.add_wages(ordinary_amount=vested, fica_wages=vested, source="rsu_vest")
             if self.owner.social_security is not None:
                 self.owner.social_security.add_income_for_year(vested)
             self._dispose(vested)

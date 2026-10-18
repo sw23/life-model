@@ -404,9 +404,11 @@ class Annuity(LifeModelAgent):
         tax before the federal retirement age (IRC §72(q), same rate as §72(t))."""
         if taxable <= 0:
             return
-        self.person.income.add(IncomeType.ORDINARY, taxable)
+        self.person.income.add(IncomeType.ORDINARY, taxable, source="annuity")
         self.stat_taxable_payouts += taxable
-        self.person.income.add_penalty(self.person.early_withdrawal_penalty(taxable))
+        self.person.income.add_penalty(
+            self.person.early_withdrawal_penalty(taxable), source="annuity_early_distribution"
+        )
 
     def _joint_life(self) -> Person:
         """The joint annuitant for a JOINT_AND_SURVIVOR contract (defaults to the living spouse)."""
@@ -538,7 +540,7 @@ class Annuity(LifeModelAgent):
         # Tax the gains portion as ordinary income (exclusion ratio covers return of basis).
         taxable_portion = payout * (1 - self.exclusion_ratio)
         if taxable_portion > 0:
-            self.person.income.add(IncomeType.ORDINARY, taxable_portion)
+            self.person.income.add(IncomeType.ORDINARY, taxable_portion, source="annuity")
             self.stat_taxable_payouts += taxable_portion
 
         # Deposit the payout into the person's bank account.
@@ -629,7 +631,7 @@ class Annuity(LifeModelAgent):
             if inheritor is not None and self.balance > 0:
                 gain = max(0.0, self.balance - self.basis)
                 if gain > 0:
-                    inheritor.income.add(IncomeType.ORDINARY, gain)
+                    inheritor.income.add(IncomeType.ORDINARY, gain, source="annuity_death_benefit")
                 inheritor.receive_cash(self.balance, source=f"{owner.name}'s annuity death benefit")
                 self.balance = 0.0
             self.is_active = False

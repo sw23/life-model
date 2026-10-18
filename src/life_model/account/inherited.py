@@ -80,7 +80,7 @@ class InheritedPretaxAccount(Investment):
         distribution = self.withdraw(self.balance / self.years_remaining)
         self.years_remaining -= 1
         if distribution > 0:
-            self.person.income.add(IncomeType.PRETAX_DISTRIBUTION, distribution)
+            self.person.income.add(IncomeType.PRETAX_DISTRIBUTION, distribution, source="inherited")
             self.person.receive_cash(distribution, source=f"inherited retirement from {self.decedent_name}")
 
         # Once the ten-year window closes (or the balance is exhausted), remove the account so it
@@ -92,7 +92,7 @@ class InheritedPretaxAccount(Investment):
         """Distribute any residual balance and remove the account from the simulation."""
         if self.balance > 0:
             residual = self.withdraw(self.balance)
-            self.person.income.add(IncomeType.PRETAX_DISTRIBUTION, residual)
+            self.person.income.add(IncomeType.PRETAX_DISTRIBUTION, residual, source="inherited")
             self.person.receive_cash(residual, source=f"inherited retirement from {self.decedent_name}")
         self.model.event_log.add(
             Event(f"{self.person.name}'s inherited account from {self.decedent_name} fully distributed")

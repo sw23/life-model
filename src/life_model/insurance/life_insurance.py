@@ -259,7 +259,7 @@ class LifeInsurance(LifeModelAgent):
                 # Gains over the premiums paid (basis) are taxable ordinary income.
                 taxable_gain = max(0.0, surrender_value - self.total_premiums_paid)
                 if taxable_gain > 0:
-                    self.person.income.add(IncomeType.ORDINARY, taxable_gain)
+                    self.person.income.add(IncomeType.ORDINARY, taxable_gain, source="life_insurance")
                 self.model.event_log.add(
                     Event(f"{self.person.name} surrendered life insurance policy for ${surrender_value:,.0f}")
                 )
@@ -373,7 +373,7 @@ class LifeInsurance(LifeModelAgent):
             if self.outstanding_loan_balance > self.cash_value:
                 taxable_gain = max(0.0, self.outstanding_loan_balance - self.total_premiums_paid)
                 if taxable_gain > 0:
-                    self.person.income.add(IncomeType.ORDINARY, taxable_gain)
+                    self.person.income.add(IncomeType.ORDINARY, taxable_gain, source="life_insurance")
                 self.model.event_log.add(
                     Event(
                         f"{self.person.name}'s life insurance lapsed: loan balance "

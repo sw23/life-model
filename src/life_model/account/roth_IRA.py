@@ -57,8 +57,10 @@ class RothIRA(TaxAdvantagedAccount):
         earnings_withdrawn = withdrawn - (basis_before - self.contribution_basis)
         config = self.model.config
         if earnings_withdrawn > 0 and self.person.age < federal_retirement_age(config):
-            self.person.income.add(IncomeType.PRETAX_DISTRIBUTION, earnings_withdrawn)
-            self.person.income.add_penalty(earnings_withdrawn * config.retirement.early_withdrawal_penalty_rate / 100)
+            self.person.income.add(IncomeType.PRETAX_DISTRIBUTION, earnings_withdrawn, source="roth_ira_earnings")
+            self.person.income.add_penalty(
+                earnings_withdrawn * config.retirement.early_withdrawal_penalty_rate / 100, source="roth_ira_earnings"
+            )
         return withdrawn
 
     def tax_free_withdrawable(self) -> float:

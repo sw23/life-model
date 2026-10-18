@@ -15,6 +15,10 @@ from collections.abc import Sequence
 
 Bracket = Sequence[int | float]
 
+#: One marginal segment a taxable amount reached: ``(lower, upper, rate_percent, amount, tax)``, where
+#: ``amount`` is the income taxed in ``[lower, upper)`` and ``tax`` is ``amount * rate / 100``.
+BracketSlice = tuple[float, float, float, float, float]
+
 
 def apply_brackets(income: float, brackets: "list[Bracket]") -> float:
     """Apply progressive tax brackets to ``income``.
@@ -41,3 +45,22 @@ def apply_brackets(income: float, brackets: "list[Bracket]") -> float:
         total_tax += amount_in_bracket * (percent / 100)
         prev_upper = upper
     return total_tax
+
+
+def bracket_slices(income: float, brackets: "list[Bracket]") -> list[BracketSlice]:
+    """The marginal segments ``income`` reaches, with the tax charged in each.
+
+    Walks the brackets exactly as :func:`apply_brackets` does (same segment bounds, same arithmetic,
+    same order), so ``sum(tax for *_, tax in bracket_slices(x, b)) == apply_brackets(x, b)``. Used to
+    show a return's per-bracket breakdown; it never feeds back into the tax computed.
+    """
+    slices: list[BracketSlice] = []
+    prev_upper = 0.0
+    for _start, upper, percent in brackets:
+        if income <= prev_upper:
+            break
+        amount_in_bracket = min(income, upper) - prev_upper
+        tax = amount_in_bracket * (percent / 100)
+        slices.append((float(prev_upper), float(upper), float(percent), float(amount_in_bracket), tax))
+        prev_upper = upper
+    return slices

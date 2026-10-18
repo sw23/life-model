@@ -96,7 +96,7 @@ class BankAccount(FinancialAccount):
         self.balance += interest
         self.stat_total_interest += interest
         if interest != 0:
-            self.person.income.add(IncomeType.INTEREST, interest)
+            self.person.income.add(IncomeType.INTEREST, interest, source="bank_interest")
 
     def post_step(self):
         # Year-end statistics, after the tax unit has paid the year's bills from this account.
