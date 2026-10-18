@@ -41,15 +41,15 @@ class TestMortality(unittest.TestCase):
 
     def test_get_chance_of_mortality_valid_ages(self):
         """Test get_chance_of_mortality for valid ages"""
-        # Test known values from the mortality table
-        self.assertEqual(get_chance_of_mortality(0, GenderAtBirth.MALE), 0.006064)
-        self.assertEqual(get_chance_of_mortality(0, GenderAtBirth.FEMALE), 0.005119)
+        # Test known values from the mortality table (SSA 2023 period table, 2026 Trustees Report)
+        self.assertEqual(get_chance_of_mortality(0, GenderAtBirth.MALE), 0.006015)
+        self.assertEqual(get_chance_of_mortality(0, GenderAtBirth.FEMALE), 0.005125)
         self.assertEqual(get_chance_of_mortality(119, GenderAtBirth.MALE), 1.0)
         self.assertEqual(get_chance_of_mortality(119, GenderAtBirth.FEMALE), 1.0)
 
         # Test a middle age
-        self.assertEqual(get_chance_of_mortality(50, GenderAtBirth.MALE), 0.005666)
-        self.assertEqual(get_chance_of_mortality(50, GenderAtBirth.FEMALE), 0.003407)
+        self.assertEqual(get_chance_of_mortality(50, GenderAtBirth.MALE), 0.005126)
+        self.assertEqual(get_chance_of_mortality(50, GenderAtBirth.FEMALE), 0.003030)
 
     def test_get_chance_of_mortality_boundary_ages(self):
         """Test get_chance_of_mortality for boundary conditions"""
