@@ -1,0 +1,1818 @@
+[
+  {
+    "age": 25,
+    "net_worth": 29047.89583020027,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.6666666666666667,
+    "is_retired": false,
+    "year": 2026,
+    "month": 1,
+    "policy_changes": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "spending_adjust": "hold",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "default",
+      "retire": "no",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    }
+  },
+  {
+    "age": 26,
+    "net_worth": 31978.61005879556,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.6666666666666667,
+    "is_retired": false,
+    "year": 2027,
+    "month": 1,
+    "policy_changes": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "default",
+      "retire": "no",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    }
+  },
+  {
+    "age": 27,
+    "net_worth": 48253.037240558435,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.6666666666666667,
+    "is_retired": false,
+    "year": 2028,
+    "month": 1,
+    "policy_changes": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "default",
+      "retire": "no",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    }
+  },
+  {
+    "age": 28,
+    "net_worth": 56317.45796292395,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.6666666666666667,
+    "is_retired": false,
+    "year": 2029,
+    "month": 1,
+    "policy_changes": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "default",
+      "retire": "no",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    }
+  },
+  {
+    "age": 29,
+    "net_worth": 79522.91539731988,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.6666666666666667,
+    "is_retired": false,
+    "year": 2030,
+    "month": 1,
+    "policy_changes": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "default",
+      "retire": "no",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    }
+  },
+  {
+    "age": 30,
+    "net_worth": 83970.18570510576,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.6666666666666667,
+    "is_retired": false,
+    "year": 2031,
+    "month": 1,
+    "policy_changes": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "default",
+      "retire": "no",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    }
+  },
+  {
+    "age": 31,
+    "net_worth": 98906.2308369894,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.6666666666666667,
+    "is_retired": false,
+    "year": 2032,
+    "month": 1,
+    "policy_changes": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "default",
+      "retire": "no",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    }
+  },
+  {
+    "age": 32,
+    "net_worth": 92463.60833792051,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.6666666666666667,
+    "is_retired": false,
+    "year": 2033,
+    "month": 1,
+    "policy_changes": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "default",
+      "retire": "no",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    }
+  },
+  {
+    "age": 33,
+    "net_worth": 113294.06241866547,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.6666666666666667,
+    "is_retired": false,
+    "year": 2034,
+    "month": 1,
+    "policy_changes": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "default",
+      "retire": "no",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    }
+  },
+  {
+    "age": 34,
+    "net_worth": 145030.75655255132,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.6666666666666667,
+    "is_retired": false,
+    "year": 2035,
+    "month": 1,
+    "policy_changes": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "default",
+      "retire": "no",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    }
+  },
+  {
+    "age": 35,
+    "net_worth": 173335.48253213943,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.6666666666666667,
+    "is_retired": false,
+    "year": 2036,
+    "month": 1,
+    "policy_changes": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "default",
+      "retire": "no",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    }
+  },
+  {
+    "age": 36,
+    "net_worth": 208916.10786177876,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.6666666666666667,
+    "is_retired": false,
+    "year": 2037,
+    "month": 1,
+    "policy_changes": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "default",
+      "retire": "no",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    }
+  },
+  {
+    "age": 37,
+    "net_worth": 263355.3133079528,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.6666666666666667,
+    "is_retired": false,
+    "year": 2038,
+    "month": 1,
+    "policy_changes": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "default",
+      "retire": "no",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    }
+  },
+  {
+    "age": 38,
+    "net_worth": 315829.8795078275,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.6666666666666667,
+    "is_retired": false,
+    "year": 2039,
+    "month": 1,
+    "policy_changes": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "default",
+      "retire": "no",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    }
+  },
+  {
+    "age": 39,
+    "net_worth": 302308.94504127174,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.6666666666666667,
+    "is_retired": false,
+    "year": 2040,
+    "month": 1,
+    "policy_changes": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "default",
+      "retire": "no",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    }
+  },
+  {
+    "age": 40,
+    "net_worth": 315799.9737184537,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.6666666666666667,
+    "is_retired": false,
+    "year": 2041,
+    "month": 1,
+    "policy_changes": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "default",
+      "retire": "no",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    }
+  },
+  {
+    "age": 41,
+    "net_worth": 307563.0041440638,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.6666666666666667,
+    "is_retired": false,
+    "year": 2042,
+    "month": 1,
+    "policy_changes": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "default",
+      "retire": "no",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    }
+  },
+  {
+    "age": 42,
+    "net_worth": 323704.0416636998,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.6666666666666667,
+    "is_retired": false,
+    "year": 2043,
+    "month": 1,
+    "policy_changes": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "default",
+      "retire": "no",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    }
+  },
+  {
+    "age": 43,
+    "net_worth": 352472.12853134994,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.6666666666666667,
+    "is_retired": false,
+    "year": 2044,
+    "month": 1,
+    "policy_changes": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "default",
+      "retire": "no",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    }
+  },
+  {
+    "age": 44,
+    "net_worth": 321251.23231310095,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.6666666666666667,
+    "is_retired": false,
+    "year": 2045,
+    "month": 1,
+    "policy_changes": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "default",
+      "retire": "no",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    }
+  },
+  {
+    "age": 45,
+    "net_worth": 410655.75304186624,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.6666666666666667,
+    "is_retired": false,
+    "year": 2046,
+    "month": 1,
+    "policy_changes": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "default",
+      "retire": "no",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    }
+  },
+  {
+    "age": 46,
+    "net_worth": 380845.0093712622,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.6666666666666667,
+    "is_retired": false,
+    "year": 2047,
+    "month": 1,
+    "policy_changes": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "default",
+      "retire": "no",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    }
+  },
+  {
+    "age": 47,
+    "net_worth": 407313.4443298351,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.6666666666666667,
+    "is_retired": false,
+    "year": 2048,
+    "month": 1,
+    "policy_changes": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "default",
+      "retire": "no",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    }
+  },
+  {
+    "age": 48,
+    "net_worth": 400446.78860920813,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.6666666666666667,
+    "is_retired": false,
+    "year": 2049,
+    "month": 1,
+    "policy_changes": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "default",
+      "retire": "no",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    }
+  },
+  {
+    "age": 49,
+    "net_worth": 560571.4730549866,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.6666666666666667,
+    "is_retired": false,
+    "year": 2050,
+    "month": 1,
+    "policy_changes": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "default",
+      "retire": "no",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    }
+  },
+  {
+    "age": 50,
+    "net_worth": 647504.9342462418,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.6666666666666667,
+    "is_retired": false,
+    "year": 2051,
+    "month": 1,
+    "policy_changes": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "default",
+      "retire": "no",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    }
+  },
+  {
+    "age": 51,
+    "net_worth": 639911.3791237178,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.6666666666666667,
+    "is_retired": false,
+    "year": 2052,
+    "month": 1,
+    "policy_changes": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "default",
+      "retire": "no",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    }
+  },
+  {
+    "age": 52,
+    "net_worth": 666691.4218375174,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.6666666666666669,
+    "is_retired": false,
+    "year": 2053,
+    "month": 1,
+    "policy_changes": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "default",
+      "retire": "no",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    }
+  },
+  {
+    "age": 53,
+    "net_worth": 675794.317836412,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.666666666666667,
+    "is_retired": false,
+    "year": 2054,
+    "month": 1,
+    "policy_changes": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "default",
+      "retire": "no",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    }
+  },
+  {
+    "age": 54,
+    "net_worth": 770727.0862761651,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.6666666666666669,
+    "is_retired": false,
+    "year": 2055,
+    "month": 1,
+    "policy_changes": {
+      "pretax_401k_rate": "3",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "3",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "default",
+      "retire": "no",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    }
+  },
+  {
+    "age": 55,
+    "net_worth": 905945.9643165435,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.6666666666666669,
+    "is_retired": false,
+    "year": 2056,
+    "month": 1,
+    "policy_changes": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "default",
+      "retire": "no",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    }
+  },
+  {
+    "age": 56,
+    "net_worth": 906847.993581688,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.6666666666666667,
+    "is_retired": false,
+    "year": 2057,
+    "month": 1,
+    "policy_changes": {
+      "pretax_401k_rate": "3",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "3",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "default",
+      "retire": "no",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    }
+  },
+  {
+    "age": 57,
+    "net_worth": 1450648.090465235,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.6666666666666669,
+    "is_retired": false,
+    "year": 2058,
+    "month": 1,
+    "policy_changes": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "default",
+      "retire": "no",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    }
+  },
+  {
+    "age": 58,
+    "net_worth": 2050571.1820760856,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.6666666666666669,
+    "is_retired": false,
+    "year": 2059,
+    "month": 1,
+    "policy_changes": {
+      "pretax_401k_rate": "3",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "none"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "3",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "default",
+      "retire": "no",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "none"
+    }
+  },
+  {
+    "age": 59,
+    "net_worth": 2091707.7801309708,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.6666666666666669,
+    "is_retired": false,
+    "year": 2060,
+    "month": 1,
+    "policy_changes": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "default",
+      "retire": "no",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    }
+  },
+  {
+    "age": 60,
+    "net_worth": 2580047.0127449674,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.666666666666667,
+    "is_retired": false,
+    "year": 2061,
+    "month": 1,
+    "policy_changes": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "default",
+      "retire": "no",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    }
+  },
+  {
+    "age": 61,
+    "net_worth": 2738829.1923798155,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.666666666666667,
+    "is_retired": false,
+    "year": 2062,
+    "month": 1,
+    "policy_changes": {
+      "pretax_401k_rate": "3",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "none"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "3",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "default",
+      "retire": "no",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "none"
+    }
+  },
+  {
+    "age": 62,
+    "net_worth": 2892667.048158426,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.666666666666667,
+    "is_retired": false,
+    "year": 2063,
+    "month": 1,
+    "policy_changes": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "default",
+      "retire": "no",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    }
+  },
+  {
+    "age": 63,
+    "net_worth": 3882594.0483108372,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.666666666666667,
+    "is_retired": false,
+    "year": 2064,
+    "month": 1,
+    "policy_changes": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "default",
+      "retire": "no",
+      "claim_social_security": "not_yet",
+      "roth_conversion": "to_bracket_22"
+    }
+  },
+  {
+    "age": 64,
+    "net_worth": 3396667.096811181,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.5833333333333337,
+    "is_retired": true,
+    "year": 2065,
+    "month": 1,
+    "policy_changes": {
+      "pretax_401k_rate": "15",
+      "roth_401k_rate": "15",
+      "ira_contribution": "traditional_max",
+      "claim_social_security": "now",
+      "roth_conversion": "none"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "0",
+      "roth_401k_rate": "0",
+      "ira_contribution": "none",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "default",
+      "retire": "yes",
+      "claim_social_security": "now",
+      "roth_conversion": "none"
+    }
+  },
+  {
+    "age": 65,
+    "net_worth": 2904236.0636795457,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.5833333333333337,
+    "is_retired": true,
+    "year": 2066,
+    "month": 1,
+    "policy_changes": {
+      "roth_conversion": "none"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "0",
+      "roth_401k_rate": "0",
+      "ira_contribution": "none",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "default",
+      "retire": "yes",
+      "claim_social_security": "now",
+      "roth_conversion": "none"
+    }
+  },
+  {
+    "age": 66,
+    "net_worth": 3777402.403806441,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.5833333333333337,
+    "is_retired": true,
+    "year": 2067,
+    "month": 1,
+    "policy_changes": {
+      "withdrawal_order": "brokerage_first",
+      "roth_conversion": "none"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "0",
+      "roth_401k_rate": "0",
+      "ira_contribution": "none",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "brokerage_first",
+      "retire": "yes",
+      "claim_social_security": "now",
+      "roth_conversion": "none"
+    }
+  },
+  {
+    "age": 67,
+    "net_worth": 3589344.6585179567,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.5833333333333337,
+    "is_retired": true,
+    "year": 2068,
+    "month": 1,
+    "policy_changes": {
+      "sweep_policy": "hold_cash",
+      "withdrawal_order": "brokerage_first",
+      "roth_conversion": "none"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "0",
+      "roth_401k_rate": "0",
+      "ira_contribution": "none",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "brokerage_first",
+      "retire": "yes",
+      "claim_social_security": "now",
+      "roth_conversion": "none"
+    }
+  },
+  {
+    "age": 68,
+    "net_worth": 3464703.3142624083,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.5833333333333339,
+    "is_retired": true,
+    "year": 2069,
+    "month": 1,
+    "policy_changes": {
+      "sweep_policy": "hold_cash",
+      "roth_conversion": "none"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "0",
+      "roth_401k_rate": "0",
+      "ira_contribution": "none",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "brokerage_first",
+      "retire": "yes",
+      "claim_social_security": "now",
+      "roth_conversion": "none"
+    }
+  },
+  {
+    "age": 69,
+    "net_worth": 4139452.4487406877,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.5833333333333339,
+    "is_retired": true,
+    "year": 2070,
+    "month": 1,
+    "policy_changes": {
+      "sweep_policy": "hold_cash",
+      "withdrawal_order": "brokerage_first",
+      "roth_conversion": "none"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "0",
+      "roth_401k_rate": "0",
+      "ira_contribution": "none",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "brokerage_first",
+      "retire": "yes",
+      "claim_social_security": "now",
+      "roth_conversion": "none"
+    }
+  },
+  {
+    "age": 70,
+    "net_worth": 6096770.798146502,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.5833333333333339,
+    "is_retired": true,
+    "year": 2071,
+    "month": 1,
+    "policy_changes": {
+      "sweep_policy": "hold_cash",
+      "withdrawal_order": "brokerage_first",
+      "roth_conversion": "none"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "0",
+      "roth_401k_rate": "0",
+      "ira_contribution": "none",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "brokerage_first",
+      "retire": "yes",
+      "claim_social_security": "now",
+      "roth_conversion": "none"
+    }
+  },
+  {
+    "age": 71,
+    "net_worth": 7008852.935479136,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.5833333333333339,
+    "is_retired": true,
+    "year": 2072,
+    "month": 1,
+    "policy_changes": {
+      "sweep_policy": "hold_cash",
+      "roth_conversion": "none"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "0",
+      "roth_401k_rate": "0",
+      "ira_contribution": "none",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "brokerage_first",
+      "retire": "yes",
+      "claim_social_security": "now",
+      "roth_conversion": "none"
+    }
+  },
+  {
+    "age": 72,
+    "net_worth": 6134426.925385167,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.5833333333333339,
+    "is_retired": true,
+    "year": 2073,
+    "month": 1,
+    "policy_changes": {
+      "sweep_policy": "hold_cash",
+      "roth_conversion": "none"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "0",
+      "roth_401k_rate": "0",
+      "ira_contribution": "none",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "brokerage_first",
+      "retire": "yes",
+      "claim_social_security": "now",
+      "roth_conversion": "none"
+    }
+  },
+  {
+    "age": 73,
+    "net_worth": 6389741.418233668,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.5833333333333339,
+    "is_retired": true,
+    "year": 2074,
+    "month": 1,
+    "policy_changes": {
+      "sweep_policy": "hold_cash",
+      "roth_conversion": "none"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "0",
+      "roth_401k_rate": "0",
+      "ira_contribution": "none",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "brokerage_first",
+      "retire": "yes",
+      "claim_social_security": "now",
+      "roth_conversion": "none"
+    }
+  },
+  {
+    "age": 74,
+    "net_worth": 6249949.455712161,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.5833333333333339,
+    "is_retired": true,
+    "year": 2075,
+    "month": 1,
+    "policy_changes": {
+      "sweep_policy": "hold_cash",
+      "roth_conversion": "none"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "0",
+      "roth_401k_rate": "0",
+      "ira_contribution": "none",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "brokerage_first",
+      "retire": "yes",
+      "claim_social_security": "now",
+      "roth_conversion": "none"
+    }
+  },
+  {
+    "age": 75,
+    "net_worth": 5684790.888105657,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.5833333333333339,
+    "is_retired": true,
+    "year": 2076,
+    "month": 1,
+    "policy_changes": {
+      "sweep_policy": "hold_cash",
+      "roth_conversion": "none"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "0",
+      "roth_401k_rate": "0",
+      "ira_contribution": "none",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "brokerage_first",
+      "retire": "yes",
+      "claim_social_security": "now",
+      "roth_conversion": "none"
+    }
+  },
+  {
+    "age": 76,
+    "net_worth": 6233157.17023001,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.5833333333333339,
+    "is_retired": true,
+    "year": 2077,
+    "month": 1,
+    "policy_changes": {
+      "sweep_policy": "hold_cash",
+      "roth_conversion": "none"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "0",
+      "roth_401k_rate": "0",
+      "ira_contribution": "none",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "brokerage_first",
+      "retire": "yes",
+      "claim_social_security": "now",
+      "roth_conversion": "none"
+    }
+  },
+  {
+    "age": 77,
+    "net_worth": 6041680.981433393,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.5833333333333339,
+    "is_retired": true,
+    "year": 2078,
+    "month": 1,
+    "policy_changes": {
+      "sweep_policy": "hold_cash",
+      "roth_conversion": "none"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "0",
+      "roth_401k_rate": "0",
+      "ira_contribution": "none",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "brokerage_first",
+      "retire": "yes",
+      "claim_social_security": "now",
+      "roth_conversion": "none"
+    }
+  },
+  {
+    "age": 78,
+    "net_worth": 6015678.725124419,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.5833333333333339,
+    "is_retired": true,
+    "year": 2079,
+    "month": 1,
+    "policy_changes": {
+      "sweep_policy": "hold_cash",
+      "roth_conversion": "none"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "0",
+      "roth_401k_rate": "0",
+      "ira_contribution": "none",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "brokerage_first",
+      "retire": "yes",
+      "claim_social_security": "now",
+      "roth_conversion": "none"
+    }
+  },
+  {
+    "age": 79,
+    "net_worth": 8101398.156753332,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.5833333333333339,
+    "is_retired": true,
+    "year": 2080,
+    "month": 1,
+    "policy_changes": {
+      "sweep_policy": "hold_cash",
+      "roth_conversion": "none"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "0",
+      "roth_401k_rate": "0",
+      "ira_contribution": "none",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "brokerage_first",
+      "retire": "yes",
+      "claim_social_security": "now",
+      "roth_conversion": "none"
+    }
+  },
+  {
+    "age": 80,
+    "net_worth": 7527618.191456189,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.5833333333333339,
+    "is_retired": true,
+    "year": 2081,
+    "month": 1,
+    "policy_changes": {
+      "sweep_policy": "hold_cash",
+      "roth_conversion": "none"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "0",
+      "roth_401k_rate": "0",
+      "ira_contribution": "none",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "brokerage_first",
+      "retire": "yes",
+      "claim_social_security": "now",
+      "roth_conversion": "none"
+    }
+  },
+  {
+    "age": 81,
+    "net_worth": 8802915.843392087,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.5833333333333339,
+    "is_retired": true,
+    "year": 2082,
+    "month": 1,
+    "policy_changes": {
+      "sweep_policy": "hold_cash",
+      "roth_conversion": "none"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "0",
+      "roth_401k_rate": "0",
+      "ira_contribution": "none",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "brokerage_first",
+      "retire": "yes",
+      "claim_social_security": "now",
+      "roth_conversion": "none"
+    }
+  },
+  {
+    "age": 82,
+    "net_worth": 9554514.028004978,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.5833333333333339,
+    "is_retired": true,
+    "year": 2083,
+    "month": 1,
+    "policy_changes": {
+      "sweep_policy": "hold_cash",
+      "roth_conversion": "none"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "0",
+      "roth_401k_rate": "0",
+      "ira_contribution": "none",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "brokerage_first",
+      "retire": "yes",
+      "claim_social_security": "now",
+      "roth_conversion": "none"
+    }
+  },
+  {
+    "age": 83,
+    "net_worth": 9231573.125804953,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.5833333333333337,
+    "is_retired": true,
+    "year": 2084,
+    "month": 1,
+    "policy_changes": {
+      "sweep_policy": "hold_cash",
+      "roth_conversion": "none"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "0",
+      "roth_401k_rate": "0",
+      "ira_contribution": "none",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "brokerage_first",
+      "retire": "yes",
+      "claim_social_security": "now",
+      "roth_conversion": "none"
+    }
+  },
+  {
+    "age": 84,
+    "net_worth": 9943683.541051798,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.5833333333333339,
+    "is_retired": true,
+    "year": 2085,
+    "month": 1,
+    "policy_changes": {
+      "sweep_policy": "hold_cash",
+      "roth_conversion": "none"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "0",
+      "roth_401k_rate": "0",
+      "ira_contribution": "none",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "brokerage_first",
+      "retire": "yes",
+      "claim_social_security": "now",
+      "roth_conversion": "none"
+    }
+  },
+  {
+    "age": 85,
+    "net_worth": 8856890.997216564,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.5833333333333339,
+    "is_retired": true,
+    "year": 2086,
+    "month": 1,
+    "policy_changes": {
+      "sweep_policy": "hold_cash",
+      "roth_conversion": "none"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "0",
+      "roth_401k_rate": "0",
+      "ira_contribution": "none",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "brokerage_first",
+      "retire": "yes",
+      "claim_social_security": "now",
+      "roth_conversion": "none"
+    }
+  },
+  {
+    "age": 86,
+    "net_worth": 9803628.293597123,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.5833333333333337,
+    "is_retired": true,
+    "year": 2087,
+    "month": 1,
+    "policy_changes": {
+      "sweep_policy": "hold_cash",
+      "roth_conversion": "none"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "0",
+      "roth_401k_rate": "0",
+      "ira_contribution": "none",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "brokerage_first",
+      "retire": "yes",
+      "claim_social_security": "now",
+      "roth_conversion": "none"
+    }
+  },
+  {
+    "age": 87,
+    "net_worth": 9324878.089286761,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.5833333333333337,
+    "is_retired": true,
+    "year": 2088,
+    "month": 1,
+    "policy_changes": {
+      "sweep_policy": "hold_cash",
+      "withdrawal_order": "brokerage_first",
+      "roth_conversion": "none"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "0",
+      "roth_401k_rate": "0",
+      "ira_contribution": "none",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "brokerage_first",
+      "retire": "yes",
+      "claim_social_security": "now",
+      "roth_conversion": "none"
+    }
+  },
+  {
+    "age": 88,
+    "net_worth": 9832603.530353595,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 0.5833333333333337,
+    "is_retired": true,
+    "year": 2089,
+    "month": 1,
+    "policy_changes": {
+      "sweep_policy": "hold_cash",
+      "withdrawal_order": "brokerage_first",
+      "roth_conversion": "none"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "0",
+      "roth_401k_rate": "0",
+      "ira_contribution": "none",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "brokerage_first",
+      "retire": "yes",
+      "claim_social_security": "now",
+      "roth_conversion": "none"
+    }
+  },
+  {
+    "age": 89,
+    "net_worth": 0.0,
+    "action_type": null,
+    "action_amount": 0.0,
+    "reward": 2.072974202673457,
+    "is_retired": true,
+    "year": 2090,
+    "month": 1,
+    "policy_changes": {
+      "sweep_policy": "hold_cash",
+      "withdrawal_order": "brokerage_first",
+      "roth_conversion": "none"
+    },
+    "policy_vector": {
+      "pretax_401k_rate": "0",
+      "roth_401k_rate": "0",
+      "ira_contribution": "none",
+      "hsa_contribution": "none",
+      "sweep_policy": "hold_cash",
+      "spending_adjust": "hold",
+      "withdrawal_order": "brokerage_first",
+      "retire": "yes",
+      "claim_social_security": "now",
+      "roth_conversion": "none"
+    }
+  }
+]

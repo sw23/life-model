@@ -19,6 +19,12 @@ bracket-filling withdrawal) through the env's own action executor, so each move 
 legality, 402(g), employer-match, and tax rules as an RL action; the policy then returns
 ``NO_ACTION`` for the year.
 
+**Policy vectors (Plan 32 D8).** With ``action_space="factored"`` a candidate runs on the RL env's
+standing-policy space instead: :func:`plan_policy_vector` writes the plan in that vocabulary (a
+401(k) rate per bucket, an IRA / HSA choice, a sweep, a withdrawal order, a claim, a Roth
+conversion) and :func:`candidate_policy` returns the action vector each decision. The flat path stays
+the default, so committed SLM data and reports are unchanged.
+
 **Teacher gating:** no trained RL policy is a candidate. Per the committed protocol reports no
 learned policy cleared the pre-registered bar, so distilling from one would silently cap the
 student.
@@ -29,11 +35,17 @@ this, mirroring ``deepqlearning/tests/conftest.py``).
 
 from collections.abc import Callable
 
+import numpy as np
+
 from deepqlearning.envs.financial.actions import ActionType, _remaining_401k_deferral_room
 from deepqlearning.envs.financial.environment import FinancialLifeEnv
+from deepqlearning.envs.financial.policies import SLOT_BY_NAME
 from deepqlearning.evaluation.baselines import (
     _NO_ACTION,
+    FACTORED_BASELINES,
     BaselinePolicy,
+    _legal_vector,
+    affordable_401k_rate,
     age_glide_policy,
     contribution_waterfall_policy,
     emergency_fund_first_policy,
@@ -162,11 +174,96 @@ def candidate_household(name: str, household: dict) -> dict:
     }
 
 
-def candidate_policy(name: str) -> Callable[[FinancialLifeEnv], int]:
-    """The per-year policy for a plan or reference-policy name."""
+#: Action spaces a candidate can run on (see the module docstring).
+CANDIDATE_ACTION_SPACES = ("flat", "factored")
+
+_RATE_VALUES = SLOT_BY_NAME["pretax_401k_rate"].values  # "0", "3", "6", "10", "15", "max"
+
+
+def _rate_pct(env: FinancialLifeEnv, value: str) -> float:
+    """A 401(k) rate value as a percent of this year's pay ("max": the 402(g) limit's share)."""
+    if value != "max":
+        return float(value)
+    person = env.person
+    pay = sum(job.salary.base for job in person.jobs if not job.retired)
+    limit = env.model.year_config.get_job_401k_contrib_limit(person.age_in(env.model.year))
+    return 100.0 * limit / pay if pay > 0 else 0.0
+
+
+def _split_rates(env: FinancialLifeEnv, total: str) -> tuple[str, str]:
+    """``(pretax, roth)`` rate values for the ``split`` routing: pre-tax on pay above the target
+    bracket's top edge (the smallest step covering it), Roth for the rest of ``total``."""
+    person = env.person
+    wages = sum(job.salary.base + job.salary.bonus for job in person.jobs if not job.retired)
+    if wages <= 0 or total == "0":
+        return "0", "0"
+    total_pct = _rate_pct(env, total)
+    needed = max(0.0, wages - _bracket_top(env)) / wages * 100.0
+    pretax = next((v for v in _RATE_VALUES if _rate_pct(env, v) >= needed), "max")
+    if _rate_pct(env, pretax) >= total_pct:
+        return total, "0"
+    left = total_pct - _rate_pct(env, pretax)
+    roth = "0"
+    for value in _RATE_VALUES:
+        if _rate_pct(env, value) <= left + 1e-9:
+            roth = value
+    return pretax, roth
+
+
+def plan_policy_vector(plan: Plan, env: FinancialLifeEnv) -> dict[str, str]:
+    """``plan`` in the RL env's standing-policy vocabulary (``envs/financial/policies.py``) at the
+    env's current state: ``{slot: value}`` for the slots the plan sets.
+
+    * **routing** — while working, the 401(k) deferral at the highest rate take-home pay carries
+      (``evaluation.baselines.affordable_401k_rate``): all pre-tax, all Roth, or ``split`` (pre-tax on
+      pay above the 12% bracket's top, Roth for the rest); savings beyond it are swept to the
+      brokerage (``sweep_to_brokerage``; the sweep keeps six months of spending, the flat plan three).
+    * **claim** — claiming at the plan's age is applied by the policy (the household carries the age).
+    * **drawdown** — ``conventional`` keeps the default withdrawal order; ``bracketfill`` becomes a
+      standing Roth conversion to the top of the 12% bracket once retired (the factored analog of
+      drawing pre-tax money up to that edge: the bracket is filled by converting, not withdrawing).
+    * **savings** — the savings boost is a household lever (``candidate_household``), the same in
+      both spaces.
+    """
+    vector: dict[str, str] = {"sweep_policy": "sweep_to_brokerage", "withdrawal_order": "default"}
+    working = not env.person.is_retired and not env.person.is_deceased
+    if working:
+        total = affordable_401k_rate(env)
+        if plan.routing == "pretax":
+            pretax, roth = total, "0"
+        elif plan.routing == "roth":
+            pretax, roth = "0", total
+        else:
+            pretax, roth = _split_rates(env, total)
+        vector.update({"pretax_401k_rate": pretax, "roth_401k_rate": roth})
+        vector["roth_conversion"] = "none"
+    else:
+        vector["roth_conversion"] = "to_bracket_12" if plan.drawdown == "bracketfill" else "none"
+    return vector
+
+
+def plan_factored_policy(plan: Plan) -> Callable[[FinancialLifeEnv], np.ndarray]:
+    """The per-decision factored policy realizing ``plan`` (a ``MultiDiscrete`` action each step)."""
+
+    def policy(env: FinancialLifeEnv) -> np.ndarray:
+        return _legal_vector(env, plan_policy_vector(plan, env))
+
+    policy.__name__ = f"plan_{plan.name}_factored"
+    return policy
+
+
+def candidate_policy(name: str, *, action_space: str = "flat") -> Callable[[FinancialLifeEnv], int]:
+    """The per-decision policy for a plan or reference-policy name.
+
+    ``action_space="factored"`` returns the plan's (or reference heuristic's) standing-policy version,
+    for an env built with ``action_space="factored"``; the default is the flat-space policy.
+    """
+    if action_space not in CANDIDATE_ACTION_SPACES:
+        raise ValueError(f"action_space must be one of {CANDIDATE_ACTION_SPACES}, got {action_space!r}")
     plan = Plan.parse(name)
+    factored = action_space == "factored"
     if plan is not None:
-        return plan_policy(plan)
+        return plan_factored_policy(plan) if factored else plan_policy(plan)
     if name in REFERENCE_POLICIES:
-        return REFERENCE_POLICIES[name]
+        return FACTORED_BASELINES[name] if factored else REFERENCE_POLICIES[name]
     raise KeyError(f"unknown candidate {name!r}")

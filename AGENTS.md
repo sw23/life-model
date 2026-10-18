@@ -125,6 +125,16 @@ fixtures use only synthetic names (a test enforces an allowlist).
   `default_financial_config()`. `config_manager.config` is a deprecated shim library code must not
   import (a test enforces it). Scenarios are YAML overlays in `config/data/scenarios/`
   (`list_scenarios()`; `stochastic` turns on random economy draws).
+- **RL environment** (`deepqlearning/envs/financial/`, Plan 32 D8/D9). `FinancialLifeEnv(config=
+  {"action_space": "flat" | "factored", "decision_interval": "year" | "quarter" | "month"})`: the
+  flat `Discrete(52)` one-off moves stay the default; the factored `MultiDiscrete` space is ten
+  standing-policy slots (`policies.py`) that set the Plan 27 `ContributionPlan` / `SavingsPolicy` /
+  `RothConversionPolicy` objects, the household `withdrawal_order`, retirement and the Social Security
+  claim, with per-slot legal masks. An env step runs 12, 3 or 1 monthly model steps; `"year"` must
+  stay bit-identical to `model.step_year()` (a twin-env test). PPO/REINFORCE take `MultiDiscrete`
+  natively; DQN goes through `flatten.py:FlattenPolicies`. Baselines exist in both spaces under the
+  same names (`baselines_for`). The SLM candidate generator can emit plans as policy vectors
+  (`candidate_policy(name, action_space="factored")`); the flat path is its default.
 - **Agent interface.** `life_model/api.py` (one-call functions; `life_model.run/compare/validate/
   explain`), `life_model/cli.py` (the `life-model` console script and `python -m life_model`),
   `life_model/mcp.py` (optional stdio MCP server, extra `life-model[mcp]`). Keep these thin: no

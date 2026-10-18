@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from ..algos.base import Algorithm, StepBatch
-from ..envs.masks import legal_actions_of
+from ..envs.masks import legal_actions_of, mask_width
 
 
 @dataclass
@@ -34,8 +34,9 @@ def rollout(
 ) -> RolloutResult:
     """Run one episode.
 
-    The action space is fully discrete: the policy's chosen index carries everything the
-    environment needs, so there is no separate amount or parameter to fill in. When ``training`` is
+    The action space is fully discrete: the policy's chosen index (or, for a ``MultiDiscrete``
+    space, its vector of slot indices) carries everything the environment needs, so there is no
+    separate amount or parameter to fill in. When ``training`` is
     True the transition is handed to the algorithm and an update is attempted each step — the
     algorithm decides whether that update actually does anything.
 
@@ -43,7 +44,8 @@ def rollout(
     read; environments that do not publish them simply record ``None``.
     """
     state, info = env.reset(seed=seed)
-    action_size = int(env.action_space.n)
+    action_size = mask_width(env.action_space)
+    multi = algo.action_nvec is not None
     if training:
         algo.on_env_count(1)
 
@@ -57,7 +59,7 @@ def rollout(
     while True:
         obs_batch = np.expand_dims(np.asarray(state), 0)
         act_result = algo.act(obs_batch, [legal_actions], training=training)
-        action = int(act_result.actions[0])
+        action = np.asarray(act_result.actions[0], dtype=np.int64) if multi else int(act_result.actions[0])
 
         next_state, reward, terminated, truncated, info = env.step(action)
         done = terminated or truncated
@@ -89,6 +91,11 @@ def rollout(
                     "bank_balance": info.get("bank_balance"),
                     "action_type": info.get("action_type"),
                     "action_amount": info.get("action_amount"),
+                    "year": info.get("year"),
+                    "month": info.get("month"),
+                    "is_retired": info.get("is_retired"),
+                    "policy_vector": info.get("policy_vector"),
+                    "policy_changes": info.get("policy_changes"),
                 }
             )
 

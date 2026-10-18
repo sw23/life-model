@@ -8,8 +8,9 @@
 Environments may restrict which of their discrete actions are currently valid. The protocol is
 opt-in and has three fallbacks, checked in order:
 
-1. ``info["legal_mask"]`` — a boolean array of length ``action_space.n``. This is the only form
-   that survives a vectorized (especially async) backend, since the collector never touches the
+1. ``info["legal_mask"]`` — a boolean array of length ``action_space.n`` (for a ``MultiDiscrete``
+   space: the per-slot masks concatenated, length ``sum(nvec)``). This is the only form that
+   survives a vectorized (especially async) backend, since the collector never touches the
    sub-environments.
 2. ``env.get_legal_actions()`` — a method returning the legal indices, for single-env loops.
 3. Every action is legal — the case for standard environments, which declare nothing.
@@ -19,14 +20,23 @@ train on an environment without masking.
 """
 
 import numpy as np
+from gymnasium import spaces
+
+
+def mask_width(space) -> int:
+    """Width of a legal-action mask for ``space``: ``n`` for ``Discrete``, ``sum(nvec)`` for
+    ``MultiDiscrete`` (one entry per value of every slot)."""
+    if isinstance(space, spaces.MultiDiscrete):
+        return int(np.sum(space.nvec))
+    return int(space.n)
 
 
 def _action_count(env, n: int | None) -> int:
-    """Number of discrete actions, from the explicit ``n`` or the env's action space."""
+    """Number of mask entries, from the explicit ``n`` or the env's action space."""
     if n is not None:
         return int(n)
     space = getattr(env, "single_action_space", None) or getattr(env, "action_space", None)
-    return int(space.n)
+    return mask_width(space)
 
 
 def legal_actions_of(env, info: dict | None = None, n: int | None = None) -> list[int]:

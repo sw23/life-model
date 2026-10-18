@@ -327,3 +327,31 @@ builds an unseeded environment whose 67-year-old dies in about one run in ten wi
 (the estate is settled and the bank emptied, so the final `bank_account_balance > 0` fails): 7 of 60
 runs on `fourth-wave` (f66307f), 9 of 60 here. The test now makes the retiree immortal; it is about
 the benefit covering the spending.
+
+## Task 5: the RL action space and decision interval
+
+`FinancialLifeEnv` gained `decision_interval` (`"year"`, `"quarter"`, `"month"`: 12, 3 or 1 monthly model
+steps per env step) and `action_space` (`"flat"`, the `Discrete(52)` one-off moves, still the default;
+`"factored"`, ten `MultiDiscrete` standing-policy slots that set the Plan 27 `ContributionPlan` /
+`SavingsPolicy` / `RothConversionPolicy` objects, the household `withdrawal_order`, retirement and the
+Social Security claim). See `deepqlearning/README.md`.
+
+* **No RL expected value changed.** With yearly decisions the env is bit-identical to driving the model
+  with `model.step_year()` (`test_decision_interval.py::test_twelve_monthly_steps_are_step_year` checks
+  every reward and observation), and four seeded mixed-action episodes reproduced the pre-task env's
+  rewards, lengths and first 38 observation features exactly. The observation gained two features
+  (month of the decision, months to the next decision), so `OBS_VERSION` is 5 and older DQN checkpoints
+  are refused. Episodes of the trained configurations are also identical before and after merging
+  Plan 27b.
+* **Reward over an interval.** A step earns `months / 12` of the utility of the spending rate in force at
+  its end (base plus active categorized lines; one-time expenses are not a rate), deflated to the start of
+  the next month. At a year boundary that is what the yearly reward always read, so yearly rewards did not
+  move; within a year it does not depend on how much of the year's spending has been paid, so the
+  December settlement and the year-end flow-stat reset inside a quarter cannot distort it.
+* **Committed RL reports regenerated** on the monthly engine (they were trained on the annual engine):
+  `reports/retirement_security/` (flat DQN), `reports/retirement_security_ppo/` (flat PPO) and
+  `reports/algorithm_sweep.txt`, plus the new `reports/factored_ppo_year/`, `reports/factored_ppo_quarter/`
+  and `reports/factored_action_space.txt`. The flat DQN five-seed sweep shows no regression in the
+  heuristic-baseline comparison (pooled paired gap to `always_max_401k` +0.19 [+0.01, +0.38], previously
+  -0.39 [-2.11, +1.33]); the bar's own return moved from 33.50 to 35.30 with the engine.
+  `reports/sb3_cross_check/` was not regenerated.
