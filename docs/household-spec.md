@@ -300,7 +300,7 @@ Builds: `FixedIncomeHolding`.
 | `tax_exempt` | boolean |  | `False` | `FixedIncomeHolding.tax_exempt` | Interest exempt from federal tax (a municipal fund). |
 | `early_withdrawal_penalty_months` | integer |  | `0` | `FixedIncomeHolding.early_withdrawal_penalty_months` | CD penalty in months of interest. |
 | `reserve` | boolean |  | `True` | `FixedIncomeHolding.reserve` | Not drawn by the waterfall unless all else is exhausted (false: drawn right after the bank). |
-| `accrued_interest` | number | USD | `0.0` | `FixedIncomeHolding.accrued_interest` | An I bond's interest included in face (taxed at redemption). |
+| `accrued_interest` | number | USD | `0.0` | `FixedIncomeHolding.accrued_interest` | An I bond's interest included in face (taxed at redemption). A CD's interest earned before the start that face (the statement's principal) leaves out, e.g. from the purchase month to the start: added to the value and taxed when paid (at maturity). |
 | `cost_basis` | number (optional) | USD | — | `FixedIncomeHolding.cost_basis` | A bond fund's cost basis (defaults to face). |
 
 ## BrokerageAccount
@@ -745,6 +745,7 @@ Builds: `LifeInsurance`.
 | `max_missed_payments` | integer (optional) |  | — | `LifeInsurance.max_missed_payments` | Missed payments before lapse. |
 | `beneficiary` | string (optional) |  | — | `LifeInsurance.beneficiary` | Person id of the designated beneficiary. |
 | `issue_year` | integer (optional) | year | — | `LifeInsurance.issue_year` | Year issued (a term policy expires term_years after it; defaults to the start year). |
+| `issue_month` | integer (optional) | month | — | `LifeInsurance.issue_month` | Month issued (1-12). The policy year then runs from it: the year's premium (12 x premium_monthly) is charged on each anniversary instead of every January, and a term policy's coverage ends at the start of its last anniversary month (issue_year + term_years) instead of that December. |
 | `cash_value` | number (optional) | USD | — | `LifeInsurance.cash_value` | Existing whole-life cash value. |
 | `loan_balance` | number (optional) | USD | — | `LifeInsurance.loan_balance` | Existing policy loan. |
 | `premiums_paid` | number (optional) | USD | — | `LifeInsurance.premiums_paid` | Premiums paid so far: the policy's cost basis on a surrender (defaults to cash_value). |

@@ -778,7 +778,9 @@ class FixedIncomeAccount(SpecModel):
     )
     accrued_interest: NonNegativeMoney = spec_field(
         0.0,
-        description="An I bond's interest included in face (taxed at redemption).",
+        description="An I bond's interest included in face (taxed at redemption). A CD's interest earned before the "
+        "start that face (the statement's principal) leaves out, e.g. from the purchase month to the start: added "
+        "to the value and taxed when paid (at maturity).",
         unit="USD",
         core="FixedIncomeHolding.accrued_interest",
     )
@@ -1954,6 +1956,14 @@ class LifeInsurance(SpecModel):
         description="Year issued (a term policy expires term_years after it; defaults to the start year).",
         unit="year",
         core="LifeInsurance.issue_year",
+    )
+    issue_month: Annotated[int, Field(ge=1, le=12)] | None = spec_field(
+        None,
+        description="Month issued (1-12). The policy year then runs from it: the year's premium (12 x "
+        "premium_monthly) is charged on each anniversary instead of every January, and a term policy's coverage "
+        "ends at the start of its last anniversary month (issue_year + term_years) instead of that December.",
+        unit="month",
+        core="LifeInsurance.issue_month",
     )
     cash_value: NonNegativeMoney | None = spec_field(
         None, description="Existing whole-life cash value.", unit="USD", core="LifeInsurance.cash_value"

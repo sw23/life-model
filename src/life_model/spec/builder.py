@@ -949,6 +949,7 @@ class _Builder:
                 max_missed_payments=policy.max_missed_payments,
                 beneficiary=self.person(policy.beneficiary) if policy.beneficiary is not None else None,
                 issue_year=policy.issue_year,
+                issue_month=policy.issue_month,
                 cash_value=policy.cash_value or 0.0,
                 loan_balance=policy.loan_balance or 0.0,
                 premiums_paid=policy.premiums_paid,

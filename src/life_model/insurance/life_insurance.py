@@ -66,6 +66,7 @@ class LifeInsurance(LifeModelAgent):
         *,
         beneficiary: Person | None = None,
         issue_year: int | None = None,
+        issue_month: int | None = None,
         cash_value: float = 0.0,
         loan_balance: float = 0.0,
         premiums_paid: float | None = None,
@@ -95,6 +96,10 @@ class LifeInsurance(LifeModelAgent):
             issue_year: Year the policy was issued (keyword-only; Plan 27 D1). Defaults to the current
                 year. A term policy expires ``term_years`` after it; whole-life cash value is credited
                 at the later-year rate after the first year.
+            issue_month: The month (1-12) the policy was issued (keyword-only). With it the policy year runs
+                from that month: the year's premium is charged on each anniversary (that month) instead of in
+                January, and a term policy's coverage ends at the start of its last anniversary
+                (``issue_year + term_years``, ``issue_month``) instead of at the end of that year.
             cash_value: An existing whole-life policy's cash value (from its statement).
             loan_balance: An existing policy loan against the cash value.
             premiums_paid: Premiums paid so far (the policy's cost basis for a surrender or a lapse
@@ -158,6 +163,10 @@ class LifeInsurance(LifeModelAgent):
         self.is_active = True
         self.is_lapsed = False
         self.policy_start_year = self.model.year if issue_year is None else int(issue_year)
+        if issue_month is not None and not 1 <= int(issue_month) <= 12:
+            raise ValueError(f"issue_month must be 1-12, got {issue_month}")
+        #: The anniversary month (None: the policy year is the calendar year).
+        self.issue_month = None if issue_month is None else int(issue_month)
         if self.policy_start_year > self.model.year:
             raise ValueError(f"issue_year {issue_year} is after the current year {self.model.year}")
         self.consecutive_missed_payments = 0
@@ -237,8 +246,10 @@ class LifeInsurance(LifeModelAgent):
 
     @property
     def is_term_expired(self) -> bool:
-        """Check if term life policy has expired"""
+        """Check if term life policy has expired (at its last anniversary month, with ``issue_month``)."""
         if self.policy_type == LifeInsuranceType.TERM and self.term_years:
+            if self.issue_month is not None:
+                return (self.model.year, self.model.month) >= (self.policy_start_year + self.term_years, self.issue_month)
             return self.policy_years_active >= self.term_years
         return False
 
@@ -435,9 +446,24 @@ class LifeInsurance(LifeModelAgent):
         return benefit_amount
 
     def pre_step(self):
-        """Pay the year's premium in the first month of the year (January, or the start month)."""
-        if self.model.is_year_start and self.is_active and not self.is_term_expired:
+        """Pay the year's premium in the first month of the year (January, or the start month), or on the
+        policy anniversary with ``issue_month``; a term policy with an issue month ends at its last
+        anniversary."""
+        if self.issue_month is None:
+            if self.model.is_year_start and self.is_active and not self.is_term_expired:
+                self.make_premium_payment()
+            return
+        if not self.is_active:
+            return
+        if self.is_term_expired:
+            self._expire()
+        elif self.model.month == self.issue_month:
             self.make_premium_payment()
+
+    def _expire(self) -> None:
+        self.close("term life policy expired")
+        self.model.event_log.add(Event(f"{self.person.name}'s term life insurance policy expired"))
+        self.stat_policy_active = 0
 
     def on_year_end(self):
         """Year end: term expiry, premium re-pricing, cash value growth, policy-loan interest, lapse."""
@@ -447,9 +473,7 @@ class LifeInsurance(LifeModelAgent):
 
         # Check if term policy has expired
         if self.is_term_expired:
-            self.close("term life policy expired")
-            self.model.event_log.add(Event(f"{self.person.name}'s term life insurance policy expired"))
-            self.stat_policy_active = 0
+            self._expire()
             return
 
         # Update premiums based on the premium increase type (LEVEL: unchanged)

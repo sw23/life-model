@@ -477,5 +477,42 @@ class TestJointAccounts(unittest.TestCase):
         self.assertEqual(after, [(value, basis + (value - basis) / 2) for value, basis in before])
 
 
+class TestStatementTiming(unittest.TestCase):
+    """Rows of the 'could not be represented' table: a term policy's issue month, a CD's accrued interest."""
+
+    def test_term_life_issue_month(self):
+        data = minimal()
+        data["meta"]["end_year"] = 2039
+        data["meta"]["accepted_warnings"] = ["cash_not_invested"]
+        policy = {"kind": "life", "policy": "term", "death_benefit": 750000, "premium_monthly": 46, "term_years": 20}
+        data["people"][0]["insurance"] = [{**policy, "issue_year": 2018, "issue_month": 5}]
+        result = life_model.run(data, seed=1, checks="strict")
+        ledger = result.ledger
+        premiums = ledger[ledger["sink"].fillna("").str.contains("life insurance")]
+        self.assertEqual(sorted(set(premiums["month"])), [5])
+        by_year = premiums.groupby("year")["amount"].sum()
+        self.assertAlmostEqual(by_year[2037], 552, places=2)
+        self.assertNotIn(2038, by_year.index)  # coverage ends at the May 2038 anniversary
+        expired = result.events[result.events["message"].str.contains("expired", na=False)]
+        self.assertEqual((int(expired["year"].iloc[0]), int(expired["month"].iloc[0])), (2038, 5))
+        policy_agent = result._model.household.people["alex"].life_insurance_policies[0]
+        self.assertFalse(policy_agent.is_active)
+
+    def test_cd_interest_accrued_before_the_start(self):
+        data = minimal()
+        cd = {"kind": "fixed_income", "id": "cd", "instrument": "cd", "face": 10000, "rate_pct": 4.25}
+        data["people"][0]["accounts"].append({**cd, "maturity": "2026-05", "purchased": "2025-11", "accrued_interest": 71})
+        result = life_model.run(data, seed=1, checks="strict")
+        returns = result.tax_returns.for_year(2026)
+        model = _quiet_build(data)
+        holding = model.household.items["cd"]
+        self.assertAlmostEqual(holding.balance, 10071)
+        no_accrued = {**data}
+        no_accrued["people"] = [{**data["people"][0], "accounts": [data["people"][0]["accounts"][0], {**cd, "maturity": "2026-05", "purchased": "2025-11"}]}]
+        base = life_model.run(no_accrued, seed=1).tax_returns.for_year(2026)
+        interest = returns[0].summary_row()["taxable_interest"] - base[0].summary_row()["taxable_interest"]
+        self.assertAlmostEqual(interest, 71 * (1 + 0.0425 / 12) ** 4, delta=1.0)  # taxed at maturity, with its own interest
+
+
 if __name__ == "__main__":
     unittest.main()

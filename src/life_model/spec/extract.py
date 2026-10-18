@@ -490,7 +490,8 @@ class _Extractor:
                     id=self.item_id(holding),
                     instrument=holding.kind,
                     name=None if holding.name == _DEFAULT_FIXED_NAMES[holding.kind] else holding.name,
-                    face=holding.balance,
+                    # A CD's face excludes its pre-start accrued interest (which is part of the balance).
+                    face=holding.balance - (holding.accrued_interest if holding.kind == "cd" else 0.0),
                     rate_pct=holding.rate_pct,
                     maturity=_ym(holding.maturity)
                     if holding.maturity is not None and holding.kind != "i_bond"
@@ -945,6 +946,7 @@ class _Extractor:
                     max_missed_payments=_none_if(policy.max_missed_payments, life_cfg.default_max_missed_payments),
                     beneficiary=self.pid(policy.beneficiary) if policy.beneficiary is not None else None,
                     issue_year=_none_if(policy.policy_start_year, self.start),
+                    issue_month=getattr(policy, "issue_month", None),
                     cash_value=policy.cash_value or None,
                     loan_balance=policy.outstanding_loan_balance or None,
                     premiums_paid=_none_if(policy.total_premiums_paid, policy.cash_value),

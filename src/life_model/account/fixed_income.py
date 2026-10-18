@@ -114,7 +114,9 @@ class FixedIncomeHolding(FinancialAccount):
             reinvest: Whether interest stays in the holding (default: True for a CD, bond fund and I
                 bond; a Treasury's coupon is paid to the bank).
             accrued_interest: An I bond's interest included in ``face`` (its federal tax is deferred to
-                redemption). Defaults to 0.
+                redemption). For a CD: interest earned before the model's start that ``face`` (the principal
+                on the statement) does not include, added to the holding's value and taxed when it is paid
+                (at maturity or an early redemption). Defaults to 0.
             cost_basis: A bond fund's cost basis (defaults to ``face``: no embedded gain).
             growth_pct: A bond fund's total return (percent a year); None follows the economy's bond return.
         """
@@ -124,7 +126,10 @@ class FixedIncomeHolding(FinancialAccount):
             raise ValueError("face must be non-negative")
         if early_withdrawal_penalty_months < 0:
             raise ValueError("early_withdrawal_penalty_months must be non-negative")
-        super().__init__(owner, face)
+        if accrued_interest < 0:
+            raise ValueError("accrued_interest must be non-negative")
+        # A CD's interest accrued before the start is not in the statement's face: it is part of the value.
+        super().__init__(owner, face + (accrued_interest if kind == "cd" else 0.0))
         self.kind = kind
         self.rate_pct = float(rate_pct)
         self.name = name or {"cd": "CD", "treasury": "Treasury", "i_bond": "I bond", "bond_fund": "Bond fund"}[kind]
@@ -255,7 +260,7 @@ class FixedIncomeHolding(FinancialAccount):
     def mature(self) -> None:
         """Pay the holding out to the owner's bank at maturity (an I bond's deferred interest is taxed)."""
         amount = self.balance
-        if self.kind == "i_bond" and self.accrued_interest > 0:
+        if self.kind in ("i_bond", "cd") and self.accrued_interest > 0:
             self.person.income.add(self.income_type, self.accrued_interest, source="i_bond_interest")
             self.accrued_interest = 0.0
         self.balance = 0.0
@@ -287,6 +292,10 @@ class FixedIncomeHolding(FinancialAccount):
         fraction = take / self.balance if self.balance > 0 else 1.0
         self.balance -= take
         lost = 0.0
+        if self.kind == "cd" and self.accrued_interest > 0:
+            interest = self.accrued_interest * fraction
+            self.accrued_interest -= interest
+            self.person.income.add(self.income_type, interest, source="cd_interest")
         if self.kind == "cd" and not self.is_mature_now and self.early_withdrawal_penalty_months:
             lost = min(take, take * self.rate_pct / 12 / 100 * self.early_withdrawal_penalty_months)
             if lost > 0:
