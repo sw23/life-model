@@ -560,6 +560,85 @@ class _SpecChecker:
             for j, policy in enumerate(p.insurance):
                 if isinstance(policy, s.LifeInsurance) and policy.beneficiary is not None:
                     self.check_person_ref(policy.beneficiary, f"{path}.insurance[{j}].beneficiary")
+                if (
+                    isinstance(policy, s.LifeInsurance)
+                    and policy.policy == "term"
+                    and (policy.cash_value or policy.loan_balance)
+                ):
+                    self.error(
+                        f"{path}.insurance[{j}]",
+                        "a term policy has no cash value or policy loan.",
+                        "remove cash_value / loan_balance, or set policy: whole.",
+                    )
+                if (
+                    isinstance(policy, s.LifeInsurance)
+                    and policy.issue_year is not None
+                    and policy.issue_year > self.start
+                ):
+                    self.error(
+                        f"{path}.insurance[{j}].issue_year",
+                        f"issue_year {policy.issue_year} is after the start year (a later policy belongs in an event).",
+                    )
+            self.check_plan27_insurance_and_benefits(p, path)
+
+    def check_plan27_insurance_and_benefits(self, p: s.Person, path: str) -> None:
+        """Plan 27 PR D cross-field checks: annuities in payout, pension rollovers, Social Security."""
+        ira_ids = {a.id for a in p.accounts if a.kind == "traditional_ira" and a.id is not None}
+        for j, account in enumerate(p.accounts):
+            apath = f"{path}.accounts[{j}]"
+            if isinstance(account, s.Annuity) and account.in_payout:
+                if not account.payout_monthly:
+                    self.error(f"{apath}.payout_monthly", "an annuity in payout needs its payout_monthly.")
+                if account.balance:
+                    self.error(f"{apath}.balance", "an annuity in payout has no accumulation balance (set it to 0).")
+            if isinstance(account, s.Annuity) and account.qualified and account.basis:
+                self.error(f"{apath}.basis", "a qualified annuity has no after-tax basis.")
+            if isinstance(account, s.Pension) and account.rollover_account is not None:
+                if account.rollover_account not in ira_ids:
+                    self.error(
+                        f"{apath}.rollover_account",
+                        f"unknown traditional IRA {account.rollover_account!r} (must be one of this person's "
+                        "traditional_ira ids)",
+                        code="unknown_reference",
+                    )
+                if not account.lump_sum_option:
+                    self.warn(
+                        f"{apath}.rollover_account",
+                        "rollover_account is only used with lump_sum_option.",
+                        code="unused_field",
+                    )
+        ss = p.social_security
+        if ss is not None:
+            birth_year = int(p.birth.split("-")[0]) if p.birth is not None else self.start - p.age
+            if not ss.fra_from_birth_year and birth_year < 1960:
+                self.warn(
+                    f"{path}.social_security.fra_from_birth_year",
+                    f"{p.name} was born in {birth_year}: the full retirement age for that birth year is below the "
+                    "configured 67, so early reductions and delayed credits are off.",
+                    "set fra_from_birth_year: true.",
+                    "ss_fra_by_birth_year",
+                )
+            if ss.spousal_benefit:
+                spouse_ids = {
+                    pid for m in self.spec.relationships.marriages if p.id in m.spouses for pid in m.spouses
+                } - {p.id}
+                spouses = [q for q in self.spec.people if q.id in spouse_ids]
+                if not spouses or all(q.social_security is None for q in spouses):
+                    self.warn(
+                        f"{path}.social_security.spousal_benefit",
+                        f"{p.name} has no spouse with social_security, so there is no spousal benefit.",
+                        code="unused_field",
+                    )
+        if any(isinstance(e, s.DisabilityEvent) and e.person == p.id for e in self.spec.events) and not any(
+            isinstance(policy, s.GeneralInsurance) and policy.kind == "disability" and policy.benefit_pct
+            for policy in p.insurance
+        ):
+            self.warn(
+                f"{path}.insurance",
+                f"{p.name} has a disability event but no disability policy with benefit_pct: the jobs stop with "
+                "no income replacement.",
+                code="no_disability_policy",
+            )
 
     def check_person_ref(self, pid: str, path: str) -> None:
         if pid not in self.people:

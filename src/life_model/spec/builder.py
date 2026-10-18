@@ -406,7 +406,11 @@ class _Builder:
         from ..people.types import GenderAtBirth, MortalityMode
 
         spending = Spending(
-            model=self.model, base=p.spending.amount_annual, yearly_increase=_growth(p.spending.growth_pct)
+            model=self.model,
+            base=p.spending.amount_annual,
+            yearly_increase=_growth(p.spending.growth_pct),
+            categories=_spending_lines(p.spending.categories),
+            schedule=[tuple(step) for step in p.spending.schedule] if p.spending.schedule else None,
         )
         person = Person(
             family=self.family,
@@ -616,6 +620,18 @@ class _Builder:
                 benefit_multiplier=account.benefit_multiplier_pct,
                 final_salary=account.final_salary_annual,
                 job=self.job_agent(person_spec, account.job) if account.job is not None else None,
+                salary_history=account.salary_history_annual,
+                final_average_years=account.final_average_years,
+                normal_retirement_age=account.normal_retirement_age,
+                early_reduction_pct_per_year=account.early_retirement_reduction_pct or 0.0,
+                survivor_reduction=account.survivor_reduction_pct,
+                employee_basis=account.employee_basis,
+                lump_sum=account.lump_sum_option,
+                lump_sum_amount=account.lump_sum_amount,
+                lump_sum_rate_pct=account.lump_sum_rate_pct,
+                rollover_account=self.built.items[account.rollover_account]
+                if account.rollover_account is not None
+                else None,
             )
             pension.accrues_service = account.accrues_service
             return pension
@@ -636,6 +652,11 @@ class _Builder:
                 surrender_charge_rate=account.surrender_charge_pct,
                 joint_annuitant=joint,
                 survivor_percent=account.survivor_pct,
+                basis=account.basis,
+                purchase_year=account.purchase_year,
+                qualified=account.qualified,
+                in_payout=account.in_payout,
+                cola_percent=account.cola_pct,
             )
         if kind == "daf":
             from ..charity.daf import DonorAdvisedFund
@@ -822,6 +843,10 @@ class _Builder:
                 loan_interest_rate=policy.loan_interest_pct,
                 max_missed_payments=policy.max_missed_payments,
                 beneficiary=self.person(policy.beneficiary) if policy.beneficiary is not None else None,
+                issue_year=policy.issue_year,
+                cash_value=policy.cash_value or 0.0,
+                loan_balance=policy.loan_balance or 0.0,
+                premiums_paid=policy.premiums_paid,
             )
         from ..insurance.general_insurance import Insurance, InsuranceType
 
@@ -837,6 +862,13 @@ class _Builder:
             coverage_end_age=policy.coverage_end_age,
             premium_increase_rate=policy.premium_increase_pct,
             max_claims_per_year=policy.max_claims_per_year,
+            oop_max_annual=policy.oop_max_annual,
+            coinsurance_pct=policy.coinsurance_pct,
+            benefit_pct=policy.benefit_pct,
+            benefit_max_monthly=policy.benefit_max_monthly,
+            elimination_months=policy.elimination_months,
+            benefit_end_age=policy.benefit_end_age,
+            benefits_taxable=policy.benefits_taxable,
         )
 
     # --- SS, healthcare, giving ---
@@ -869,7 +901,15 @@ class _Builder:
             history = self.synthetic_earnings(person_spec, ss.assumed_career_start_age)
         else:
             history = sorted((ss.earnings_history or {}).items())
-        agent = SocialSecurity(person, withdrawal_start_age=claim_age, income_history=history)
+        agent = SocialSecurity(
+            person,
+            withdrawal_start_age=claim_age,
+            income_history=history,
+            pia_override=ss.pia_override_monthly,
+            fra_from_birth_year=ss.fra_from_birth_year,
+            spousal_benefit=ss.spousal_benefit,
+            earnings_test=ss.earnings_test,
+        )
         if ss.assumed_career_start_age is not None:
             # Provenance for the extractor: the record was synthesized, not entered.
             agent.spec_synthesized_history = (ss.assumed_career_start_age, len(history))
@@ -962,6 +1002,8 @@ class _Builder:
                     care_expenses_annual=child.care_expenses_annual,
                     interest_annual=child.interest_annual,
                     dividends_annual=child.dividends_annual,
+                    cost_annual=child.cost_override_annual,
+                    college_cost_annual=child.college_cost_annual,
                 ),
             )
         for p, i, item in each("accounts", lambda a: a.kind in LATE_ACCOUNT_KINDS):
@@ -969,8 +1011,8 @@ class _Builder:
         for p in people:
             if p.healthcare is not None:
                 person = self.person(p.id)
-                if p.healthcare.medical_costs:
-                    MedicalCosts(person)
+                if p.healthcare.medical_costs or p.healthcare.medical_costs_annual is not None:
+                    MedicalCosts(person, annual_cost=p.healthcare.medical_costs_annual)
                 if p.healthcare.medicare:
                     Medicare(person)
                 if p.healthcare.long_term_care:
@@ -999,6 +1041,26 @@ class _Builder:
 
             self.built.life_events = LifeEvents(self.model, life_events)
         return self.built
+
+
+def _spending_lines(categories: "dict[str, s.SpendingCategory] | None"):
+    """The core ``SpendingLine`` of each spec spending category (Plan 27 D6)."""
+    if not categories:
+        return None
+    from ..people.person import SpendingLine
+
+    lines = {}
+    for name, category in categories.items():
+        monthly = category.amount_monthly is not None
+        lines[name] = SpendingLine(
+            amount=float(category.amount_monthly if monthly else category.amount_annual),
+            period="monthly" if monthly else "annual",
+            growth_pct=_growth(category.growth_pct),
+            start_year=category.start_year,
+            end_year=category.end_year,
+            essential=category.essential,
+        )
+    return lines
 
 
 #: Earliest year a synthesized earnings record may start (SSA quarter-of-coverage table start).

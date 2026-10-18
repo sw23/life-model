@@ -55,8 +55,8 @@ Each spec entry, the core class the builder constructs, the fields you must give
 | HealthSavingsAccount (`kind: hsa`) | `HealthSavingsAccount` | — | `coverage='individual'`, `balance=0.0`, `growth_pct='economy'` |
 | Plan529 (`kind: 529`) | `Plan529` | — | `balance=0.0`, `plan_state='NY'`, `growth_pct='economy'` |
 | InheritedPretaxAccount (`kind: inherited_pretax`) | `InheritedPretaxAccount` | `balance`, `decedent_name` | `years=10` |
-| Pension (`kind: pension`) | `Pension` | `company`, `vesting_years` | `benefit_annual=0.0`, `cola_pct=0.0`, `survivor_pct=0.0`, `accrues_service=True`, `lump_sum_option=False` |
-| Annuity (`kind: annuity`) | `Annuity` | `annuity_type` | `balance=0.0`, `payout_type='life_only'`, `survivor_pct=100.0` |
+| Pension (`kind: pension`) | `Pension` | `company`, `vesting_years` | `benefit_annual=0.0`, `cola_pct=0.0`, `survivor_pct=0.0`, `accrues_service=True`, `employee_basis=0.0`, `lump_sum_option=False` |
+| Annuity (`kind: annuity`) | `Annuity` | `annuity_type` | `balance=0.0`, `payout_type='life_only'`, `survivor_pct=100.0`, `qualified=False`, `in_payout=False`, `cola_pct=0.0` |
 | DonorAdvisedFund (`kind: daf`) | `DonorAdvisedFund` | — | `name='DAF'`, `balance=0.0`, `growth_pct=7.0`, `management_fee_pct=0.6`, `distribution_pct=5.0` |
 | Trust (`kind: trust`) | `Trust` | `trust_type` | `name='Trust'`, `balance=0.0`, `growth_pct='economy'`, `asset_class='equity'` |
 | CarLoan (`kind: car`) | `CarLoan` | `rate_pct` | `extra_principal_monthly=0.0`, `name='Car'` |
@@ -68,8 +68,8 @@ Each spec entry, the core class the builder constructs, the fields you must give
 | HomeExpenses | `HomeExpenses` | — | `property_tax_pct=0.0`, `insurance_pct=0.0`, `property_tax_growth_pct='economy'`, `insurance_growth_pct='economy'`, `maintenance_annual=0.0`, `maintenance_growth_pct=0.0`, `improvement_annual=0.0`, `improvement_growth_pct=0.0`, `hoa_monthly=0.0`, `hoa_growth_pct=0.0` |
 | Rental (`kind: rental`) | `Apartment` | `rent_monthly` | `name='Apartment'`, `rent_growth_pct=5.0` |
 | LifeInsurance (`kind: life`) | `LifeInsurance` | `policy`, `death_benefit`, `premium_monthly` | `premium_schedule='level'`, `group=False` |
-| GeneralInsurance (`kind: health`) | `Insurance` | `premium_annual`, `coverage_amount` | `company='Insurer'`, `deductible=0.0` |
-| SocialSecurity | `SocialSecurity` | — | `spousal_benefit=False` |
+| GeneralInsurance (`kind: health`) | `Insurance` | `premium_annual`, `coverage_amount` | `company='Insurer'`, `deductible=0.0`, `elimination_months=3`, `benefits_taxable=False` |
+| SocialSecurity | `SocialSecurity` | — | `spousal_benefit=False`, `fra_from_birth_year=False`, `earnings_test=True` |
 | Donation (`kind: donation`) | `Donation` | `charity`, `amount_annual` | `donation_type='cash'`, `tax_deductible=True`, `frequency_years=1` |
 | Child | `Child` | `name`, `birth_year` | `care_expenses_annual=0.0`, `interest_annual=0.0`, `dividends_annual=0.0` |
 | SelfEmployment | `Job (kind='self_employed')` | `business` | `expenses_annual=0.0`, `growth_pct=0.0`, `sep_ira_contrib_pct=0.0`, `sstb=False` |
@@ -83,7 +83,7 @@ The owner argument links the object to its owner (a `Person`, a `Job`, or the `m
 | `LifeModel` (life_model.model) |  | — | `end_year=None`, `start_year=None`, `seed=None`, `config=None`, `scenario=None`, `*collect_data=True`, `*start=None`, `*start_month=None`, `*collect='year'`, `*checks='off'` |
 | `Family` (life_model.people.family) | `model` | `model` | `*withdrawal_order=None` |
 | `Person` (life_model.people.person) | `family` | `family`, `name`, `age`, `retirement_age`, `spending` | `*gender=GenderAtBirth.OTHER`, `*mortality_mode=MortalityMode.IMMORTAL`, `*death_age=None`, `*state=None`, `*birth=None` |
-| `Spending` (life_model.people.person) | `model` | `model` | `base=0`, `yearly_increase=0` |
+| `Spending` (life_model.people.person) | `model` | `model` | `base=0`, `yearly_increase=0`, `*categories=None`, `*schedule=None` |
 | `Job` (life_model.work.job) | `owner` | `owner`, `company`, `role`, `salary` | `*kind='w2'`, `*expenses_annual=0.0`, `*payroll=None`, `*sep_account=None`, `*plan_contribution_percent=0.0`, `*sstb=False` |
 | `Salary` (life_model.work.job) | `model` | `model`, `base` | `yearly_increase=0`, `yearly_bonus=0`, `*bonus_month=None` |
 | `StockPlan` (life_model.work.stock) | `job` | `job` | `*signon_value=0.0`, `*refresher_value=0.0`, `*refresher_start_year=1`, `*refresher_growth_percent=0.0`, `*schedule=None`, `*signon_schedule=None`, `*disposition='sell'`, `*growth_rate=None`, `*brokerage_account=None`, `*options=None` |
@@ -95,8 +95,8 @@ The owner argument links the object to its owner (a `Person`, a `Job`, or the `m
 | `HealthSavingsAccount` (life_model.account.hsa) | `person` | `person`, `hsa_type` | `balance=0`, `contribution_limit=None`, `employer_contribution=None`, `*growth_rate=None` |
 | `Plan529` (life_model.dependents.plan529) | `owner` | `owner` | `beneficiary=None`, `balance=0`, `state='NY'`, `growth_rate=None`, `annual_contribution_limit=None`, `lifetime_contribution_limit=None` |
 | `InheritedPretaxAccount` (life_model.account.inherited) | `beneficiary` | `beneficiary`, `balance`, `decedent_name` | `years=10` |
-| `Pension` (life_model.account.pension) | `person` | `person`, `company`, `vesting_years` | `benefit_amount=0.0`, `*start_age=None`, `*cola_percent=0.0`, `*survivor_percent=0.0`, `*years_of_service=None`, `*benefit_multiplier=None`, `*final_salary=None`, `*job=None` |
-| `Annuity` (life_model.insurance.annuity) | `person` | `person`, `annuity_type` | `initial_balance=0.0`, `interest_rate=None`, `payout_type=AnnuityPayoutType.LIFE_ONLY`, `payout_start_age=None`, `monthly_payout=None`, `period_certain_years=None`, `surrender_charge_years=None`, `surrender_charge_rate=None`, `*joint_annuitant=None`, `*survivor_percent=100.0` |
+| `Pension` (life_model.account.pension) | `person` | `person`, `company`, `vesting_years` | `benefit_amount=0.0`, `*start_age=None`, `*cola_percent=0.0`, `*survivor_percent=0.0`, `*years_of_service=None`, `*benefit_multiplier=None`, `*final_salary=None`, `*job=None`, `*salary_history=None`, `*final_average_years=None`, `*normal_retirement_age=None`, `*early_reduction_pct_per_year=0.0`, `*survivor_reduction=None`, `*employee_basis=0.0`, `*lump_sum=False`, `*lump_sum_amount=None`, `*lump_sum_rate_pct=None`, `*rollover_account=None` |
+| `Annuity` (life_model.insurance.annuity) | `person` | `person`, `annuity_type` | `initial_balance=0.0`, `interest_rate=None`, `payout_type=AnnuityPayoutType.LIFE_ONLY`, `payout_start_age=None`, `monthly_payout=None`, `period_certain_years=None`, `surrender_charge_years=None`, `surrender_charge_rate=None`, `*joint_annuitant=None`, `*survivor_percent=100.0`, `*basis=None`, `*purchase_year=None`, `*qualified=False`, `*in_payout=False`, `*cola_percent=0.0` |
 | `DonorAdvisedFund` (life_model.charity.daf) | `person` | `person`, `fund_name` | `balance=0`, `growth_rate=7.0`, `management_fee=0.6`, `distribution_rate=5.0` |
 | `Trust` (life_model.estate.trust) | `grantor` | `grantor`, `trust_type`, `beneficiaries` | `*name='Trust'`, `*balance=0.0`, `*growth_rate=None`, `*asset_class='equity'` |
 | `CarLoan` (life_model.debt.car_loan) | `person` | `person` | `loan_amount=None`, `length_years=None`, `yearly_interest_rate=None`, `name='Car'`, `principal=None`, `monthly_payment=None`, `*term_months=None`, `*origination=None`, `*payments_made=None`, `*remaining_months=None`, `*extra_principal_monthly=0.0` |
@@ -106,8 +106,8 @@ The owner argument links the object to its owner (a `Person`, a `Job`, or the `m
 | `Mortgage` (life_model.housing.home) |  | — | `loan_amount=None`, `start_date=None`, `length_years=None`, `yearly_interest_rate=None`, `principal=None`, `monthly_payment=None`, `*term_months=None`, `*origination=None`, `*payments_made=None`, `*remaining_months=None`, `*escrow_monthly=None`, `*extra_principal_monthly=0.0` |
 | `HomeExpenses` (life_model.housing.home) | `model` | `model` | `property_tax_percent=0.0`, `home_insurance_percent=0.0`, `maintenance_amount=0.0`, `maintenance_increase=0.0`, `improvement_amount=0.0`, `improvement_increase=0.0`, `hoa_amount=0.0`, `hoa_increase=0.0`, `*property_tax_annual=None`, `*property_tax_growth_pct=None`, `*assessed_value=None`, `*assessment_growth_cap_pct=None`, `*insurance_annual=None`, `*insurance_growth_pct=None`, `*inflation=False` |
 | `Apartment` (life_model.housing.apartment) | `person` | `person`, `name`, `monthly_rent` | `yearly_increase=5` |
-| `LifeInsurance` (life_model.insurance.life_insurance) | `person` | `person`, `policy_type`, `death_benefit`, `monthly_premium` | `term_years=None`, `premium_increase_rate=None`, `cash_value_growth_rate=None`, `loan_interest_rate=None`, `max_missed_payments=None`, `*beneficiary=None` |
-| `Insurance` (life_model.insurance.general_insurance) | `person` | `person`, `insurance_type`, `company`, `annual_premium`, `coverage_amount` | `deductible=0`, `coverage_start_age=None`, `coverage_end_age=None`, `premium_increase_rate=None`, `max_claims_per_year=None` |
-| `SocialSecurity` (life_model.insurance.social_security) | `person` | `person` | `withdrawal_start_age=None`, `income_history=None` |
+| `LifeInsurance` (life_model.insurance.life_insurance) | `person` | `person`, `policy_type`, `death_benefit`, `monthly_premium` | `term_years=None`, `premium_increase_rate=None`, `cash_value_growth_rate=None`, `loan_interest_rate=None`, `max_missed_payments=None`, `*beneficiary=None`, `*issue_year=None`, `*cash_value=0.0`, `*loan_balance=0.0`, `*premiums_paid=None` |
+| `Insurance` (life_model.insurance.general_insurance) | `person` | `person`, `insurance_type`, `company`, `annual_premium`, `coverage_amount` | `deductible=0`, `coverage_start_age=None`, `coverage_end_age=None`, `premium_increase_rate=None`, `max_claims_per_year=None`, `*oop_max_annual=None`, `*coinsurance_pct=None`, `*benefit_pct=None`, `*benefit_max_monthly=None`, `*elimination_months=3`, `*benefit_end_age=None`, `*benefits_taxable=False` |
+| `SocialSecurity` (life_model.insurance.social_security) | `person` | `person` | `withdrawal_start_age=None`, `income_history=None`, `*pia_override=None`, `*fra_from_birth_year=False`, `*spousal_benefit=False`, `*earnings_test=False` |
 | `Donation` (life_model.charity.donation) | `person` | `person`, `charity_name`, `annual_amount` | `donation_type=DonationType.CASH`, `tax_deductible=True`, `frequency_years=1`, `start_year=None`, `end_year=None` |
-| `Child` (life_model.dependents.child) | `person` | `person`, `name`, `birth_year` | `*care_expenses_annual=0.0`, `*interest_annual=0.0`, `*dividends_annual=0.0` |
+| `Child` (life_model.dependents.child) | `person` | `person`, `name`, `birth_year` | `*care_expenses_annual=0.0`, `*interest_annual=0.0`, `*dividends_annual=0.0`, `*cost_annual=None`, `*college_cost_annual=None` |

@@ -7,8 +7,9 @@ from enum import Enum
 from typing import cast
 
 from ..ledger import FlowKind
-from ..model import Event, LifeModel, LifeModelAgent
+from ..model import Event, LifeModel, LifeModelAgent, month_index, snap_money
 from ..people.person import Person
+from ..tax.income import IncomeType
 
 
 class InsuranceType(Enum):
@@ -61,6 +62,14 @@ class Insurance(LifeModelAgent):
         coverage_end_age: int | None = None,
         premium_increase_rate: float | None = None,
         max_claims_per_year: int | None = None,
+        *,
+        oop_max_annual: float | None = None,
+        coinsurance_pct: float | None = None,
+        benefit_pct: float | None = None,
+        benefit_max_monthly: float | None = None,
+        elimination_months: int = 3,
+        benefit_end_age: float | None = None,
+        benefits_taxable: bool = False,
     ):
         """Models insurance coverage for a person
 
@@ -75,6 +84,18 @@ class Insurance(LifeModelAgent):
             coverage_end_age: Age when coverage ends (None for lifetime)
             premium_increase_rate: Annual premium increase percentage. Configured default if None.
             max_claims_per_year: Maximum claims allowed per year. Configured default if None.
+            oop_max_annual: HEALTH: the out-of-pocket maximum per year (keyword-only; Plan 27 D9). With
+                it or ``coinsurance_pct`` the policy caps the person's ``MedicalCosts``: they pay the
+                year's costs up to ``deductible``, then ``coinsurance_pct`` of the rest, at most
+                ``oop_max_annual``.
+            coinsurance_pct: HEALTH: the person's share of costs above the deductible (100 when unset).
+            benefit_pct: DISABILITY: the share of pre-disability pay replaced (Plan 27; e.g. 60).
+            benefit_max_monthly: DISABILITY: the monthly benefit cap.
+            elimination_months: DISABILITY: months from the disability before benefits start.
+            benefit_end_age: DISABILITY: age benefits stop (``coverage_end_age``, else 65, when unset).
+            benefits_taxable: DISABILITY: True when the premiums were paid by the employer or pre-tax
+                (benefits are then taxable income, IRC §104(a)(3), §105(a)); False (default): an
+                individually paid policy, whose benefits are tax-free.
         """
         super().__init__(cast(LifeModel, person.model))
         self.model: LifeModel = cast("LifeModel", self.model)
@@ -107,6 +128,17 @@ class Insurance(LifeModelAgent):
         self.stat_claims_paid_out = 0.0
         self.stat_deductibles_paid = 0.0
 
+        self.oop_max_annual = oop_max_annual
+        self.coinsurance_pct = coinsurance_pct
+        self.benefit_pct = benefit_pct
+        self.benefit_max_monthly = benefit_max_monthly
+        self.elimination_months = elimination_months
+        self.benefit_end_age = benefit_end_age
+        self.benefits_taxable = benefits_taxable
+        #: DISABILITY: the claim's ``(month index it pays from, monthly benefit)`` once disabled.
+        self.disability_claim: tuple[int, float] | None = None
+        self.stat_disability_benefits = 0.0
+
         # Register with model
         self.model.registries.general_insurance_policies.register(person, self)
 
@@ -123,6 +155,58 @@ class Insurance(LifeModelAgent):
     def years_active(self) -> int:
         """Years the policy has been active"""
         return self.model.year - self.policy_start_year
+
+    # --- health: cost sharing (Plan 27 D9) ---
+
+    @property
+    def caps_medical_costs(self) -> bool:
+        """Whether this is a HEALTH policy with cost sharing that limits the person's medical costs."""
+        return self.insurance_type == InsuranceType.HEALTH and (
+            self.oop_max_annual is not None or self.coinsurance_pct is not None
+        )
+
+    def out_of_pocket(self, gross: float) -> float:
+        """The person's share of ``gross`` covered costs in a year: the deductible, then coinsurance,
+        capped at the out-of-pocket maximum."""
+        share = 1.0 if self.coinsurance_pct is None else self.coinsurance_pct / 100
+        paid = min(gross, self.deductible) + share * max(0.0, gross - self.deductible)
+        return paid if self.oop_max_annual is None else min(paid, self.oop_max_annual)
+
+    # --- disability: income replacement ---
+
+    def start_disability_claim(self, monthly_pay: float | None = None) -> float:
+        """Open a disability claim now: the benefit (``benefit_pct`` of ``monthly_pay``, default the
+        person's current base pay, up to ``benefit_max_monthly``) is paid monthly from the end of the
+        elimination period. Returns the monthly benefit (0 when the policy is not disability income)."""
+        if self.insurance_type != InsuranceType.DISABILITY or not self.benefit_pct or not self.is_coverage_active:
+            return 0.0
+        if monthly_pay is None:
+            monthly_pay = sum(job.salary.base for job in self.person.jobs if not job.retired) / 12
+        benefit = monthly_pay * self.benefit_pct / 100
+        if self.benefit_max_monthly is not None:
+            benefit = min(benefit, self.benefit_max_monthly)
+        self.disability_claim = (month_index(self.model.year, self.model.month) + self.elimination_months, benefit)
+        self.model.event_log.add(
+            Event(
+                f"{self.person.name} filed a disability claim with {self.company}: ${benefit:,.0f}/month after "
+                f"{self.elimination_months} months"
+            )
+        )
+        return benefit
+
+    def _pay_disability_benefit(self) -> None:
+        if self.disability_claim is None or self.person.is_deceased:
+            return
+        start, benefit = self.disability_claim
+        end_age = self.benefit_end_age if self.benefit_end_age is not None else (self.coverage_end_age or 65)
+        if month_index(self.model.year, self.model.month) < start or self.person.age_years_fractional >= end_age:
+            return
+        if self.benefits_taxable:
+            self.person.income.add(IncomeType.ORDINARY, benefit, source="disability_benefits")
+        self.person.receive_cash(
+            benefit, source=f"{self.company} (disability insurance)", kind=FlowKind.BENEFIT, cause="disability benefit"
+        )
+        self.stat_disability_benefits = snap_money(self.stat_disability_benefits + benefit)
 
     def pay_premium(self) -> bool:
         """Charge the annual premium through the tax unit's bill path (once a year, in the first
@@ -285,9 +369,11 @@ class Insurance(LifeModelAgent):
             self.annual_premium *= 1 + self.premium_increase_rate / 100
 
     def pre_step(self):
-        """Pay the annual premium in the first month of each year (January, or the start month)."""
-        if self.model.is_year_start and self.is_coverage_active:
+        """Pay the annual premium in the first month of each year (January, or the start month); a
+        disability claim's monthly benefit (premiums are waived while it is open)."""
+        if self.model.is_year_start and self.is_coverage_active and self.disability_claim is None:
             self.pay_premium()
+        self._pay_disability_benefit()
 
     def _repr_html_(self):
         desc = "<ul>"

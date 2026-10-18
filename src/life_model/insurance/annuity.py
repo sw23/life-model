@@ -228,6 +228,11 @@ class Annuity(LifeModelAgent):
         *,
         joint_annuitant: Person | None = None,
         survivor_percent: float = 100.0,
+        basis: float | None = None,
+        purchase_year: int | None = None,
+        qualified: bool = False,
+        in_payout: bool = False,
+        cola_percent: float = 0.0,
     ):
         """Models an annuity for a person
 
@@ -251,6 +256,18 @@ class Annuity(LifeModelAgent):
                 at annuitization; annuitizing without one raises ``ValueError``.
             survivor_percent: JOINT_AND_SURVIVOR only: share of the payment continued to the joint
                 annuitant after the owner dies (e.g. 50.0 for joint-and-50%-survivor).
+            basis: An existing contract's cost basis (after-tax money paid in; keyword-only, Plan 27
+                D1). Defaults to ``initial_balance`` (no gain) for a non-qualified contract.
+            purchase_year: Year the contract was bought (the surrender-charge clock and the
+                period-certain guarantee count from it). Defaults to the current year.
+            qualified: Held in a qualified plan or IRA (bought with pre-tax money): no basis, every
+                payout and withdrawal is taxable as a pension/annuity distribution (a 10% additional
+                tax before 59.5).
+            in_payout: An annuity already paying (an existing SPIA): ``monthly_payout`` is paid for
+                life (and to the joint annuitant / for the rest of the period certain under the payout
+                type) by the insurer; there is no reserve on the balance sheet (an income stream,
+                like a pension). Needs ``monthly_payout``.
+            cola_percent: Yearly increase of the payout once in payout (a COLA rider).
 
         Note:
             Payout taxation uses a simplified exclusion-ratio model (basis / expected total
@@ -289,7 +306,13 @@ class Annuity(LifeModelAgent):
         self.surrender_charge_rate = surrender_charge_rate
 
         # Cost basis (after-tax investment in the contract) used for exclusion-ratio taxation.
-        self.basis = initial_balance
+        self.qualified = qualified
+        if qualified:
+            if basis:
+                raise ValueError("a qualified annuity has no after-tax basis")
+            basis = 0.0
+        self.basis = initial_balance if basis is None else float(basis)
+        self.cola_percent = cola_percent
 
         self.joint_annuitant = joint_annuitant
         self.survivor_percent = survivor_percent
@@ -302,8 +325,12 @@ class Annuity(LifeModelAgent):
         self.is_active = True
         self.is_annuitized = False
         self.annuitization_year: int | None = None
-        self.purchase_year = self.model.year
+        self.purchase_year = self.model.year if purchase_year is None else int(purchase_year)
+        if self.purchase_year > self.model.year:
+            raise ValueError(f"purchase_year {purchase_year} is after the current year {self.model.year}")
         self.remaining_period_certain_payments = 0
+        #: An existing contract in payout: the insurer pays ``monthly_payout`` (no reserve modeled).
+        self.insurer_funded = in_payout
 
         # Annuitization converts ``balance`` into a reserve that funds payouts and is no longer
         # a withdrawable/surrenderable asset.
@@ -321,6 +348,36 @@ class Annuity(LifeModelAgent):
         # Register with model
         self.model.registries.annuities.register(person, self)
         self.model.ledger.post_opening(self, initial_balance)
+        if in_payout:
+            self._start_existing_payout()
+
+    def _start_existing_payout(self) -> None:
+        """An annuity already in payout: annuitized at purchase, paying the stated monthly payout."""
+        if self.monthly_payout is None or self.monthly_payout <= 0:
+            raise ValueError("an annuity in payout (in_payout=True) needs its monthly_payout")
+        if self.balance:
+            raise ValueError("an annuity in payout has no accumulation balance (initial_balance must be 0)")
+        self.is_annuitized = True
+        self.annuitization_year = self.purchase_year
+        if self.payout_type == AnnuityPayoutType.JOINT_AND_SURVIVOR:
+            self.joint_annuitant = self._joint_life()
+        if self.payout_type == AnnuityPayoutType.LIFE_WITH_PERIOD_CERTAIN:
+            elapsed = 12 * (self.model.year - self.purchase_year)
+            self.remaining_period_certain_payments = max(0, self.period_certain_years * 12 - elapsed)
+        gender = getattr(self.person, "gender", None)
+        joint_kwargs: dict[str, Any] = {}
+        if self.payout_type == AnnuityPayoutType.JOINT_AND_SURVIVOR:
+            joint = self.joint_annuitant
+            joint_kwargs = {
+                "joint_age": joint.age,
+                "joint_gender": getattr(joint, "gender", None),
+                "survivor_percent": self.survivor_percent,
+            }
+        # The exclusion ratio over the payments still expected (Pub. 939 would use the expected return
+        # at the annuity starting date; the remaining basis over today's expectation is equivalent for
+        # a contract whose basis is not yet recovered).
+        expected_total = self.monthly_payout * self._expected_payout_months(gender, **joint_kwargs)
+        self.exclusion_ratio = min(1.0, self.basis / expected_total) if expected_total > 0 else 0.0
 
     def collect_stats(self):
         """Year-end value: the accumulation balance plus the annuitized reserve, while in force."""
@@ -444,7 +501,8 @@ class Annuity(LifeModelAgent):
         tax before the federal retirement age (IRC §72(q), same rate as §72(t))."""
         if taxable <= 0:
             return
-        self.person.income.add(IncomeType.ORDINARY, taxable, source="annuity")
+        income_type = IncomeType.PENSION if self.qualified else IncomeType.ORDINARY
+        self.person.income.add(income_type, taxable, source="annuity")
         self.stat_taxable_payouts += taxable
         self.person.income.add_penalty(
             self.person.early_withdrawal_penalty(taxable), source="annuity_early_distribution"
@@ -560,7 +618,7 @@ class Annuity(LifeModelAgent):
         if not self.is_annuitized or not self.is_active:
             return 0.0
 
-        if self.annuitized_reserve <= 0:
+        if self.annuitized_reserve <= 0 and not self.insurer_funded:
             # Reserve exhausted: guaranteed payments already accounted for; stop paying.
             self._close("annuity reserve exhausted")
             return 0.0
@@ -577,23 +635,33 @@ class Annuity(LifeModelAgent):
         scheduled = self.monthly_payout or 0.0
         if self.survivor_phase:
             scheduled *= self.survivor_percent / 100
-        payout = min(scheduled, self.annuitized_reserve)
+        payout = scheduled if self.insurer_funded else min(scheduled, self.annuitized_reserve)
         if payout <= 0:
             return 0.0
 
-        self.annuitized_reserve -= payout
+        if not self.insurer_funded:
+            self.annuitized_reserve -= payout
         self.stat_payouts_received += payout
 
-        # Tax the gains portion as ordinary income (exclusion ratio covers return of basis).
-        taxable_portion = payout * (1 - self.exclusion_ratio)
+        # Tax the gains portion as ordinary income (exclusion ratio covers return of basis); once the
+        # basis is recovered every payment is taxable (IRC §72(b)(2)).
+        excluded = min(payout * self.exclusion_ratio, self.basis)
+        self.basis -= excluded
+        taxable_portion = payout - excluded
         if taxable_portion > 0:
-            self.person.income.add(IncomeType.ORDINARY, taxable_portion, source="annuity")
+            income_type = IncomeType.PENSION if self.qualified else IncomeType.ORDINARY
+            self.person.income.add(income_type, taxable_portion, source="annuity")
             self.stat_taxable_payouts += taxable_portion
 
         # Deposit the payout into the person's bank account.
-        self.person.receive_cash(
-            payout, source="annuity payout", kind=FlowKind.WITHDRAWAL, from_account=self, cause="annuity payout"
-        )
+        if self.insurer_funded:
+            self.person.receive_cash(
+                payout, source="insurer: annuity payout", kind=FlowKind.BENEFIT, cause="annuity payout"
+            )
+        else:
+            self.person.receive_cash(
+                payout, source="annuity payout", kind=FlowKind.WITHDRAWAL, from_account=self, cause="annuity payout"
+            )
 
         # Reduce period certain payments if applicable
         if (
@@ -668,6 +736,11 @@ class Annuity(LifeModelAgent):
 
         if self.is_annuitized and self.is_active:
             self.make_payout()
+
+    def on_year_end(self):
+        """A COLA rider raises the payout once a year while in payout."""
+        if self.cola_percent and self.is_annuitized and self.is_active and self.monthly_payout:
+            self.monthly_payout *= 1 + self.cola_percent / 100
 
     def settle_owner_death(self, inheritor: Person | None) -> None:
         """Apply the contract's death terms when its current owner dies.

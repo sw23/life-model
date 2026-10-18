@@ -199,6 +199,8 @@ class _Extractor:
                 care_expenses_annual=c.care_expenses_annual,
                 interest_annual=c.interest_annual,
                 dividends_annual=c.dividends_annual,
+                cost_override_annual=c.cost_annual,
+                college_cost_annual=c.college_cost_annual,
             )
             for i, c in enumerate(person.children)
         ]
@@ -215,9 +217,7 @@ class _Extractor:
             state=None if person.state == default_state else person.state,
             mortality=mortality,
             death_age=death_age,
-            spending=s.Spending(
-                amount_annual=person.spending.base, growth_pct=_growth(person.spending._yearly_increase_override)
-            ),
+            spending=self.spending(person.spending),
             jobs=jobs,
             accounts=_sorted(self.accounts(person, job_ids), ACCOUNT_KIND_ORDER),
             debts=_sorted(self.debts(person, housing), DEBT_KIND_ORDER),
@@ -228,6 +228,33 @@ class _Extractor:
             giving=_sorted(self.giving(person)),
             children=_sorted(children),
             self_employment=self.self_employment(person, job_ids),
+        )
+
+    def spending(self, spending) -> s.Spending:
+        categories = None
+        if spending.categories:
+            categories = {
+                name: s.SpendingCategory(
+                    amount_annual=line.amount if line.period == "annual" else None,
+                    amount_monthly=line.amount if line.period == "monthly" else None,
+                    growth_pct=_growth(line.growth_pct),
+                    essential=line.essential,
+                    start_year=line.start_year,
+                    end_year=line.end_year,
+                )
+                for name, line in spending.categories.items()
+            }
+        schedule = None
+        if spending.schedule:
+            applied = spending._schedule_applied or set()
+            # Steps already applied are in today's amounts; only the steps to come remain.
+            remaining = [step for k, step in enumerate(spending.schedule) if k not in applied or not self.stepped]
+            schedule = [(int(a) if a == int(a) else a, p) for a, p in remaining] or None
+        return s.Spending(
+            amount_annual=spending.base,
+            growth_pct=_growth(spending._yearly_increase_override),
+            categories=categories,
+            schedule=schedule,
         )
 
     def self_employment(self, person, job_ids: dict[int, str]) -> s.SelfEmployment | None:
@@ -430,6 +457,11 @@ class _Extractor:
                 )
         for pension in person.pensions:
             formula = pension.benefit_multiplier is not None
+            history = dict(pension.salary_history) or None
+            final_salary = pension.final_salary
+            if history and final_salary == pension._final_average(history, pension.final_average_years):
+                final_salary = None
+            rollover = pension.rollover_account
             out.append(
                 s.Pension(
                     kind="pension",
@@ -442,11 +474,23 @@ class _Extractor:
                     survivor_pct=pension.survivor_percent,
                     years_of_service=_none_if(pension.years_of_service, pension.vesting_years),
                     benefit_multiplier_pct=pension.benefit_multiplier,
-                    final_salary_annual=pension.final_salary,
+                    final_salary_annual=final_salary,
                     job=self.item_ids.get(id(pension.job)) or getattr(pension.job, "spec_id", None)
                     if pension.job is not None
                     else None,
                     accrues_service=pension.accrues_service,
+                    salary_history_annual=history,
+                    final_average_years=pension.final_average_years,
+                    normal_retirement_age=pension.normal_retirement_age,
+                    early_retirement_reduction_pct=pension.early_reduction_pct_per_year or None,
+                    survivor_reduction_pct=cast(Any, pension.survivor_reduction),
+                    employee_basis=pension.remaining_basis if self.stepped else pension.employee_basis,
+                    lump_sum_option=pension.lump_sum,
+                    lump_sum_amount=pension.lump_sum_amount,
+                    lump_sum_rate_pct=pension.lump_sum_rate_pct,
+                    rollover_account=None
+                    if rollover is None
+                    else (getattr(rollover, "spec_id", None) or self.item_ids.get(id(rollover))),
                 )
             )
         annuity_cfg = cfg.insurance.annuity
@@ -479,6 +523,11 @@ class _Extractor:
                     ),
                     joint_annuitant=self.pid(annuity.joint_annuitant) if annuity.joint_annuitant is not None else None,
                     survivor_pct=annuity.survivor_percent,
+                    basis=None if annuity.qualified else _none_if(annuity.basis, annuity.balance),
+                    purchase_year=_none_if(annuity.purchase_year, self.start),
+                    qualified=annuity.qualified,
+                    in_payout=annuity.insurer_funded,
+                    cola_pct=annuity.cola_percent,
                 )
             )
         for daf in person.donor_advised_funds:
@@ -717,6 +766,10 @@ class _Extractor:
                     loan_interest_pct=_none_if(policy.loan_interest_rate, life_cfg.default_loan_interest_rate),
                     max_missed_payments=_none_if(policy.max_missed_payments, life_cfg.default_max_missed_payments),
                     beneficiary=self.pid(policy.beneficiary) if policy.beneficiary is not None else None,
+                    issue_year=_none_if(policy.policy_start_year, self.start),
+                    cash_value=policy.cash_value or None,
+                    loan_balance=policy.outstanding_loan_balance or None,
+                    premiums_paid=_none_if(policy.total_premiums_paid, policy.cash_value),
                 )
             )
         general_cfg = self.config.insurance.general
@@ -736,6 +789,13 @@ class _Extractor:
                         policy.premium_increase_rate, general_cfg.default_premium_increase_rate
                     ),
                     max_claims_per_year=_none_if(policy.max_claims_per_year, general_cfg.default_max_claims_per_year),
+                    oop_max_annual=policy.oop_max_annual,
+                    coinsurance_pct=policy.coinsurance_pct,
+                    benefit_pct=policy.benefit_pct,
+                    benefit_max_monthly=policy.benefit_max_monthly,
+                    elimination_months=policy.elimination_months,
+                    benefit_end_age=policy.benefit_end_age,
+                    benefits_taxable=policy.benefits_taxable,
                 )
             )
         return out
@@ -751,19 +811,29 @@ class _Extractor:
             event = record["event"]
             if event.action == "claim_social_security" and event.person == pid:
                 claim = record["previous"]["claim_age"]
+        flags = {
+            "spousal_benefit": ss.spousal_benefit,
+            "fra_from_birth_year": ss.fra_from_birth_year,
+            "earnings_test": ss.earnings_test,
+        }
+        if ss.pia_override is not None:
+            return s.SocialSecurity(claim_age=claim, pia_override_monthly=ss.pia_override, **flags)
         synthesized = getattr(ss, "spec_synthesized_history", None)
         if synthesized is not None and len(ss.income_history) == synthesized[1]:
-            return s.SocialSecurity(claim_age=claim, assumed_career_start_age=synthesized[0])
+            return s.SocialSecurity(claim_age=claim, assumed_career_start_age=synthesized[0], **flags)
         history = {income.year: income.amount for income in ss.income_history}
-        return s.SocialSecurity(claim_age=claim, earnings_history=history or None)
+        return s.SocialSecurity(claim_age=claim, earnings_history=history or None, **flags)
 
     def healthcare(self, person) -> s.Healthcare | None:
+        override = next((agent.annual_cost_override for agent in person.medical_costs), None)
         flags = s.Healthcare(
-            medical_costs=bool(person.medical_costs),
+            medical_costs=bool(person.medical_costs) and override is None,
+            medical_costs_annual=override,
             medicare=bool(person.medicare),
             long_term_care=bool(person.long_term_care),
         )
-        return flags if (flags.medical_costs or flags.medicare or flags.long_term_care) else None
+        active = flags.medical_costs or flags.medicare or flags.long_term_care or override is not None
+        return flags if active else None
 
     def giving(self, person) -> list:
         return [

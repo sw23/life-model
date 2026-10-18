@@ -232,6 +232,10 @@ def _compile_one(builder: "_Builder", timing: EventTiming, event, year: int) -> 
         name = _name(event, f"{person.name} contributes ${event.amount:,.0f}")
         return [_life_event(year, name, event, _contribute, builder, person, event.account, event.amount)]
 
+    if action == "disability":
+        name = _name(event, f"{person.name} becomes disabled")
+        return [_life_event(year, name, event, _disability, person)]
+
     if action == "refinance":
         name = _name(event, f"{person.name} refinances at {event.rate_pct:g}%")
         return [_life_event(year, name, event, _refinance, builder, event)]
@@ -374,3 +378,20 @@ def _refinance(builder: "_Builder", event: s.RefinanceEvent) -> None:
 
 def _heloc_draw(builder: "_Builder", event: s.HelocDrawEvent) -> None:
     builder.built.items[event.heloc].draw(event.amount, for_improvements=event.for_improvements)
+
+
+def _disability(person) -> None:
+    from ..insurance.general_insurance import InsuranceType
+
+    policies = [
+        policy
+        for policy in person.model.registries.general_insurance_policies.get_items(person)
+        if policy.insurance_type == InsuranceType.DISABILITY
+    ]
+    monthly_pay = sum(job.salary.base for job in person.jobs if not job.retired) / 12
+    for policy in policies:
+        policy.start_disability_claim(monthly_pay)
+    for job in person.jobs:
+        if not job.retired:
+            job.retire()
+    person.model.event_log.add(Event(f"{person.name} became disabled and stopped working"))

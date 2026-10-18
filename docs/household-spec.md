@@ -35,7 +35,7 @@ error: put what already happened into the starting state (for example a marriage
 
 ## Event actions
 
-`marry`, `divorce`, `retire`, `change_job`, `move`, `buy_home`, `sell_home`, `one_time_expense`, `recurring_expense`, `change_spending`, `add_account`, `contribute`, `convert_to_roth`, `claim_social_security`, `die`, `refinance`, `heloc_draw`.
+`marry`, `divorce`, `retire`, `change_job`, `move`, `buy_home`, `sell_home`, `one_time_expense`, `recurring_expense`, `change_spending`, `add_account`, `contribute`, `convert_to_roth`, `claim_social_security`, `die`, `refinance`, `heloc_draw`, `disability`.
 
 ## HouseholdSpec
 
@@ -49,7 +49,7 @@ A complete household: metadata, optional economy overrides, people, relationship
 | `people` | list[[Person](#person)] |  | **required** |  | The people in the household (one family). |
 | `relationships` | [Relationships](#relationships) |  | {} |  | Marriages. |
 | `withdrawal_order` | list[`"bank"` \\| `"brokerage"` \\| `"roth_basis"` \\| `"pretax"` \\| `"roth_earnings"`] (optional) |  | — | `Family.withdrawal_order` | Household payment waterfall: the order sources are drawn to pay bills and taxes, across every member. Each source exactly once, starting with 'bank'. Defaults to bank, brokerage, roth_basis, pretax, roth_earnings. |
-| `events` | list[one of: [MarryEvent](#marryevent), [DivorceEvent](#divorceevent), [RetireEvent](#retireevent), [ChangeJobEvent](#changejobevent), [MoveEvent](#moveevent), [BuyHomeEvent](#buyhomeevent), [SellHomeEvent](#sellhomeevent), [OneTimeExpenseEvent](#onetimeexpenseevent), [RecurringExpenseEvent](#recurringexpenseevent), [ChangeSpendingEvent](#changespendingevent), [AddAccountEvent](#addaccountevent), [ContributeEvent](#contributeevent), [ConvertToRothEvent](#converttorothevent), [ClaimSocialSecurityEvent](#claimsocialsecurityevent), [DieEvent](#dieevent), [RefinanceEvent](#refinanceevent), [HelocDrawEvent](#helocdrawevent)] |  | [] |  | Dated life events. |
+| `events` | list[one of: [MarryEvent](#marryevent), [DivorceEvent](#divorceevent), [RetireEvent](#retireevent), [ChangeJobEvent](#changejobevent), [MoveEvent](#moveevent), [BuyHomeEvent](#buyhomeevent), [SellHomeEvent](#sellhomeevent), [OneTimeExpenseEvent](#onetimeexpenseevent), [RecurringExpenseEvent](#recurringexpenseevent), [ChangeSpendingEvent](#changespendingevent), [AddAccountEvent](#addaccountevent), [ContributeEvent](#contributeevent), [ConvertToRothEvent](#converttorothevent), [ClaimSocialSecurityEvent](#claimsocialsecurityevent), [DieEvent](#dieevent), [RefinanceEvent](#refinanceevent), [HelocDrawEvent](#helocdrawevent), [DisabilityEvent](#disabilityevent)] |  | [] |  | Dated life events. |
 | `actuals` | map[integer → [ActualRecords](#actualrecords)] (optional) |  | — |  | What the household's real documents say, by tax year (filed 1040 lines, W-2s, 1099s, statement balances): read by 'life-model reconcile' and the backtest, ignored by the builder. Keep real documents in my-models/ (git-ignored). |
 
 ## Meta
@@ -153,18 +153,21 @@ Builds: `Spending`.
 |---|---|---|---|---|---|
 | `amount_annual` | number | USD/year | **required** | `Spending.base` | Base living spending per year. |
 | `growth_pct` | number \\| `"economy"` | percent (typically > 1) | `0.0` | `Spending.yearly_increase` | Yearly increase; 'economy' follows inflation. The core default 0 means spending never rises (the validator warns). |
-| `categories` | map[string → [SpendingCategory](#spendingcategory)] (optional) |  | — |  | Categorized spending lines on top of the base amount. NOT YET SUPPORTED (Plan 27 D6): rejected by the validator. |
-| `schedule` | list[list[integer, number]] (optional) |  | — |  | (age, percent of prior spending) steps, e.g. a retirement spending smile. NOT YET SUPPORTED (Plan 27 D6): rejected by the validator. |
+| `categories` | map[string → [SpendingCategory](#spendingcategory)] (optional) |  | — | `Spending.categories` | Categorized spending lines on top of amount_annual (then the uncategorized remainder), each paid with the month's bills under its name. |
+| `schedule` | list[list[number, number]] (optional) |  | — | `Spending.schedule` | (age, percent of prior spending) steps: in the month the person reaches each age, the base and every category become that percent of what they were, e.g. a retirement spending smile [[75, 80], [85, 87.5]] (80% from 75, 70% of the original from 85). Ages already reached at the start count as applied. |
 
 ## SpendingCategory
 
-A categorized spending line (Plan 27 D6).
+A categorized spending line (Plan 27 D6): a yearly or monthly amount in start-year dollars, grown every year, paid in the years ``start_year`` through ``end_year`` (a multi-year expense).
 
 | Field | Type | Unit | Default | Maps to | Description |
 |---|---|---|---|---|---|
-| `amount_annual` | number | USD/year | **required** |  | Annual amount. |
-| `growth_pct` | number \\| `"economy"` | percent | `"economy"` |  | Annual growth. |
-| `essential` | boolean |  | `True` |  | Essential (vs discretionary) spending. |
+| `amount_annual` | number (optional) | USD/year | — | `SpendingLine.amount` | Amount per year (or amount_monthly). |
+| `amount_monthly` | number (optional) | USD/month | — | `SpendingLine.amount` | Amount per month (or amount_annual). |
+| `growth_pct` | number \\| `"economy"` | percent | `"economy"` | `SpendingLine.growth_pct` | Annual growth; 'economy' follows inflation. |
+| `essential` | boolean |  | `True` | `SpendingLine.essential` | Essential (vs discretionary) spending. |
+| `start_year` | integer (optional) | year | — | `SpendingLine.start_year` | First year paid (the start when unset). |
+| `end_year` | integer (optional) | year | — | `SpendingLine.end_year` | Last year paid (inclusive; open when unset). |
 
 ## Job
 
@@ -448,8 +451,16 @@ Builds: `Pension`.
 | `final_salary_annual` | number (optional) | USD/year | — | `Pension.final_salary` | Final(-average) salary for the formula. |
 | `job` | string (optional) |  | — | `Pension.job` | Id of the owner's sponsoring job. Defaults to the owner's job whose company equals 'company' (if any). |
 | `accrues_service` | boolean |  | `True` | `Pension.accrues_service` | A year of service (and vesting) accrues for each year the sponsoring job books payroll; a formula benefit's final salary follows that job. |
-| `early_retirement_reduction_pct` | number (optional) | percent | — |  | Reduction per year before normal age. NOT YET SUPPORTED (Plan 27 item 5): rejected by the validator. |
-| `lump_sum_option` | boolean |  | `False` |  | Lump-sum election. NOT YET SUPPORTED (Plan 27 item 5): rejected by the validator. |
+| `salary_history_annual` | map[integer → number] (optional) | USD/year | — | `Pension.salary_history` | Covered pay by year from the plan statement (the formula's final salary comes from it when final_salary_annual is unset; the sponsoring job's pay is added as service accrues). |
+| `final_average_years` | integer (optional) | years | — | `Pension.final_average_years` | Final-average-pay window: the highest average of this many consecutive years. |
+| `normal_retirement_age` | number (optional) | age | — | `Pension.normal_retirement_age` | The plan's normal retirement age. |
+| `early_retirement_reduction_pct` | number (optional) | percent | — | `Pension.early_reduction_pct_per_year` | Reduction per year the benefit starts before normal_retirement_age (prorated by month). |
+| `survivor_reduction_pct` | number \\| `"actuarial"` (optional) | percent | — | `Pension.survivor_reduction` | How the survivor election reduces the retiree's own benefit: the plan's percent (10 = a 90% joint-and-survivor factor) or 'actuarial' (equal present value with the spouse's age). Unset: no reduction. |
+| `employee_basis` | number | USD | `0.0` | `Pension.employee_basis` | After-tax employee contributions, recovered tax-free over the Simplified Method's payments. |
+| `lump_sum_option` | boolean |  | `False` | `Pension.lump_sum` | Take the benefit as a lump sum at the start age. |
+| `lump_sum_amount` | number (optional) | USD | — | `Pension.lump_sum_amount` | The plan's stated lump sum (else the present value of the life annuity at lump_sum_rate_pct). |
+| `lump_sum_rate_pct` | number (optional) | percent | — | `Pension.lump_sum_rate_pct` | Interest rate for the lump sum's present value (configured default when unset). |
+| `rollover_account` | string (optional) |  | — | `Pension.rollover_account` | Id of the owner's traditional_ira the lump sum rolls into (untaxed); else it is paid to the bank and taxed. |
 
 ## Annuity
 
@@ -472,9 +483,11 @@ Builds: `Annuity`.
 | `surrender_charge_pct` | number (optional) | percent | — | `Annuity.surrender_charge_rate` | Surrender charge rate. |
 | `joint_annuitant` | string (optional) |  | — | `Annuity.joint_annuitant` | Person id of the second life (joint_and_survivor). |
 | `survivor_pct` | number | percent | `100.0` | `Annuity.survivor_percent` | Share continued to the joint annuitant. |
-| `basis` | number (optional) | USD | — |  | Cost basis of an existing contract. NOT YET SUPPORTED (Plan 27 D1): rejected by the validator. |
-| `purchase_year` | integer (optional) | year | — |  | Year purchased (surrender clock). NOT YET SUPPORTED (Plan 27 D1): rejected by the validator. |
-| `qualified` | boolean (optional) |  | — |  | Held in a qualified (pre-tax) plan. NOT YET SUPPORTED (Plan 27 D1): rejected by the validator. |
+| `basis` | number (optional) | USD | — | `Annuity.basis` | Cost basis of an existing contract (after-tax money paid in; defaults to balance). |
+| `purchase_year` | integer (optional) | year | — | `Annuity.purchase_year` | Year purchased (the surrender-charge clock and period-certain guarantee count from it). |
+| `qualified` | boolean |  | `False` | `Annuity.qualified` | Held in a qualified plan or IRA (pre-tax money): no basis, every payout taxable. |
+| `in_payout` | boolean |  | `False` | `Annuity.in_payout` | Already paying (an existing SPIA): payout_monthly is paid for life by the insurer (no reserve on the balance sheet; balance must be 0). |
+| `cola_pct` | number | percent | `0.0` | `Annuity.cola_percent` | Yearly payout increase in payout (a COLA rider). |
 
 ## DonorAdvisedFund
 
@@ -699,9 +712,10 @@ Builds: `LifeInsurance`.
 | `loan_interest_pct` | number (optional) | percent | — | `LifeInsurance.loan_interest_rate` | Policy loan interest. |
 | `max_missed_payments` | integer (optional) |  | — | `LifeInsurance.max_missed_payments` | Missed payments before lapse. |
 | `beneficiary` | string (optional) |  | — | `LifeInsurance.beneficiary` | Person id of the designated beneficiary. |
-| `issue_year` | integer (optional) | year | — |  | Year issued. NOT YET SUPPORTED (Plan 27 D1): rejected by the validator. |
-| `cash_value` | number (optional) | USD | — |  | Existing cash value. NOT YET SUPPORTED (Plan 27 D1): rejected by the validator. |
-| `loan_balance` | number (optional) | USD | — |  | Existing policy loan. NOT YET SUPPORTED (Plan 27 D1): rejected by the validator. |
+| `issue_year` | integer (optional) | year | — | `LifeInsurance.issue_year` | Year issued (a term policy expires term_years after it; defaults to the start year). |
+| `cash_value` | number (optional) | USD | — | `LifeInsurance.cash_value` | Existing whole-life cash value. |
+| `loan_balance` | number (optional) | USD | — | `LifeInsurance.loan_balance` | Existing policy loan. |
+| `premiums_paid` | number (optional) | USD | — | `LifeInsurance.premiums_paid` | Premiums paid so far: the policy's cost basis on a surrender (defaults to cash_value). |
 | `group` | boolean |  | `False` |  | Employer group life. NOT YET SUPPORTED (Plan 27 item 13): rejected by the validator. |
 
 ## GeneralInsurance
@@ -722,8 +736,13 @@ Builds: `Insurance`.
 | `coverage_end_age` | integer (optional) | age | — | `Insurance.coverage_end_age` | Coverage end age (lifetime when unset). |
 | `premium_increase_pct` | number (optional) | percent | — | `Insurance.premium_increase_rate` | Yearly premium increase (configured default when unset). |
 | `max_claims_per_year` | integer (optional) |  | — | `Insurance.max_claims_per_year` | Claims allowed per year. |
-| `oop_max_annual` | number (optional) | USD/year | — |  | Health out-of-pocket maximum. NOT YET SUPPORTED (Plan 27 D9): rejected by the validator. |
-| `coinsurance_pct` | number (optional) | percent | — |  | Health coinsurance. NOT YET SUPPORTED (Plan 27 D9): rejected by the validator. |
+| `oop_max_annual` | number (optional) | USD/year | — | `Insurance.oop_max_annual` | Health: out-of-pocket maximum. With it or coinsurance_pct the policy caps the person's medical costs (healthcare.medical_costs): the deductible, then coinsurance, at most this a year. |
+| `coinsurance_pct` | number (optional) | percent | — | `Insurance.coinsurance_pct` | Health: the person's share of costs above the deductible (100 when unset). |
+| `benefit_pct` | number (optional) | percent | — | `Insurance.benefit_pct` | Disability: share of pre-disability pay replaced (paid after a 'disability' event). |
+| `benefit_max_monthly` | number (optional) | USD/month | — | `Insurance.benefit_max_monthly` | Disability: monthly benefit cap. |
+| `elimination_months` | integer | months | `3` | `Insurance.elimination_months` | Disability: months before benefits start. |
+| `benefit_end_age` | number (optional) | age | — | `Insurance.benefit_end_age` | Disability: age benefits stop (coverage_end_age, else 65, when unset). |
+| `benefits_taxable` | boolean |  | `False` | `Insurance.benefits_taxable` | Disability: premiums paid by the employer or pre-tax, so benefits are taxable (else tax-free). |
 
 ## SocialSecurity
 
@@ -736,8 +755,10 @@ Builds: `SocialSecurity`.
 | `claim_age` | number (optional) | age | — | `SocialSecurity.withdrawal_start_age` | Claiming age (62-70); defaults to the retirement age, which must then be at least 62. |
 | `earnings_history` | map[integer → number] (optional) | USD/year | — | `SocialSecurity.income_history` | Covered earnings by year from the SSA statement, e.g. {2019: 47000, 2020: 48000}. |
 | `assumed_career_start_age` | integer (optional) | age | — |  | Synthesize the earnings record instead: a flat real career at the first job's salary from this age to the year before start_year, indexed by the average wage index and capped at each year's wage base (years before 1978 dropped). Mutually exclusive with earnings_history. |
-| `pia_override_monthly` | number (optional) | USD/month | — |  | PIA from the SSA statement. NOT YET SUPPORTED (Plan 27 D10): rejected by the validator. |
-| `spousal_benefit` | boolean |  | `False` |  | Model the spousal benefit. NOT YET SUPPORTED (Plan 27 D10): rejected by the validator. |
+| `pia_override_monthly` | number (optional) | USD/month | — | `SocialSecurity.pia_override` | The benefit at full retirement age from the SSA statement, in today's dollars (wage-indexed to age 62, then COLAs), instead of computing it from the earnings record. |
+| `spousal_benefit` | boolean |  | `False` | `SocialSecurity.spousal_benefit` | Pay the spousal benefit once both spouses claim: half the spouse's PIA less the person's own, reduced for each month before full retirement age. |
+| `fra_from_birth_year` | boolean |  | `False` | `SocialSecurity.fra_from_birth_year` | Full retirement age by birth year (66 and 6 months for 1957, ...) instead of the configured 67 (the validator warns for births before 1960). |
+| `earnings_test` | boolean |  | `True` | `SocialSecurity.earnings_test` | Withhold benefits claimed before full retirement age while earnings exceed the year's exempt amount ($1 per $2; $1 per $3 in the year of FRA), recomputing the reduction at FRA. |
 
 ## Healthcare
 
@@ -746,6 +767,7 @@ Opt-in healthcare cost agents.
 | Field | Type | Unit | Default | Maps to | Description |
 |---|---|---|---|---|---|
 | `medical_costs` | boolean |  | `False` | `MedicalCosts` | Age-banded out-of-pocket medical costs. |
+| `medical_costs_annual` | number (optional) | USD/year | — | `MedicalCosts.annual_cost` | The person's own yearly medical cost (start-year dollars, medical inflation) instead of the configured age bands; implies medical_costs. |
 | `medicare` | boolean |  | `False` | `Medicare` | Medicare premiums and IRMAA from the eligibility age. |
 | `long_term_care` | boolean |  | `False` | `LongTermCare` | Long-term-care hazard and costs. |
 
@@ -778,7 +800,8 @@ Builds: `Child`.
 | `id` | string (optional) |  | — |  | Optional identifier for this child, unique across the spec. Required when another entry references it (a 401k's job, an event's target, a relative event's anchor). |
 | `name` | string |  | **required** | `Child.name` | Child's name. |
 | `birth_year` | integer | year | **required** | `Child.birth_year` | Birth year (future years are planned births). |
-| `cost_override_annual` | number (optional) | USD/year | — |  | Per-child cost instead of the config bands. NOT YET SUPPORTED (Plan 27 D6): rejected by the validator. |
+| `cost_override_annual` | number (optional) | USD/year | — | `Child.cost_annual` | This child's yearly cost while a dependent (start-year dollars) instead of the configured childcare and school-age bands (not counted as dependent care: use care_expenses_annual). |
+| `college_cost_annual` | number (optional) | USD/year | — | `Child.college_cost_annual` | This child's yearly college cost (start-year dollars) instead of the configured band. |
 | `care_expenses_annual` | number | USD/year | `0.0` | `Child.care_expenses_annual` | Dependent care (after-school care, day camp) paid while the child is under 13, on top of the age-band cost, in start-year dollars. The childcare band's cost (under 6) already counts as care expenses for the dependent care credit. |
 | `interest_annual` | number | USD/year | `0.0` | `Child.interest_annual` | The child's own interest income (a custodial account, not part of the household's balances), reported by the parents on Form 8814 (kiddie tax). |
 | `dividends_annual` | number | USD/year | `0.0` | `Child.dividends_annual` | The child's own qualified dividends (same as interest_annual). |
@@ -1104,6 +1127,18 @@ Draw on a home equity line: to the bank, or spent on improvements to the home se
 | `heloc` | string |  | **required** |  | Id of the home equity line (a 'heloc' debt). |
 | `amount` | number | USD | **required** |  | Amount drawn (up to the available credit). |
 | `for_improvements` | boolean |  | `False` |  | Spent on improvements (cost basis; deductible interest) instead of paid to the bank. |
+
+## DisabilityEvent
+
+The person becomes disabled: every job stops and each disability policy with a benefit_pct opens a claim (benefits from the end of its elimination period to its benefit end age).
+
+| Field | Type | Unit | Default | Maps to | Description |
+|---|---|---|---|---|---|
+| `id` | string (optional) |  | — |  | Event id (needed to anchor relative events). |
+| `at` | [At](#at) |  | **required** |  | When the event happens: {year}, {age} or {relative: {after, years}}. |
+| `person` | string |  | **required** |  | Person the event applies to. |
+| `name` | string (optional) |  | — |  | Description shown in the event list. |
+| `action` | `"disability"` |  | **required** |  |  |
 
 ## ActualRecords
 

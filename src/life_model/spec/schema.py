@@ -308,11 +308,38 @@ class At(SpecModel):
 
 
 class SpendingCategory(SpecModel):
-    """A categorized spending line (Plan 27 D6)."""
+    """A categorized spending line (Plan 27 D6): a yearly or monthly amount in start-year dollars, grown
+    every year, paid in the years ``start_year`` through ``end_year`` (a multi-year expense)."""
 
-    amount_annual: NonNegativeMoney = spec_field(description="Annual amount.", unit="USD/year")
-    growth_pct: GrowthPct = spec_field("economy", description="Annual growth.", unit="percent")
-    essential: bool = spec_field(True, description="Essential (vs discretionary) spending.")
+    amount_annual: NonNegativeMoney | None = spec_field(
+        None, description="Amount per year (or amount_monthly).", unit="USD/year", core="SpendingLine.amount"
+    )
+    amount_monthly: NonNegativeMoney | None = spec_field(
+        None, description="Amount per month (or amount_annual).", unit="USD/month", core="SpendingLine.amount"
+    )
+    growth_pct: GrowthPct = spec_field(
+        "economy",
+        description="Annual growth; 'economy' follows inflation.",
+        unit="percent",
+        core="SpendingLine.growth_pct",
+    )
+    essential: bool = spec_field(
+        True, description="Essential (vs discretionary) spending.", core="SpendingLine.essential"
+    )
+    start_year: Year | None = spec_field(
+        None, description="First year paid (the start when unset).", unit="year", core="SpendingLine.start_year"
+    )
+    end_year: Year | None = spec_field(
+        None, description="Last year paid (inclusive; open when unset).", unit="year", core="SpendingLine.end_year"
+    )
+
+    @model_validator(mode="after")
+    def _one_amount(self) -> "SpendingCategory":
+        if (self.amount_annual is None) == (self.amount_monthly is None):
+            raise ValueError("a spending category needs exactly one of amount_annual or amount_monthly")
+        if self.start_year is not None and self.end_year is not None and self.end_year < self.start_year:
+            raise ValueError("end_year is before start_year")
+        return self
 
 
 class Spending(SpecModel):
@@ -333,13 +360,17 @@ class Spending(SpecModel):
     )
     categories: dict[str, SpendingCategory] | None = spec_field(
         None,
-        description="Categorized spending lines on top of the base amount.",
-        not_yet_supported="Plan 27 D6",
+        description="Categorized spending lines on top of amount_annual (then the uncategorized remainder), "
+        "each paid with the month's bills under its name.",
+        core="Spending.categories",
     )
-    schedule: list[tuple[int, float]] | None = spec_field(
+    schedule: list[tuple[AgeFloat, NonNegativePercent]] | None = spec_field(
         None,
-        description="(age, percent of prior spending) steps, e.g. a retirement spending smile.",
-        not_yet_supported="Plan 27 D6",
+        description="(age, percent of prior spending) steps: in the month the person reaches each age, the base "
+        "and every category become that percent of what they were, e.g. a retirement spending smile [[75, 80], "
+        "[85, 87.5]] (80% from 75, 70% of the original from 85). Ages already reached at the start count as "
+        "applied.",
+        core="Spending.schedule",
     )
 
 
@@ -932,15 +963,75 @@ class Pension(SpecModel):
         "formula benefit's final salary follows that job.",
         core="Pension.accrues_service",
     )
-    early_retirement_reduction_pct: NonNegativePercent | None = spec_field(
-        None, description="Reduction per year before normal age.", unit="percent", not_yet_supported="Plan 27 item 5"
+    salary_history_annual: dict[int, NonNegativeMoney] | None = spec_field(
+        None,
+        description="Covered pay by year from the plan statement (the formula's final salary comes from it when "
+        "final_salary_annual is unset; the sponsoring job's pay is added as service accrues).",
+        unit="USD/year",
+        core="Pension.salary_history",
     )
-    lump_sum_option: bool = spec_field(False, description="Lump-sum election.", not_yet_supported="Plan 27 item 5")
+    final_average_years: int | None = spec_field(
+        None,
+        description="Final-average-pay window: the highest average of this many consecutive years.",
+        unit="years",
+        core="Pension.final_average_years",
+        ge=1,
+    )
+    normal_retirement_age: AgeFloat | None = spec_field(
+        None, description="The plan's normal retirement age.", unit="age", core="Pension.normal_retirement_age"
+    )
+    early_retirement_reduction_pct: NonNegativePercent | None = spec_field(
+        None,
+        description="Reduction per year the benefit starts before normal_retirement_age (prorated by month).",
+        unit="percent",
+        core="Pension.early_reduction_pct_per_year",
+    )
+    survivor_reduction_pct: NonNegativePercent | Literal["actuarial"] | None = spec_field(
+        None,
+        description="How the survivor election reduces the retiree's own benefit: the plan's percent (10 = a 90% "
+        "joint-and-survivor factor) or 'actuarial' (equal present value with the spouse's age). Unset: no "
+        "reduction.",
+        unit="percent",
+        core="Pension.survivor_reduction",
+        le=100,
+    )
+    employee_basis: NonNegativeMoney = spec_field(
+        0.0,
+        description="After-tax employee contributions, recovered tax-free over the Simplified Method's payments.",
+        unit="USD",
+        core="Pension.employee_basis",
+    )
+    lump_sum_option: bool = spec_field(
+        False, description="Take the benefit as a lump sum at the start age.", core="Pension.lump_sum"
+    )
+    lump_sum_amount: NonNegativeMoney | None = spec_field(
+        None,
+        description="The plan's stated lump sum (else the present value of the life annuity at lump_sum_rate_pct).",
+        unit="USD",
+        core="Pension.lump_sum_amount",
+    )
+    lump_sum_rate_pct: NonNegativePercent | None = spec_field(
+        None,
+        description="Interest rate for the lump sum's present value (configured default when unset).",
+        unit="percent",
+        core="Pension.lump_sum_rate_pct",
+    )
+    rollover_account: Identifier | None = spec_field(
+        None,
+        description="Id of the owner's traditional_ira the lump sum rolls into (untaxed); else it is paid to the "
+        "bank and taxed.",
+        core="Pension.rollover_account",
+    )
 
     @model_validator(mode="after")
     def _formula_pair(self) -> "Pension":
-        if (self.benefit_multiplier_pct is None) != (self.final_salary_annual is None):
-            raise ValueError("benefit_multiplier_pct and final_salary_annual must be given together")
+        final_salary = self.final_salary_annual is not None or bool(self.salary_history_annual)
+        if (self.benefit_multiplier_pct is not None) != final_salary:
+            raise ValueError(
+                "benefit_multiplier_pct and final_salary_annual (or salary_history_annual) must be given together"
+            )
+        if self.early_retirement_reduction_pct and self.normal_retirement_age is None:
+            raise ValueError("early_retirement_reduction_pct needs normal_retirement_age")
         return self
 
 
@@ -1001,13 +1092,30 @@ class Annuity(SpecModel):
         le=100,
     )
     basis: NonNegativeMoney | None = spec_field(
-        None, description="Cost basis of an existing contract.", unit="USD", not_yet_supported="Plan 27 D1"
+        None,
+        description="Cost basis of an existing contract (after-tax money paid in; defaults to balance).",
+        unit="USD",
+        core="Annuity.basis",
     )
     purchase_year: Year | None = spec_field(
-        None, description="Year purchased (surrender clock).", unit="year", not_yet_supported="Plan 27 D1"
+        None,
+        description="Year purchased (the surrender-charge clock and period-certain guarantee count from it).",
+        unit="year",
+        core="Annuity.purchase_year",
     )
-    qualified: bool | None = spec_field(
-        None, description="Held in a qualified (pre-tax) plan.", not_yet_supported="Plan 27 D1"
+    qualified: bool = spec_field(
+        False,
+        description="Held in a qualified plan or IRA (pre-tax money): no basis, every payout taxable.",
+        core="Annuity.qualified",
+    )
+    in_payout: bool = spec_field(
+        False,
+        description="Already paying (an existing SPIA): payout_monthly is paid for life by the insurer (no "
+        "reserve on the balance sheet; balance must be 0).",
+        core="Annuity.in_payout",
+    )
+    cola_pct: NonNegativePercent = spec_field(
+        0.0, description="Yearly payout increase in payout (a COLA rider).", unit="percent", core="Annuity.cola_percent"
     )
 
 
@@ -1550,12 +1658,23 @@ class LifeInsurance(SpecModel):
     beneficiary: Identifier | None = spec_field(
         None, description="Person id of the designated beneficiary.", core="LifeInsurance.beneficiary"
     )
-    issue_year: Year | None = spec_field(None, description="Year issued.", unit="year", not_yet_supported="Plan 27 D1")
+    issue_year: Year | None = spec_field(
+        None,
+        description="Year issued (a term policy expires term_years after it; defaults to the start year).",
+        unit="year",
+        core="LifeInsurance.issue_year",
+    )
     cash_value: NonNegativeMoney | None = spec_field(
-        None, description="Existing cash value.", unit="USD", not_yet_supported="Plan 27 D1"
+        None, description="Existing whole-life cash value.", unit="USD", core="LifeInsurance.cash_value"
     )
     loan_balance: NonNegativeMoney | None = spec_field(
-        None, description="Existing policy loan.", unit="USD", not_yet_supported="Plan 27 D1"
+        None, description="Existing policy loan.", unit="USD", core="LifeInsurance.loan_balance"
+    )
+    premiums_paid: NonNegativeMoney | None = spec_field(
+        None,
+        description="Premiums paid so far: the policy's cost basis on a surrender (defaults to cash_value).",
+        unit="USD",
+        core="LifeInsurance.premiums_paid",
     )
     group: bool = spec_field(False, description="Employer group life.", not_yet_supported="Plan 27 item 13")
 
@@ -1599,10 +1718,46 @@ class GeneralInsurance(SpecModel):
         None, description="Claims allowed per year.", core="Insurance.max_claims_per_year", ge=0
     )
     oop_max_annual: NonNegativeMoney | None = spec_field(
-        None, description="Health out-of-pocket maximum.", unit="USD/year", not_yet_supported="Plan 27 D9"
+        None,
+        description="Health: out-of-pocket maximum. With it or coinsurance_pct the policy caps the person's "
+        "medical costs (healthcare.medical_costs): the deductible, then coinsurance, at most this a year.",
+        unit="USD/year",
+        core="Insurance.oop_max_annual",
     )
     coinsurance_pct: NonNegativePercent | None = spec_field(
-        None, description="Health coinsurance.", unit="percent", not_yet_supported="Plan 27 D9"
+        None,
+        description="Health: the person's share of costs above the deductible (100 when unset).",
+        unit="percent",
+        core="Insurance.coinsurance_pct",
+        le=100,
+    )
+    benefit_pct: NonNegativePercent | None = spec_field(
+        None,
+        description="Disability: share of pre-disability pay replaced (paid after a 'disability' event).",
+        unit="percent",
+        core="Insurance.benefit_pct",
+        le=100,
+    )
+    benefit_max_monthly: NonNegativeMoney | None = spec_field(
+        None, description="Disability: monthly benefit cap.", unit="USD/month", core="Insurance.benefit_max_monthly"
+    )
+    elimination_months: int = spec_field(
+        3,
+        description="Disability: months before benefits start.",
+        unit="months",
+        core="Insurance.elimination_months",
+        ge=0,
+    )
+    benefit_end_age: AgeFloat | None = spec_field(
+        None,
+        description="Disability: age benefits stop (coverage_end_age, else 65, when unset).",
+        unit="age",
+        core="Insurance.benefit_end_age",
+    )
+    benefits_taxable: bool = spec_field(
+        False,
+        description="Disability: premiums paid by the employer or pre-tax, so benefits are taxable (else tax-free).",
+        core="Insurance.benefits_taxable",
     )
 
 
@@ -1637,9 +1792,30 @@ class SocialSecurity(SpecModel):
         unit="age",
     )
     pia_override_monthly: NonNegativeMoney | None = spec_field(
-        None, description="PIA from the SSA statement.", unit="USD/month", not_yet_supported="Plan 27 D10"
+        None,
+        description="The benefit at full retirement age from the SSA statement, in today's dollars (wage-indexed "
+        "to age 62, then COLAs), instead of computing it from the earnings record.",
+        unit="USD/month",
+        core="SocialSecurity.pia_override",
     )
-    spousal_benefit: bool = spec_field(False, description="Model the spousal benefit.", not_yet_supported="Plan 27 D10")
+    spousal_benefit: bool = spec_field(
+        False,
+        description="Pay the spousal benefit once both spouses claim: half the spouse's PIA less the person's own, "
+        "reduced for each month before full retirement age.",
+        core="SocialSecurity.spousal_benefit",
+    )
+    fra_from_birth_year: bool = spec_field(
+        False,
+        description="Full retirement age by birth year (66 and 6 months for 1957, ...) instead of the configured "
+        "67 (the validator warns for births before 1960).",
+        core="SocialSecurity.fra_from_birth_year",
+    )
+    earnings_test: bool = spec_field(
+        True,
+        description="Withhold benefits claimed before full retirement age while earnings exceed the year's exempt "
+        "amount ($1 per $2; $1 per $3 in the year of FRA), recomputing the reduction at FRA.",
+        core="SocialSecurity.earnings_test",
+    )
 
     @field_validator("earnings_history")
     @classmethod
@@ -1648,8 +1824,11 @@ class SocialSecurity(SpecModel):
 
     @model_validator(mode="after")
     def _one_history(self) -> "SocialSecurity":
-        if self.earnings_history is not None and self.assumed_career_start_age is not None:
+        given = [self.earnings_history is not None, self.assumed_career_start_age is not None]
+        if sum(given) > 1:
             raise ValueError("give either earnings_history or assumed_career_start_age, not both")
+        if self.pia_override_monthly is not None and any(given):
+            raise ValueError("pia_override_monthly replaces the earnings record: give one or the other")
         return self
 
 
@@ -1657,6 +1836,13 @@ class Healthcare(SpecModel):
     """Opt-in healthcare cost agents."""
 
     medical_costs: bool = spec_field(False, description="Age-banded out-of-pocket medical costs.", core="MedicalCosts")
+    medical_costs_annual: NonNegativeMoney | None = spec_field(
+        None,
+        description="The person's own yearly medical cost (start-year dollars, medical inflation) instead of the "
+        "configured age bands; implies medical_costs.",
+        unit="USD/year",
+        core="MedicalCosts.annual_cost",
+    )
     medicare: bool = spec_field(
         False, description="Medicare premiums and IRMAA from the eligibility age.", core="Medicare"
     )
@@ -1709,7 +1895,17 @@ class Child(SpecModel):
         description="Birth year (future years are planned births).", unit="year", core="Child.birth_year"
     )
     cost_override_annual: NonNegativeMoney | None = spec_field(
-        None, description="Per-child cost instead of the config bands.", unit="USD/year", not_yet_supported="Plan 27 D6"
+        None,
+        description="This child's yearly cost while a dependent (start-year dollars) instead of the configured "
+        "childcare and school-age bands (not counted as dependent care: use care_expenses_annual).",
+        unit="USD/year",
+        core="Child.cost_annual",
+    )
+    college_cost_annual: NonNegativeMoney | None = spec_field(
+        None,
+        description="This child's yearly college cost (start-year dollars) instead of the configured band.",
+        unit="USD/year",
+        core="Child.college_cost_annual",
     )
     care_expenses_annual: NonNegativeMoney = spec_field(
         0.0,
@@ -2086,6 +2282,13 @@ class HelocDrawEvent(EventBase):
     )
 
 
+class DisabilityEvent(EventBase):
+    """The person becomes disabled: every job stops and each disability policy with a benefit_pct opens a
+    claim (benefits from the end of its elimination period to its benefit end age)."""
+
+    action: Literal["disability"]
+
+
 class ClaimSocialSecurityEvent(EventBase):
     """Claim Social Security (sets the claiming age; the person needs social_security)."""
 
@@ -2115,7 +2318,8 @@ Event = Annotated[
     | ClaimSocialSecurityEvent
     | DieEvent
     | RefinanceEvent
-    | HelocDrawEvent,
+    | HelocDrawEvent
+    | DisabilityEvent,
     Field(discriminator="action"),
 ]
 
@@ -2138,6 +2342,7 @@ EVENT_ACTIONS: tuple[str, ...] = (
     "die",
     "refinance",
     "heloc_draw",
+    "disability",
 )
 
 

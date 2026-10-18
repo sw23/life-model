@@ -58,6 +58,7 @@ people:
     coverage_amount: 150000
   social_security:
     claim_age: 67
+    fra_from_birth_year: true
     earnings_history:
       1985: 18000
       1986: 19500
@@ -129,6 +130,7 @@ people:
     survivor_pct: 50
   social_security:
     claim_age: 67
+    fra_from_birth_year: true
     earnings_history:
       1988: 21000
       1989: 22000
