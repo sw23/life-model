@@ -22,6 +22,7 @@ I18NSPHINXOPTS  = $(PAPEROPT_$(PAPER)) $(SPHINXOPTS) .
 .PHONY: help
 help:
 	@echo "Please use \`make <target>' where <target> is one of"
+	@echo "  generated  to regenerate household-spec.md, outputs.md and constructor-cheatsheet.md"
 	@echo "  html       to make standalone HTML files"
 	@echo "  dirhtml    to make HTML files named index.html in directories"
 	@echo "  singlehtml to make a single large HTML file"
@@ -46,6 +47,13 @@ help:
 	@echo "  linkcheck  to check all external links for integrity"
 	@echo "  doctest    to run all doctests embedded in the documentation (if enabled)"
 	@echo "  coverage   to run coverage check of the documentation (if enabled)"
+
+# Regenerate the docs rendered from the code (tests fail while any of them is stale).
+.PHONY: generated
+generated:
+	cd .. && python scripts/generate_household_spec_docs.py
+	cd .. && python scripts/generate_outputs_doc.py
+	cd .. && python scripts/generate_cheatsheet.py
 
 .PHONY: clean
 clean:

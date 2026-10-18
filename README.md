@@ -27,6 +27,22 @@ Check out the example simulation notebook:
 python -m pip install life-model
 ```
 
+### Command line
+`life-model` runs a household spec from the shell (`python -m life_model` is the same program):
+```bash
+life-model examples --copy married_homeowners my-models/h.yaml   # a synthetic example to edit
+life-model validate my-models/h.yaml                             # findings, exit code 2 on errors
+life-model run my-models/h.yaml --out my-models/out              # yearly summary + out/result.json
+life-model explain my-models/h.yaml --year 2035                  # one year: income, bills, taxes
+life-model compare my-models/h.yaml --set 'people[john].retirement_age=58'
+life-model montecarlo my-models/h.yaml --scenario stochastic --n 1000
+```
+Every command takes `--json` for machine-readable output. The same operations are Python one-liners
+(`life_model.run`, `validate`, `explain`, `compare`), and `pip install 'life-model[mcp]'` adds an MCP
+server (`life-model mcp`) for Claude Code and other MCP clients. See [docs/cli.md](docs/cli.md) and,
+for the end-to-end workflow, [docs/modeling-a-household.md](docs/modeling-a-household.md). Coding
+agents: start with [AGENTS.md](AGENTS.md).
+
 ### Describing a household
 A household can be written as a YAML or JSON **household spec** (people, jobs, accounts, debts,
 home, insurance, Social Security records and dated events) instead of Python:
@@ -141,11 +157,15 @@ This package supports a comprehensive range of financial modeling components:
 ## Examples and Documentation
 
 ### Dashboard
-The interactive dashboard provides real-time visualization of financial simulations with parameter controls for:
-- Family member configuration (age, salary, retirement age)
-- Economic factors (inflation, salary growth)
-- Account balances and debt management
-- Tax and spending analysis
+The interactive dashboard simulates a two-person household (John and Jane) and charts income, bank
+and 401k balances, debt, spending, 401k contributions and match, and income vs. taxes, with a
+results table and CSV download. Its controls cover:
+- Each person: include/exclude, age, retirement age, salary, bonus, spending, starting bank balance,
+  401k (balance, contribution, employer match) and number of children
+- Household: start and end year, state of residence, annual salary and spending increase, bank
+  interest rate, an optional home (price, mortgage rate and term) and optional healthcare costs
+- Economy: a packaged economic scenario (there is no separate inflation control; pick
+  `high_inflation`, `deflation`, `stochastic`, ... to change inflation and returns)
 
 ### Reinforcement Learning
 The deep learning module includes:
@@ -156,11 +176,19 @@ The deep learning module includes:
 - The simulation-grounded language-model adviser in [`slm/`](slm/README.md), which uses the same environment as its data generator
 
 ### Configuration System
-YAML-based configuration files packaged with life-model (in `src/life_model/config/data/scenarios/`) allow modeling of different economic conditions:
-- `conservative.yaml` - Low growth, stable conditions
-- `aggressive.yaml` - High growth, volatile markets
-- `recession.yaml` - Economic downturn scenarios
-- `high_inflation.yaml` - Inflationary environment modeling
+YAML scenario files packaged with life-model (in `src/life_model/config/data/scenarios/`) overlay the
+default financial configuration; use one with `LifeModel(scenario="recession")`, `meta.scenario` in a
+household spec, or `life-model run SPEC --scenario recession`:
+- `conservative` - lower equity returns (5%)
+- `aggressive` - higher equity returns (10%)
+- `boom` - a multi-year run of elevated equity returns and cash yields (path economy)
+- `recession` - a multi-year equity downturn, then recovery (path economy)
+- `high_inflation` - 8% inflation, wages lagging, lower real returns
+- `deflation` - falling prices with depressed returns
+- `stochastic` - random, correlated equity/bond/inflation draws each year (for Monte Carlo)
+- `high_tax`, `low_tax`, `tax_reform` - alternative federal brackets, deductions, state and payroll rates
+
+See [docs/configuration.md](docs/configuration.md) for authoring your own.
 
 ## Contributing
 This project is open source and welcomes contributions. See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, the tox targets used by CI, and the `pre-commit install` step. The test suite in `src/life_model/tests/` shows examples of expected functionality.
