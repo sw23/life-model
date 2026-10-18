@@ -113,9 +113,17 @@ Defaults differ between the spec and the core: the spec's spending `growth_pct` 
 
 Everyone files single until married; a marriage in `relationships.marriages` (or a `marry` event)
 creates a married-filing-jointly unit (or separately, with `filing_status: separate`) headed by the
-first spouse listed, and the unit files in the head's state. A state needs a state tax pack (`CA`,
-`NY`, `TX`, ...): an unknown code is a spec error, because the core would silently tax it at the
-flat default rate.
+first spouse listed, and the unit files in the head's state. An unmarried person files head of
+household with a dependent child (under 19, or a student under 24) or a qualifying relative
+(`dependents[]`: a parent wherever they live, another relative living with them), and as a qualifying
+surviving spouse for the two years after a spouse's death (`widowed_year`, or a death in the run)
+while a dependent child lives with them (Plan 31 D5).
+
+A state needs a state tax pack (`CA`, `NY`, `GA`, ...; `DEFAULT` is the flat rate, chosen
+deliberately): an unknown code is an error in the spec and in the core (`UnknownStateError`). The
+state follows a residency timeline (`residency: [[YYYY-MM, state], ...]`; a `move` event adds an
+entry): a year with a move files part-year returns, wages allocated by the months worked in each
+state and other income by residence when received (Plan 31 D4).
 
 ## Time
 
@@ -208,7 +216,10 @@ children's ages for the credits. The qualified charitable distribution's 70½ is
 | Children | A twelfth of the age band's yearly cost and of `care_expenses_annual` (529 draws for college, keeping the year's first $4,000 for the AOTC) | The child's `interest_annual` / `dividends_annual` on the parents' return (Form 8814) |
 | Insurance premiums, donations (cash, appreciated shares in kind), stock vests and option exercises | | In the first month of the year; policy updates (term expiry, re-pricing, cash value) at year end |
 | Bills | Paid through the household waterfall each month; unpaid bills carried as debt with a month of interest | |
-| Taxes | | Settled in December from the year's income ledger (the sized waterfall) |
+| Taxes | With `payroll.withholding` (Plan 31 D3): federal (Pub. 15-T), Social Security, Medicare and state tax withheld from each paycheck; estimated tax installments in April, June, September and January (`estimated_payments`); last year's balance due paid (or refund received) in April | Settled in December from the year's income ledger: by default the whole year as a lump through the sized waterfall; with withholding or estimates the return is figured and the balance due (or refund) accrued as a liability (or receivable), with the Form 2210 penalty |
+| RSU vests (with withholding) | | Supplemental federal rate (22%, 37% past $1,000,000), FICA and state tax withheld by selling shares to cover them |
+| Marketplace health coverage (`marketplace`) | A twelfth of the premium, net of any advance premium tax credit, while covered | The premium tax credit on the return (Form 8962) |
+| Contribution plans (bank-sourced), tax hold-back | Each month holds back the balance due on last year's return and the month's share of the year's projected tax not yet withheld or paid (Plan 31) | |
 | Mortality | Monthly hazard `1 - (1 - q)^(1/12)` (fixed-age deaths in the birth month); a death in month m stops pay from m+1 | |
 | Data | Ledger entries carry their month; month-end balance sheets (the monthly conservation check); monthly rows with `collect="month"` | Model and agent frames at each year end; tax returns |
 | Invariant checks (`checks=`) | Read: monthly conservation, between-month continuity, month-end balances, the cash floor at the month of each waterfall draw | Run at each year end, after December's taxes (`life_model.invariants`) |

@@ -15,8 +15,9 @@ copy, because agents step in `STEP_PRIORITY`, then construction, order.
 |---|---|---|
 | `Person(mortality_mode=)` | MortalityMode.IMMORTAL | The person never dies. Spec: `mortality` (default `immortal`); use `stochastic` (SSA life table, seeded) or `fixed_age` with `death_age`. |
 | `Person(gender=)` | GenderAtBirth.OTHER | Only used by stochastic mortality: OTHER blends the male and female tables. |
-| filing status | FilingStatus.SINGLE | Every person files single until married (`Person.marry` or a spec `relationships.marriages` entry, which defaults to `joint`). Head of household needs a qualifying child. |
-| `Person(state=None)` | `tax.state.default_state` = 'DEFAULT' | The DEFAULT pack: a flat 6% on the federal AGI base. An unknown state code is **not** an error in core: it silently falls back to the default pack. The spec validator rejects unknown codes (`meta.default_state`, `people[].state`). |
+| filing status | FilingStatus.SINGLE | Every person files single until married (`Person.marry` or a spec `relationships.marriages` entry, which defaults to `joint`). Head of household needs a qualifying child or a qualifying relative (`Dependent`); qualifying surviving spouse needs `widowed_year` (or a death in the run) and a dependent child. |
+| `Person(state=None)` | `tax.state.default_state` = 'DEFAULT' | The DEFAULT pack: a flat 6% on the federal AGI base. A state code without a pack raises `UnknownStateError` (core and spec alike; Plan 31 D4); pass `state='DEFAULT'` to choose the flat rate deliberately. |
+| `PayrollDeductions(withholding=None)`, `Person(estimated_payments=None)` | None | No withholding or estimated payments: the year's taxes are paid as a December lump. With either, taxes are withheld from paychecks / paid quarterly and the balance due or refund settles in April (Plan 31 D3). |
 | `Spending(growth_pct=)` | 0 | Spending never rises (the spec validator warns). `None` (spec: `growth_pct: economy`) follows inflation (3% in the fixed economy). |
 | `Salary(raise_pct=, bonus_pct=)` | 0, 0 | No raises and no bonus. `None` (spec: `raise_pct: economy`) follows wage growth (3%). |
 | `Apartment(rent_growth_pct=)` | 5 | Rent rises 5% a year unless told otherwise (the spec validator warns when `rent_growth_pct` is unset); `None` follows inflation. |
