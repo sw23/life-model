@@ -24,7 +24,13 @@ from ..tax.household import (
 )
 from ..tax.income import IncomeType
 from ..tax.return_record import TaxReturn, build_tax_return
-from ..tax.state import StateTaxDetail, part_year_state_tax_detail, state_income_tax_detail
+from ..tax.state import (
+    StateHousehold,
+    StateMember,
+    StateTaxDetail,
+    part_year_state_tax_detail,
+    state_income_tax_detail,
+)
 from ..tax.tax import TaxesDue, compute_taxes
 
 if TYPE_CHECKING:
@@ -418,9 +424,16 @@ class TaxUnit:
         totals[IncomeType.LONG_TERM_CAPITAL_GAIN] += additional_preferential
         totals[IncomeType.SHORT_TERM_CAPITAL_GAIN] += additional_short_term
         counts = dependent_counts(self)
-        dependents = counts["ctc"] + counts["other"] + counts["relatives"]
         year = self.members[0].model.year
-        retirees = [(m.age_in(year), m.income.retirement_income) for m in self.members]
+        household = StateHousehold(
+            federal_agi=self.agi(ordinary_bump + additional_preferential),
+            children=counts["ctc"],
+            other_dependents=counts["other"],
+            members=tuple(
+                StateMember(m.age_in(year), m.income.retirement_income, getattr(m, "birth_year", None))
+                for m in self.members
+            ),
+        )
         head = self.members[0]
         states = head.states_in_year(year) if hasattr(head, "states_in_year") else [self.state]
         if len(set(states)) > 1:
@@ -432,12 +445,11 @@ class TaxUnit:
                 self.filing_status,
                 legacy_agi,
                 self.config,
-                dependents=dependents,
-                retirees=retirees,
+                household=household,
                 final_state=self.config.tax.state.resolve_state_code(self.state),
             )
         return state_income_tax_detail(
-            totals, self.filing_status, self.state, legacy_agi, self.config, dependents=dependents, retirees=retirees
+            totals, self.filing_status, self.state, legacy_agi, self.config, household=household
         )
 
     def _state_allocations(

@@ -153,10 +153,10 @@ class TestFederalAndStateBracketEnginesAgree(unittest.TestCase):
             {
                 "tax": {
                     "federal": {"tax_brackets": {"single": rows}},
-                    "state": {"packs": {"CA": {"brackets": {"single": rows}, "standard_deduction": {"single": 0}}}},
+                    "state": {"packs": {"WY": {"brackets": {"single": rows}, "standard_deduction": {"single": 0}}}},
                 }
             },
         )
         federal = federal_income_tax(income, FilingStatus.SINGLE, config)
-        state = state_income_tax_for_unit({IncomeType.WAGES: income}, FilingStatus.SINGLE, "CA", income, config)
+        state = state_income_tax_for_unit({IncomeType.WAGES: income}, FilingStatus.SINGLE, "WY", income, config)
         self.assertAlmostEqual(federal, state, delta=1e-6 * max(1.0, federal))

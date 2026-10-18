@@ -409,6 +409,12 @@ def finish_federal(
             taxes.amt_credit_generated = minimum_tax_credit_generated(result, exclusion, regular_tax)
 
     counts = dependent_counts(unit)
+    # Form 8962: the excess advance credit repaid is Schedule 2 line 1a, part of line 17 (before the credits).
+    ptc = premium_tax_credit_figures(unit, agi, counts)
+    if ptc is not None:
+        taxes.ptc_detail = dict(ptc)
+        taxes.excess_advance_ptc = ptc["repayment"]
+        taxes.federal += ptc["repayment"]
     earned = earned_incomes(unit, taxes)
     taxes.earned_income = sum(earned)
     benefits = sum(m.income.dependent_care_benefits for m in unit.members)
@@ -418,7 +424,7 @@ def finish_federal(
         year=unit.members[0].model.year,
         filing_status=status,
         agi=agi,
-        tax_before_credits=regular_tax + taxes.amt,
+        tax_before_credits=regular_tax + taxes.amt + taxes.excess_advance_ptc,
         regular_tax=regular_tax,
         tentative_minimum_tax=tentative,
         earned_income=earned,
@@ -436,12 +442,8 @@ def finish_federal(
         payroll_taxes_withheld=sum(taxes.ss_by_worker) + sum(taxes.medicare_by_worker),
         se_tax_deduction=sum(se.deduction for se in taxes.se_by_worker),
         amt_credit_carryforward=carryforward,
-        ptc=premium_tax_credit_figures(unit, agi, counts),
+        ptc=ptc,
     )
-    if facts.ptc is not None:
-        taxes.ptc_detail = dict(facts.ptc)
-        taxes.excess_advance_ptc = facts.ptc["repayment"]
-        taxes.federal += facts.ptc["repayment"]
     for line in apply_credits(facts, config):
         taxes.credits += line.total
         taxes.nonrefundable_credits += line.nonrefundable

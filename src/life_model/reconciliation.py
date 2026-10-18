@@ -17,12 +17,12 @@ green, the likely cause:
 * ``input_difference``: both have it but the amounts differ (a spec input, such as a salary or a
   balance, differs from the document);
 * ``unmodeled_credit`` / ``unmodeled_deduction``: a credit or deduction the engine does not compute
-  yet (the foreign tax credit, the ACA premium tax credit (Plan 31 task 6), energy credits...), or one
+  yet (the foreign tax credit, energy credits...), or one
   it computes from an input the spec lacks (care expenses, education expenses);
 * ``unit_mismatch``: off by a factor of 12 or 100 (a monthly amount entered as annual, a fraction
   entered as a percent);
-* ``timing``: withholding, estimated payments and the refund/balance due (the engine settles taxes
-  as one year-end lump; Plan 31 D3);
+* ``timing``: withholding, estimated payments and the refund/balance due of a household without
+  ``payroll.withholding`` or ``estimated_payments`` (its taxes settle as a December lump; Plan 31 D3);
 * ``missing_input``: a line that needs a spec input the engine does not take yet (a 1099-B's per-sale
   cost basis, a 1098's escrow lines);
 * ``unmodeled_line``: a line the engine has no equivalent for (household-employee wages, ...);
@@ -257,13 +257,22 @@ def form_1040_lines(r: "TaxReturn") -> dict[str, float]:
     # Standard (with §63(f)) or itemized (after §68): line 12 / 12e.
     deduction = r.deduction - r.senior_deduction - r.qbi_deduction - r.charitable_deduction_non_itemizer
     tax = r.ordinary_tax + r.preferential_tax + r.kiddie_tax
-    line_18 = tax + r.amt
+    line_18 = tax + r.amt + r.excess_advance_ptc_repayment
     line_19 = r.credits_nonrefundable.get("child_tax_credit", 0.0)
     line_20 = r.nonrefundable_credits - line_19
     line_22 = max(line_18 - line_19 - line_20, 0.0)
     other_taxes = r.niit + r.additional_medicare_tax + r.total_penalties + r.self_employment_tax
     total_tax = line_22 + other_taxes
     refundable = r.credits_refundable
+    # Payments (Plan 31 D3): withholding, estimated payments, the refundable credits and excess Social Security.
+    withheld = r.federal_income_tax_withheld + r.additional_medicare_tax_withheld
+    schedule_3_15 = refundable.get("premium_tax_credit", 0.0) + r.excess_social_security_withheld
+    other_refundable = (
+        refundable.get("earned_income_credit", 0.0)
+        + refundable.get("child_tax_credit", 0.0)
+        + refundable.get("education_credits", 0.0)
+        + schedule_3_15
+    )
     lines = {
         "1a": r.wages - r.taxable_dependent_care_benefits,
         "1e": r.taxable_dependent_care_benefits,
@@ -283,7 +292,7 @@ def form_1040_lines(r: "TaxReturn") -> dict[str, float]:
         "10": r.total_adjustments,
         "15": r.taxable_income,
         "16": tax,
-        "17": r.amt,
+        "17": r.amt + r.excess_advance_ptc_repayment,
         "18": line_18,
         "19": line_19,
         "20": line_20,
@@ -292,7 +301,18 @@ def form_1040_lines(r: "TaxReturn") -> dict[str, float]:
         "23": other_taxes,
         "28": refundable.get("child_tax_credit", 0.0),
         "29": refundable.get("education_credits", 0.0),
-        "31": 0.0,
+        "31": schedule_3_15,
+        "25a": r.federal_income_tax_withheld,
+        "25b": 0.0,
+        "25c": r.additional_medicare_tax_withheld,
+        "25d": withheld,
+        "26": r.estimated_tax_payments,
+        "33": r.total_payments,
+        "34": r.overpayment,
+        "35a": r.overpayment,
+        "36": 0.0,
+        "37": r.amount_owed,
+        "38": r.estimated_tax_penalty,
     }
     eitc = refundable.get("earned_income_credit", 0.0)
     if year == 2024:
@@ -305,6 +325,7 @@ def form_1040_lines(r: "TaxReturn") -> dict[str, float]:
                 "14": r.deduction,
                 "24": total_tax,
                 "27": eitc,
+                "32": other_refundable,
             }
         )
     else:
@@ -320,7 +341,7 @@ def form_1040_lines(r: "TaxReturn") -> dict[str, float]:
             }
         )
         if year == 2025:
-            lines.update({"13a": r.qbi_deduction, "13b": r.senior_deduction, "24": total_tax})
+            lines.update({"13a": r.qbi_deduction, "13b": r.senior_deduction, "24": total_tax, "32": other_refundable})
         else:
             lines.update(
                 {
@@ -330,6 +351,9 @@ def form_1040_lines(r: "TaxReturn") -> dict[str, float]:
                     "24a": total_tax,
                     "24b": 0.0,
                     "24c": total_tax,
+                    "32a": other_refundable,
+                    "32b": 0.0,
+                    "32c": other_refundable,
                 }
             )
     return lines
@@ -368,8 +392,9 @@ def schedule_lines(r: "TaxReturn") -> dict[str, dict[str, float]]:
             "6b": nonrefundable.get("minimum_tax_credit", 0.0),
             "7": nonrefundable.get("minimum_tax_credit", 0.0),
             "8": r.nonrefundable_credits - nonrefundable.get("child_tax_credit", 0.0),
-            "9": 0.0,
-            "15": 0.0,
+            "9": refundable.get("premium_tax_credit", 0.0),
+            "11": r.excess_social_security_withheld,
+            "15": refundable.get("premium_tax_credit", 0.0) + r.excess_social_security_withheld,
         },
         "8812": {
             "14": nonrefundable.get("child_tax_credit", 0.0),
@@ -424,11 +449,38 @@ def schedule_lines(r: "TaxReturn") -> dict[str, dict[str, float]]:
             "16": r.short_term_gains + r.long_term_gains,
         }
     total_other = r.niit + r.additional_medicare_tax + r.total_penalties + r.self_employment_tax
+    if r.ptc_slcsp_premiums or r.advance_premium_tax_credit:
+        excess = max(0.0, r.advance_premium_tax_credit - r.premium_tax_credit_allowed)
+        schedules["8962"] = {
+            "3": r.ptc_household_income,
+            "5": r.ptc_fpl_percent,
+            "7": r.ptc_applicable_figure,
+            "8a": r.ptc_contribution,
+            "11a": r.ptc_enrollment_premiums,
+            "11b": r.ptc_slcsp_premiums,
+            "11d": max(0.0, r.ptc_slcsp_premiums - r.ptc_contribution),
+            "11e": r.premium_tax_credit_allowed,
+            "11f": r.advance_premium_tax_credit,
+            "24": r.premium_tax_credit_allowed,
+            "25": r.advance_premium_tax_credit,
+            "26": refundable.get("premium_tax_credit", 0.0),
+            "27": excess,
+            "29": r.excess_advance_ptc_repayment,
+        }
+    if r.required_annual_payment or r.estimated_tax_penalty:
+        schedules["2210"] = {
+            "4": r.tax_for_estimates,
+            "6": r.federal_income_tax_withheld + r.additional_medicare_tax_withheld + r.excess_social_security_withheld,
+            "9": r.required_annual_payment,
+            "19": r.estimated_tax_penalty,
+        }
     if year == 2026:
         se_medicare = r.additional_medicare_tax_self_employment
         schedules["2"] = {
+            "1a": r.excess_advance_ptc_repayment,
+            "1z": r.excess_advance_ptc_repayment,
             "2": r.amt,
-            "3": r.amt,
+            "3": r.amt + r.excess_advance_ptc_repayment,
             "4": r.self_employment_tax,
             "5": retirement_penalties,
             "6": r.niit,
@@ -440,8 +492,10 @@ def schedule_lines(r: "TaxReturn") -> dict[str, dict[str, float]]:
         schedules["1-A"] = {"15": 0.0, "27": 0.0, "36": 0.0, "43": r.senior_deduction, "44": r.senior_deduction}
     else:
         schedules["2"] = {
+            "1a": r.excess_advance_ptc_repayment,
+            "1z": r.excess_advance_ptc_repayment,
             "2": r.amt,
-            "3": r.amt,
+            "3": r.amt + r.excess_advance_ptc_repayment,
             "4": r.self_employment_tax,
             "8": retirement_penalties,
             "11": r.additional_medicare_tax,
@@ -591,13 +645,24 @@ def _w2_simulated(sim: _Year, person, employer: str) -> dict[str, float | None]:
     ss_wages = min(gross, fica.social_security_max_income)
     # Employers withhold the Additional Medicare Tax on wages over $200,000 whatever the filing status.
     medicare = gross * fica.medicare_rate / 100 + max(0.0, gross - 200000) * fica.medicare_additional_rate / 100
+    jobs = [job for job in person.jobs if job.company == employer]
+    withholds = any(getattr(job, "withholding", None) is not None for job in jobs)
+    payments = getattr(person, "tax_payments", {}).get(sim.year)
+    box_2 = box_17 = None
+    if withholds:
+        # Plan 31 D3: what the paychecks (and vests) actually withheld.
+        box_2 = payments.federal_by_employer.get(employer, 0.0) if payments is not None else 0.0
+        box_17 = payments.state_by_employer.get(employer, 0.0) if payments is not None else 0.0
+        if payments is not None:
+            medicare = payments.medicare_by_employer.get(employer, medicare)
     return {
         "1": gross - flows["pretax"],
-        "2": None,
+        "2": box_2,
         "3": ss_wages,
         "4": ss_wages * fica.social_security_rate / 100,
         "5": gross,
         "6": medicare,
+        "17": box_17,
         "10": fsa,
         "12:D": flows["pretax"],
         "12:AA": flows["roth"],
@@ -829,9 +894,20 @@ def reconcile(
         if sim_return is None:
             report.notes.append(f"{source or 'a return'}: no simulated return matched (name the filer)")
         sim_1040 = form_1040_lines(sim_return) if sim_return is not None else {}
+        # Without withholding or estimated payments the year's taxes are a December lump: the payment lines have
+        # nothing to match (the validator suggests payroll.withholding / estimated_payments).
+        lump = sim_return is None or not sim_return.settled_in_april
         for line, amount in actual_return.form_1040.items():
-            cause = "timing" if line in _PAYMENT_LINES else "unmodeled_line" if line not in sim_1040 else None
-            note = "withholding and the April settlement are not modeled (Plan 31 D3)" if line in _PAYMENT_LINES else ""
+            unmatched = line in _PAYMENT_LINES and lump
+            cause = "timing" if unmatched else "unmodeled_line" if line not in sim_1040 else None
+            note = (
+                "taxes settle as a December lump: set payroll.withholding (and estimated_payments) to model the "
+                "payments and the April settlement (Plan 31 D3)"
+                if unmatched
+                else ""
+            )
+            if unmatched:
+                sim_1040 = {k: v for k, v in sim_1040.items() if k != line}
             add(
                 "1040",
                 line,
@@ -859,11 +935,17 @@ def reconcile(
         state = actual_return.state_return
         if state is not None and sim_return is not None:
             detail = sim_return.state_return
+            state_tax = sim_return.state_tax
+            # A part-year return (Plan 31 D4): compare with the share of the state the record is for.
+            for part in detail.parts if detail is not None else ():
+                if part.state == state.state:
+                    detail, state_tax = part, part.tax
+                    break
             for name, value, sim_value in (
                 ("agi", state.agi, detail.income if detail else None),
                 ("taxable_income", state.taxable_income, detail.taxable_income if detail else None),
-                ("tax", state.tax, sim_return.state_tax),
-                ("withheld", state.withheld, None),
+                ("tax", state.tax, state_tax),
+                ("withheld", state.withheld, sim_return.state_withheld if sim_return.settled_in_april else None),
             ):
                 if value is not None:
                     add(
@@ -872,7 +954,7 @@ def reconcile(
                         f"{state.state} {name.replace('_', ' ')}",
                         value,
                         sim_value,
-                        cause="timing" if name == "withheld" else None,
+                        cause="timing" if sim_value is None and name == "withheld" else None,
                         source=source,
                     )
             if detail is not None and detail.state != state.state:
@@ -883,8 +965,8 @@ def reconcile(
         source = f"{w2.employer} / {w2.person or (person.name if person else '?')}"
         simulated = _w2_simulated(sim, person, w2.employer) if person is not None else {}
         for box, amount in w2.boxes.items():
-            cause = "timing" if box in ("2", "17", "19") else None
             sim_value = simulated.get(box)
+            cause = "timing" if box in ("2", "17", "19") and sim_value is None else None
             if sim_value is None and cause is None:
                 cause = "unmodeled_line"
             add("W-2", f"box {box}", W2_BOXES.get(box, box), amount, sim_value, cause=cause, source=source)
@@ -944,16 +1026,23 @@ def reconcile(
                 note="" if sim_value is not None else "payroll deductions are Plan 27 D3",
                 source=source,
             )
-        for name, amount in (("federal_withholding", stub.federal_withholding_monthly), ("net", stub.net_monthly)):
+        withheld = None
+        records = getattr(person, "tax_payments", {}).get(year)
+        if records is not None and any(getattr(j, "withholding", None) is not None for j in person.jobs):
+            withheld = sum(v for k, v in records.federal_by_employer.items() if k in employers) / 12
+        for name, amount, sim_value in (
+            ("federal_withholding", stub.federal_withholding_monthly, withheld),
+            ("net", stub.net_monthly, None),
+        ):
             if amount is not None:
                 add(
                     "paystub",
                     name,
                     f"{name.replace('_', ' ')} (monthly)",
                     amount,
-                    None,
-                    cause="timing",
-                    note="withholding is not modeled (Plan 31 D3)",
+                    sim_value,
+                    cause="timing" if sim_value is None else None,
+                    note="" if sim_value is not None else "set payroll.withholding to model withholding (Plan 31 D3)",
                     source=source,
                 )
 
@@ -991,7 +1080,8 @@ def reconcile(
     report.lines = sorted(rows, key=_row_order)
     if any(r.cause == "timing" for r in rows):
         report.notes.append(
-            "Withholding, estimated payments and the refund are not modeled: taxes settle as one year-end lump."
+            "Withholding, estimated payments and the refund have nothing to match: without payroll.withholding or "
+            "estimated_payments the model settles the year's taxes as a December lump (Plan 31 D3)."
         )
     return report
 

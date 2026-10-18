@@ -497,16 +497,21 @@ def _gross_pay_this_month(person: "Person") -> float:
 
 
 def _available_cash(person: "Person") -> float:
-    """Cash a bank-sourced contribution may use: the owner's spendable bank balance (in December less the
-    year's estimated tax, which is paid at the year end)."""
-    cash = person.spendable_bank_balance
-    model = person.model
-    if model.month == 12:
-        from .people.tax_unit import TaxUnit
+    """Cash a bank-sourced contribution may use: the owner's spendable bank balance less their share of the tax
+    the unit still owes. That is the balance due on last year's return until April, plus the month's share of
+    this year's tax not yet paid: the projected year's tax times the share of the year elapsed, less the
+    withholding and estimated payments so far (:meth:`TaxUnit.expected_unpaid_tax`). Holding it back month by
+    month means a contribution is never sold back to pay the same year's taxes (Plan 31 D3)."""
+    from .people.tax_unit import TaxUnit
 
-        unit = TaxUnit.for_member(person)
-        share = cash / unit.bank_account_balance if unit.bank_account_balance > 0 else 1.0
-        cash -= max(0.0, unit.get_income_taxes_due().total) * share
+    cash = person.spendable_bank_balance
+    unit = TaxUnit.for_member(person)
+    owed = sum(getattr(m, "taxes_owed", 0.0) for m in unit.living_members)
+    reserve = owed + unit.expected_unpaid_tax()
+    if reserve > 0:
+        bank = unit.bank_account_balance
+        share = cash / bank if bank > 0 else 1.0
+        cash -= reserve * share
     return max(0.0, cash)
 
 

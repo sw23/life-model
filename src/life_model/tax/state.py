@@ -17,7 +17,7 @@ Two code paths coexist:
 """
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from ..config.financial_config import resolve_financial_config as _fin
 from .brackets import apply_brackets, bracket_slices
@@ -167,13 +167,140 @@ def _state_base(totals_by_type: "dict[IncomeType, float]", pack: "StateTaxPack")
     return ordinary, base
 
 
-def _retirement_exclusion(pack: "StateTaxPack", retirees: "list[tuple[int, float]] | None") -> float:
-    """The pack's partial retirement-income exclusion: up to its amount per member of the minimum age, each
-    limited to that member's retirement income (``retirees``: ``(age at year end, retirement income)``)."""
-    rule = pack.retirement_exclusion
-    if rule is None or not retirees:
+@dataclass(frozen=True)
+class StateMember:
+    """One member of the return, for a state's age and retirement rules."""
+
+    age: int
+    retirement_income: float = 0.0
+    birth_year: int | None = None
+
+
+@dataclass(frozen=True)
+class StateHousehold:
+    """What a state's exemptions, credits and exclusions read about the return besides its income (Plan 31)."""
+
+    federal_agi: float = 0.0
+    #: Children under 17 (the federal child tax credit's) and other dependents (older children, relatives).
+    children: int = 0
+    other_dependents: int = 0
+    members: tuple[StateMember, ...] = ()
+
+    @property
+    def dependents(self) -> int:
+        return self.children + self.other_dependents
+
+
+def _status_value(table: "dict[str, Any] | None", filing_status: "FilingStatus"):
+    if not table:
+        return None
+    for key in _status_keys(filing_status):
+        if key in table:
+            return table[key]
+    return table.get("single")
+
+
+def _retirement_exclusion(
+    pack: "StateTaxPack", household: StateHousehold, filing_status: "FilingStatus", base: float
+) -> float:
+    """The pack's partial retirement exclusion (or age deduction) for the return."""
+    rules = pack.retirement_exclusion
+    if rules is None or not household.members:
         return 0.0
-    return sum(min(rule.amount, max(0.0, income)) for age, income in retirees if age >= rule.min_age)
+    if not isinstance(rules, list):
+        rules = [rules]
+    total = 0.0
+    phaseouts = []
+    for rule in rules:
+        if rule.income_limit is not None and household.federal_agi > rule.income_limit:
+            continue
+        amount = rule.amount
+        if rule.amount_by_status is not None:
+            amount = _status_value(rule.amount_by_status, filing_status) or 0.0
+        eligible = []
+        for member in household.members:
+            if member.age < rule.min_age or (rule.max_age is not None and member.age > rule.max_age):
+                continue
+            if member.birth_year is not None:
+                if rule.born_from is not None and member.birth_year < rule.born_from:
+                    continue
+                if rule.born_through is not None and member.birth_year > rule.born_through:
+                    continue
+            eligible.append(member)
+        if not eligible:
+            continue
+        if rule.applies_to == "any":
+            excluded = amount * len(eligible)
+        elif rule.per_return:
+            excluded = min(amount, sum(max(0.0, m.retirement_income) for m in eligible))
+        else:
+            excluded = sum(min(amount, max(0.0, m.retirement_income)) for m in eligible)
+        if rule.phaseout_start is not None:
+            start = _status_value(rule.phaseout_start, filing_status)
+            if start is not None:
+                phaseouts.append(max(0.0, household.federal_agi - start))
+        total += excluded
+    total = max(0.0, total - sum(phaseouts))
+    return min(max(base, 0.0), total)
+
+
+def _exemptions(pack: "StateTaxPack", household: StateHousehold, filing_status: "FilingStatus") -> float:
+    filers = _filers(filing_status)
+    personal, dependent = pack.personal_exemption, pack.dependent_exemption
+    bands = _status_value(pack.exemption_by_agi, filing_status)
+    if bands:
+        amount = 0.0
+        for agi_max, value in bands:
+            if household.federal_agi <= agi_max:
+                amount = value
+                break
+        personal = dependent = amount
+    seniors = sum(1 for m in household.members[:filers] if m.age >= 65)
+    total = personal * filers + dependent * household.dependents + pack.additional_exemption_65 * seniors
+    rows = _status_value(pack.child_deduction, filing_status)
+    if rows and household.children:
+        for low, high, amount in rows:
+            if low <= household.federal_agi <= high:
+                total += amount * household.children
+                break
+    return total
+
+
+def _credits(pack: "StateTaxPack", household: StateHousehold, filing_status: "FilingStatus") -> float:
+    filers = _filers(filing_status)
+    seniors = sum(1 for m in household.members[:filers] if m.age >= 65)
+    other = pack.other_dependent_credit if pack.other_dependent_credit is not None else pack.dependent_credit
+    items = [pack.personal_credit] * filers + [pack.senior_credit] * seniors
+    items += [pack.dependent_credit] * household.children + [other] * household.other_dependents
+    rule = pack.credit_phaseout
+    if rule is not None:
+        start = _status_value(rule.start, filing_status)
+        if start is not None and household.federal_agi > start:
+            step = (
+                rule.step_separate
+                if filing_status.name == "MARRIED_FILING_SEPARATELY" and rule.step_separate
+                else rule.step
+            )
+            steps = -(-(household.federal_agi - start) // step)
+            items = [max(0.0, item - rule.per_step * steps) for item in items]
+    return sum(items)
+
+
+def _bracket_tax(base: float, rows, pack: "StateTaxPack") -> tuple[float, tuple]:
+    """Tax on ``base``: marginal accumulation, or a schedule with a base tax per row (``bracket_base_tax``)."""
+    if pack.bracket_base_tax is None:
+        return apply_brackets(base, rows), tuple(bracket_slices(base, rows))
+    tax = 0.0
+    for index, (low, high, rate) in enumerate(rows):
+        start = low - 1 if low > 0 else 0
+        if base > start:
+            tax = (
+                pack.bracket_base_tax[index] + (min(base, high) - start) * rate / 100
+                if rate
+                else pack.bracket_base_tax[index]
+            )
+    slices = tuple(bracket_slices(base, rows))
+    return tax, slices
 
 
 def state_income_tax_detail(
@@ -183,20 +310,19 @@ def state_income_tax_detail(
     legacy_agi_base: float,
     config: "FinancialConfig | None" = None,
     *,
-    dependents: int = 0,
-    retirees: "list[tuple[int, float]] | None" = None,
+    household: StateHousehold | None = None,
     year: int | None = None,
 ) -> StateTaxDetail:
     """:func:`state_income_tax_for_unit` with every intermediate line (the one computation of it).
 
-    ``dependents`` (the return's dependents) and ``retirees`` (``(age at year end, retirement income)`` per
-    member) feed the pack's dependent exemption / credit and its partial retirement exclusion. ``year``
-    picks a year-keyed pack's entry (a year view of the config has already resolved it). An unknown state
-    raises :class:`~life_model.config.models.UnknownStateError`.
+    ``household`` (federal AGI, dependents, members' ages and retirement income) feeds the pack's exemptions,
+    credits and retirement exclusions. ``year`` picks a year-keyed pack's entry (a year view of the config has
+    already resolved it). An unknown state raises :class:`~life_model.config.models.UnknownStateError`.
     """
     state_config = _fin(config).tax.state
     from ..config.models import DEFAULT_STATE_KEY
 
+    household = household or StateHousehold()
     resolved = state_config.resolve_state_code(state)
     pack = state_config.get_pack(state, year)
 
@@ -220,17 +346,17 @@ def state_income_tax_detail(
         )
 
     ordinary, base = _state_base(totals_by_type, pack)
-    base -= min(max(base, 0.0), _retirement_exclusion(pack, retirees))
+    base -= _retirement_exclusion(pack, household, filing_status, base)
     subtractions = ordinary - base
-    exemptions = pack.personal_exemption * _filers(filing_status) + pack.dependent_exemption * dependents
+    exemptions = _exemptions(pack, household, filing_status)
     deduction = _state_standard_deduction(pack, filing_status) + exemptions
     base -= deduction
     base = max(base, 0.0)
-    credits_available = pack.personal_credit * _filers(filing_status) + pack.dependent_credit * dependents
+    credits_available = _credits(pack, household, filing_status)
 
     if pack.brackets is not None:
         rows = _bracket_rows(pack, filing_status)
-        gross = apply_brackets(base, rows)
+        gross, slices = _bracket_tax(base, rows, pack)
         credits = min(gross, credits_available)
         return StateTaxDetail(
             state=resolved,
@@ -240,7 +366,7 @@ def state_income_tax_detail(
             deduction=deduction,
             taxable_income=base,
             flat_rate=None,
-            brackets=tuple(bracket_slices(base, rows)),
+            brackets=slices,
             tax=gross - credits,
             exemptions=exemptions,
             credits=credits,
@@ -269,8 +395,7 @@ def part_year_state_tax_detail(
     legacy_agi_base: float,
     config: "FinancialConfig | None" = None,
     *,
-    dependents: int = 0,
-    retirees: "list[tuple[int, float]] | None" = None,
+    household: StateHousehold | None = None,
     final_state: str | None = None,
 ) -> StateTaxDetail:
     """State tax for a year with more than one state of residence (Plan 31 D4), by the income-ratio method
@@ -289,9 +414,7 @@ def part_year_state_tax_detail(
             totals[income_type] += amount
     parts = []
     for code, allocated in allocations.items():
-        full = state_income_tax_detail(
-            totals, filing_status, code, legacy_agi_base, config, dependents=dependents, retirees=retirees
-        )
+        full = state_income_tax_detail(totals, filing_status, code, legacy_agi_base, config, household=household)
         state_config = _fin(config).tax.state
         pack = state_config.get_pack(code)
         _, whole = _state_base(totals, pack)

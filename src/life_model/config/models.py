@@ -555,11 +555,36 @@ class StateStandardDeductionConfig(StrictModel):
 
 
 class StateRetirementExclusion(StrictModel):
-    """A state's partial exclusion of retirement income (pre-tax distributions and pensions): up to
-    ``amount`` per person who is ``min_age`` or older by the end of the year (Plan 31 D4)."""
+    """A state's partial exclusion of retirement income (pre-tax distributions and pensions), or an age
+    deduction against any income (``applies_to: any``) (Plan 31 D4).
 
-    amount: float = Field(ge=0)
+    Per person who is ``min_age`` (to ``max_age``) by the end of the year and born in ``born_from`` -
+    ``born_through``: up to ``amount`` (or ``amount_by_status``) of that person's retirement income. With
+    ``per_return`` the amount is a cap for the whole return. ``income_limit``: no exclusion when federal AGI is
+    over it. ``phaseout_start``: the total is reduced a dollar per dollar of federal AGI over the status's
+    amount (Virginia's age deduction).
+    """
+
+    amount: float = Field(default=0.0, ge=0)
+    amount_by_status: dict[str, float] | None = None
     min_age: int = Field(default=0, ge=0)
+    max_age: int | None = None
+    born_from: int | None = None
+    born_through: int | None = None
+    per_return: bool = False
+    income_limit: float | None = None
+    phaseout_start: dict[str, float] | None = None
+    applies_to: Literal["retirement", "any"] = "retirement"
+
+
+class StateCreditPhaseout(StrictModel):
+    """Exemption credits reduced by ``per_step`` dollars each for every ``step`` (or part) of federal AGI over
+    the status's ``start`` (California: $6 per $2,500; ``step_separate`` for a separate return)."""
+
+    start: dict[str, float]
+    step: float = Field(gt=0)
+    per_step: float = Field(ge=0)
+    step_separate: float | None = None
 
 
 #: Filing-status keys a state pack's brackets may define (missing ones fall back: head of household and
@@ -601,7 +626,21 @@ class StateTaxPack(StrictModel):
     dependent_exemption: float = Field(default=0.0, ge=0)
     personal_credit: float = Field(default=0.0, ge=0)
     dependent_credit: float = Field(default=0.0, ge=0)
-    retirement_exclusion: StateRetirementExclusion | None = None
+    #: Credit for a dependent who is not a child under 17 (None: ``dependent_credit``).
+    other_dependent_credit: float | None = Field(default=None, ge=0)
+    #: Credit per filer 65 or older (California's senior exemption credit).
+    senior_credit: float = Field(default=0.0, ge=0)
+    credit_phaseout: StateCreditPhaseout | None = None
+    #: Extra exemption per filer 65 or older.
+    additional_exemption_65: float = Field(default=0.0, ge=0)
+    #: Exemptions by federal AGI band, per status: ``[[agi_max, amount], ...]`` (replaces the flat amounts).
+    exemption_by_agi: dict[str, list[list[float]]] | None = None
+    #: A deduction per child under 17 by federal AGI band, per status: ``[[agi_low, agi_high, amount], ...]``.
+    child_deduction: dict[str, list[list[float]]] | None = None
+    #: Tax at the start of each bracket row (a schedule with jumps, Ohio's): tax = base + rate x the amount over
+    #: the row's start; replaces marginal accumulation.
+    bracket_base_tax: list[float] | None = None
+    retirement_exclusion: "StateRetirementExclusion | list[StateRetirementExclusion] | None" = None
     years: "dict[int, StateTaxPack] | None" = None
 
     @model_validator(mode="after")

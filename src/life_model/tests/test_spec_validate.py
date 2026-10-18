@@ -55,7 +55,7 @@ class TestSpecErrors(unittest.TestCase):
 
     def test_unknown_state(self):
         data = minimal(state="ZZ")
-        data["meta"]["default_state"] = "AZ"
+        data["meta"]["default_state"] = "WY"  # no pack (AZ has had one since Plan 31)
         findings = validate_spec(data)
         self.assertEqual(codes(findings), ["unknown_state", "unknown_state"])
         self.assertEqual({f.path for f in findings}, {"meta.default_state", "people[0].state"})

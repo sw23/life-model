@@ -161,6 +161,7 @@ _SCHEDULE_1 = {
     "26": "Adjustments to income (to Form 1040 line 10)",
 }
 _SCHEDULE_2_2024 = {
+    "1a": "Excess advance premium tax credit repayment (Form 8962)",
     "1z": "Additions to tax (premium tax credit repayment, ...)",
     "2": "Alternative minimum tax",
     "3": "Add lines 1z and 2 (to Form 1040 line 17)",
@@ -173,6 +174,7 @@ _SCHEDULE_2_2024 = {
     "21": "Total other taxes (to Form 1040 line 23)",
 }
 _SCHEDULE_2_2026 = {
+    "1a": "Excess advance premium tax credit repayment (Form 8962)",
     "1z": "Additions to tax",
     "2": "Alternative minimum tax",
     "3": "Add lines 1z and 2 (to Form 1040 line 17)",
@@ -196,6 +198,7 @@ _SCHEDULE_3 = {
     "7": "Total other nonrefundable credits",
     "8": "Nonrefundable credits (to Form 1040 line 20)",
     "9": "Net premium tax credit",
+    "11": "Excess social security and tier 1 RRTA tax withheld",
     "15": "Other payments and refundable credits (to Form 1040 line 31)",
 }
 _SCHEDULE_A = {
@@ -258,6 +261,34 @@ _PLAN_31_FORMS = {
     "8995": {"1": "Qualified business income", "15": "Qualified business income deduction"},
     "6251": {"4": "Alternative minimum taxable income", "9": "Tentative minimum tax", "11": "Alternative minimum tax"},
     "8814": {"15": "Tax on the child's income (to Form 1040 line 16)"},
+    # Plan 31 tasks 6-7
+    "8962": {
+        "1": "Tax family size",
+        "3": "Household income",
+        "4": "Federal poverty line",
+        "5": "Household income as a percentage of the federal poverty line",
+        "7": "Applicable figure",
+        "8a": "Annual contribution amount",
+        "8b": "Monthly contribution amount",
+        "11a": "Annual enrollment premiums",
+        "11b": "Annual applicable SLCSP premium",
+        "11d": "Annual maximum premium assistance",
+        "11e": "Annual premium tax credit allowed",
+        "11f": "Annual advance payment of PTC",
+        "24": "Total premium tax credit",
+        "25": "Advance payment of PTC",
+        "26": "Net premium tax credit",
+        "27": "Excess advance premium tax credit",
+        "28": "Repayment limitation",
+        "29": "Excess advance premium tax credit repayment",
+    },
+    "2210": {
+        "4": "Current year tax",
+        "6": "Withholding taxes",
+        "8": "Maximum required annual payment based on prior year's tax",
+        "9": "Required annual payment",
+        "19": "Penalty",
+    },
 }
 
 #: Schedule name -> line -> label, by tax year (the lines reconciliation reads; others are accepted).

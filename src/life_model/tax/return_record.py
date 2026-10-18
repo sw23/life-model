@@ -14,8 +14,10 @@ lines follow Form 1040's structure:
 * ``agi - deduction == taxable_income`` (floored at 0), where ``deduction`` is the itemized deductions
   (after the §68 limit) or the standard deduction (with §63(f)) plus the non-itemizer charitable
   deduction, plus the senior deduction and the QBI deduction;
-* ``ordinary_tax + preferential_tax + kiddie_tax + niit + amt - total_credits + total_penalties ==
-  federal_tax``;
+* ``ordinary_tax + preferential_tax + kiddie_tax + niit + amt + excess_advance_ptc_repayment - total_credits +
+  total_penalties == federal_tax``;
+* (Plan 31 D3) ``amount_owed - overpayment == federal_tax + refundable_credits + self_employment_tax +
+  additional_medicare_tax - total_payments + estimated_tax_penalty`` (Form 1040 lines 24-38);
 * ``federal_tax + state_tax + social_security_tax + medicare_tax + self_employment_tax == total_tax``
   (``TaxesDue.total``).
 
@@ -83,6 +85,57 @@ class StateReturn:
     flat_rate: float | None
     brackets: tuple[tuple[float, float, float, float, float], ...]
     tax: float
+    #: Plan 31: exemptions (in ``deduction``), credits (out of ``tax``) and a part-year return's states.
+    exemptions: float = 0.0
+    credits: float = 0.0
+    parts: "tuple[StateReturn, ...]" = ()
+
+    @classmethod
+    def from_detail(cls, detail) -> "StateReturn":
+        return cls(
+            state=detail.state,
+            method=detail.method,
+            income=detail.income,
+            subtractions=detail.subtractions,
+            deduction=detail.deduction,
+            taxable_income=detail.taxable_income,
+            flat_rate=detail.flat_rate,
+            brackets=tuple(detail.brackets),
+            tax=detail.tax,
+            exemptions=getattr(detail, "exemptions", 0.0),
+            credits=getattr(detail, "credits", 0.0),
+            parts=tuple(cls.from_detail(part) for part in getattr(detail, "parts", ())),
+        )
+
+    def to_dict(self) -> dict:
+        data = asdict(self)
+        data["brackets"] = [list(row) for row in self.brackets]
+        data["parts"] = [part.to_dict() for part in self.parts]
+        return data
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "StateReturn":
+        data = dict(data)
+        data["brackets"] = tuple(tuple(row) for row in data["brackets"])
+        data["parts"] = tuple(cls.from_dict(part) for part in data.get("parts", ()))
+        return cls(**data)
+
+    def scaled(self, divisor: float) -> "StateReturn":
+        def money(value: float) -> float:
+            return value / divisor
+
+        return replace(
+            self,
+            income=money(self.income),
+            subtractions=money(self.subtractions),
+            deduction=money(self.deduction),
+            taxable_income=money(self.taxable_income),
+            brackets=tuple((money(lo), money(hi), r, money(a), money(t)) for lo, hi, r, a, t in self.brackets),
+            tax=money(self.tax),
+            exemptions=money(self.exemptions),
+            credits=money(self.credits),
+            parts=tuple(part.scaled(divisor) for part in self.parts),
+        )
 
 
 @dataclass(frozen=True)
@@ -206,7 +259,7 @@ class TaxReturn:
         data["ordinary_brackets"] = [list(row) for row in self.ordinary_brackets]
         data["fica"] = [asdict(line) for line in self.fica]
         if self.state_return is not None:
-            data["state_return"]["brackets"] = [list(row) for row in self.state_return.brackets]
+            data["state_return"] = self.state_return.to_dict()
         data["member_ids"] = list(self.member_ids)
         data["member_names"] = list(self.member_names)
         return data
@@ -221,9 +274,7 @@ class TaxReturn:
         data["fica"] = tuple(FicaLine(**line) for line in data["fica"])
         state = data.get("state_return")
         if state is not None:
-            state = dict(state)
-            state["brackets"] = tuple(tuple(row) for row in state["brackets"])
-            data["state_return"] = StateReturn(**state)
+            data["state_return"] = StateReturn.from_dict(state)
         return cls(**data)
 
     def summary_row(self) -> dict[str, Any]:
@@ -270,16 +321,7 @@ class TaxReturn:
             for line in self.fica
         )
         if self.state_return is not None:
-            s = self.state_return
-            changes["state_return"] = replace(
-                s,
-                income=money(s.income),
-                subtractions=money(s.subtractions),
-                deduction=money(s.deduction),
-                taxable_income=money(s.taxable_income),
-                brackets=tuple((money(lo), money(hi), r, money(a), money(t)) for lo, hi, r, a, t in s.brackets),
-                tax=money(s.tax),
-            )
+            changes["state_return"] = self.state_return.scaled(divisor)
         return replace(self, **changes)
 
 
@@ -543,19 +585,7 @@ def build_tax_return(unit: "TaxUnit", taxes: "TaxesDue", payments: "dict | None"
     )
 
     detail = taxes.state_detail
-    state_return = None
-    if detail is not None:
-        state_return = StateReturn(
-            state=detail.state,
-            method=detail.method,
-            income=detail.income,
-            subtractions=detail.subtractions,
-            deduction=detail.deduction,
-            taxable_income=detail.taxable_income,
-            flat_rate=detail.flat_rate,
-            brackets=tuple(detail.brackets),
-            tax=detail.tax,
-        )
+    state_return = StateReturn.from_detail(detail) if detail is not None else None
 
     brackets = tuple(tuple(row) for row in taxes.ordinary_brackets)
     reached = [row for row in brackets if row[3] > 0]
