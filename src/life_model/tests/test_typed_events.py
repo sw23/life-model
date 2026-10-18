@@ -44,7 +44,7 @@ class TestEventConstruction(unittest.TestCase):
         self.assertEqual(event.account, f"BrokerageAccount:{account.unique_id}")
         self.assertTrue(event.is_detail)
         withdrawal = Event(EventKind.PRETAX_WITHDRAWAL, person=person, amount=500, cause="fund bills", target=750)
-        self.assertIn("solver target 750", withdrawal.message)
+        self.assertIn("solver target $750", withdrawal.message)
         self.assertEqual(withdrawal.details, {"target": 750})
 
     def test_explicit_year_is_kept(self):

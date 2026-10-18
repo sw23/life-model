@@ -88,3 +88,13 @@ No existing test's expected value changed. Output changes:
   attribute the same way.
 * `Spending.person` and `Salary.owner` back-references are set by `Person` and `Job` (reporting
   only).
+
+## Task 6 — RunResult, exports, explain, Monte Carlo
+
+No existing test's expected value changed. `LifeModel.run()` now returns a `RunResult` instead of
+`None`; every existing caller (dashboard, RL environment and benchmark, SLM, Monte Carlo, the
+notebook, `__main__`, the tests) ignores the return value or steps the model itself, so nothing
+else changed. `get_yearly_stat_df` no longer inserts `extra_columns` into the caller's `columns`
+list (it used to mutate it) and takes `styled=False` to return the plain DataFrame. The Monte Carlo
+runner's private `_run_trial` now returns a dict (frame, seed, deflators, and optionally the agent
+frame and events); `MonteCarloResult(frames)` still works positionally.

@@ -26,40 +26,167 @@ When it is not picklable, the runner transparently falls back to running trials 
 current process (the simulation is CPU-light, so this is only a speed difference).
 """
 
+import json
+import os
 from collections.abc import Callable, Sequence
 from concurrent.futures import ProcessPoolExecutor
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-from .model import LifeModel
+from .model import LifeModel, MoneyStat
 
 # A callable that builds a ready-to-run model for a given random seed.
 ModelFactory = Callable[[int], LifeModel]
 
 
-def _run_trial(args) -> pd.DataFrame:
-    """Build and run a single trial, returning its yearly model-vars DataFrame.
+def _money_columns() -> list[str]:
+    return [s.title for s in (*LifeModel.STATS, *LifeModel.EXTRA_STATS) if isinstance(s, MoneyStat)]
+
+
+def _run_trial(args) -> dict:
+    """Build and run a single trial, returning its yearly model-vars DataFrame, its seed and its
+    deflators (plus its agent frame and events when asked).
 
     Defined at module scope so it (and its arguments) can be pickled for process-pool execution.
     """
-    factory, seed = args
+    factory, seed, keep_agent_frames, keep_events = (*args, False, False)[:4]
     model = factory(seed)
-    model.run()
-    return model.datacollector.get_model_vars_dataframe().reset_index(drop=True)
+    result = model.run()
+    trial = {
+        "seed": seed,
+        "frame": model.datacollector.get_model_vars_dataframe().reset_index(drop=True),
+        "deflators": result.deflators,
+    }
+    if keep_agent_frames:
+        trial["agent_frame"] = result.agent_frame
+    if keep_events:
+        trial["events"] = result.events
+    return trial
 
 
 class MonteCarloResult:
     """Aggregated results of a Monte Carlo study.
 
     Holds one yearly ``model_vars`` DataFrame per trial (all sharing the same ``Year`` column) and
-    provides success-probability, percentile, and fan-chart helpers over them.
+    provides success-probability, percentile, and fan-chart helpers over them. ``seeds`` are the
+    per-trial seeds (rebuild trial ``i`` with ``factory(result.seeds[i])``); ``agent_frames`` and
+    ``events`` are kept when the runner was asked to keep them.
     """
 
-    def __init__(self, frames: list[pd.DataFrame]):
+    def __init__(
+        self,
+        frames: list[pd.DataFrame],
+        *,
+        seeds: "list[int] | None" = None,
+        agent_frames: "list[pd.DataFrame] | None" = None,
+        events: "list[pd.DataFrame] | None" = None,
+        deflators: "list[dict[int, float]] | None" = None,
+        real: bool = False,
+    ):
         if not frames:
             raise ValueError("MonteCarloResult requires at least one trial frame")
         self.frames = frames
+        self.seeds = list(seeds) if seeds is not None else None
+        self.agent_frames = agent_frames
+        self.events = events
+        #: Per-trial cumulative inflation by year (for :meth:`real_dollars`).
+        self.deflators = deflators
+        #: True when money is in start-year dollars.
+        self.real = real
+
+    def real_dollars(self) -> "MonteCarloResult":
+        """A copy with every trial's money columns deflated to start-year dollars by that trial's own
+        realized inflation (agent frames too; event amounts likewise). Idempotent."""
+        if self.real:
+            return self
+        if self.deflators is None:
+            raise ValueError("This result has no per-trial deflators (it was not produced by MonteCarlo.run)")
+        money = _money_columns()
+
+        def deflate(frame, deflator, year_column, columns):
+            frame = frame.copy()
+            factors = frame[year_column].map(lambda y: deflator.get(int(y), 1.0)).astype(float)
+            for column in columns:
+                if column in frame.columns:
+                    frame[column] = pd.to_numeric(frame[column], errors="coerce") / factors
+            return frame
+
+        return MonteCarloResult(
+            [deflate(f, d, "Year", money) for f, d in zip(self.frames, self.deflators, strict=True)],
+            seeds=self.seeds,
+            agent_frames=None
+            if self.agent_frames is None
+            else [deflate(f, d, "Year", money) for f, d in zip(self.agent_frames, self.deflators, strict=True)],
+            events=None
+            if self.events is None
+            else [deflate(f, d, "year", ["amount"]) for f, d in zip(self.events, self.deflators, strict=True)],
+            deflators=self.deflators,
+            real=True,
+        )
+
+    @staticmethod
+    def _stack(frames: "list[pd.DataFrame]", seeds: "list[int] | None") -> pd.DataFrame:
+        parts = []
+        for trial, frame in enumerate(frames):
+            frame = frame.copy()
+            frame.insert(0, "Trial", trial)
+            frame.insert(1, "Seed", seeds[trial] if seeds is not None else None)
+            parts.append(frame)
+        return pd.concat(parts, ignore_index=True)
+
+    def to_parquet(self, directory: "str | os.PathLike") -> Path:
+        """Write ``model.parquet`` (every trial stacked, with ``Trial`` and ``Seed`` columns), the agent
+        frames and events when kept, and ``meta.json``. Needs pyarrow (the ``parquet`` extra)."""
+        from .results import _require_parquet
+
+        _require_parquet()
+        directory = Path(directory)
+        directory.mkdir(parents=True, exist_ok=True)
+        self._stack(self.frames, self.seeds).to_parquet(directory / "model.parquet", index=False)
+        if self.agent_frames is not None:
+            self._stack(self.agent_frames, self.seeds).to_parquet(directory / "agents.parquet", index=False)
+        if self.events is not None:
+            self._stack(self.events, self.seeds).to_parquet(directory / "events.parquet", index=False)
+        meta = {
+            "seeds": self.seeds,
+            "real": self.real,
+            "deflators": None
+            if self.deflators is None
+            else [{str(year): factor for year, factor in d.items()} for d in self.deflators],
+        }
+        (directory / "meta.json").write_text(json.dumps(meta))
+        return directory
+
+    @classmethod
+    def load(cls, directory: "str | os.PathLike") -> "MonteCarloResult":
+        """Read a result written by :meth:`to_parquet`."""
+        from .results import _require_parquet
+
+        _require_parquet()
+        directory = Path(directory)
+        meta = json.loads((directory / "meta.json").read_text())
+
+        def unstack(name: str) -> "list[pd.DataFrame] | None":
+            path = directory / f"{name}.parquet"
+            if not path.exists():
+                return None
+            stacked = pd.read_parquet(path)
+            return [
+                group.drop(columns=["Trial", "Seed"]).reset_index(drop=True)
+                for _, group in stacked.groupby("Trial", sort=True)
+            ]
+
+        deflators = meta.get("deflators")
+        return cls(
+            unstack("model"),
+            seeds=meta.get("seeds"),
+            agent_frames=unstack("agents"),
+            events=unstack("events"),
+            deflators=None if deflators is None else [{int(y): f for y, f in d.items()} for d in deflators],
+            real=meta.get("real", False),
+        )
 
     @property
     def num_trials(self) -> int:
@@ -138,6 +265,9 @@ class MonteCarlo:
             seed.
         workers: Process-pool size. ``None`` lets the pool choose; ``1`` forces sequential
             execution in the current process.
+        keep_agent_frames: Keep every trial's agent frame on the result (keyword-only; memory grows
+            with ``n``).
+        keep_events: Keep every trial's event table on the result (keyword-only).
     """
 
     def __init__(
@@ -146,6 +276,9 @@ class MonteCarlo:
         n: int = 1000,
         seed: int | None = None,
         workers: int | None = None,
+        *,
+        keep_agent_frames: bool = False,
+        keep_events: bool = False,
     ):
         if n < 1:
             raise ValueError("n must be at least 1")
@@ -153,6 +286,8 @@ class MonteCarlo:
         self.n = n
         self.seed = seed
         self.workers = workers
+        self.keep_agent_frames = keep_agent_frames
+        self.keep_events = keep_events
 
     def _trial_seeds(self) -> list[int]:
         """Derive ``n`` independent, reproducible per-trial seeds from the master seed."""
@@ -162,19 +297,25 @@ class MonteCarlo:
     def run(self) -> MonteCarloResult:
         """Run all trials and return the aggregated result."""
         seeds = self._trial_seeds()
-        args = [(self.model_factory, seed) for seed in seeds]
+        args = [(self.model_factory, seed, self.keep_agent_frames, self.keep_events) for seed in seeds]
 
         if self.workers == 1 or not self._factory_is_picklable():
-            frames = [_run_trial(a) for a in args]
+            trials = [_run_trial(a) for a in args]
         else:
             try:
                 with ProcessPoolExecutor(max_workers=self.workers) as executor:
-                    frames = list(executor.map(_run_trial, args))
+                    trials = list(executor.map(_run_trial, args))
             except Exception:  # noqa: BLE001
                 # Fall back to sequential execution if the pool can't run the trials (e.g. an
                 # object deep in the model turns out not to be picklable). The sim is CPU-light.
-                frames = [_run_trial(a) for a in args]
-        return MonteCarloResult(frames)
+                trials = [_run_trial(a) for a in args]
+        return MonteCarloResult(
+            [trial["frame"] for trial in trials],
+            seeds=[trial["seed"] for trial in trials],
+            agent_frames=[trial["agent_frame"] for trial in trials] if self.keep_agent_frames else None,
+            events=[trial["events"] for trial in trials] if self.keep_events else None,
+            deflators=[trial["deflators"] for trial in trials],
+        )
 
     def _factory_is_picklable(self) -> bool:
         import pickle

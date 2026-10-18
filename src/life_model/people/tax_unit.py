@@ -957,7 +957,14 @@ class TaxUnit:
         if home.mortgage is not None and before is not None:
             lines.extend(
                 _loan_lines(
-                    member, home.mortgage, mortgage_paid, interest, before, home.mortgage.principal, FlowKind.HOUSING
+                    member,
+                    home.mortgage,
+                    mortgage_paid,
+                    interest,
+                    before,
+                    home.mortgage.principal,
+                    FlowKind.HOUSING,
+                    name=f"mortgage on {home.name}",
                 )
             )
         return lines
@@ -1141,11 +1148,13 @@ class _BillLine:
         )
 
 
-def _loan_lines(member, loan, paid: float, interest: float, before: float, after: float, kind) -> "list[_BillLine]":
+def _loan_lines(
+    member, loan, paid: float, interest: float, before: float, after: float, kind, name: str | None = None
+) -> "list[_BillLine]":
     """A loan's year: interest paid (out), principal paid (a transfer into the loan), and any change in
     the balance the payments don't explain: interest capitalized (more debt) or principal relief
     (an income-driven plan's match, forgiveness)."""
-    name = getattr(loan, "name", None) or getattr(loan, "school_name", None) or type(loan).__name__
+    name = name or getattr(loan, "name", None) or getattr(loan, "school_name", None) or type(loan).__name__
     principal_paid = paid - interest
     lines = [
         _BillLine(interest, kind, member, f"interest: {name}", sink=f"interest: {name}"),

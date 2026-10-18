@@ -7,7 +7,7 @@ from collections.abc import Callable
 from datetime import datetime
 from enum import Enum
 from math import e as const_e
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 import mesa
 import pandas as pd
@@ -16,6 +16,9 @@ from pandas.io.formats.style import Styler
 from .config.financial_config import FinancialConfig
 from .ledger import LEDGER_COLUMNS, CashFlowLedger
 from .registry import ModelRegistries
+
+if TYPE_CHECKING:
+    from .results import RunResult
 
 
 def compound_interest(principal: float, rate: float, num_times_applied: int = 1, elapsed_time_periods: int = 1):
@@ -180,7 +183,7 @@ class Event:
         if self.kind == EventKind.FORCED_SALE:
             return f"{who} sold {amount} of {account}{because}"
         if self.kind == EventKind.PRETAX_WITHDRAWAL:
-            sized = f" (solver target {target:,.0f})" if target is not None else ""
+            sized = f" (solver target ${target:,.0f})" if target is not None else ""
             return f"{who} withdrew {amount} pre-tax from {account}{sized}{because}"
         if self.kind == EventKind.WITHDRAWAL:
             return f"{who} withdrew {amount} from {account}{because}"
@@ -471,6 +474,8 @@ class LifeModel(mesa.Model):
         """
         # Mesa 3.5 deprecates ``seed=`` in favor of ``rng=``; both seed ``self.random`` identically.
         super().__init__(rng=seed)
+        #: The seed this model was built with (None when unseeded; see ``RunResult.seed``).
+        self.initial_seed = seed
         if start_year is None:
             start_year = datetime.now().astimezone().year
 
@@ -714,13 +719,25 @@ class LifeModel(mesa.Model):
         """:meth:`config_for_year` for the current simulated year."""
         return self.config_for_year(self.year)
 
-    def run(self):
+    def run(self, *, spec=None) -> "RunResult":
         """Run the simulation over the inclusive year range ``[start_year, end_year]``.
 
         The number of simulated years is ``end_year - start_year + 1``.
+
+        Returns:
+            RunResult: the run's frames, tax returns, ledger, events and seed (see
+            :mod:`life_model.results`). Callers that ignore it lose nothing: the frames are built
+            from the model only when read. ``spec`` (keyword-only) is recorded on the result.
         """
         for _ in self.get_year_range():
             self.step()
+        return self.result(spec=spec)
+
+    def result(self, *, spec=None) -> "RunResult":
+        """The :class:`~life_model.results.RunResult` of what has been simulated so far."""
+        from .results import RunResult
+
+        return RunResult.from_model(self, spec=spec)
 
     def _require_datacollector(self) -> LifeModelDataCollector:
         """Return the DataCollector, or raise clearly when built with ``collect_data=False``."""
@@ -756,7 +773,8 @@ class LifeModel(mesa.Model):
         aggregate: dict[str, Callable] | None = None,
         column_formats: dict[str, str] | None = None,
         real_dollars: bool = False,
-    ) -> Styler:
+        styled: bool = True,
+    ) -> "Styler | pd.DataFrame":
         """Get a DataFrame of the yearly stats
 
         Args:
@@ -767,13 +785,14 @@ class LifeModel(mesa.Model):
             real_dollars (bool, optional): When True, every money column is deflated by the economy's
                 cumulative inflation so values are expressed in start-year dollars. Defaults to False
                 (nominal dollars).
+            styled (bool, optional): Return a formatted ``Styler`` (default) or, when False, the plain
+                DataFrame.
 
         Returns:
-            pd.DataFrame: DataFrame of the yearly stats
+            Styler | pd.DataFrame: The yearly stats. ``columns`` and ``extra_columns`` are not modified.
         """
-        # Get the list of columns to use
-        if columns is None:
-            columns = ["Year"] + [x.title for x in self.STATS]
+        # Get the list of columns to use (a copy: the caller's list is never mutated)
+        columns = ["Year"] + [x.title for x in self.STATS] if columns is None else list(columns)
         if extra_columns is not None:
             for i, column in enumerate(extra_columns):
                 columns.insert(i + 1, column)
@@ -795,6 +814,8 @@ class LifeModel(mesa.Model):
             df = df.aggregate(aggregators).reset_index().transpose()
             df.columns = df.iloc[0]
             df = df.drop(df.index[0])
+        if not styled:
+            return df
         formats = {x.title: x.fmt for x in stats if x.fmt is not None}
         if column_formats is not None:
             formats.update(column_formats)
