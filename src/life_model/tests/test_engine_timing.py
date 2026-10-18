@@ -20,6 +20,8 @@ from ..account.roth_IRA import RothIRA
 from ..config.financial_config import FinancialConfig
 from ..housing.apartment import Apartment
 from ..housing.home import Home, HomeExpenses, Mortgage
+from ..insurance.annuity import Annuity, AnnuityType
+from ..insurance.life_insurance import LifeInsurance, LifeInsuranceType, PremiumIncreaseType
 from ..insurance.social_security import SocialSecurity, taxable_social_security
 from ..lifeevents import LifeEvent, LifeEventRecord, LifeEvents
 from ..model import LifeModel
@@ -667,6 +669,77 @@ class TestMatchTiers(unittest.TestCase):
         self.assertEqual(account.unvested_match, 0)
         job.retire()
         self.assertAlmostEqual(account.pretax_balance, 3 * 12000, places=6)
+
+
+class TestLevelTermPremiums(unittest.TestCase):
+    """Item 8 / D8: term premiums are level unless age banding is asked for."""
+
+    def _premiums(self, **kwargs):
+        model = _model(end_year=2030)
+        person = _worker(model)
+        LifeInsurance(person, LifeInsuranceType.TERM, 500000, 50, term_years=20, **kwargs)
+        model.run()
+        return _frame(model)["Life Ins Premiums"].tolist()
+
+    def test_default_is_level(self):
+        self.assertEqual(self._premiums(), [600.0] * 5)
+        self.assertEqual(self._premiums(premium_increase_rate=0), [600.0] * 5)
+        self.assertEqual(self._premiums(premium_increase_rate=PremiumIncreaseType.LEVEL), [600.0] * 5)
+
+    def test_age_banded_is_explicit(self):
+        premiums = self._premiums(premium_increase_rate=PremiumIncreaseType.AGE_BANDED)
+        self.assertEqual(premiums[0], 600.0)
+        self.assertGreater(premiums[1], premiums[0])
+        self.assertIs(PremiumIncreaseType.AGE_BASED, PremiumIncreaseType.AGE_BANDED)  # deprecated alias
+
+    def test_whole_life_default_is_level(self):
+        model = _model(end_year=2028)
+        person = _worker(model)
+        policy = LifeInsurance(person, LifeInsuranceType.WHOLE, 250000, 100)
+        model.run()
+        self.assertEqual(policy.monthly_premium, 100)
+
+
+class TestAnnuityDefaults(unittest.TestCase):
+    """Item 9 / D9: FIXED/VARIABLE annuities stay in accumulation unless a payout age is given."""
+
+    def test_fixed_annuity_accumulates(self):
+        model = _model(end_year=2028)
+        person = _worker(model)
+        annuity = Annuity(person, AnnuityType.FIXED, initial_balance=100000, interest_rate=4)
+        model.run()
+        self.assertFalse(annuity.is_annuitized)
+        self.assertIsNone(annuity.payout_start_age)
+        self.assertAlmostEqual(annuity.balance, 100000 * 1.04**3, places=6)
+
+    def test_accumulation_contract_can_still_be_annuitized_on_election(self):
+        model = _model(end_year=2026)
+        person = _worker(model, age=66)
+        annuity = Annuity(person, AnnuityType.FIXED, initial_balance=100000, interest_rate=4)
+        self.assertTrue(annuity.annuitize())
+        self.assertEqual(annuity.payout_start_age, 66)
+
+    def test_immediate_and_deferred_keep_their_payout_ages(self):
+        model = _model(end_year=2026)
+        person = _worker(model, age=50)
+        immediate = Annuity(person, AnnuityType.IMMEDIATE, initial_balance=100000)
+        deferred = Annuity(person, AnnuityType.DEFERRED, initial_balance=100000)
+        self.assertEqual(immediate.payout_start_age, 50)
+        self.assertEqual(deferred.payout_start_age, model.config.insurance.annuity.default_payout_start_age)
+        model.run()
+        self.assertTrue(immediate.is_annuitized)
+        self.assertFalse(deferred.is_annuitized)
+
+    def test_variable_tracks_equity_unless_a_rate_is_given(self):
+        config = _fixture_config()
+        config.model.economy.equity_return = 9.0
+        model = LifeModel(start_year=2026, end_year=2026, config=config)
+        person = _worker(model)
+        market = Annuity(person, AnnuityType.VARIABLE, initial_balance=100000)
+        stated = Annuity(person, AnnuityType.VARIABLE, initial_balance=100000, interest_rate=3)
+        model.run()
+        self.assertAlmostEqual(market.balance, 109000, places=6)
+        self.assertAlmostEqual(stated.balance, 103000, places=6)
 
 
 if __name__ == "__main__":

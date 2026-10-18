@@ -306,6 +306,7 @@ class TestLifeInsurance(unittest.TestCase):
             death_benefit=500000,
             monthly_premium=50,
             term_years=30,
+            premium_increase_rate=PremiumIncreaseType.AGE_BANDED,  # Plan 26 D8: explicit
         )
 
         initial_premium = policy.monthly_premium
@@ -406,6 +407,7 @@ class TestLifeInsurance(unittest.TestCase):
             death_benefit=500000,
             monthly_premium=50,
             term_years=30,
+            premium_increase_rate=PremiumIncreaseType.AGE_BANDED,  # Plan 26 D8: explicit
         )
 
         # Should have default age multipliers
@@ -435,6 +437,7 @@ class TestLifeInsurance(unittest.TestCase):
             death_benefit=500000,
             monthly_premium=50,
             term_years=30,
+            premium_increase_rate=PremiumIncreaseType.AGE_BANDED,  # Plan 26 D8: explicit
         )
 
         initial_premium = policy.monthly_premium
@@ -478,7 +481,7 @@ class TestLifeInsurance(unittest.TestCase):
         self.assertEqual(age_policy.yearly_increase_rate, 0.0)
         self.assertEqual(age_policy.age_multipliers, age_multipliers)
 
-        # Test with None (default age-based)
+        # Test with None (Plan 26 D8: a level premium; age bands are opt-in)
         default_policy = LifeInsurance(
             person=self.john,
             policy_type=LifeInsuranceType.TERM,
@@ -487,9 +490,9 @@ class TestLifeInsurance(unittest.TestCase):
             premium_increase_rate=None,
         )
 
-        self.assertEqual(default_policy.premium_increase_type, PremiumIncreaseType.AGE_BASED)
+        self.assertEqual(default_policy.premium_increase_type, PremiumIncreaseType.LEVEL)
         self.assertEqual(default_policy.yearly_increase_rate, 0.0)
-        self.assertGreater(len(default_policy.age_multipliers), 0)  # Should have default multipliers
+        self.assertEqual(default_policy.age_multipliers, {})
 
 
 class TestLifeInsuranceLoansAndSurrender(unittest.TestCase):

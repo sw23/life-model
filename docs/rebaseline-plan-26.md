@@ -76,3 +76,21 @@ projects it in $1,000 steps. The dashboard's "Company Match" slider now means a 
 match up to that percent of pay (`match_tiers=[(100, pct)]`), changing dashboard outputs for any
 non-zero match (the default 3% with a 6% deferral: $180 → $3,000 of match on $100k).
 `Job.retire()` is now idempotent (a second call no longer logs a second "retired" event).
+
+## Task 7 / D8–D9 — level term premiums, annuity defaults
+
+These tests pinned the default age-banded term pricing that D8 removes. Their *intent* is the
+age-band mechanics, so they now ask for it explicitly; one expected value changed:
+
+| Test | Old | New | Reason |
+| --- | --- | --- | --- |
+| `test_life_insurance.py::TestLifeInsurance::test_age_based_premium_increases` | default premium (age-banded) | input `premium_increase_rate=PremiumIncreaseType.AGE_BANDED` | D8: age bands are opt-in |
+| `test_life_insurance.py::TestLifeInsurance::test_default_age_multipliers` | default policy carries the config multipliers | input `AGE_BANDED` (same expected multipliers) | D8 |
+| `test_life_insurance.py::TestLifeInsurance::test_update_term_life_premiums_method` | default policy | input `AGE_BANDED` | D8 |
+| `test_life_insurance.py::TestLifeInsurance::test_premium_increase_rate_types` (None branch) | `premium_increase_type == AGE_BASED`, non-empty multipliers | `== LEVEL`, `age_multipliers == {}` | D8: None means level (pinned the bug) |
+| `test_annuity.py::TestTermLifeMultipliersFromConfig::test_age_multipliers_come_from_config` | default policy | input `AGE_BANDED` | D8 |
+
+`PremiumIncreaseType.AGE_BASED` remains as an alias of the new `AGE_BANDED`. No annuity test
+changed: every FIXED/VARIABLE test already passed an explicit `payout_start_age`. Probe 6: a $50/mo
+level term policy now costs $600 every year (was $600, $1,344, $1,428, $1,512); a $100k FIXED
+annuity at age 40 stays in accumulation (was fully annuitized in year 1).

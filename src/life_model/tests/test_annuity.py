@@ -429,13 +429,16 @@ class TestAnnuityReserveConservation(unittest.TestCase):
 class TestTermLifeMultipliersFromConfig(unittest.TestCase):
     def test_age_multipliers_come_from_config(self):
         from ..config.financial_config import FinancialConfig
-        from ..insurance.life_insurance import LifeInsurance, LifeInsuranceType
+        from ..insurance.life_insurance import LifeInsurance, LifeInsuranceType, PremiumIncreaseType
 
         config = FinancialConfig()
         config.apply_scenario("flat", {"insurance": {"life": {"term_age_multipliers": {20: 1.0, 90: 1.0}}}})
         model = LifeModel(start_year=2026, end_year=2026, config=config)
         person = Person(Family(model), "P", age=60, retirement_age=65, spending=Spending(model, 0))
-        policy = LifeInsurance(person, LifeInsuranceType.TERM, 500000, 50.0, 20)
+        # Plan 26 D8: age-banded pricing is explicit (the default is a level premium).
+        policy = LifeInsurance(
+            person, LifeInsuranceType.TERM, 500000, 50.0, 20, premium_increase_rate=PremiumIncreaseType.AGE_BANDED
+        )
         # Scenario dicts deep-merge, so the age-90 point is added to the configured curve.
         self.assertEqual(policy.age_multipliers, dict(config.insurance.life.term_age_multipliers))
         self.assertEqual(policy.age_multipliers[90], 1.0)
