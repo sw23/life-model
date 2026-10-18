@@ -35,7 +35,7 @@ error: put what already happened into the starting state (for example a marriage
 
 ## Event actions
 
-`marry`, `divorce`, `retire`, `change_job`, `move`, `buy_home`, `sell_home`, `one_time_expense`, `recurring_expense`, `change_spending`, `add_account`, `contribute`, `convert_to_roth`, `claim_social_security`, `die`, `refinance`, `heloc_draw`, `disability`.
+`marry`, `divorce`, `retire`, `change_job`, `move`, `buy_home`, `sell_home`, `one_time_expense`, `recurring_expense`, `change_spending`, `add_account`, `contribute`, `stop_contribution`, `change_contribution`, `convert_to_roth`, `claim_social_security`, `die`, `refinance`, `heloc_draw`, `disability`.
 
 ## HouseholdSpec
 
@@ -49,7 +49,7 @@ A complete household: metadata, optional economy overrides, people, relationship
 | `people` | list[[Person](#person)] |  | **required** |  | The people in the household (one family). |
 | `relationships` | [Relationships](#relationships) |  | {} |  | Marriages. |
 | `withdrawal_order` | list[`"bank"` \\| `"fixed_income"` \\| `"brokerage"` \\| `"roth_basis"` \\| `"pretax"` \\| `"roth_earnings"` \\| `"reserve"`] (optional) |  | — | `Family.withdrawal_order` | Household payment waterfall: the order sources are drawn to pay bills and taxes, across every member. Each source exactly once, starting with 'bank'. Defaults to bank, fixed_income, brokerage, roth_basis, pretax, roth_earnings, reserve (fixed_income and reserve may be left out: they then take those places). |
-| `events` | list[one of: [MarryEvent](#marryevent), [DivorceEvent](#divorceevent), [RetireEvent](#retireevent), [ChangeJobEvent](#changejobevent), [MoveEvent](#moveevent), [BuyHomeEvent](#buyhomeevent), [SellHomeEvent](#sellhomeevent), [OneTimeExpenseEvent](#onetimeexpenseevent), [RecurringExpenseEvent](#recurringexpenseevent), [ChangeSpendingEvent](#changespendingevent), [AddAccountEvent](#addaccountevent), [ContributeEvent](#contributeevent), [ConvertToRothEvent](#converttorothevent), [ClaimSocialSecurityEvent](#claimsocialsecurityevent), [DieEvent](#dieevent), [RefinanceEvent](#refinanceevent), [HelocDrawEvent](#helocdrawevent), [DisabilityEvent](#disabilityevent)] |  | [] |  | Dated life events. |
+| `events` | list[one of: [MarryEvent](#marryevent), [DivorceEvent](#divorceevent), [RetireEvent](#retireevent), [ChangeJobEvent](#changejobevent), [MoveEvent](#moveevent), [BuyHomeEvent](#buyhomeevent), [SellHomeEvent](#sellhomeevent), [OneTimeExpenseEvent](#onetimeexpenseevent), [RecurringExpenseEvent](#recurringexpenseevent), [ChangeSpendingEvent](#changespendingevent), [AddAccountEvent](#addaccountevent), [ContributeEvent](#contributeevent), [StopContributionEvent](#stopcontributionevent), [ChangeContributionEvent](#changecontributionevent), [ConvertToRothEvent](#converttorothevent), [ClaimSocialSecurityEvent](#claimsocialsecurityevent), [DieEvent](#dieevent), [RefinanceEvent](#refinanceevent), [HelocDrawEvent](#helocdrawevent), [DisabilityEvent](#disabilityevent)] |  | [] |  | Dated life events. |
 | `actuals` | map[integer → [ActualRecords](#actualrecords)] (optional) |  | — |  | What the household's real documents say, by tax year (filed 1040 lines, W-2s, 1099s, statement balances): read by 'life-model reconcile' and the backtest, ignored by the builder. Keep real documents in my-models/ (git-ignored). |
 
 ## Meta
@@ -69,6 +69,7 @@ Builds: `LifeModel`.
 | `seed` | integer (optional) |  | — | `LifeModel.seed` | Random seed (stochastic economy and mortality draws). |
 | `scenario` | string (optional) |  | — | `LifeModel.scenario` | Named economic/regulatory scenario from life_model.config.scenarios (e.g. 'recession'). |
 | `default_state` | string (optional) |  | — | `config.tax.state.default_state` | Two-letter state of residence for people without their own 'state'. Must have a state tax pack (unknown codes are errors, never a silent flat 6%). |
+| `accepted_warnings` | list[string] (optional) |  | — |  | Validator warning codes the household keeps on purpose (e.g. [default_child_costs, cash_not_invested]): the validator drops them, so they no longer fail --checks strict. Record why with the assumptions you report. Errors cannot be accepted. |
 
 ## Economy
 
@@ -315,7 +316,7 @@ Builds: `BrokerageAccount`.
 | `balance` | number (optional) | USD | — | `BrokerageAccount.balance` | Balance, seeded as one lot with basis equal to the balance (no embedded gain). Mutually exclusive with lots. |
 | `lots` | list[[TaxLot](#taxlot)] (optional) |  | — | `BrokerageAccount.lots` | Opening tax lots (value, cost basis, acquired year and month). |
 | `growth_pct` | number \\| `"economy"` | percent (typically > 1) | `"economy"` | `BrokerageAccount.growth_pct` | Total annual return; 'economy' follows the equity return (and varies under stochastic runs). |
-| `dividend_yield_pct` | number (optional) | percent | — | `BrokerageAccount.dividend_yield_pct` | Qualified-dividend yield carved out of the return; defaults to the configured yield. |
+| `dividend_yield_pct` | number (optional) | percent | — | `BrokerageAccount.dividend_yield_pct` | Qualified-dividend yield carved out of the total return (the rest is untaxed price growth). Unset: the configured accounts.brokerage.dividend_yield, which is 0 in the packaged defaults (pure price appreciation, no dividends); enter the fund's yield from the statement. |
 | `allocation_pct` | map[`"equity"` \\| `"bond"` \\| `"cash"` → number] (optional) | percent | — | `Investment.allocation` | Asset allocation in percent by asset class (equity, bond, cash; sums to 100), e.g. {equity: 70, bond: 30}: the account grows at the blend of the economy's returns, rebalanced yearly. A numeric growth_pct overrides it. |
 | `expense_ratio_pct` | number (optional) | percent | — | `Investment.expense_ratio_pct` | Fund expense ratio (percent a year), netted out of the return. |
 | `reinvest_dividends` | boolean |  | `True` | `BrokerageAccount.reinvest_dividends` | False pays dividends to the bank instead. |
@@ -344,11 +345,11 @@ Builds: `Job401kAccount`.
 | `job` | string (optional) |  | — | `Job401kAccount.job` | Id of the person's job offering the plan. Unset: a standalone (old-employer) plan, which grows, pays RMDs and is drawn by the waterfall but takes no contributions. |
 | `pretax_balance` | number | USD | `0.0` | `Job401kAccount.pretax_balance` | Pre-tax balance. |
 | `roth_balance` | number | USD | `0.0` | `Job401kAccount.roth_balance` | Roth balance. |
-| `pretax_contrib_pct` | number | percent (typically > 1) | `0.0` | `Job401kAccount.pretax_contrib_pct` | Pre-tax deferral, percent of plan pay (base salary, plus bonus with match_on_bonus). |
-| `roth_contrib_pct` | number | percent (typically > 1) | `0.0` | `Job401kAccount.roth_contrib_pct` | Roth deferral, percent of plan pay (base salary, plus bonus with match_on_bonus). |
+| `pretax_contrib_pct` | number | percent (typically > 1) | `0.0` | `Job401kAccount.pretax_contrib_pct` | Pre-tax deferral, percent of plan pay (base salary, plus the bonus with bonus_is_plan_pay). |
+| `roth_contrib_pct` | number | percent (typically > 1) | `0.0` | `Job401kAccount.roth_contrib_pct` | Roth deferral, percent of plan pay (base salary, plus the bonus with bonus_is_plan_pay). |
 | `growth_pct` | number \\| `"economy"` | percent (typically > 1) | `"economy"` | `Job401kAccount.growth_pct` | Annual return; 'economy' follows the equity return. |
 | `match_tiers` | list[[MatchTier](#matchtier)] (optional) |  | — | `Job401kAccount.match_tiers` | The employer match as the plan states it, tier by tier over the deferral rate: [{match_pct: 100, up_to_pay_pct: 3}, {match_pct: 50, up_to_pay_pct: 2}] is 100% of the first 3% of pay deferred plus 50% of the next 2%. |
-| `match_on_bonus` | boolean |  | `False` | `Job401kAccount.match_on_bonus` | Plan pay includes the bonus (deferral percentages and match tiers apply to salary + bonus). |
+| `bonus_is_plan_pay` | boolean |  | `False` | `Job401kAccount.bonus_is_plan_pay` | The plan's compensation (plan pay) includes the bonus. A plan document defines compensation once, for both the deferral election and the match: true withholds the deferral percentages from the bonus too and applies the match tiers to salary + bonus; false (default) applies both to base salary only. Check the plan's definition of compensation (many include bonuses). 'match_on_bonus' is a deprecated alias read as this field. |
 | `match_vesting_years` | integer | years | `0` | `Job401kAccount.match_vesting_years` | Cliff vesting of employer money (0 = immediately vested); unvested match is forfeited if the job ends first. |
 | `company_match_pct` | number | percent (typically > 1) | `0.0` | `Job401kAccount.company_match_percent` | DEPRECATED (the validator warns): core's legacy match, this percent OF THE DEFERRAL capped at this percent of pay (6 with a 6% deferral on $100k matches $360). Use match_tiers; a dollar-for-dollar match up to 6% of pay is [{match_pct: 100, up_to_pay_pct: 6}]. Mutually exclusive with match_tiers. |
 | `after_tax_balance` | number (optional) | USD | — | `Job401kAccount.after_tax_balance` | After-tax (non-Roth) bucket: contributions plus their earnings (pre-tax money). |
@@ -550,7 +551,7 @@ Builds: `Trust`.
 
 ## CarLoan
 
-An auto loan. Enter a loan the way its statement shows it (Plan 27 D1/D7): the original amount and term with an origination month (or payments_made) give today's balance and payment with no other input; or give the current balance with the months remaining (or the payment). Any three of balance / months remaining / payment determine the fourth; inputs that contradict each other are a validation error naming the field. The first payment is in the month after origination; a balance below the original schedule is a prepaid loan (it pays off early at the contract payment).
+An auto loan. Enter a loan the way its statement shows it (Plan 27 D1/D7): the original amount and term with an origination month (or payments_made) give today's balance and payment with no other input; or give the current balance with the months remaining (or the payment). Any three of balance / months remaining / payment determine the fourth; inputs that contradict each other are a validation error naming the field. The first payment is in the month after origination; a balance below the original schedule is a prepaid loan (it pays off early at the contract payment). A balance above it (a loan behind on its payments) needs schedule: statement.
 
 Builds: `CarLoan`.
 
@@ -566,13 +567,14 @@ Builds: `CarLoan`.
 | `payments_made` | integer (optional) |  | — | `Loan.payments_made` | Payments made before the start (instead of origination). |
 | `remaining_months` | integer (optional) | months | — | `Loan.remaining_months` | Payments left to maturity on the statement. |
 | `extra_principal_monthly` | number | USD/month | `0.0` | `Loan.extra_principal_monthly` | Extra principal paid with every payment (paid with the month's bills). |
+| `schedule` | `"contract"` \\| `"statement"` |  | `"contract"` | `Loan.schedule` | Which inputs to trust. 'contract' (default): the original terms define the schedule and the statement must agree (a balance above the original schedule is an error). 'statement': the loan is behind its original schedule (late payments, a deferral, a forbearance) and the statement's balance is right: it amortizes from balance at payment_monthly, else over remaining_months, else at the contract payment of original_amount over the term (paying off after the original maturity); original_amount, term and origination are then kept for the record. Needs balance. |
 | `kind` | `"car"` |  | **required** |  |  |
 | `id` | string (optional) |  | — |  | Optional identifier for this debt, unique across the spec. Required when another entry references it (a 401k's job, an event's target, a relative event's anchor). |
 | `name` | string |  | `"Car"` | `CarLoan.name` | Vehicle (make/model). |
 
 ## StudentLoan
 
-A student loan. Enter a loan the way its statement shows it (Plan 27 D1/D7): the original amount and term with an origination month (or payments_made) give today's balance and payment with no other input; or give the current balance with the months remaining (or the payment). Any three of balance / months remaining / payment determine the fourth; inputs that contradict each other are a validation error naming the field. The first payment is in the month after origination; a balance below the original schedule is a prepaid loan (it pays off early at the contract payment).
+A student loan. Enter a loan the way its statement shows it (Plan 27 D1/D7): the original amount and term with an origination month (or payments_made) give today's balance and payment with no other input; or give the current balance with the months remaining (or the payment). Any three of balance / months remaining / payment determine the fourth; inputs that contradict each other are a validation error naming the field. The first payment is in the month after origination; a balance below the original schedule is a prepaid loan (it pays off early at the contract payment). A balance above it (a loan behind on its payments) needs schedule: statement.
 
 Builds: `StudentLoan`.
 
@@ -588,9 +590,10 @@ Builds: `StudentLoan`.
 | `payments_made` | integer (optional) |  | — | `Loan.payments_made` | Payments made before the start (instead of origination). |
 | `remaining_months` | integer (optional) | months | — | `Loan.remaining_months` | Payments left to maturity on the statement. |
 | `extra_principal_monthly` | number | USD/month | `0.0` | `Loan.extra_principal_monthly` | Extra principal paid with every payment (paid with the month's bills). |
+| `schedule` | `"contract"` \\| `"statement"` |  | `"contract"` | `Loan.schedule` | Which inputs to trust. 'contract' (default): the original terms define the schedule and the statement must agree (a balance above the original schedule is an error). 'statement': the loan is behind its original schedule (late payments, a deferral, a forbearance) and the statement's balance is right: it amortizes from balance at payment_monthly, else over remaining_months, else at the contract payment of original_amount over the term (paying off after the original maturity); original_amount, term and origination are then kept for the record. Needs balance. |
 | `kind` | `"student"` |  | **required** |  |  |
 | `id` | string (optional) |  | — |  | Optional identifier for this debt, unique across the spec. Required when another entry references it (a 401k's job, an event's target, a relative event's anchor). |
-| `loan_type` | `"federal_subsidized"` \\| `"federal_unsubsidized"` \\| `"private"` \\| `"plus"` |  | **required** | `StudentLoan.loan_type` | Loan program. |
+| `loan_type` | `"federal_subsidized"` \\| `"federal_unsubsidized"` \\| `"private"` \\| `"plus"` \\| `"unknown"` |  | `"unknown"` | `StudentLoan.loan_type` | Loan program. 'unknown' (the default, when the statement does not say federal or private): repaid like any loan on the standard plan, interest accrues and capitalizes during deferment (no subsidy), and the repayment_assistance_plan (federal only) is not allowed. The type only matters for deferment and that plan. |
 | `school` | string |  | `"School"` | `StudentLoan.school_name` | School name. |
 | `in_deferment` | boolean |  | `False` | `StudentLoan.in_deferment` | In deferment (no payments). |
 | `repayment_plan` | `"standard"` \\| `"repayment_assistance_plan"` |  | `"standard"` | `StudentLoan.repayment_plan` | Standard amortization or the income-driven RAP (federal only). |
@@ -662,7 +665,7 @@ Builds: `Home`.
 
 ## Mortgage
 
-The mortgage on a home. Enter a loan the way its statement shows it (Plan 27 D1/D7): the original amount and term with an origination month (or payments_made) give today's balance and payment with no other input; or give the current balance with the months remaining (or the payment). Any three of balance / months remaining / payment determine the fourth; inputs that contradict each other are a validation error naming the field. The first payment is in the month after origination; a balance below the original schedule is a prepaid loan (it pays off early at the contract payment). With escrow_monthly, payment_monthly is the statement's total payment and the escrow (property tax and insurance, paid through the home's expenses) is subtracted. A mortgage originated on or before 2017-12 keeps the $1,000,000 acquisition-debt limit.
+The mortgage on a home. Enter a loan the way its statement shows it (Plan 27 D1/D7): the original amount and term with an origination month (or payments_made) give today's balance and payment with no other input; or give the current balance with the months remaining (or the payment). Any three of balance / months remaining / payment determine the fourth; inputs that contradict each other are a validation error naming the field. The first payment is in the month after origination; a balance below the original schedule is a prepaid loan (it pays off early at the contract payment). A balance above it (a loan behind on its payments) needs schedule: statement. With escrow_monthly, payment_monthly is the statement's total payment and the escrow (property tax and insurance, paid through the home's expenses) is subtracted. A mortgage originated on or before 2017-12 keeps the $1,000,000 acquisition-debt limit.
 
 Builds: `Mortgage`.
 
@@ -678,6 +681,7 @@ Builds: `Mortgage`.
 | `payments_made` | integer (optional) |  | — | `Loan.payments_made` | Payments made before the start (instead of origination). |
 | `remaining_months` | integer (optional) | months | — | `Loan.remaining_months` | Payments left to maturity on the statement. |
 | `extra_principal_monthly` | number | USD/month | `0.0` | `Loan.extra_principal_monthly` | Extra principal paid with every payment (paid with the month's bills). |
+| `schedule` | `"contract"` \\| `"statement"` |  | `"contract"` | `Loan.schedule` | Which inputs to trust. 'contract' (default): the original terms define the schedule and the statement must agree (a balance above the original schedule is an error). 'statement': the loan is behind its original schedule (late payments, a deferral, a forbearance) and the statement's balance is right: it amortizes from balance at payment_monthly, else over remaining_months, else at the contract payment of original_amount over the term (paying off after the original maturity); original_amount, term and origination are then kept for the record. Needs balance. |
 | `start_year` | integer (optional) | year | — | `Mortgage.start_date` | Year the loan was originated (prefer origination). Without a balance, a year before the start is taken as an origination in January of that year. |
 | `escrow_monthly` | number (optional) | USD/month | — | `Mortgage.escrow_monthly` | Escrow included in payment_monthly (subtracted: the home's expenses pay tax and insurance). |
 
@@ -781,7 +785,7 @@ Builds: `SocialSecurity`.
 | `claim_age` | number (optional) | age | — | `SocialSecurity.withdrawal_start_age` | Claiming age (62-70); defaults to the retirement age, which must then be at least 62. |
 | `earnings_history` | map[integer → number] (optional) | USD/year | — | `SocialSecurity.income_history` | Covered earnings by year from the SSA statement, e.g. {2019: 47000, 2020: 48000}. |
 | `assumed_career_start_age` | integer (optional) | age | — |  | Synthesize the earnings record instead: a flat real career at the first job's salary from this age to the year before start_year, indexed by the average wage index and capped at each year's wage base (years before 1978 dropped). Mutually exclusive with earnings_history. |
-| `pia_override_monthly` | number (optional) | USD/month | — | `SocialSecurity.pia_override` | The benefit at full retirement age from the SSA statement, in today's dollars (wage-indexed to age 62, then COLAs), instead of computing it from the earnings record. |
+| `pia_override_monthly` | number (optional) | USD/month | — | `SocialSecurity.pia_override` | The benefit at full retirement age from the SSA statement, in today's dollars (wage-indexed to age 62, then COLAs), instead of computing it from the earnings record. SSA's estimate assumes work until full retirement age at the latest earnings: give earnings_history too (the statement's earnings record) and the override is scaled for the years the run does not work, by the PIA recomputed from the record plus the simulated wages (zeros after retiring) over the PIA of the statement's assumption. Without earnings_history the override is used as is, which overstates the benefit of someone retiring before full retirement age (the validator warns). |
 | `spousal_benefit` | boolean |  | `False` | `SocialSecurity.spousal_benefit` | Pay the spousal benefit once both spouses claim: half the spouse's PIA less the person's own, reduced for each month before full retirement age. |
 | `fra_from_birth_year` | boolean |  | `False` | `SocialSecurity.fra_from_birth_year` | Full retirement age by birth year (66 and 6 months for 1957, ...) instead of the configured 67 (the validator warns for births before 1960). |
 | `earnings_test` | boolean |  | `True` | `SocialSecurity.earnings_test` | Withhold benefits claimed before full retirement age while earnings exceed the year's exempt amount ($1 per $2; $1 per $3 in the year of FRA), recomputing the reduction at FRA. |
@@ -817,7 +821,7 @@ Builds: `Donation`.
 
 ## Child
 
-A child dependent: age-banded costs, the Child Tax Credit, 529 beneficiary.
+A child dependent: age-banded costs, the Child Tax Credit, 529 beneficiary. Unless overridden, a child costs the configured bands (childcare, school age, college; amounts in the 'Child cost bands' table of docs/household-spec.md) on top of the person's ``spending``: spending excludes modeled child costs. The validator warns about every band a child gets by default.
 
 Builds: `Child`.
 
@@ -826,11 +830,24 @@ Builds: `Child`.
 | `id` | string (optional) |  | — |  | Optional identifier for this child, unique across the spec. Required when another entry references it (a 401k's job, an event's target, a relative event's anchor). |
 | `name` | string |  | **required** | `Child.name` | Child's name. |
 | `birth_year` | integer | year | **required** | `Child.birth_year` | Birth year (future years are planned births). |
-| `cost_override_annual` | number (optional) | USD/year | — | `Child.cost_annual` | This child's yearly cost while a dependent (start-year dollars) instead of the configured childcare and school-age bands (not counted as dependent care: use care_expenses_annual). |
-| `college_cost_annual` | number (optional) | USD/year | — | `Child.college_cost_annual` | This child's yearly college cost (start-year dollars) instead of the configured band. |
-| `care_expenses_annual` | number | USD/year | `0.0` | `Child.care_expenses_annual` | Dependent care (after-school care, day camp) paid while the child is under 13, on top of the age-band cost, in start-year dollars. The childcare band's cost (under 6) already counts as care expenses for the dependent care credit. |
+| `birth_month` | integer (optional) | month | — | `Child.birth_month` | Birth month (1-12). The cost bands, the college months and the end of care_expenses_annual follow the child's exact age: they change in the birthday month (care stops at the 13th birthday). Unset: January is assumed, so they change in January of the birthday year. |
+| `cost_override_annual` | number (optional) | USD/year | — | `Child.cost_annual` | This child's yearly cost while a dependent (birth to 18), in start-year dollars, instead of the configured childcare and school-age bands (see 'Child cost bands' below for their amounts). These costs are added on top of spending.amount_annual, which excludes modeled child costs: if the household budget already includes the child, set 0. Not counted as dependent care: use care_expenses_annual. |
+| `college_cost_annual` | number (optional) | USD/year | — | `Child.college_cost_annual` | This child's yearly college cost (start-year dollars) instead of the configured college band (see 'Child cost bands' below), paid from the child's 529 plans first. 0: no college costs. |
+| `care_expenses_annual` | number | USD/year | `0.0` | `Child.care_expenses_annual` | Dependent care (after-school care, day camp) paid until the child's 13th birthday (the month of it with birth_month; January of that year without), on top of the age-band cost, in start-year dollars. The childcare band's cost (under 6) already counts as care expenses for the dependent care credit. |
 | `interest_annual` | number | USD/year | `0.0` | `Child.interest_annual` | The child's own interest income (a custodial account, not part of the household's balances), reported by the parents on Form 8814 (kiddie tax). |
 | `dividends_annual` | number | USD/year | `0.0` | `Child.dividends_annual` | The child's own qualified dividends (same as interest_annual). |
+
+### Child cost bands
+
+<!-- Generated from the packaged config (dependents in financial_defaults.yaml). -->
+
+What a child costs unless the spec says otherwise, in start-year dollars a year, grown with inflation and charged a twelfth a month by the child's exact age (`birth_month`; January when unset). These costs come **on top of** the person's `spending.amount_annual`, which excludes modeled child costs: when the household budget already includes the child, set `cost_override_annual: 0` (and `college_cost_annual` to the planned amount, 0 for none). The validator warns about every band a child gets by default.
+
+| Band | Ages | Default cost (USD/year) | Note |
+|---|---|---|---|
+| childcare | 0-5 | $12,000 | counts as dependent care expenses (credit, dependent-care FSA); replaced by cost_override_annual |
+| school age | 6-17 | $8,000 | replaced by cost_override_annual |
+| college | 18-21 | $28,000 | paid from the child's 529 plans first; replaced by college_cost_annual (0: no college) |
 
 ## SelfEmployment
 
@@ -865,6 +882,9 @@ Builds: `ContributionPlan`.
 | `source` | `"bank"` \\| `"payroll"` |  | `"bank"` | `ContributionPlan.source` | 'bank' (moved after the month's bills, never more than the bank holds) or 'payroll' (a 401k deferral, or a pre-tax HSA deferral). |
 | `bucket` | `"pretax"` \\| `"roth"` \\| `"after_tax"` (optional) |  | — | `ContributionPlan.bucket` | For a 401k: which bucket (default pretax). |
 | `months` | integer \\| list[integer] |  | `12` | `ContributionPlan.months` | Contribute in the first n months of each year (12: monthly), or in the listed months. |
+| `start` | integer \\| string (optional) | YYYY-MM | — | `ContributionPlan.start` | First month of contributions (YYYY-MM, or a year: its January). Unset: from the start. |
+| `end` | integer \\| string (optional) | YYYY-MM | — | `ContributionPlan.end` | Last month of contributions, inclusive (YYYY-MM, or a year: its December). Unset: until an event stops or changes it, except a 529 plan for a child beneficiary, which stops the month before the child's college months start (set end to keep contributing through college). |
+| `until_age` | number (optional) | age | — | `ContributionPlan.end` | Stop once the owner reaches this age: the last contribution is the month before that birthday. Exclusive with end. |
 
 ## SavingsPolicy
 
@@ -1099,6 +1119,37 @@ A one-time contribution from the bank into an account. Tax-advantaged accounts t
 | `action` | `"contribute"` |  | **required** |  |  |
 | `account` | string |  | **required** |  | Target account id. |
 | `amount` | number | USD | **required** |  | Amount (one time). |
+
+## StopContributionEvent
+
+Stop the person's recurring contributions into an account from this month: its contribution plans (for a 401k, the bucket's plan, or every bucket when unset) are removed, and a 401k's deferral percent for the bucket (or every bucket) drops to 0.
+
+| Field | Type | Unit | Default | Maps to | Description |
+|---|---|---|---|---|---|
+| `id` | string (optional) |  | — |  | Event id (needed to anchor relative events). |
+| `at` | [At](#at) |  | **required** |  | When the event happens: {year}, {age} or {relative: {after, years}}. |
+| `person` | string |  | **required** |  | Person the event applies to. |
+| `name` | string (optional) |  | — |  | Description shown in the event list. |
+| `action` | `"stop_contribution"` |  | **required** |  |  |
+| `account` | string |  | **required** |  | Account id (one of the person's accounts). |
+| `bucket` | `"pretax"` \\| `"roth"` \\| `"after_tax"` (optional) |  | — |  | For a 401k: which bucket (unset: every bucket). |
+
+## ChangeContributionEvent
+
+Change (or start) the person's recurring contribution into an account from this month: its plan for the account (and 401k bucket) gets the new amount; without one a plan starts (a 401k: payroll deferral; other accounts: from the bank).
+
+| Field | Type | Unit | Default | Maps to | Description |
+|---|---|---|---|---|---|
+| `id` | string (optional) |  | — |  | Event id (needed to anchor relative events). |
+| `at` | [At](#at) |  | **required** |  | When the event happens: {year}, {age} or {relative: {after, years}}. |
+| `person` | string |  | **required** |  | Person the event applies to. |
+| `name` | string (optional) |  | — |  | Description shown in the event list. |
+| `action` | `"change_contribution"` |  | **required** |  |  |
+| `account` | string |  | **required** |  | Account id (one of the person's accounts). |
+| `bucket` | `"pretax"` \\| `"roth"` \\| `"after_tax"` (optional) |  | — |  | For a 401k: which bucket (default pretax). |
+| `amount_annual` | number (optional) | USD/year | — |  | New dollars per year. |
+| `pay_pct` | number (optional) | percent | — |  | New percent of gross pay. |
+| `max_out` | boolean |  | `False` |  | Contribute the account's annual limit. |
 
 ## ConvertToRothEvent
 

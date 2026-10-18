@@ -84,6 +84,7 @@ class TestSpecErrors(unittest.TestCase):
         self.assertEqual(codes(validate_spec(data)), ["ss_claim_too_early"])
         data = minimal(social_security={"claim_age": 67})
         data["meta"]["end_year"] = 2070
+        data["meta"]["accepted_warnings"] = ["cash_not_invested"]  # a long run: surplus cash is not the point here
         data["events"] = [{"at": {"age": 61}, "person": "alex", "action": "claim_social_security"}]
         self.assertEqual(codes(validate_spec(data)), ["ss_claim_too_early"])
 

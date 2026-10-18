@@ -622,6 +622,7 @@ class Mortgage(Loan):
         remaining_months: int | None = None,
         escrow_monthly: float | None = None,
         extra_principal_monthly: float = 0.0,
+        schedule: str = "contract",
     ):
         """Mortgage
 
@@ -646,6 +647,8 @@ class Mortgage(Loan):
             remaining_months (int, optional): Months to maturity on the statement.
             escrow_monthly (float, optional): Escrow included in ``payment_monthly``.
             extra_principal_monthly (float, optional): Extra principal paid every month.
+            schedule (str, optional): ``"contract"`` (default) or ``"statement"`` (trust a current balance
+                above the original schedule; see :mod:`life_model.debt.terms`).
         """
         loan_amount, start_date, length_years = original_amount, start_year, term_years
         yearly_interest_rate, principal, monthly_payment = rate_pct, current_balance, payment_monthly
@@ -669,6 +672,7 @@ class Mortgage(Loan):
             "payments_made": payments_made,
             "remaining_months": remaining_months,
             "extra_principal_monthly": extra_principal_monthly,
+            "schedule": schedule,
         }
         # Until the mortgage is attached (and knows the as-of month) an origination date is not applied.
         self._set_terms(as_of=None, **{**self._term_inputs, "origination": None})

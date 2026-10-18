@@ -175,12 +175,15 @@ def _schema_findings(error: ValidationError) -> list[Finding]:
     return findings
 
 
-def validate_spec(spec: s.HouseholdSpec | dict | str, *, config: FinancialConfig | None = None) -> list[Finding]:
+def validate_spec(
+    spec: s.HouseholdSpec | dict | str, *, config: FinancialConfig | None = None, include_accepted: bool = False
+) -> list[Finding]:
     """Validate a spec (a ``HouseholdSpec``, a dict, or JSON text); returns every finding.
 
     Raw data that fails the schema returns the schema errors (the semantic checks need a valid
     spec). ``config`` supplies the state packs and Social Security ages (packaged defaults when
-    None).
+    None). Warnings whose code is in ``meta.accepted_warnings`` are dropped unless
+    ``include_accepted``.
     """
     if not isinstance(spec, s.HouseholdSpec):
         try:
@@ -196,6 +199,9 @@ def validate_spec(spec: s.HouseholdSpec | dict | str, *, config: FinancialConfig
     findings += not_yet_supported_findings(spec)
     findings += fraction_percent_findings(spec)
     findings += _SpecChecker(spec, config).run()
+    if not include_accepted:
+        accepted = set(spec.meta.accepted_warnings or ())
+        findings = [f for f in findings if not (f.level == WARNING and f.code in accepted)]
     return findings
 
 
@@ -229,7 +235,162 @@ class _SpecChecker:
         self.check_growth()
         self.check_actuals()
         self.check_tax_inputs()
+        self.check_children()
+        self.check_retirement_gaps()
+        self.check_cash_sweep()
         return self.findings
+
+    # --- dogfood: what an early retiree and a long run silently leave out ---
+
+    def _birth(self, person: s.Person) -> tuple[int, int]:
+        if person.birth is not None:
+            year, month = (int(part) for part in person.birth.split("-"))
+            return year, month
+        return self.start - person.age, 1
+
+    def _year_at(self, person: s.Person, age: float) -> int:
+        year, month = self._birth(person)
+        return (year * 12 + month - 1 + round(age * 12)) // 12
+
+    def check_retirement_gaps(self) -> None:
+        """Warn when a worker retiring before Medicare has no health coverage cost before 65 and no Medicare
+        after, and when an SSA statement's PIA override (which assumes work until full retirement age) meets an
+        earlier retirement without the earnings record that would scale it."""
+        from ..insurance.social_security import full_retirement_age
+
+        medicare_age = self.config.healthcare.medicare.eligibility_age
+        for i, p in enumerate(self.spec.people):
+            path = f"people[{i}]"
+            works = bool(p.jobs) or p.self_employment is not None
+            retire_year = self._year_at(p, p.retirement_age)
+            # (retirement_age below the current age with a job is already an error: retirement_before_age)
+            if works and p.age <= p.retirement_age < medicare_age and retire_year <= self.end:
+                care = p.healthcare
+                has_policy = any(policy.kind == "health" for policy in p.insurance)
+                has_costs = care is not None and (care.medical_costs or care.medical_costs_annual is not None)
+                gaps = []
+                if not has_policy and not has_costs:
+                    gaps.append(
+                        f"no health coverage cost from retirement at {p.retirement_age:g} to {medicare_age} "
+                        "(payroll premiums stop with the job)"
+                    )
+                if (care is None or not care.medicare) and self._year_at(p, medicare_age) <= self.end:
+                    gaps.append(f"no Medicare premiums from {medicare_age}")
+                if gaps:
+                    self.warn(
+                        f"{path}.healthcare",
+                        f"{p.name} retires before Medicare and the spec has " + " and ".join(gaps) + ".",
+                        f"add insurance {{kind: health, premium_annual: <quote>, coverage_start_age: "
+                        f"{int(p.retirement_age)}, coverage_end_age: {medicare_age - 1}}} for the years before "
+                        f"Medicare (marketplace, COBRA or a retiree plan), and healthcare: {{medicare: true}} (plus "
+                        "medical_costs: true for out-of-pocket costs); or accept it (meta.accepted_warnings: "
+                        "[no_health_coverage]).",
+                        "no_health_coverage",
+                    )
+            ss = p.social_security
+            if ss is not None and ss.pia_override_monthly is not None and ss.earnings_history is None and works:
+                birth_year = self._birth(p)[0]
+                fra = full_retirement_age(birth_year, self.config) if ss.fra_from_birth_year else (
+                    self.config.social_security.normal_retirement_age
+                )
+                if p.retirement_age < fra:
+                    self.warn(
+                        f"{path}.social_security.pia_override_monthly",
+                        f"the SSA statement's estimate assumes {p.name} keeps working at the latest earnings until "
+                        f"full retirement age ({fra:g}), but they retire at {p.retirement_age:g}: the override "
+                        "overstates the benefit (a retirement-age change does not move it).",
+                        "add earnings_history (the statement's earnings record): the override is then scaled for "
+                        "the years not worked; or reduce the override, or accept it (meta.accepted_warnings: "
+                        "[ss_estimate_assumes_work]).",
+                        "ss_estimate_assumes_work",
+                    )
+
+    #: A bank yield (APR, percent) below this counts as low for the surplus-cash warning.
+    LOW_CASH_YIELD_PCT = 1.0
+    #: Runs at least this long get the surplus-cash warning.
+    LONG_RUN_YEARS = 10
+
+    def check_cash_sweep(self) -> None:
+        """Warn when nobody sweeps surplus cash and the bank pays a low yield over a long run: income left after
+        the bills piles up in checking (the engine never invests it on its own)."""
+        if self.end - self.start + 1 < self.LONG_RUN_YEARS:
+            return
+        if any(p.savings_policy is not None for p in self.spec.people):
+            return
+        economy_yield = float(getattr(self.config.economy, "cash_yield", 0.0) or 0.0)
+        low = []
+        for p in self.spec.people:
+            for a in p.accounts:
+                if a.kind != "bank" or a.reserve:
+                    continue
+                rate = economy_yield if a.interest_pct == "economy" else float(a.interest_pct)
+                if rate < self.LOW_CASH_YIELD_PCT:
+                    low.append(f"{p.name}'s {a.company} {a.type} at {rate:g}%")
+        if low:
+            self.warn(
+                "people[*].savings_policy",
+                "no one has a savings_policy, so surplus income stays in the bank for the whole run, here "
+                + ", ".join(low)
+                + ": over a long run it piles up as low-yield cash (net worth and peak-year answers depend on it).",
+                "add savings_policy: {cash_floor: <dollars to keep>, sweep_to: <a brokerage, IRA or savings account "
+                "id>} to invest cash above the floor every year; or keep it on purpose (meta.accepted_warnings: "
+                "[cash_not_invested]) and say so in the assumptions.",
+                "cash_not_invested",
+            )
+
+    # --- children (dogfood: default band costs stack on top of spending) ---
+
+    def check_children(self) -> None:
+        """Warn about every configured child-cost band a child gets by default (they come on top of the
+        person's spending, which excludes modeled child costs), and about care_expenses_annual without a
+        birth month."""
+        from ..dependents.child import Child
+
+        dep = self.config.dependents
+        bands = [
+            ("childcare", 0, Child.CHILDCARE_END_AGE - 1, dep.childcare_annual_cost, "cost_override_annual"),
+            ("school age", Child.CHILDCARE_END_AGE, dep.adult_age - 1, dep.school_age_annual_cost, "cost_override_annual"),
+            (
+                "college",
+                dep.college_start_age,
+                dep.college_start_age + dep.college_years - 1,
+                dep.college_annual_cost,
+                "college_cost_annual",
+            ),
+        ]
+        for p_index, person in enumerate(self.spec.people):
+            for c_index, child in enumerate(person.children):
+                path = f"people[{p_index}].children[{c_index}]"
+                parts = []
+                for band, low, high, amount, override in bands:
+                    if getattr(child, override) is not None or amount <= 0:
+                        continue
+                    first = max(self.start, child.birth_year + low)
+                    last = min(self.end, child.birth_year + high)
+                    if first > last:
+                        continue
+                    span = f"{first}" if first == last else f"{first}-{last}"
+                    parts.append(f"{band} ${amount:,.0f}/yr (ages {low}-{high}, {span})")
+                if parts:
+                    self.warn(
+                        path,
+                        f"{child.name} gets the configured child costs by default, in start-year dollars and on top "
+                        f"of {person.name}'s spending (spending excludes modeled child costs): " + "; ".join(parts) + ".",
+                        "if spending.amount_annual already includes the child, set cost_override_annual: 0 (or the "
+                        "child's own yearly cost); set college_cost_annual to the planned yearly cost (0 for no "
+                        "college); or keep the defaults on purpose (meta.accepted_warnings: [default_child_costs]).",
+                        "default_child_costs",
+                    )
+                if child.care_expenses_annual > 0 and child.birth_month is None:
+                    year = child.birth_year + Child.CARE_CREDIT_AGE
+                    if self.start <= year <= self.end:
+                        self.warn(
+                            f"{path}.birth_month",
+                            f"care_expenses_annual stops at {child.name}'s 13th birthday, in {year}; without "
+                            "birth_month it is taken to be in January, so that year's care is dropped.",
+                            f"set birth_month (1-12): care is then paid through the month before the birthday in {year}.",
+                            "child_birth_month_assumed",
+                        )
 
     # --- Plan 31 tax inputs ---
 
@@ -542,6 +703,18 @@ class _SpecChecker:
             for j, debt in enumerate(p.debts):
                 if isinstance(debt, s.CarLoan | s.StudentLoan):
                     self.check_loan(debt, f"{path}.debts[{j}]")
+                if (
+                    isinstance(debt, s.StudentLoan)
+                    and debt.repayment_plan == "repayment_assistance_plan"
+                    and debt.loan_type in ("private", "unknown")
+                ):
+                    self.error(
+                        f"{path}.debts[{j}].loan_type",
+                        f"the Repayment Assistance Plan is for federal loans; loan_type is {debt.loan_type}.",
+                        "set loan_type to the federal program on the statement (federal_subsidized, "
+                        "federal_unsubsidized or plus), or use repayment_plan: standard.",
+                        "rap_needs_federal_loan",
+                    )
                 if isinstance(debt, s.HomeEquityLine) and debt.home not in home_ids:
                     self.error(
                         f"{path}.debts[{j}].home",
@@ -731,8 +904,20 @@ class _SpecChecker:
                 self.error(f"{path}.target", f"{target!r} is not a roth_ira of the person", code="unknown_reference")
 
     def check_payroll(self, p: s.Person, path: str) -> None:
-        """Payroll HSA money needs an HSA; a health FSA over the year's limit is cut to it."""
+        """Payroll HSA money needs an HSA; a health FSA over the year's limit is cut to it; employer HSA money
+        is entered once."""
         has_hsa = any(a.kind == "hsa" for a in p.accounts)
+        payroll_employer = any(job.payroll is not None and job.payroll.hsa_employer_annual for job in p.jobs)
+        for j, account in enumerate(p.accounts):
+            if account.kind == "hsa" and account.employer_contribution_annual and payroll_employer:
+                self.error(
+                    f"{path}.accounts[{j}].employer_contribution_annual",
+                    "employer HSA money is given twice: the account's employer_contribution_annual (a yearly "
+                    "deposit at each year start) and the job's payroll.hsa_employer_annual (per paycheck) would "
+                    "both be paid.",
+                    "keep payroll.hsa_employer_annual (preferred) and remove employer_contribution_annual.",
+                    "hsa_employer_twice",
+                )
         fsa_limit = self.config.tax_year(self.start).limit_health_fsa
         for j, job in enumerate(p.jobs):
             payroll = job.payroll
@@ -809,15 +994,12 @@ class _SpecChecker:
                 current_balance=m.balance,
                 monthly_payment=payment,
                 names=_LOAN_FIELD_NAMES,
+                schedule=m.schedule,
             )
         except LoanTermsError as exc:
             field = exc.field
-            self.error(
-                f"{path}.{field}",
-                str(exc).split(": ", 1)[-1],
-                "recheck it against the statement (see docs/units-and-conventions.md, loans).",
-                "loan_terms",
-            )
+            message = str(exc).split(": ", 1)[-1]
+            self.error(f"{path}.{field}", message, _loan_fix(field, message, m), "loan_terms")
             return False
         return True
 
@@ -1053,6 +1235,47 @@ class _SpecChecker:
                 "use growth_pct: economy for accounts that should follow market returns.",
                 "fixed_growth",
             )
+
+
+def _loan_fix(field: str, message: str, loan) -> str:
+    """The Fix of a loan_terms error: field combinations that validate."""
+    escrow = " (a mortgage: the statement total with escrow_monthly)" if hasattr(loan, "escrow_monthly") else ""
+    if field == "balance" and "above" in message:
+        return (
+            "if the statement's balance is right and the loan is behind its schedule (late payments, a deferral), "
+            "add schedule: statement and keep balance and rate_pct: it pays the contract payment of original_amount "
+            "over the term, or payment_monthly / remaining_months when given; or drop original_amount, term_* and "
+            "origination and give balance + rate_pct + payment_monthly (or + remaining_months). Otherwise recheck "
+            "original_amount, rate_pct, term_* and origination against the statement (a lower balance is a prepaid "
+            "loan and validates as is)."
+        )
+    if field == "balance":
+        return (
+            "give original_amount + rate_pct + term_years (or term_months) + origination (or payments_made); or "
+            "balance + rate_pct + remaining_months (or payment_monthly)."
+        )
+    if field == "payment_monthly" and "does not pay" in message:
+        return (
+            f"payment_monthly is principal and interest{escrow}; or drop remaining_months (the payment then sets the "
+            "payoff date), or drop payment_monthly (computed from balance over remaining_months)."
+        )
+    if field == "payment_monthly" and "never pays" in message:
+        return "recheck payment_monthly (principal and interest) and rate_pct, or give remaining_months instead."
+    if field == "payment_monthly":
+        return "give term_years / term_months (with original_amount), remaining_months, or payment_monthly."
+    if field == "remaining_months":
+        return (
+            "drop remaining_months (it follows from the term and origination); or drop term_* and origination and "
+            "keep balance + rate_pct + remaining_months; if the lender extended the loan (a deferral), add schedule: "
+            "statement with balance + remaining_months."
+        )
+    if field == "payments_made":
+        return "give origination or payments_made, not both."
+    if field == "origination" and "after the as-of" in message:
+        return "a loan taken out after the start belongs in an event (or start the spec later)."
+    if "exceed" in message:
+        return "the loan is paid off by the start: remove it, or recheck term_* and origination."
+    return "recheck it against the statement (see docs/units-and-conventions.md, loans)."
 
 
 #: Core argument names (as :func:`~life_model.debt.terms.resolve_loan_terms` reports them) to spec fields.

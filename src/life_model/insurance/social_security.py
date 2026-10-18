@@ -421,7 +421,13 @@ class SocialSecurity(LifeModelAgent):
             pia_override_monthly: The monthly benefit at full retirement age from the SSA statement, in today's
                 (the model start's) dollars, instead of computing the PIA from ``income_history``
                 (keyword-only; Plan 27 D10). It is wage-indexed to the year the person turns 62 (the
-                statement's "today's dollars" are wage-indexed), then gets the COLAs.
+                statement's "today's dollars" are wage-indexed), then gets the COLAs. The statement's
+                estimate assumes work until full retirement age at the latest earnings; with an
+                ``earnings_history`` too, the override is scaled by the ratio of the PIA recomputed from
+                the earnings actually recorded (the history plus the simulated wages, zeros once retired)
+                to the PIA of the statement's assumption (the history plus the latest year's earnings,
+                wage-indexed, every year until full retirement age) -- SSA's own method of zero years.
+                Without a history the override is used as is (it overstates an early retiree's benefit).
             fra_from_birth_year: Use the full retirement age of the person's birth year (66 and 6
                 months for 1957, ...) instead of the configured ``normal_retirement_age``.
             spousal_benefit: Pay the spousal benefit: once both spouses have claimed, half the
@@ -458,6 +464,13 @@ class SocialSecurity(LifeModelAgent):
                     self.income_history.append(income)
                 else:
                     self.income_history.append(Income(income[0], income[1]))
+        #: The statement's earnings record when a PIA override comes with one: the override is then scaled
+        #: for the years the run does not work before full retirement age (see ``pia_override_monthly``).
+        self._statement_history: list[tuple[int, float]] | None = (
+            [(income.year, income.amount) for income in self.income_history]
+            if pia_override_monthly is not None and self.income_history
+            else None
+        )
 
         if self.withdrawal_start_age < get_min_early_retirement_age(self.model.config):
             raise ValueError("Withdrawal start age cannot be before early retirement age")
@@ -521,21 +534,68 @@ class SocialSecurity(LifeModelAgent):
         age_60_year = self.person.get_year_at_age(60)
         return [x.get_indexed_amount(age_60_year, self.model.config, self.model.economy) for x in self.income_history]
 
-    def get_aime(self) -> float:
-        """Computes Average Indexed Monthly Earnings (AIME) for a person"""
+    def get_aime(self, history: "list[Income] | None" = None) -> float:
+        """Computes Average Indexed Monthly Earnings (AIME) for a person (from ``history``, default the
+        earnings record)"""
+        history = self.income_history if history is None else history
 
         # Make sure the person has enough credits to be eligible
         config = self.model.config
-        credits_earned = sum(x.get_credits(config, self.model.economy) for x in self.income_history)
+        credits_earned = sum(x.get_credits(config, self.model.economy) for x in history)
         if credits_earned < get_min_eligible_credits(config):
             return 0
 
         # Pick the highest 35 values from the list
-        indexed_earnings = self.get_indexed_income_history()
+        age_60_year = self.person.get_year_at_age(60)
+        indexed_earnings = [x.get_indexed_amount(age_60_year, config, self.model.economy) for x in history]
         max_years = get_max_years_of_income(config)
         highest_earnings = sorted(indexed_earnings, reverse=True)[:max_years]
 
         return round(sum(highest_earnings) / (max_years * 12))
+
+    def _formula_pia(self, aime: float, year_of_age_62: int) -> float:
+        """The PIA formula (the bend points of the year the person turns 62) on ``aime``, truncated to the dime."""
+        bend_points = get_bend_points(year_of_age_62, self.model.config, economy=self.model.economy)
+        pia = min(aime, bend_points[0]) * 0.9
+        pia += min(max(0, aime - bend_points[0]), bend_points[1] - bend_points[0]) * 0.32
+        pia += max(0, aime - bend_points[1]) * 0.15
+        return int(pia * 10) / 10.0
+
+    def statement_assumed_history(self) -> list[Income]:
+        """The earnings record an SSA statement's estimate assumes: the statement's history plus, for every
+        year from the model's first year until the year before full retirement age, the latest year's
+        earnings (wage-indexed, capped at each year's wage base). Empty without a statement history."""
+        if not self._statement_history:
+            return []
+        config, economy = self.model.config, self.model.economy
+        history = [Income(year, amount) for year, amount in self._statement_history]
+        last_year, last_amount = max(
+            ((year, amount) for year, amount in self._statement_history if amount > 0), default=(None, 0.0)
+        )
+        if last_year is None:
+            return history
+        fra_year = self._fra_period()[0]
+        known = {year for year, _ in self._statement_history}
+        for year in range(max(self.model.start_year, last_year + 1), fra_year):
+            if year in known:
+                continue
+            amount = last_amount * get_avg_wage_index(year, config, economy=economy) / get_avg_wage_index(
+                last_year, config, economy=economy
+            )
+            cap = self.model.config_for_year(year).tax.fica.social_security_max_income
+            history.append(Income(year, min(amount, cap)))
+        return history
+
+    def override_scale(self) -> float:
+        """The factor applied to the statement's PIA override for the years actually worked: the PIA from the
+        recorded earnings over the PIA of the statement's assumed record (1.0 without a statement history)."""
+        if not self._statement_history:
+            return 1.0
+        year_of_age_62 = self.person.get_year_at_age(62)
+        assumed = self._formula_pia(self.get_aime(self.statement_assumed_history()), year_of_age_62)
+        if assumed <= 0:
+            return 1.0
+        return self._formula_pia(self.get_aime(), year_of_age_62) / assumed
 
     @property
     def normal_retirement_age(self) -> float:
@@ -600,15 +660,12 @@ class SocialSecurity(LifeModelAgent):
                 )
                 pia = int(pia * 10) / 10.0
                 first_cola_year = year_of_age_62
+            if self._statement_history:
+                # The estimate assumed work until full retirement age: scale it for the years not worked.
+                pia = int(pia * self.override_scale() * 10) / 10.0
         else:
-            aime = self.get_aime()
-            pia = 0.0
-            bend_points = get_bend_points(year_of_age_62, config, economy=economy)
-            pia += min(aime, bend_points[0]) * 0.9
-            pia += min(max(0, aime - bend_points[0]), bend_points[1] - bend_points[0]) * 0.32
-            pia += max(0, aime - bend_points[1]) * 0.15
             # Round to the nearest lowest dime
-            pia = int(pia * 10) / 10.0
+            pia = self._formula_pia(self.get_aime(), year_of_age_62)
             first_cola_year = year_of_age_62
         for cola_year in range(first_cola_year, current_year):
             # This rounding seems to match the SSA's rounding (truncating to nearest lower dime)

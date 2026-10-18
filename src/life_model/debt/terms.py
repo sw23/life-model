@@ -19,8 +19,19 @@ Conventions (see docs/units-and-conventions.md):
 * ``payments_made`` counts scheduled payments; ``remaining_months`` counts the scheduled payments left
   to maturity, including the current month's.
 * A current balance below the original schedule is a prepaid loan (it pays off early at the contract
-  payment); a balance above it is an error (the terms are wrong, or payments were missed).
+  payment); a balance above it is an error (the terms are wrong, or payments were missed) unless the
+  statement is trusted over the contract (``schedule="statement"``).
+
+**Which fields to trust** (``schedule``). ``"contract"`` (default): the original terms define the
+schedule and the statement must agree with them. ``"statement"``: the statement's current balance is
+right even though it is above the original schedule (late payments, a deferral, a forbearance); the loan
+amortizes from that balance at the statement's payment (``monthly_payment``), else over its
+``remaining_months``, else at the contract payment of the original amount and term (it then pays off
+later than the original maturity). The original amount, term and origination are kept for the record.
 """
+
+#: ``schedule`` choices of :func:`resolve_loan_terms`.
+SCHEDULES = ("contract", "statement")
 
 import math
 from dataclasses import dataclass
@@ -123,6 +134,7 @@ def resolve_loan_terms(
     current_balance: float | None = None,
     monthly_payment: float | None = None,
     names: dict[str, str] | None = None,
+    schedule: str = "contract",
 ) -> LoanTerms:
     """Resolve a loan's terms from the inputs a statement shows.
 
@@ -134,6 +146,8 @@ def resolve_loan_terms(
         remaining_months, current_balance, monthly_payment: The statement today (the payment is
             principal and interest).
         names: How to name each argument in an error (e.g. ``{"current_balance": "balance"}``).
+        schedule: ``"contract"`` (the original terms rule) or ``"statement"`` (trust the statement's balance;
+            see the module docstring).
 
     Returns:
         The resolved :class:`LoanTerms`.
@@ -167,6 +181,20 @@ def resolve_loan_terms(
         payments_made = derived if payments_made is None else payments_made
     if term_months is not None and term_months < 0:
         raise LoanTermsError(name("term_months"), "must not be negative")
+    if schedule not in SCHEDULES:
+        raise ValueError(f"schedule must be one of {SCHEDULES}, got {schedule!r}")
+    if schedule == "statement":
+        return _resolve_from_statement(
+            rate_pct=rate_pct,
+            original_amount=original_amount,
+            term_months=term_months,
+            origin=origin,
+            payments_made=payments_made,
+            remaining_months=remaining_months,
+            current_balance=current_balance,
+            monthly_payment=monthly_payment,
+            name=name,
+        )
 
     # Months: payments made + remaining = term (one month of slack for the first-payment convention).
     if remaining_months is not None:
@@ -229,7 +257,8 @@ def resolve_loan_terms(
                 name("current_balance"),
                 f"${balance:,.2f} is above the ${schedule:,.2f} the original schedule leaves after {payments_made} "
                 "payments: recheck the original amount, rate, term or origination (a lower balance is a prepaid "
-                "loan)",
+                "loan), or, for a loan behind on its payments, trust the statement's balance with schedule "
+                "'statement'",
             )
 
     if payment is None:
@@ -258,6 +287,60 @@ def resolve_loan_terms(
         term_months=int(term_months),
         payments_made=int(payments_made or 0),
         current_balance=float(balance),
+        monthly_payment=float(payment),
+        origination=origin,
+    )
+
+
+def _resolve_from_statement(
+    *,
+    rate_pct: float,
+    original_amount: float | None,
+    term_months: int | None,
+    origin: tuple[int, int] | None,
+    payments_made: int | None,
+    remaining_months: int | None,
+    current_balance: float | None,
+    monthly_payment: float | None,
+    name,
+) -> LoanTerms:
+    """``schedule="statement"``: amortize the statement's balance (see the module docstring)."""
+    if current_balance is None:
+        raise LoanTermsError(
+            name("current_balance"), 'schedule "statement" amortizes the statement\'s current balance: give it'
+        )
+    payment = monthly_payment
+    if payment is None:
+        if remaining_months is not None:
+            payment = amortizing_payment(current_balance, rate_pct, remaining_months)
+        elif original_amount is not None and term_months is not None:
+            payment = amortizing_payment(original_amount, rate_pct, term_months)
+        else:
+            raise LoanTermsError(
+                name("monthly_payment"),
+                'schedule "statement" needs the payment, the months remaining, or the original amount and term',
+            )
+    if remaining_months is not None and monthly_payment is not None:
+        required = amortizing_payment(current_balance, rate_pct, remaining_months)
+        if payment < required - max(1.0, 0.005 * required):
+            raise LoanTermsError(
+                name("monthly_payment"),
+                f"${payment:,.2f} does not pay ${current_balance:,.2f} off in {remaining_months} months "
+                f"(that takes ${required:,.2f})",
+            )
+    months = remaining_months
+    if months is None:
+        months = months_to_pay_off(current_balance, rate_pct, payment)
+        if months is None:
+            raise LoanTermsError(
+                name("monthly_payment"), f"${payment:,.2f} never pays the loan off (below the interest)"
+            )
+    made = payments_made or 0
+    return LoanTerms(
+        original_amount=float(original_amount if original_amount is not None else current_balance),
+        term_months=int(made + months),
+        payments_made=int(made),
+        current_balance=float(current_balance),
         monthly_payment=float(payment),
         origination=origin,
     )

@@ -1241,12 +1241,15 @@ class Person(LifeModelAgent):
 
         return TaxUnit([self]).get_income_taxes_due(additional_income)
 
-    def get_married(self, spouse: "Person", link_spouse: bool = True):
+    def get_married(self, spouse: "Person", link_spouse: bool = True, *, log_event: bool = True):
         """Get married.
 
         Args:
             spouse (Person): Spouse to get married to.
             link_spouse (bool, optional): Whether to call get_married on the spouse object as well. Defaults to True.
+            log_event (bool, optional): Log a ``married`` event (keyword-only). False for a marriage that is
+                part of the starting state (it happened before the first simulated year), so the event list
+                does not report it as something that happened in the run.
         """
         self.spouse = spouse
         self.filing_status = FilingStatus.MARRIED_FILING_JOINTLY
@@ -1262,8 +1265,9 @@ class Person(LifeModelAgent):
                         self.family.members.append(member)
                 vacated_family.members = []
             spouse.get_married(self, False)
-            event_str = f"{self.name} and {spouse.name} got married at age {self.age} and {spouse.age}"
-            self.model.event_log.add(Event(EventKind.MARRIED, person=self, message=event_str, spouse=spouse.name))
+            if log_event:
+                event_str = f"{self.name} and {spouse.name} got married at age {self.age} and {spouse.age}"
+                self.model.event_log.add(Event(EventKind.MARRIED, person=self, message=event_str, spouse=spouse.name))
 
     def add_child(self, name: str, birth_year: int | None = None) -> "Child":
         """Add a child dependent to this person.

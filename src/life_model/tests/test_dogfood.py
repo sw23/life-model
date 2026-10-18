@@ -169,5 +169,232 @@ class TestOutputs(_SpecFile):
         self.assertIn("real dollars", out)
 
 
+def _quiet_build(data: dict):
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", SpecWarning)
+        return api.build(data)
+
+
+def _sam(retirement_age: float, *, history: bool = True) -> dict:
+    data = minimal(age=39, birth="1986-09", retirement_age=retirement_age)
+    data["meta"]["end_year"] = 2056
+    data["people"][0]["jobs"][0]["salary_annual"] = 96000
+    ss = {"pia_override_monthly": 2050, "claim_age": 67, "fra_from_birth_year": True}
+    if history:
+        ss["earnings_history"] = {year: min(90000, 40000 + (year - 2008) * 3000) for year in range(2008, 2026)}
+    data["people"][0]["social_security"] = ss
+    return data
+
+
+class TestSocialSecurityOverride(unittest.TestCase):
+    """Friction 4: an SSA estimate assumes work until full retirement age."""
+
+    def _benefit(self, data: dict) -> float:
+        model = _quiet_build(data)
+        model.run()
+        return model.household.people["alex"].social_security._pia_by_year[2054]
+
+    def test_override_responds_to_early_retirement_with_an_earnings_history(self):
+        at_55, at_60, at_67 = (self._benefit(_sam(age)) for age in (55, 60, 67))
+        self.assertLess(at_55, at_60)
+        self.assertLess(at_60, at_67)
+        # Working to full retirement age at wage growth roughly reproduces the statement's estimate.
+        model = _quiet_build(_sam(67))
+        model.run()
+        self.assertAlmostEqual(model.household.people["alex"].social_security.override_scale(), 1.0, delta=0.05)
+
+    def test_override_alone_is_unchanged_and_warns_for_early_retirement(self):
+        self.assertEqual(self._benefit(_sam(55, history=False)), self._benefit(_sam(67, history=False)))
+        codes = [f.code for f in life_model.validate(_sam(55, history=False))]
+        self.assertIn("ss_estimate_assumes_work", codes)
+        self.assertNotIn("ss_estimate_assumes_work", [f.code for f in life_model.validate(_sam(55))])
+        self.assertNotIn("ss_estimate_assumes_work", [f.code for f in life_model.validate(_sam(67, history=False))])
+
+
+class TestContributionPlanWindows(unittest.TestCase):
+    """Friction 7: contribution plans can end, and a 529 plan stops when college starts."""
+
+    def _family(self, plan: dict, events: list | None = None, child: dict | None = None) -> dict:
+        data = minimal()
+        data["meta"]["end_year"] = 2040
+        person = data["people"][0]
+        person["accounts"].append({"kind": "529", "id": "kid_529", "beneficiary": "kid", "balance": 1000})
+        person["accounts"].append({"kind": "brokerage", "id": "taxable", "balance": 1000})
+        person["children"] = [{"id": "kid", "name": "Kit", "birth_year": 2017, "birth_month": 6, **(child or {})}]
+        person["contribution_plans"] = [plan]
+        data["events"] = events or []
+        return data
+
+    def _contributions(self, data: dict, account: str) -> "dict[int, float]":
+        model = _quiet_build(data)
+        result = model.run()
+        label = f"{type(model.household.items[account]).__name__}:{model.household.items[account].unique_id}"
+        ledger = result.ledger
+        rows = ledger[(ledger["to_account"] == label) & (ledger["kind"] == "contribution")]
+        return rows.groupby("year")["amount"].sum().round(2).to_dict()
+
+    def test_529_stops_the_month_before_college(self):
+        by_year = self._contributions(self._family({"account": "kid_529", "amount_annual": 2400}), "kid_529")
+        self.assertEqual(by_year[2026], 2400)
+        self.assertEqual(by_year[2034], 2400)
+        self.assertAlmostEqual(by_year[2035], 1000, places=2)  # January-May: college starts June 2035
+        self.assertNotIn(2036, by_year)
+        # An explicit end keeps contributing through college.
+        by_year = self._contributions(
+            self._family({"account": "kid_529", "amount_annual": 2400, "end": "2038-12"}), "kid_529"
+        )
+        self.assertEqual(by_year[2037], 2400)
+        self.assertNotIn(2039, by_year)
+
+    def test_start_end_until_age_and_events(self):
+        plan = {"account": "taxable", "amount_annual": 1200, "start": "2027-07", "end": 2029}
+        by_year = self._contributions(self._family(plan), "taxable")
+        self.assertEqual(sorted(by_year), [2027, 2028, 2029])
+        self.assertAlmostEqual(by_year[2027], 600, places=2)
+        by_year = self._contributions(self._family({"account": "taxable", "amount_annual": 1200, "until_age": 42}), "taxable")
+        self.assertEqual(sorted(by_year), [2026, 2027])  # Alex (born 1986-01) turns 42 in January 2028
+        events = [
+            {"at": {"year": 2028, "month": 4}, "person": "alex", "action": "stop_contribution", "account": "taxable"},
+            {"at": 2031, "person": "alex", "action": "change_contribution", "account": "taxable", "amount_annual": 2400},
+        ]
+        by_year = self._contributions(self._family({"account": "taxable", "amount_annual": 1200}, events), "taxable")
+        self.assertAlmostEqual(by_year[2028], 300, places=2)  # January-March
+        self.assertNotIn(2029, by_year)
+        self.assertEqual(by_year[2031], 2400)
+
+    def test_401k_events(self):
+        data = minimal()
+        data["people"][0]["accounts"].append({"kind": "401k", "id": "k", "job": "job", "pretax_contrib_pct": 10})
+        data["events"] = [
+            {"at": 2027, "person": "alex", "action": "stop_contribution", "account": "k"},
+            {"at": 2029, "person": "alex", "action": "change_contribution", "account": "k", "pay_pct": 5},
+        ]
+        model = _quiet_build(data)
+        result = model.run()
+        frame = result.ledger
+        deferrals = frame[frame["cause"] == "pre-tax 401k deferral"].groupby("year")["amount"].sum()
+        deferrals = deferrals[deferrals.abs() > 0.01]  # a stopped paycheck's true-up nets to zero
+        self.assertGreater(deferrals.get(2026, 0), 0)
+        self.assertNotIn(2027, deferrals.index)
+        self.assertGreater(deferrals.get(2029, 0), 0)
+
+
+class TestLoanSchedule(unittest.TestCase):
+    """Friction 8: a loan statement behind its own schedule."""
+
+    def _car(self, **fields) -> dict:
+        data = minimal()
+        loan = {"kind": "car", "original_amount": 28000, "term_months": 60, "rate_pct": 6.9, "origination": "2024-02"}
+        data["people"][0]["debts"] = [{**loan, "balance": 19450, **fields}]
+        return data
+
+    def test_behind_schedule_is_an_error_whose_fix_names_valid_fields(self):
+        (finding,) = [f for f in life_model.validate(self._car()) if f.code == "loan_terms"]
+        self.assertIn("schedule: statement", finding.fix)
+        self.assertIn("balance + rate_pct + payment_monthly", finding.fix)
+        for fields in ({"schedule": "statement"}, {"schedule": "statement", "remaining_months": 38}):
+            self.assertEqual([f for f in life_model.validate(self._car(**fields)) if f.level == "error"], [])
+        # The combination without the original terms validates too.
+        data = self._car()
+        loan = data["people"][0]["debts"][0]
+        for key in ("original_amount", "term_months", "origination"):
+            del loan[key]
+        loan["payment_monthly"] = 553.11
+        self.assertEqual([f for f in life_model.validate(data) if f.level == "error"], [])
+
+    def test_statement_schedule_keeps_the_contract_payment(self):
+        loan = _quiet_build(self._car(schedule="statement")).household.people["alex"].car_loans[0]
+        self.assertAlmostEqual(loan.principal, 19450)
+        self.assertAlmostEqual(loan.monthly_payment, 553.11, places=2)
+        self.assertEqual(loan.remaining_months, 40)  # two months past the original 38
+        loan = _quiet_build(self._car(schedule="statement", remaining_months=38)).household.people["alex"].car_loans[0]
+        self.assertEqual(loan.remaining_months, 38)
+        self.assertGreater(loan.monthly_payment, 553.11)
+
+
+class TestChildAges(unittest.TestCase):
+    """Friction 13: care_expenses_annual stops at the 13th birthday month."""
+
+    def _care(self, **child) -> "dict[int, float]":
+        data = minimal()
+        data["meta"]["end_year"] = 2031
+        data["people"][0]["children"] = [
+            {"name": "Kit", "birth_year": 2017, "cost_override_annual": 0, "college_cost_annual": 0, **child}
+        ]
+        data["people"][0]["children"][0]["care_expenses_annual"] = 5400
+        model = _quiet_build(data)
+        model.run()
+        ledger = model.ledger.to_frame()
+        care = ledger[ledger["sink"].fillna("").str.contains("dependent care")]
+        return care.groupby("year")["amount"].sum().to_dict()
+
+    def test_care_stops_in_the_birthday_month(self):
+        care = self._care(birth_month=6)
+        self.assertAlmostEqual(care[2029], 5400 * 1.03**3, places=0)
+        self.assertAlmostEqual(care[2030], 5400 * 1.03**4 * 5 / 12, places=0)  # January-May
+        self.assertNotIn(2031, care)
+        self.assertNotIn(2030, self._care())  # no birth month: January
+
+    def test_bands_follow_the_exact_age(self):
+        data = minimal()
+        data["meta"]["end_year"] = 2036
+        data["people"][0]["children"] = [{"name": "Kit", "birth_year": 2017, "birth_month": 6}]
+        model = _quiet_build(data)
+        child = model.household.people["alex"].children[0]
+        model.run()
+        self.assertEqual(child.birth_month, 6)
+        frame = model.ledger.to_frame()
+        college = frame[(frame["sink"].fillna("").str.contains("dependents")) & (frame["year"] == 2035)]
+        months = sorted(college["month"].unique())
+        self.assertEqual(len(months), 12)
+        self.assertGreater(college[college["month"] == 6]["amount"].sum(), 2 * college[college["month"] == 5]["amount"].sum())
+
+
+class TestStartingStateAndInputs(unittest.TestCase):
+    def test_past_marriage_is_not_an_event(self):
+        """Friction 17."""
+        data = minimal()
+        sam = {**minimal()["people"][0], "id": "sam", "name": "Sam"}
+        sam["jobs"] = [{**sam["jobs"][0], "id": "sam_job"}]
+        data["people"].append(sam)
+        for year, expected in ((2015, 0), (None, 0), (2026, 1)):
+            marriage = {"spouses": ["alex", "sam"]}
+            if year is not None:
+                marriage["year"] = year
+            data["relationships"] = {"marriages": [marriage]}
+            result = _quiet_build(data).run()
+            self.assertEqual(int((result.events["kind"] == "married").sum()), expected, year)
+
+    def test_student_loan_type_unknown(self):
+        """Friction 18."""
+        data = minimal()
+        data["people"][0]["debts"] = [{"kind": "student", "balance": 11200, "rate_pct": 4.5, "remaining_months": 41}]
+        self.assertEqual([f for f in life_model.validate(data) if f.level == "error"], [])
+        loan = _quiet_build(data).household.people["alex"].student_loans[0]
+        self.assertEqual(loan.loan_type.name, "UNKNOWN")
+        data["people"][0]["debts"][0]["repayment_plan"] = "repayment_assistance_plan"
+        self.assertIn("rap_needs_federal_loan", [f.code for f in life_model.validate(data)])
+
+    def test_bonus_is_plan_pay(self):
+        """Friction 10: one field for the plan's compensation; match_on_bonus is a deprecated alias."""
+        from ..spec import schema
+
+        account = schema.Job401k.model_validate({"kind": "401k", "bonus_is_plan_pay": True})
+        self.assertTrue(account.bonus_is_plan_pay)
+        with self.assertWarns(UserWarning):
+            old = schema.Job401k.model_validate({"kind": "401k", "match_on_bonus": True})
+        self.assertEqual(old, account)
+        data = minimal()
+        data["people"][0]["jobs"][0]["bonus_pct"] = 10
+        data["people"][0]["accounts"].append({"kind": "401k", "job": "job", "pretax_contrib_pct": 10})
+        deferrals = []
+        for flag in (False, True):
+            data["people"][0]["accounts"][1]["bonus_is_plan_pay"] = flag
+            ledger = _quiet_build(data).run().ledger
+            deferrals.append(ledger[(ledger["year"] == 2026) & (ledger["cause"] == "pre-tax 401k deferral")]["amount"].sum())
+        self.assertAlmostEqual(deferrals[0], 8000, places=0)
+        self.assertAlmostEqual(deferrals[1], 8800, places=0)
+
+
 if __name__ == "__main__":
     unittest.main()

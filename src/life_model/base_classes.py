@@ -142,7 +142,8 @@ class Loan(LifeModelAgent, ABC):
     its statement shows it — an ``origination`` month (or ``payments_made``), the ``remaining_months``,
     the ``current_balance`` and the payment — and :func:`~life_model.debt.terms.resolve_loan_terms` fills in
     the rest and rejects inputs that contradict each other. ``extra_principal_monthly`` is paid with
-    every scheduled payment.
+    every scheduled payment. ``schedule="statement"`` trusts a current balance above the original schedule
+    (a loan behind on its payments) and amortizes from it.
     """
 
     @deprecated_arguments(LOAN_RENAMES)
@@ -160,10 +161,12 @@ class Loan(LifeModelAgent, ABC):
         payments_made: int | None = None,
         remaining_months: int | None = None,
         extra_principal_monthly: float = 0.0,
+        schedule: str = "contract",
     ):
         super().__init__(owner.model)
         self.person = owner
         self._set_terms(
+            schedule=schedule,
             as_of=(self.model.year, self.model.month),
             loan_amount=original_amount,
             yearly_interest_rate=rate_pct,
@@ -209,8 +212,10 @@ class Loan(LifeModelAgent, ABC):
         payments_made: int | None,
         remaining_months: int | None,
         extra_principal_monthly: float = 0.0,
+        schedule: str = "contract",
     ) -> None:
-        """Resolve and store the loan's terms (see :func:`~life_model.debt.terms.resolve_loan_terms`)."""
+        """Resolve and store the loan's terms (see :func:`~life_model.debt.terms.resolve_loan_terms`;
+        ``schedule="statement"`` trusts the statement's balance over the original schedule)."""
         from .debt.terms import resolve_loan_terms
 
         if yearly_interest_rate is None:
@@ -232,7 +237,10 @@ class Loan(LifeModelAgent, ABC):
             current_balance=principal,
             monthly_payment=monthly_payment,
             names=self.TERM_NAMES,
+            schedule=schedule,
         )
+        #: Which inputs define the schedule: ``"contract"`` (the original terms) or ``"statement"``.
+        self.schedule = schedule
         self.loan_amount = terms.original_amount
         self.yearly_interest_rate = yearly_interest_rate
         self.term_months = terms.term_months

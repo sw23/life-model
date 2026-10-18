@@ -16,7 +16,7 @@ policies, Plan 32 D8, are these objects):
   never more than the bank holds (in December, less the year's estimated tax), and a tax-advantaged
   account takes at most its remaining room. ``amount_annual`` (dollars a year, or ``"max"``: the account's
   limit) is spread evenly over the plan's ``months``; ``pct_of_pay`` takes that percent of the month's
-  gross W-2 pay. Change it with :meth:`ContributionPlan.set_rate` / :meth:`ContributionPlan.set_amount`, or
+  gross W-2 pay. ``start`` / ``end`` bound the months a plan contributes in. Change it with :meth:`ContributionPlan.set_rate` / :meth:`ContributionPlan.set_amount`, or
   replace it (``person.add_contribution_plan`` replaces the plan for the same account and bucket).
 * :class:`SavingsPolicy` (``person.savings_policy = SavingsPolicy(cash_floor=, sweep_to=)``; None holds
   cash): once a year, after the year's taxes are paid, cash in the owner's banks above ``cash_floor``
@@ -47,6 +47,28 @@ BUCKETS_401K = ("pretax", "roth", "after_tax")
 MAX = "max"
 
 
+def _period(value, *, end: bool) -> "tuple[int, int] | None":
+    """A plan window bound as ``(year, month)``: ``"YYYY-MM"``, ``(year, month)``, or a year (January for a
+    start, December for an end); None passes through."""
+    if value is None:
+        return None
+    if isinstance(value, tuple):
+        year, month = int(value[0]), int(value[1])
+    elif isinstance(value, int) and not isinstance(value, bool):
+        year, month = value, 12 if end else 1
+    else:
+        from .model import parse_year_month
+
+        text = str(value)
+        if text.isdigit():
+            year, month = int(text), 12 if end else 1
+        else:
+            year, month = parse_year_month(text)
+    if not 1 <= month <= 12:
+        raise ValueError(f"month must be 1-12, got {month}")
+    return year, month
+
+
 def _months(months: "int | list[int] | tuple[int, ...]") -> tuple[int, ...]:
     if isinstance(months, int):
         if not 1 <= months <= 12:
@@ -70,6 +92,8 @@ class ContributionPlan:
         source: str = "bank",
         months: "int | list[int]" = 12,
         bucket: str | None = None,
+        start=None,
+        end=None,
     ):
         """A recurring contribution.
 
@@ -84,6 +108,11 @@ class ContributionPlan:
                 401(k) deferral, or a pre-tax HSA deferral through the owner's first W-2 job).
             months: Contribute in the first ``n`` months of each year (12: monthly), or in the listed months.
             bucket: For a 401(k): ``"pretax"`` (default), ``"roth"`` or ``"after_tax"``.
+            start: First month the plan contributes: ``"YYYY-MM"``, ``(year, month)`` or a year (its January).
+                None: from now.
+            end: Last month the plan contributes (inclusive): ``"YYYY-MM"``, ``(year, month)`` or a year (its
+                December). None: until changed or removed. A 401(k) plan with a window sets the deferral
+                percent to 0 outside it.
         """
         from .account.hsa import HealthSavingsAccount
         from .account.job401k import Job401kAccount
@@ -120,6 +149,10 @@ class ContributionPlan:
         self.source = source
         self.months = _months(months)
         self.bucket = bucket
+        self.start = _period(start, end=False)
+        self.end = _period(end, end=True)
+        if self.start is not None and self.end is not None and self.end < self.start:
+            raise ValueError(f"end {self.end} is before start {self.start}")
         #: Contributed by this plan so far this year (``(year, dollars)``).
         self._ytd: tuple[int, float] = (0, 0.0)
         self.person: Person | None = None
@@ -131,7 +164,23 @@ class ContributionPlan:
             else f"amount_annual={self.amount_annual!r}"
         )
         bucket = f", bucket={self.bucket!r}" if self.bucket else ""
-        return f"ContributionPlan({type(self.account).__name__}, {amount}, source={self.source!r}{bucket})"
+        window = "".join(
+            f", {name}='{value[0]:04d}-{value[1]:02d}'"
+            for name, value in (("start", self.start), ("end", self.end))
+            if value is not None
+        )
+        return f"ContributionPlan({type(self.account).__name__}, {amount}, source={self.source!r}{bucket}{window})"
+
+    @property
+    def has_window(self) -> bool:
+        """Whether the plan has a start or an end month."""
+        return self.start is not None or self.end is not None
+
+    def active(self, year: int, month: int) -> bool:
+        """Whether the plan contributes in ``(year, month)`` (inside its start/end window)."""
+        if self.start is not None and (year, month) < self.start:
+            return False
+        return self.end is None or (year, month) <= self.end
 
     # --- changing it ---
 
@@ -184,22 +233,31 @@ class ContributionPlan:
     def _record(self, year: int, amount: float) -> None:
         self._ytd = (year, self.contributed_ytd(year) + amount)
 
-    def annual_target(self) -> float:
-        """This year's dollar target (``"max"``: the account's annual limit)."""
+    def annual_target(self, year: int | None = None) -> float:
+        """This year's dollar target (``"max"``: the account's annual limit). With ``year``, a dollar amount
+        is prorated to the plan's months inside its start/end window that year."""
         if self.amount_annual == MAX:
             if _is_529(self.account):
                 return self.account.annual_contribution_limit
             return self.account.annual_contribution_limit()
-        return float(self.amount_annual or 0.0)
+        amount = float(self.amount_annual or 0.0)
+        if year is not None and self.has_window:
+            amount *= sum(1 for m in self.months if self.active(year, m)) / len(self.months)
+        return amount
+
+    def _remaining_months(self, year: int, month: int) -> int:
+        """Contribution months left this year, from ``month`` (inside the window)."""
+        return sum(1 for m in self.months if m >= month and self.active(year, m))
 
     def month_amount(self, year: int, month: int, gross_pay: float) -> float:
-        """What the plan wants to put in this month (before limits and cash)."""
-        if month not in self.months:
+        """What the plan wants to put in this month (before limits and cash). A dollar plan spreads what
+        the year's target leaves over the plan's remaining months this year (inside its window)."""
+        if month not in self.months or not self.active(year, month):
             return 0.0
         if self.pct_of_pay is not None:
             return gross_pay * self.pct_of_pay / 100
-        remaining_months = sum(1 for m in self.months if m >= month)
-        return max(0.0, self.annual_target() - self.contributed_ytd(year)) / max(1, remaining_months)
+        remaining_months = self._remaining_months(year, month)
+        return max(0.0, self.annual_target(year) - self.contributed_ytd(year)) / max(1, remaining_months)
 
     def payroll_amount(self, job: "Job", booked: float) -> float:
         """This month's payroll HSA deferral through ``job``. ``booked`` is the HSA money (employee and
@@ -208,12 +266,12 @@ class ContributionPlan:
         contributions, over the plan's remaining months."""
         model = job.model
         month = model.month
-        if month not in self.months:
+        if month not in self.months or not self.active(model.year, month):
             return 0.0
         if self.pct_of_pay is not None:
             gross = job.salary.base / 12 + (job.salary.bonus if month == job.salary.bonus_month else 0.0)
             return gross * self.pct_of_pay / 100
-        remaining_months = sum(1 for m in self.months if m >= month)
+        remaining_months = self._remaining_months(model.year, month)
         if self.amount_annual != MAX:
             return float(self.amount_annual or 0.0) / len(self.months)
         account = self.account
@@ -416,12 +474,18 @@ class PolicyRunner(LifeModelAgent):
     """Carries out the people's standing policies (one per model, created when the first is attached).
 
     * ``on_year_start`` (5): re-derive 401(k) percents of dollar / ``"max"`` plans from the year's limits.
+    * ``pre_step`` (-50): a windowed 401(k) plan's percent (0 outside its start/end months), before payroll.
     * ``post_step`` (5): bank-sourced contributions, after the month's bills.
     * ``on_year_end`` (-5): Roth conversions, before the year's taxes (0).
     * ``on_year_end`` (15, via :class:`SweepRunner`): the surplus sweep, after the taxes and escalators.
     """
 
-    STEP_PRIORITY: ClassVar[dict[str, int]] = {"on_year_start": 5, "post_step": 5, "on_year_end": -5}
+    STEP_PRIORITY: ClassVar[dict[str, int]] = {
+        "on_year_start": 5,
+        "pre_step": -50,
+        "post_step": 5,
+        "on_year_end": -5,
+    }
 
     def __init__(self, model):
         super().__init__(model)
@@ -448,6 +512,19 @@ class PolicyRunner(LifeModelAgent):
             for plan in person.contribution_plans:
                 if plan.is_401k and plan.pct_of_pay is None:
                     plan.apply_401k_election()
+
+    def pre_step(self):
+        """A 401(k) plan with a start/end window defers only inside it: before the month's paycheck, set the
+        deferral percent (0 outside the window)."""
+        year, month = self.model.year, self.model.month
+        for person in self._living():
+            for plan in person.contribution_plans:
+                if not (plan.is_401k and plan.has_window):
+                    continue
+                if plan.active(year, month):
+                    plan.apply_401k_election()
+                else:
+                    setattr(plan.account, f"{plan.bucket}_contrib_percent", 0.0)
 
     def post_step(self):
         for person in self._living():
@@ -526,6 +603,11 @@ def move_from_bank(person: "Person", account, amount: float, *, cause: str) -> f
     contribution to a tax-advantaged account or 529 (within its room, with its tax treatment), a deposit
     to a brokerage (a new lot), a purchase of a fixed-income holding, or a transfer to a bank account.
     Returns the amount moved."""
+    with person.model.ledger.caused_by(cause):
+        return _move_from_bank(person, account, amount, cause=cause)
+
+
+def _move_from_bank(person: "Person", account, amount: float, *, cause: str) -> float:
     from .account.bank import BankAccount
     from .account.brokerage import BrokerageAccount
     from .account.fixed_income import FixedIncomeHolding

@@ -12,6 +12,10 @@ meta:
   as_of: 2026-01
   start_year: 2026
   end_year: 2080
+  # Kept on purpose to keep the example small (a real household should model these instead).
+  accepted_warnings:
+  - cash_not_invested
+  - no_health_coverage
 people:
 - id: morgan
   name: Morgan

@@ -44,6 +44,7 @@ class Job401kAccount(RetirementAccount):
             "roth_contrib_percent": "roth_contrib_pct",
             "average_growth": "growth_pct",
             "person": "owner",
+            "match_on_bonus": "bonus_is_plan_pay",
         },
         positional=(
             "pretax_balance",
@@ -68,7 +69,7 @@ class Job401kAccount(RetirementAccount):
         growth_pct: float | None = None,
         company_match_percent: float = 0,
         match_tiers: "Sequence[tuple[float, float]] | None" = None,
-        match_on_bonus: bool = False,
+        bonus_is_plan_pay: bool = False,
         match_vesting_years: int = 0,
         match_true_up: bool = True,
         roth_basis: float | None = None,
@@ -104,9 +105,12 @@ class Job401kAccount(RetirementAccount):
                 plan documents state it, tier by tier over the employee's deferral rate:
                 ``[(100, 3), (50, 2)]`` is "100% of the first 3% of pay deferred plus 50% of the
                 next 2%" (4% of pay at a 5% or higher deferral).
-            match_on_bonus (bool, optional): Whether plan pay includes the bonus. When True both the
-                deferral percentages and the match tiers apply to salary + bonus; when False
-                (default) to base salary only.
+            bonus_is_plan_pay (bool, optional): Whether the plan's definition of compensation ("plan
+                pay") includes the bonus. A plan document defines compensation once and uses it for both
+                the deferral election and the match formula, so when True the deferral percentages *and*
+                the match tiers apply to salary + bonus (the deferral is withheld from the bonus check
+                too); when False (default) both apply to base salary only. Deprecated alias
+                ``match_on_bonus``.
             match_vesting_years (int, optional): Cliff vesting for employer money: the match vests
                 after this many years of service at the job, and unvested match is forfeited when the
                 job ends before then. 0 (default) means immediately vested.
@@ -166,7 +170,7 @@ class Job401kAccount(RetirementAccount):
         self.match_tiers: tuple[tuple[float, float], ...] | None = (
             None if match_tiers is None else self._validate_tiers(match_tiers)
         )
-        self.match_on_bonus = match_on_bonus
+        self.bonus_is_plan_pay = bonus_is_plan_pay
         self.match_true_up = match_true_up
         if match_vesting_years < 0:
             raise ValueError("match_vesting_years must be >= 0")
@@ -207,9 +211,19 @@ class Job401kAccount(RetirementAccount):
             raise ValueError(f"match_tiers need a match percent >= 0 and a pay percent > 0 per tier, got {tiers}")
         return validated
 
+    @property
+    def match_on_bonus(self) -> bool:
+        """Deprecated name of :attr:`bonus_is_plan_pay` (it also controls the deferral on the bonus)."""
+        return self.bonus_is_plan_pay
+
+    @match_on_bonus.setter
+    def match_on_bonus(self, value: bool) -> None:
+        self.bonus_is_plan_pay = value
+
     def plan_compensation(self, salary: float, bonus: float) -> float:
-        """Pay the plan's deferral percentages and match apply to (``match_on_bonus`` adds the bonus)."""
-        return salary + bonus if self.match_on_bonus else salary
+        """Plan pay, which the deferral percentages and the match apply to (``bonus_is_plan_pay`` adds the
+        bonus)."""
+        return salary + bonus if self.bonus_is_plan_pay else salary
 
     def employer_match(self, elective: float, compensation: float) -> float:
         """The employer match on a year's ``elective`` deferral out of ``compensation`` plan pay.

@@ -19,6 +19,10 @@ class StudentLoanType(Enum):
     FEDERAL_UNSUBSIDIZED = "Federal Unsubsidized"
     PRIVATE = "Private"
     PLUS = "PLUS"
+    #: The statement does not say whether the loan is federal or private. Repaid like any loan on the
+    #: standard plan; interest accrues and capitalizes during deferment (no subsidy); not eligible for the
+    #: Repayment Assistance Plan (federal only). The interest deduction applies as to any qualified loan.
+    UNKNOWN = "Unknown"
 
 
 class StudentLoanRepaymentPlan(Enum):
@@ -61,6 +65,7 @@ class StudentLoan(Loan):
         payments_made: int | None = None,
         remaining_months: int | None = None,
         extra_principal_monthly: float = 0.0,
+        schedule: str = "contract",
         deferment_until: int | None = None,
         qualifying_payments: int = 0,
     ):
@@ -68,7 +73,8 @@ class StudentLoan(Loan):
 
         Args:
             owner: The person to which this loan belongs (``person=`` is a deprecated alias)
-            loan_type: Type of student loan
+            loan_type: Type of student loan (``UNKNOWN`` when the statement does not say: no deferment
+                subsidy and no Repayment Assistance Plan)
             original_amount: Original amount of the loan (``loan_amount=`` is deprecated)
             rate_pct: Annual interest rate percentage (``yearly_interest_rate=`` is deprecated)
             term_years: Length of loan in years, or ``term_months`` (``length_years=`` is deprecated)
@@ -82,7 +88,7 @@ class StudentLoan(Loan):
                 (the balance does not grow); for other types interest accrues and capitalizes.
             repayment_plan: ``STANDARD`` amortization, or the income-driven Repayment Assistance
                 Plan (federal loans only), whose payment follows the borrower's AGI.
-            term_months, origination, payments_made, remaining_months, extra_principal_monthly: The
+            term_months, origination, payments_made, remaining_months, extra_principal_monthly, schedule: The
                 loan from its statement, as for every :class:`~life_model.base_classes.Loan`.
             deferment_until: Last year of deferment (inclusive): the loan is in deferment through that
                 December and repays from the January after. Implies ``in_deferment``.
@@ -106,6 +112,7 @@ class StudentLoan(Loan):
             payments_made=payments_made,
             remaining_months=remaining_months,
             extra_principal_monthly=extra_principal_monthly,
+            schedule=schedule,
         )
         self.loan_type = loan_type
         self.school_name = school_name
@@ -113,11 +120,14 @@ class StudentLoan(Loan):
         if deferment_until is not None:
             in_deferment = deferment_until >= self.model.year
         self.in_deferment = in_deferment
-        if (
-            repayment_plan is StudentLoanRepaymentPlan.REPAYMENT_ASSISTANCE_PLAN
-            and loan_type is StudentLoanType.PRIVATE
+        if repayment_plan is StudentLoanRepaymentPlan.REPAYMENT_ASSISTANCE_PLAN and loan_type in (
+            StudentLoanType.PRIVATE,
+            StudentLoanType.UNKNOWN,
         ):
-            raise ValueError("Only federal student loans are eligible for the Repayment Assistance Plan")
+            raise ValueError(
+                "Only federal student loans are eligible for the Repayment Assistance Plan (an UNKNOWN loan type "
+                "is not known to be federal)"
+            )
         self.repayment_plan = repayment_plan
         # Monthly payments made under an income-driven plan (counts toward forgiveness).
         if qualifying_payments < 0:
