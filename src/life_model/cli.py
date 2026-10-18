@@ -183,11 +183,34 @@ def _summary_text(summary: dict[str, Any]) -> str:
         lines.append(f"final net worth ({summary['final_year']}): {_money(summary['final_net_worth'])}")
         totals = ", ".join(f"{k.lower()} {_money(v)}" for k, v in summary.get("totals", {}).items())
         lines.append(f"totals: {totals}")
-        if summary.get("shortfall_years"):
-            lines.append(f"shortfall years (bills carried as debt): {summary['shortfall_years']}")
-        if summary.get("conservation_failures"):
-            lines.append(f"conservation check failed in: {summary['conservation_failures']}")
+        lines += _extremes_text(summary)
+        shortfalls = summary.get("shortfall_years", [])
+        lines.append(f"shortfall years (bills carried as debt): {shortfalls if shortfalls else 'none'}")
+        failures = summary.get("conservation_failures", [])
+        if failures:
+            lines.append(f"conservation check failed in: {failures} (a model bug: please report it)")
+        else:
+            lines.append("conservation check: passed in every year (checked in nominal dollars)")
     return "\n".join(lines)
+
+
+def _extremes_text(summary: dict[str, Any]) -> list[str]:
+    """The net-worth peak and lowest-cash lines of a run summary (both in nominal and start-year dollars)."""
+    lines = []
+    for key, label in (
+        ("net_worth_peak", "net worth peak"),
+        ("lowest_cash", "lowest cash (year-end bank balance)"),
+        ("lowest_cash_retired", "lowest cash after everyone retires"),
+    ):
+        block = summary.get(key)
+        if not block:
+            continue
+        nominal, real = block["nominal"], block["real"]
+        lines.append(
+            f"{label}: {_money(nominal['amount'])} in {nominal['year']} (nominal); "
+            f"{_money(real['amount'])} in {real['year']} (start-year dollars)"
+        )
+    return lines
 
 
 # --------------------------------------------------------------------------------------------------
@@ -301,7 +324,7 @@ def _compare(args: argparse.Namespace) -> tuple[dict, str]:
     comparison = api.compare(
         _spec_source(args), change or None, sets=args.sets, montecarlo=args.montecarlo, workers=args.workers, **kwargs
     )
-    payload = comparison.to_dict()
+    payload = comparison.to_dict(yearly=True)
     deltas = payload["deltas"]
     changes = payload["changes"]
     described = ([f"patch {json.dumps(changes['patch'], default=str)}"] if changes.get("patch") else []) + [
@@ -320,8 +343,26 @@ def _compare(args: argparse.Namespace) -> tuple[dict, str]:
     for column, delta in deltas["final_balances"].items():
         if abs(delta) >= 0.5:
             lines.append(f"final {column}: {_signed(delta)}")
-    if deltas["shortfall_years"]:
-        lines.append(f"shortfall years: {deltas['shortfall_years']:+d}")
+    lines.append(
+        f"shortfall years: {len(base.get('shortfall_years', []))} -> {len(changed.get('shortfall_years', []))} "
+        f"({deltas['shortfall_years']:+d})"
+    )
+    for key, label in (
+        ("net_worth_peak", "net worth peak"),
+        ("lowest_cash", "lowest cash"),
+        ("lowest_cash_retired", "lowest cash after everyone retires"),
+    ):
+        if key not in base or key not in changed:
+            continue
+        for dollars, unit in (("nominal", "nominal"), ("real", "start-year dollars")):
+            old, new = base[key][dollars], changed[key][dollars]
+            lines.append(
+                f"{label} ({unit}): {_money(old['amount'])} in {old['year']} -> {_money(new['amount'])} in "
+                f"{new['year']} ({_signed(new['amount'] - old['amount'])})"
+            )
+    for name, block in (("base", base), ("changed", changed)):
+        if block.get("conservation_failures"):
+            lines.append(f"conservation check failed in the {name} run: {block['conservation_failures']}")
     mc = payload.get("montecarlo")
     if mc:
         lines.append(
@@ -334,7 +375,7 @@ def _compare(args: argparse.Namespace) -> tuple[dict, str]:
 
 
 def _montecarlo_add(parser: argparse.ArgumentParser) -> None:
-    _run_arguments(parser, real_dollars=False)
+    _run_arguments(parser)
     parser.add_argument("--n", type=int, default=1000, help="number of trials (default 1000)")
     parser.add_argument("--workers", type=int, help="worker processes (default: automatic; 1 = sequential)")
     parser.add_argument("--out", metavar="DIR", help="write every trial's yearly frame and events to DIR")
@@ -377,7 +418,7 @@ def _montecarlo(args: argparse.Namespace) -> tuple[dict, str]:
     payload = {"summary": summary, "files": files}
     pct = ", ".join(f"{k} {_money(v)}" for k, v in summary["final_net_worth"].items())
     text = (
-        f"{summary['trials']} trials, {summary['years'][0]}-{summary['years'][1]}\n"
+        f"{summary['trials']} trials, {summary['years'][0]}-{summary['years'][1]}, {summary['dollars']} dollars\n"
         f"success rate: {summary['success_rate']:.1%} ({summary['success_definition']})\n"
         f"final net worth: {pct}"
     )

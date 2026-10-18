@@ -233,19 +233,36 @@ class RunResult:
         return pd.DataFrame(rows)
 
     def conservation(self) -> "list[ConservationRecord]":
-        """The money-conservation check's yearly records (works on a loaded result too)."""
+        """The money-conservation check's yearly records, always in **nominal** dollars (works on a
+        loaded result too).
+
+        Conservation is a statement about nominal money: a year's change in net worth equals its
+        ledger flows. In start-year dollars it does not hold, because inflation erodes the opening
+        balance without any ledger flow (the real opening balance is in the prior year's dollars), so
+        a real-dollar result re-inflates its balance sheets with :attr:`deflators` before checking.
+        """
         from .checks import ConservationRecord
 
-        return [
-            ConservationRecord(
-                year=int(row.year),
-                opening_net_worth=float(row.opening_net_worth),
-                closing_net_worth=float(row.closing_net_worth),
-                inflows=float(row.inflows),
-                outflows=float(row.outflows),
+        records = []
+        start = min(self.deflators) if self.deflators else None
+        for row in self.balance_sheets.itertuples():
+            year = int(row.year)
+            closing_factor = opening_factor = 1.0
+            if self.real:
+                # Undo _deflate_balance_sheets: closing and flows in the year's dollars, opening in the
+                # prior year's.
+                closing_factor = self.deflators.get(year, 1.0)
+                opening_factor = self.deflators.get(year - 1, 1.0) if start is not None and year > start else 1.0
+            records.append(
+                ConservationRecord(
+                    year=year,
+                    opening_net_worth=float(row.opening_net_worth) * opening_factor,
+                    closing_net_worth=float(row.closing_net_worth) * closing_factor,
+                    inflows=float(row.inflows) * closing_factor,
+                    outflows=float(row.outflows) * closing_factor,
+                )
             )
-            for row in self.balance_sheets.itertuples()
-        ]
+        return records
 
     def __repr__(self) -> str:
         years = self.years
@@ -487,6 +504,11 @@ class RunResult:
         if not taxes.empty:
             lines.append(f"- taxes: {_money(taxes['amount'].sum())} (see the returns below)")
 
+        def name_of(frame: pd.DataFrame, column: str) -> pd.Series:
+            names = frame[column] if column in frame.columns else pd.Series([None] * len(frame), index=frame.index)
+            labels = frame["to_account" if column == "to_name" else "from_account"]
+            return names.where(names.notna() & (names != ""), labels).fillna("")
+
         lines += ["", "## How they were paid"]
         events = self.events[self.events["year"] == year]
         drawn = 0.0
@@ -494,6 +516,19 @@ class RunResult:
             for event in events[events["kind"] == kind].itertuples():
                 drawn += float(event.amount or 0.0)
                 lines.append(f"- {event.message}")
+        # Accounts that paid bills directly (no waterfall event): 529 plans funding college costs, HSAs
+        # reimbursing medical costs. Their withdrawals land in the bank the bills are paid from.
+        funded = transfers[
+            transfers["kind"].isin(["withdrawal"])
+            & transfers["from_account"].fillna("").str.match(r"^(Plan529|HealthSavingsAccount):")
+            & transfers["to_account"].fillna("").str.match(r"^(BankAccount|Cash):")
+        ]
+        if not funded.empty:
+            funded = funded.assign(_from=name_of(funded, "from_name"))
+            for source, cause, amount in grouped(funded, ["_from", "cause"]):
+                why = f" ({cause})" if cause else ""
+                drawn += amount
+                lines.append(f"- from {source}{why}: {_money(amount)}")
         borrowed = rows[(rows["kind"] == "borrow") & rows["from_account"].fillna("").str.startswith("Debt:")]
         paid_total = bills["amount"].sum() + taxes["amount"].sum() + principal["amount"].sum()
         new_debt = borrowed["amount"].sum()
@@ -504,8 +539,10 @@ class RunResult:
         contributions = transfers[transfers["kind"].isin(["contribution", "rmd"])]
         if not contributions.empty:
             lines += ["", "## Savings moves"]
-            for kind, cause, amount in grouped(contributions, ["kind", "cause"]):
-                lines.append(f"- {kind}: {cause}: {_money(amount)}")
+            contributions = contributions.assign(_to=name_of(contributions, "to_name"))
+            for kind, cause, target, amount in grouped(contributions, ["kind", "cause", "_to"]):
+                label = cause or ("required minimum distribution" if kind == "rmd" else "contribution")
+                lines.append(f"- {kind}: {label} → {target}: {_money(amount)}")
 
         returns = [r for (y, _), r in sorted(self.tax_returns.items()) if y == year]
         lines += ["", "## Tax returns"]

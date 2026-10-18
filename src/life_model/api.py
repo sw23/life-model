@@ -391,9 +391,73 @@ def _spec_start(spec: Any) -> str | None:
     return None
 
 
+def _extreme(frame, column: str, deflators: dict, real: bool, pick) -> dict[str, Any] | None:
+    """``{"nominal": {"year", "amount"}, "real": {"year", "amount"}}``: the year ``pick`` (max or min)
+    selects for ``column`` in nominal and in start-year dollars (each block picks its own year)."""
+    if column not in frame.columns or frame.empty:
+        return None
+    rows = [(int(row["Year"]), _number(row[column])) for _, row in frame[["Year", column]].iterrows()]
+    nominal, start_dollars = [], []
+    for year, value in rows:
+        factor = deflators.get(year, 1.0) or 1.0
+        nominal.append((year, value * factor if real else value))
+        start_dollars.append((year, value if real else value / factor))
+    out = {}
+    for name, series in (("nominal", nominal), ("real", start_dollars)):
+        year, amount = pick(series, key=lambda item: (item[1], -item[0]) if pick is max else (item[1], item[0]))
+        out[name] = {"year": year, "amount": round(amount, 2)}
+    return out
+
+
+def extremes(result: "RunResult") -> dict[str, Any]:
+    """The run's net-worth peak and lowest-cash year, each in nominal and in start-year (real) dollars:
+    ``{"net_worth_peak": {"nominal": {"year", "amount"}, "real": {...}}, "lowest_cash": {...},
+    "lowest_cash_retired": {...}}`` (cash is the year-end ``Bank Balance``; ties go to the earliest
+    year; ``lowest_cash_retired`` covers the years after the last worker reaches ``retirement_age``,
+    when the result carries its spec)."""
+    frame = result.model_frame
+    if frame is None or frame.empty:
+        return {}
+    out: dict[str, Any] = {}
+    peak = _extreme(frame, "Net Worth", result.deflators, result.real, max)
+    if peak is not None:
+        out["net_worth_peak"] = peak
+    low = _extreme(frame, "Bank Balance", result.deflators, result.real, min)
+    if low is not None:
+        out["lowest_cash"] = low
+    retired = _all_retired_year(result.spec)
+    if retired is not None and low is not None:
+        later = frame[frame["Year"] > retired]
+        if not later.empty:
+            out["lowest_cash_retired"] = _extreme(later, "Bank Balance", result.deflators, result.real, min)
+    return out
+
+
+def _all_retired_year(spec: Any) -> int | None:
+    """The year the last person with a job (or business) reaches ``retirement_age``, from the spec (events
+    that retire someone early are not considered); None without a spec or without workers."""
+    people = getattr(spec, "people", None)
+    meta = getattr(spec, "meta", None)
+    if not people or meta is None:
+        return None
+    years = []
+    for person in people:
+        if not person.jobs and person.self_employment is None:
+            continue
+        if person.birth is not None:
+            birth_year, birth_month = (int(part) for part in person.birth.split("-"))
+        else:
+            birth_year, birth_month = meta.start_year - person.age, 1
+        months = birth_year * 12 + (birth_month - 1) + round(person.retirement_age * 12)
+        years.append(months // 12)
+    return max(years) if years else None
+
+
 def summarize(result: "RunResult", *, yearly: bool = True) -> dict[str, Any]:
     """A JSON-ready summary of a run: span, seed, final-year net worth and balances, run totals,
-    shortfall years, conservation status and (with ``yearly``) the key columns per year."""
+    shortfall years, conservation status (checked in nominal dollars), the net-worth peak and the
+    lowest-cash year (each in nominal and start-year dollars, :func:`extremes`) and (with ``yearly``)
+    the key columns per year."""
     frame = result.model_frame
     spec = result.spec
     name = None
@@ -424,6 +488,7 @@ def summarize(result: "RunResult", *, yearly: bool = True) -> dict[str, Any]:
     summary["shortfall_years"] = shortfall_years(result)
     failures = [record.year for record in result.conservation() if not record.ok()]
     summary["conservation_failures"] = failures
+    summary.update(extremes(result))
     if yearly:
         columns = [c for c in SUMMARY_COLUMNS if c in frame.columns]
         summary["yearly"] = [
@@ -605,17 +670,22 @@ def load_change(path: "str | os.PathLike") -> dict:
 
 
 class _SpecModelFactory:
-    """Picklable ``factory(seed) -> LifeModel`` for :class:`~life_model.montecarlo.MonteCarlo`."""
+    """Picklable ``factory(seed) -> LifeModel`` for :class:`~life_model.montecarlo.MonteCarlo`. Under
+    ``checks="strict"`` every trial runs the invariant checker too (a violation fails the study)."""
 
-    def __init__(self, spec: "HouseholdSpec"):
+    def __init__(self, spec: "HouseholdSpec", checks: Checks = "warn"):
         self.spec = spec
+        self.checks = checks
 
     def __call__(self, seed: int):
         from .spec import build_model
 
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            return build_model(self.spec, seed=seed, check=False)
+            model = build_model(self.spec, seed=seed, check=False)
+        if self.checks == "strict":
+            model.checks = "strict"
+        return model
 
 
 def run_montecarlo(
@@ -628,16 +698,20 @@ def run_montecarlo(
     end_year: int | None = None,
     scenario: str | None = None,
     checks: Checks = "warn",
+    real_dollars: bool = False,
 ) -> "MonteCarloResult":
     """Run ``n`` trials of ``spec`` (validated once) that differ only in their seeds; events are
     kept so :func:`montecarlo_summary` can report the success rate. Trials only differ when the spec
     has random draws: ``economy.mode: stochastic`` (or ``scenario="stochastic"``), stochastic
-    mortality, or long-term-care need."""
+    mortality, or long-term-care need. ``real_dollars`` deflates every trial by its own realized
+    inflation (``MonteCarloResult.real_dollars()``). ``checks="strict"`` also runs the invariant
+    checker in every trial (``InvariantError`` at the first violation)."""
     from .montecarlo import MonteCarlo
 
     spec = prepare_spec(spec, years=years, end_year=end_year, scenario=scenario)
     build(spec, checks=checks, collect_data=False)  # validate once, up front
-    return MonteCarlo(_SpecModelFactory(spec), n=n, seed=seed, workers=workers, keep_events=True).run()
+    result = MonteCarlo(_SpecModelFactory(spec, checks), n=n, seed=seed, workers=workers, keep_events=True).run()
+    return result.real_dollars() if real_dollars else result
 
 
 def montecarlo_summary(result: "MonteCarloResult", *, percentiles: Sequence[float] = (10, 50, 90)) -> dict:
@@ -652,6 +726,7 @@ def montecarlo_summary(result: "MonteCarloResult", *, percentiles: Sequence[floa
         successes = sum(1 for value in final if value > 0)
     return {
         "trials": result.num_trials,
+        "dollars": "real" if result.real else "nominal",
         "years": [result.years[0], result.years[-1]],
         "success_rate": successes / result.num_trials,
         "success_definition": "share of trials in which the household never carried unpaid bills as new debt",
@@ -678,13 +753,14 @@ class Comparison:
     #: What changed: ``{"patch": merge patch or None, "sets": ["path=value", ...]}``.
     changes: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> dict[str, Any]:
-        """JSON-ready: both summaries (without yearly rows), the deltas, and the Monte Carlo block."""
+    def to_dict(self, *, yearly: bool = False) -> dict[str, Any]:
+        """JSON-ready: both summaries (with their yearly rows when ``yearly``; ``life-model compare --json``
+        includes them), the deltas, and the Monte Carlo block."""
         return {
             "seed": self.base.seed,
             "changes": copy.deepcopy(self.changes),
-            "base": summarize(self.base, yearly=False),
-            "changed": summarize(self.changed, yearly=False),
+            "base": summarize(self.base, yearly=yearly),
+            "changed": summarize(self.changed, yearly=yearly),
             "deltas": self.deltas,
             "montecarlo": self.montecarlo,
         }
@@ -700,6 +776,13 @@ def _deltas(base: dict, changed: dict) -> dict[str, Any]:
             for column in balances
         },
         "shortfall_years": len(changed.get("shortfall_years", [])) - len(base.get("shortfall_years", [])),
+        **{
+            key: {
+                dollars: changed[key][dollars]["amount"] - base[key][dollars]["amount"] for dollars in ("nominal", "real")
+            }
+            for key in ("net_worth_peak", "lowest_cash", "lowest_cash_retired")
+            if key in base and key in changed
+        },
     }
 
 
@@ -730,7 +813,8 @@ def compare(
 
     Returns:
         :class:`Comparison`; ``deltas`` holds the change in final-year net worth, total taxes over
-        the run, final-year balances and the number of shortfall years.
+        the run, final-year balances, the number of shortfall years, and the net-worth peak and lowest
+        cash (nominal and start-year dollars; each run's own peak / lowest year).
     """
     base_spec = prepare_spec(spec, years=years, end_year=end_year, scenario=scenario)
     sets = list(sets)
@@ -753,12 +837,9 @@ def compare(
     mc = None
     if montecarlo:
         mc_seed = seed
-        mc_base = montecarlo_summary(
-            run_montecarlo(base_spec, n=montecarlo, seed=mc_seed, workers=workers, checks=checks)
-        )
-        mc_changed = montecarlo_summary(
-            run_montecarlo(changed_spec, n=montecarlo, seed=mc_seed, workers=workers, checks=checks)
-        )
+        mc_kwargs = {"n": montecarlo, "seed": mc_seed, "workers": workers, "checks": checks, "real_dollars": real_dollars}
+        mc_base = montecarlo_summary(run_montecarlo(base_spec, **mc_kwargs))
+        mc_changed = montecarlo_summary(run_montecarlo(changed_spec, **mc_kwargs))
         mc = {
             "base": mc_base,
             "changed": mc_changed,
