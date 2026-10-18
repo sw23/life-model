@@ -306,7 +306,7 @@ class TestCashFloorRegressionGuard(unittest.TestCase):
         model = self._couple()
         # The unit sees (sizes against, and pays from) only the head's bank.
         head_only = property(lambda self: self.members[0].bank_account_balance)
-        head_banks = lambda self: list(self.members[0].bank_accounts)  # noqa: E731
+        head_banks = lambda self: list(self.members[0].bank_accounts)
         with (
             mock.patch.object(TaxUnit, "bank_account_balance", head_only),
             mock.patch.object(TaxUnit, "_bank_accounts_in_draw_order", head_banks),

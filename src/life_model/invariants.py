@@ -43,6 +43,7 @@ Run them per year with ``LifeModel(checks="strict" | "warn" | "off")`` (``strict
 import warnings
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
+from itertools import pairwise
 from typing import TYPE_CHECKING, Any
 
 from .checks import CONSERVATION_TOLERANCE
@@ -50,8 +51,7 @@ from .ledger import FlowKind
 
 if TYPE_CHECKING:
     from .checks import MonthBalances, YearBalances
-    from .ledger import BalanceSheet
-    from .ledger import LedgerEntry
+    from .ledger import BalanceSheet, LedgerEntry
     from .model import LifeModel
     from .tax.return_record import TaxReturn
 
@@ -258,7 +258,7 @@ def continuity(ctx: YearContext) -> list[Violation]:
     if ctx.previous is not None:
         gaps.append((None, ctx.previous.closing, ctx.balances.opening, ctx.between, f"{ctx.year - 1}'s close"))
     months = sorted(ctx.months)
-    for prior, month in zip(months, months[1:]):
+    for prior, month in pairwise(months):
         before, after = ctx.months[prior], ctx.months[month]
         between = ctx.model.ledger.between(before.ledger_end, after.ledger_start)
         gaps.append((month, before.closing, after.opening, between, f"{ctx.year}-{prior:02d}'s close"))
