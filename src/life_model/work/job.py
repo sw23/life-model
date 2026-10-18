@@ -76,6 +76,8 @@ class Job(LifeModelAgent):
         self.company = company
         self.role = role
         self.salary = salary
+        if getattr(salary, "owner", None) is None:
+            salary.owner = owner  # whose salary it is (reporting: the agent frame's Owner column)
         self.retirement_account: Job401kAccount | None = None
         # Set by StockPlan when one attaches to this job. Vest income is deliberately excluded from
         # the 401(k)-eligible compensation computed below, matching the usual plan-document rule.
@@ -268,6 +270,8 @@ class Salary(LifeModelAgent):
         self.base = base
         self._yearly_increase_override = yearly_increase
         self.yearly_bonus = yearly_bonus
+        #: The person paid this salary (set by ``Job``).
+        self.owner = None
 
     @property
     def yearly_increase(self) -> float:
@@ -283,6 +287,12 @@ class Salary(LifeModelAgent):
     @property
     def bonus(self) -> float:
         return self.base * (self.yearly_bonus / 100)
+
+    @property
+    def base_salary(self) -> float:
+        """The base salary (an alias of ``base`` reported as the agent frame's ``Salary`` column,
+        snapshotted before the year-end raise)."""
+        return self.base
 
     def post_step(self):
         # Escalator runs after the year's income has been earned/deposited (consume-then-advance).

@@ -10,6 +10,8 @@ from ..tax.income import IncomeType
 
 
 class RothIRA(TaxAdvantagedAccount):
+    STATS_OWNED = frozenset({"stat_roth_ira_balance"})
+    BALANCE_STAT = "stat_roth_ira_balance"
     tax_treatment = TaxTreatment.ROTH
     is_rmd_eligible = False
     limit_group = "ira"  # one IRA limit shared across Roth and Traditional

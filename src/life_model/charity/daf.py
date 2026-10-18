@@ -14,7 +14,8 @@ if TYPE_CHECKING:
 
 
 class DonorAdvisedFund(Investment):
-    STATS_OWNED = frozenset({"stat_charitable_donations"})
+    STATS_OWNED = frozenset({"stat_charitable_donations", "stat_daf_balance"})
+    BALANCE_STAT = "stat_daf_balance"
 
     def __init__(
         self,

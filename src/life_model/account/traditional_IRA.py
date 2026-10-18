@@ -14,7 +14,8 @@ from ..tax.income import IncomeType
 
 
 class TraditionalIRA(TaxAdvantagedAccount):
-    STATS_OWNED = frozenset({"stat_required_min_distrib"})
+    STATS_OWNED = frozenset({"stat_required_min_distrib", "stat_traditional_ira_balance"})
+    BALANCE_STAT = "stat_traditional_ira_balance"
 
     tax_treatment = TaxTreatment.PRETAX
     is_rmd_eligible = True

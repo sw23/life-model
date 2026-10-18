@@ -16,6 +16,9 @@ if TYPE_CHECKING:
 
 
 class Plan529(Investment):
+    STATS_OWNED = frozenset({"stat_529_balance"})
+    BALANCE_STAT = "stat_529_balance"
+
     def __init__(
         self,
         owner: "Person",

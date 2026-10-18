@@ -41,6 +41,13 @@ class FinancialAccount(LifeModelAgent, ABC):
     #: Whether the balance is the household's (counted in net worth and the conservation check).
     #: False for a donor-advised fund, whose money has been given away.
     IN_NET_WORTH: ClassVar[bool] = True
+    #: The model stat (``LifeModel.EXTRA_STATS`` name) that reports this account's year-end balance.
+    BALANCE_STAT: ClassVar[str | None] = None
+
+    def collect_stats(self):
+        """Report the year-end balance in :attr:`BALANCE_STAT`, when the account type has one."""
+        if self.BALANCE_STAT is not None:
+            setattr(self, self.BALANCE_STAT, self.balance)
 
     def __init__(self, person: "Person", balance: float = 0, *, beneficiary: Optional["Person"] = None):
         super().__init__(person.model)

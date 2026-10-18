@@ -207,6 +207,8 @@ def calculate_annuity_factor(
 
 
 class Annuity(LifeModelAgent):
+    STATS_OWNED = frozenset({"stat_annuity_balance"})
+
     def __init__(
         self,
         person: Person,
@@ -315,6 +317,10 @@ class Annuity(LifeModelAgent):
         # Register with model
         self.model.registries.annuities.register(person, self)
         self.model.ledger.post_opening(self, initial_balance)
+
+    def collect_stats(self):
+        """Year-end value: the accumulation balance plus the annuitized reserve, while in force."""
+        self.stat_annuity_balance = self.balance + self.annuitized_reserve if self.is_active else 0.0
 
     def _close(self, cause: str) -> None:
         """End the contract; whatever value it still holds goes to the insurer (posted as forfeited)."""

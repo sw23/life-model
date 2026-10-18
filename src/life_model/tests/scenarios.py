@@ -107,7 +107,8 @@ def married_homeowners(start_year: int = 2026, years: int = 45, *, seed: int | N
     jane.add_child("Ben", birth_year=start_year - 5)
     SocialSecurity(john, withdrawal_start_age=67, income_history=EARNINGS_HISTORY)
     SocialSecurity(jane, withdrawal_start_age=67, income_history=EARNINGS_HISTORY[5:])
-    LifeEvents(model, [LifeEvent(start_year + 6, "Kitchen remodel", john.spending.add_expense, 45000)])
+    if start_year + 6 <= model.end_year:
+        LifeEvents(model, [LifeEvent(start_year + 6, "Kitchen remodel", john.spending.add_expense, 45000)])
     return model
 
 

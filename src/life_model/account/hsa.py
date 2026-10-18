@@ -17,6 +17,8 @@ class HSAType(Enum):
 
 
 class HealthSavingsAccount(TaxAdvantagedAccount):
+    STATS_OWNED = frozenset({"stat_hsa_balance"})
+    BALANCE_STAT = "stat_hsa_balance"
     tax_treatment = TaxTreatment.HSA
     is_rmd_eligible = False
 

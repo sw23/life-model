@@ -70,3 +70,21 @@ the solver's `target`), `withdrawal` (Roth draws by the waterfall), `rmd`, `pena
 `EventLog._repr_html_`, so the notebook's event table is byte-identical to the base commit's
 (checked by running the notebook's scenario on both trees). Code that iterates
 `event_log.list` sees the extra entries.
+
+## Task 5 — new stats, agent Name/Type/Owner, pre-post snapshot
+
+No existing test's expected value changed. Output changes:
+
+* Model frame: new EXTRA_STATS columns `Net Worth`, `Traditional IRA Balance`, `Roth IRA Balance`,
+  `HSA Balance`, `529 Balance`, `Inherited IRA Balance`, `Annuity Balance`, `DAF Balance`,
+  `Trust Balance`, `Home Value`, `Home Equity`, `Mortgage Principal`, `AGI`, `Taxable Income`,
+  `Marginal Rate` (max across returns), `Standard Deduction Taken` (bool), `Forced Sales`,
+  `Pre-tax Withdrawals`. `STATS` (the default `get_yearly_stat_df` columns) is unchanged.
+  Balance stats are read at year end by a new `collect_stats` hook that runs after the stages,
+  before collection.
+* Agent frame: new leading columns `Name`, `Type` and `Owner`, and `Salary` / `Spending Base` (this
+  year's base, snapshotted before the `post_step` escalators; reading `Salary.base` at collection
+  shows next year's raised value). `add_agent_stat(title, attr, pre_post=True)` snapshots any
+  attribute the same way.
+* `Spending.person` and `Salary.owner` back-references are set by `Person` and `Job` (reporting
+  only).

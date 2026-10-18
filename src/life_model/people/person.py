@@ -44,6 +44,13 @@ class Person(LifeModelAgent):
             "stat_itemized_deductions",
             "stat_tax_credits",
             "stat_tax_penalties",
+            "stat_net_worth",
+            "stat_agi",
+            "stat_taxable_income",
+            "stat_marginal_rate",
+            "stat_standard_deduction_taken",
+            "stat_forced_sales",
+            "stat_pretax_withdrawals",
         }
     )
 
@@ -91,6 +98,8 @@ class Person(LifeModelAgent):
         self._age_year = self.model.year
         self.retirement_age = retirement_age
         self.spending = spending
+        if getattr(spending, "person", None) is None:
+            spending.person = self  # whose spending it is (reporting: the agent frame's Owner column)
         self.state = state
         self.gender = gender
         self.mortality_mode = mortality_mode
@@ -1071,6 +1080,9 @@ class Person(LifeModelAgent):
         return self.age + (year - self._age_year)
 
     def pre_step(self):
+        # This year's waterfall accumulators start over (they are collected at year end).
+        self.stat_forced_sales = 0.0
+        self.stat_pretax_withdrawals = 0.0
         if self.is_deceased:
             return
         # Advance to this year's age. The constructor age already is the creation year's age, so
@@ -1676,6 +1688,8 @@ class Spending(LifeModelAgent):
         super().__init__(model)
         self.base = base
         self._yearly_increase_override = yearly_increase
+        #: The person whose spending this is (set by ``Person``).
+        self.person = None
         self.one_time_expenses = 0
         #: This year's one-time expenses by category (they sum to ``one_time_expenses``).
         self.one_time_by_category: dict[str, float] = {}
@@ -1717,6 +1731,12 @@ class Spending(LifeModelAgent):
     def get_yearly_spending(self) -> float:
         """Gets yearly spending."""
         return self.base + self.one_time_expenses
+
+    @property
+    def base_spending(self) -> float:
+        """Base spending (an alias of ``base`` reported as the agent frame's ``Spending Base``
+        column, snapshotted before the year-end increase)."""
+        return self.base
 
     def adjust_base(self, base_percent: float):
         """Adjusts base spending.

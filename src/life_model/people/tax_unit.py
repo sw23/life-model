@@ -575,6 +575,10 @@ class TaxUnit:
             else:
                 kind, accounts = EventKind.WITHDRAWAL, [*member.roth_iras, *member.all_retirement_accounts]
             account = accounts[0] if len(accounts) == 1 else None
+            if source == "brokerage":
+                member.stat_forced_sales += drawn
+            elif source == "pretax":
+                member.stat_pretax_withdrawals += drawn
             model.event_log.add(
                 Event(kind, person=member, amount=drawn, account=account, cause=cause, source=source, **details)
             )
@@ -1051,8 +1055,16 @@ class TaxUnit:
                 totals[IncomeType.SHORT_TERM_CAPITAL_GAIN] + totals[IncomeType.LONG_TERM_CAPITAL_GAIN]
             )
 
+        for member in self.members:
+            if tax_return is not None:
+                member.stat_marginal_rate = tax_return.marginal_rate
+                member.stat_standard_deduction_taken = tax_return.deduction_taken == "standard"
+
         if len(self.members) == 1:
             head = self.members[0]
+            if tax_return is not None:
+                head.stat_agi = tax_return.agi
+                head.stat_taxable_income = tax_return.taxable_income
             head.stat_taxes_paid = taxes.total
             head.stat_taxes_paid_federal = taxes.federal
             head.stat_taxes_paid_state = taxes.state
@@ -1081,6 +1093,9 @@ class TaxUnit:
             member.stat_taxes_paid_niit = niit
             member.stat_tax_credits = credits
             member.stat_tax_penalties = penalties
+            if tax_return is not None:
+                member.stat_agi = share * tax_return.agi
+                member.stat_taxable_income = share * tax_return.taxable_income
             member.stat_taxes_paid = federal + state + ss + medicare + niit - credits
 
 

@@ -14,6 +14,8 @@ from ..tax.income import IncomeType
 
 
 class Home(LifeModelAgent):
+    STATS_OWNED = frozenset({"stat_home_value", "stat_home_equity"})
+
     def __init__(
         self,
         person: Person,
@@ -271,6 +273,15 @@ class Home(LifeModelAgent):
         monthly = self.mortgage.monthly_payment if self.mortgage is not None else 0.0
         return f"{html.escape(self.name)}, purchase price ${self.purchase_price:,}, " + f"monthly mortgage ${monthly:,}"
 
+    def collect_stats(self):
+        """Year-end value and equity (0 once sold, or when left behind by a decedent with no heir)."""
+        if self.sold or self.person.is_deceased:
+            self.stat_home_value = self.stat_home_equity = 0.0
+            return
+        self.stat_home_value = self.home_value
+        principal = self.mortgage.principal if self.mortgage is not None else 0.0
+        self.stat_home_equity = self.home_value - principal
+
     def post_step(self):
         # Appreciate at year end (consume-then-advance): property tax for the year is assessed
         # on the beginning-of-year value during the step stage.
@@ -350,6 +361,8 @@ class HomeExpenses(LifeModelAgent):
 # https://www.valuepenguin.com/mortgages/mortgage-payments-calculator
 # https://www.investopedia.com/calculate-principal-and-interest-5211981
 class Mortgage(Loan):
+    STATS_OWNED = frozenset({"stat_mortgage_principal"})
+
     """A home mortgage.
 
     A Mortgage is an amortizing :class:`~life_model.base_classes.Loan`, so it shares the ABC's
@@ -402,6 +415,9 @@ class Mortgage(Loan):
         self.stat_balance_history = []
         self.stat_yearly_principal_payment_history = []
         self.stat_yearly_interest_payment_history = []
+
+    def collect_stats(self):
+        self.stat_mortgage_principal = 0.0 if self.person.is_deceased else self.principal
 
     def _attach(self, person: Person) -> None:
         """Bind this mortgage to its owner and register it as a model agent."""

@@ -46,6 +46,8 @@ class Trust(LifeModelAgent):
     * The annual gift exclusion is applied per trust per year, not per donee.
     """
 
+    STATS_OWNED = frozenset({"stat_trust_balance"})
+
     # Apply growth before tax-unit settlement, matching Investment's step ordering.
     STEP_PRIORITY: ClassVar[dict[str, int]] = {"step": -10}
 
@@ -235,6 +237,9 @@ class Trust(LifeModelAgent):
 
     def post_step(self):
         self.contributions_this_year = 0.0
+
+    def collect_stats(self):
+        self.stat_trust_balance = self.balance
 
     def _repr_html_(self):
         desc = "<ul>"
