@@ -24,6 +24,7 @@ see `AGENTS.md <https://github.com/sw23/life-model/blob/main/AGENTS.md>`_.
    Units and conventions <units-and-conventions.md>
    Constructor cheat sheet <constructor-cheatsheet.md>
    Outputs glossary <outputs.md>
+   Checking the model: invariants, reconciliation, backtests <reconciliation.md>
    Configuration <configuration.md>
    API documentation <apidoc.rst>
    License <license.rst>

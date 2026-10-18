@@ -94,7 +94,8 @@ def _run_arguments(parser: argparse.ArgumentParser, *, real_dollars: bool = True
         "--checks",
         choices=api.CHECK_MODES,
         default="warn",
-        help="strict: warnings fail; warn (default): errors fail, warnings reported; off: skip checks",
+        help="validator and yearly invariant checks: strict: warnings and violations fail; warn (default): "
+        "errors fail, warnings and violations reported; off: skip checks",
     )
     if real_dollars:
         parser.add_argument("--real-dollars", action="store_true", help="report money in start-year dollars")

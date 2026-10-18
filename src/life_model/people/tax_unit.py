@@ -689,6 +689,45 @@ class TaxUnit:
             remaining -= take
         return long_term, short_term
 
+    def _taxes_with_sale(self, gross: float) -> float:
+        """Total taxes due if ``gross`` of brokerage were sold now, after the year's capital-gain
+        netting.
+
+        Settlement nets gains and losses (and applies prior-year carryforwards) only after the
+        brokerage sale. When that netting would change anything (a carryforward, or a net loss) the
+        sale's previewed gains are booked on a scratch copy of the members' ledgers, netted exactly
+        as settlement will net them, taxed, and rolled back; without this the sale was sized against
+        tax on gains a carryforward was about to cancel, over-selling and leaving the excess in the
+        bank (the invariant checker's ``no_draw_above_cash_floor`` found it, Plan 29).
+        """
+        previews = {}
+        remaining = gross
+        for member in self._members_for("brokerage"):
+            take = min(max(remaining, 0.0), member.brokerage_balance)
+            previews[member.unique_id] = member.preview_brokerage_gain(take) if take > 0 else (0.0, 0.0)
+            remaining -= take
+        long_term = sum(p[0] for p in previews.values())
+        short_term = sum(p[1] for p in previews.values())
+        carryforward = sum(m.capital_loss_carryforward for m in self.members)
+        realized = sum(sum(self._capital_gain_totals(m).values()) for m in self.members)
+        if carryforward == 0 and realized + long_term + short_term >= 0:
+            # Netting will leave the ledger untouched: the plain preview is exact.
+            return self.get_income_taxes_due(additional_preferential=long_term, additional_short_term=short_term).total
+        saved = [(m, len(m.income.entries), m.capital_loss_carryforward) for m in self.members]
+        try:
+            for member in self.members:
+                member_long, member_short = previews.get(member.unique_id, (0.0, 0.0))
+                if member_long:
+                    member.income.add(IncomeType.LONG_TERM_CAPITAL_GAIN, member_long, source="sale preview")
+                if member_short:
+                    member.income.add(IncomeType.SHORT_TERM_CAPITAL_GAIN, member_short, source="sale preview")
+            self._apply_capital_loss_netting()
+            return self.get_income_taxes_due().total
+        finally:
+            for member, length, carried in saved:
+                del member.income.entries[length:]
+                member.capital_loss_carryforward = carried
+
     def _draw_hsa_for_medical(self, bills: float) -> None:
         """When bills exceed the bank, first reimburse this year's medical costs from HSAs.
 
@@ -713,10 +752,9 @@ class TaxUnit:
         brokerage can't cover the whole shortfall it is fully drained and the residual is left for
         the pre-tax 401k solve that follows.
 
-        The tax estimate reads the not-yet-netted ledger, so a rare in-year capital-loss
-        carryforward makes the sizing slightly conservative (sells marginally more than needed;
-        the excess simply lands in the bank). Settled taxes are always computed from the real
-        post-sale ledger, so they are exact regardless.
+        Gains are netted (losses, prior-year carryforwards) only after the sale, so the tax estimate
+        previews that netting (:meth:`_taxes_with_sale`); settled taxes are always computed from
+        the real post-sale ledger.
         """
         available = self.brokerage_balance
         if available <= 0:
@@ -724,8 +762,7 @@ class TaxUnit:
         bank = self.bank_account_balance
         gross = 0.0
         for _ in range(100):
-            long_term, short_term = self._preview_brokerage_gain(gross)
-            taxes = self.get_income_taxes_due(additional_preferential=long_term, additional_short_term=short_term).total
+            taxes = self._taxes_with_sale(gross)
             needed = min(available, max(0.0, bills + taxes - bank))
             if abs(needed - gross) < 0.001:
                 gross = needed

@@ -33,7 +33,7 @@ or `.json`) or `--example NAME` (a shipped synthetic example), plus:
 | `--years N` | Number of simulated years: `end_year = start_year + N - 1`. |
 | `--end-year Y` | Last simulated year (inclusive); overrides `meta.end_year`. Exclusive with `--years`. |
 | `--scenario NAME` | A named scenario (`life-model examples` lists them), replacing `meta.scenario`. `stochastic` draws random returns and inflation each year. |
-| `--checks strict\|warn\|off` | `warn` (default): validator errors fail, warnings are reported, a failed money-conservation check is reported. `strict`: warnings fail too. `off`: skip the validator (fields the engine does not support are still rejected) and the conservation check. |
+| `--checks strict\|warn\|off` | `warn` (default): validator errors fail; validator warnings, invariant violations (the yearly checker in `life_model.invariants`: conservation, no negative balances, contribution limits, RMDs, FICA, ...; see [reconciliation.md](reconciliation.md)) and a failed money-conservation check are reported. `strict`: those fail too. `off`: skip the validator (fields the engine does not support are still rejected) and every check. |
 | `--real-dollars` | Report money in start-year dollars (`RunResult.real_dollars()`). Not on `montecarlo`. |
 | `--json` | Print exactly one JSON object to stdout (every command, see below). |
 

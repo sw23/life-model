@@ -47,9 +47,10 @@ if TYPE_CHECKING:
 
 #: A household spec in any form :func:`load_spec` accepts.
 SpecLike = Any
-#: ``checks`` modes: ``strict`` fails on validator warnings and conservation residuals, ``warn``
-#: (default) fails on validator errors and warns on the rest, ``off`` skips the validator (only
-#: not-yet-supported fields are rejected) and the conservation check.
+#: ``checks`` modes: ``strict`` fails on validator warnings, invariant violations and conservation
+#: residuals, ``warn`` (default) fails on validator errors and warns on the rest, ``off`` skips the
+#: validator (only not-yet-supported fields are rejected), the invariant checker
+#: (:mod:`life_model.invariants`) and the conservation check.
 Checks = Literal["strict", "warn", "off"]
 CHECK_MODES = ("strict", "warn", "off")
 
@@ -73,6 +74,7 @@ def collected_warnings() -> Iterator[list[str]]:
     """Collect the warnings life-model emits inside the block (validator ``SpecWarning``,
     :class:`CheckWarning`, and any other ``UserWarning`` raised from life-model code) into the yielded
     list of messages (deduplicated, in order). Other warnings are re-emitted unchanged."""
+    from .invariants import InvariantWarning
     from .spec import SpecWarning
 
     package = str(Path(__file__).resolve().parent)
@@ -84,7 +86,7 @@ def collected_warnings() -> Iterator[list[str]]:
         finally:
             others = []
             for warning in caught:
-                ours = issubclass(warning.category, (SpecWarning, CheckWarning)) or (
+                ours = issubclass(warning.category, (SpecWarning, CheckWarning, InvariantWarning)) or (
                     issubclass(warning.category, UserWarning) and str(warning.filename).startswith(package)
                 )
                 if ours:
@@ -261,7 +263,11 @@ def build(spec: SpecLike, *, seed: int | None = None, checks: Checks = "warn", c
         strict = [f for f in validate_spec(spec) if f.level == WARNING]
         if strict:
             raise SpecValidationError(strict)
-    return build_model(spec, seed=seed, check=checks != "off", collect_data=collect_data)
+    model = build_model(spec, seed=seed, check=checks != "off", collect_data=collect_data)
+    # The same mode runs the yearly invariant checker (life_model.invariants): strict raises
+    # InvariantError at the first year with a violation, warn emits InvariantWarning.
+    model.checks = checks
+    return model
 
 
 def _check_conservation(result: "RunResult", checks: Checks) -> None:
@@ -300,9 +306,11 @@ def run(
             ``meta.scenario``.
         real_dollars: Return the result in start-year dollars (``RunResult.real_dollars()``).
         checks: ``"warn"`` (default): validator errors raise, validator warnings are emitted as
-            ``SpecWarning`` and a failed money-conservation check as :class:`CheckWarning`.
-            ``"strict"``: warnings raise too (``SpecValidationError`` / ``ConservationError``).
-            ``"off"``: no validator (only not-yet-supported fields are rejected) and no check.
+            ``SpecWarning``, invariant violations (:mod:`life_model.invariants`, checked every
+            simulated year) as ``InvariantWarning`` and a failed money-conservation check as
+            :class:`CheckWarning`. ``"strict"``: those raise too (``SpecValidationError`` /
+            ``InvariantError`` / ``ConservationError``). ``"off"``: no validator (only
+            not-yet-supported fields are rejected) and no checks.
 
     Raises:
         SpecValidationError: The spec is invalid (``findings`` lists why).
