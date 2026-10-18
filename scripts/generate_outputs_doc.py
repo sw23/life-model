@@ -216,6 +216,7 @@ def render() -> str:
         "| Column | Description |",
         "| --- | --- |",
         "| `year` | Year it happened. |",
+        "| `month` | Month (1-12) it happened in. |",
         "| `kind` | Event kind (below). |",
         "| `person` / `person_id` | Who it is about. |",
         "| `amount` | Dollars involved, when any. |",
@@ -227,7 +228,7 @@ def render() -> str:
         "| Kind | Detail | Meaning |",
         "| --- | --- | --- |",
     ]
-    assert len(EVENT_COLUMNS) == 10
+    assert len(EVENT_COLUMNS) == 11
     for kind in EventKind:
         out.append(f"| `{kind.value}` | {'yes' if kind.is_detail else ''} | {_escape(EVENT_KIND_DOCS[kind.value])} |")
     return "\n".join(out) + "\n"

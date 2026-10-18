@@ -25,7 +25,7 @@ at the year end.
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Year | `year` | | LifeModel | | no | | The simulated year. |
 | Income | `stat_gross_income` | STATS | Job, StockPlan | sum | yes | yes | Gross income made in the year (salary, bonus, RSU vests). |
-| Bank Balance | `stat_bank_balance` | STATS | Person | sum | yes |  | Bank account balances after the year's bills are paid. |
+| Bank Balance | `stat_bank_balance` | STATS | Person | sum | yes |  | Bank account balances at year end, after December's bills and the taxes. |
 | Brokerage Balance | `stat_brokerage_balance` | STATS | Person | sum | yes |  | Taxable brokerage balances at year end. |
 | 401k Balance | `stat_401k_balance` | STATS | Job401kAccount | sum | yes |  | 401k balances (pre-tax plus Roth) at year end. |
 | Useable Balance | `stat_useable_balance` | STATS | BankAccount, InheritedPretaxAccount, RetirementAccount | sum | yes |  | Balances usable without penalty (banks, 401ks past 59.5). |
@@ -245,6 +245,7 @@ notebook table (`_repr_html_`) shows the life story; detail kinds are kept but n
 | Column | Description |
 | --- | --- |
 | `year` | Year it happened. |
+| `month` | Month (1-12) it happened in. |
 | `kind` | Event kind (below). |
 | `person` / `person_id` | Who it is about. |
 | `amount` | Dollars involved, when any. |

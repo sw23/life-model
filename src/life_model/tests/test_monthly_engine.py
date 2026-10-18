@@ -512,8 +512,11 @@ class TestEventsInTheirMonth(unittest.TestCase):
         model = LifeModel(start_year=2026, end_year=2026)
         fired = []
         LifeEvents(model, [LifeEvent(2026, "july", lambda: fired.append(model.month), month=7)])
-        model.run()
+        result = model.run()
         self.assertEqual(fired, [7])
+        (record,) = model.event_log.of_kind("life_event_fired")
+        self.assertEqual((record.year, record.month, record.scheduled_month), (2026, 7, 7))
+        self.assertEqual(result.events["month"].tolist(), [7])
 
     def test_a_year_only_event_fires_in_the_first_simulated_month(self):
         model = LifeModel(start="2026-10", end_year=2027)

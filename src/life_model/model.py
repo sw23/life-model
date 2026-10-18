@@ -218,6 +218,8 @@ class Event:
             self.kind = EventKind.NOTE
             message = kind if message is None else message
         self.year = year
+        #: Month (1-12) it was logged in (stamped by :meth:`EventLog.add`).
+        self.month: int | None = None
         self.person_name: str | None = getattr(person, "name", person)
         self.person_id: int | None = getattr(person, "unique_id", None)
         self.amount = amount
@@ -268,6 +270,7 @@ class Event:
 
         return {
             "year": self.year,
+            "month": self.month,
             "kind": self.kind.value,
             "person": self.person_name,
             "person_id": self.person_id,
@@ -286,6 +289,7 @@ class Event:
 #: Columns of :meth:`EventLog.to_frame` (and ``RunResult.events``).
 EVENT_COLUMNS = (
     "year",
+    "month",
     "kind",
     "person",
     "person_id",
@@ -321,6 +325,8 @@ class EventLog:
         if event.year is None or event.kind == EventKind.NOTE:
             # Stamped with the year it was logged (as always for free-text events).
             event.year = self.model.year
+        if event.month is None and event.year == self.model.year:
+            event.month = self.model.month
         self.list.append(event)
 
     def of_kind(self, *kinds: "EventKind | str") -> list[Event]:
