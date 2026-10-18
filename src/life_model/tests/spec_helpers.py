@@ -44,10 +44,20 @@ def minimal(**person_overrides) -> dict:
 
 
 def not_yet_supported(**person_overrides) -> dict:
-    """A spec the validator rejects with ``not_yet_supported`` (a job end year, Plan 27 D3). The
-    ``self_employed`` example played this part until Plan 31 made it buildable."""
-    jobs = [{"id": "job", "company": "Co", "salary_annual": 80000, "raise_pct": "economy", "end_year": 2028}]
-    return minimal(jobs=jobs, **person_overrides)
+    """A spec the validator rejects with ``not_yet_supported`` (employer group life, Plan 27 item 13). The
+    ``self_employed`` example played this part until Plan 31 made it buildable, then a job end year until Plan
+    27 D3 made that buildable."""
+    insurance = [
+        {
+            "kind": "life",
+            "policy": "term",
+            "death_benefit": 100000,
+            "premium_monthly": 0,
+            "term_years": 1,
+            "group": True,
+        }
+    ]
+    return minimal(insurance=insurance, **person_overrides)
 
 
 def spec_of(data: dict) -> HouseholdSpec:

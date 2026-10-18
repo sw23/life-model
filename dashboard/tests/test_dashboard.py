@@ -324,25 +324,23 @@ def _legacy_single_person_model(prefix, **kwargs):
         company=d["bank_company"],
         type="Checking",
         balance=d["bank_balance"],
-        interest_rate=shared["bank_interest_rate"],
+        interest_pct=shared["bank_interest_rate"],
     )
     job = Job(
         owner=person,
         company=d["company"],
         role=d["role"],
-        salary=Salary(
-            model=model, base=d["salary"], yearly_increase=shared["salary_increase"], yearly_bonus=d["bonus"]
-        ),
+        salary=Salary(model, base_annual=d["salary"], raise_pct=shared["salary_increase"], bonus_pct=d["bonus"]),
     )
     if d["retirement_enabled"]:
         Job401kAccount(
             job=job,
             pretax_balance=d["retirement_balance"],
-            pretax_contrib_percent=d["retirement_contrib"],
+            pretax_contrib_pct=d["retirement_contrib"],
             # As the pre-spec dashboard wrote it after Plan 26 (fourth-wave 18ece11): a dollar-for-dollar
             # match up to the slider's percent of pay.
             match_tiers=[(100, d["company_match"])] if d["company_match"] > 0 else None,
-            average_growth=d["retirement_growth"],
+            growth_pct=d["retirement_growth"],
         )
     for i in range(int(d["children"])):
         person.add_child(f"{prefix.capitalize()}'s Child {i + 1}", birth_year=model.start_year)

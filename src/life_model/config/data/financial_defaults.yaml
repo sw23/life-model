@@ -273,7 +273,6 @@ retirement:
     annual_additions_limit: 72000
   ira:
     contribution_limit: 7500
-    default_growth_rate: 7.0  # percentage
   # vintage: post-2022, source: IRS Pub. 590-B Appendix B, Uniform Lifetime Table
   # (effective for distribution years beginning 2022). RMD start age is 73
   # (SECURE 2.0; 75 for those born 1960 or later) and is tracked per year in the
@@ -550,11 +549,9 @@ social_security:
 
 accounts:
   bank:
-    default_interest_rate: 0.0
     compound_rate: 12  # monthly compounding
   brokerage:
-    default_growth_rate: 7.0  # percentage
-    # Slice of default_growth_rate paid out as qualified dividends instead of accruing as untaxed
+    # Slice of the total return paid out as qualified dividends instead of accruing as untaxed
     # price appreciation. 0 keeps accounts pure-appreciation; total return is unaffected either way.
     dividend_yield: 0.0  # percentage
   hsa:
@@ -572,7 +569,6 @@ accounts:
   plan_529:
     annual_contribution_limit: 19000  # per beneficiary (2025/2026 gift tax exclusion)
     lifetime_contribution_limit: 500000  # typical state limit
-    default_growth_rate: 7.0  # percentage
     qualified_expense_penalty: 10.0  # percentage penalty on earnings for non-qualified withdrawals
 
 insurance:
@@ -938,6 +934,9 @@ tax_years:
     limit_ira_catch_up: 1000
     limit_hsa_self: 4150
     limit_hsa_family: 8300
+    # vintage: 2024, source: IRS Rev. Proc. 2023-34 §3.16 (§125(i) health FSA limit), §3.17 (§132(f) monthly transit/parking)
+    limit_health_fsa: 3200
+    limit_commuter_monthly: 315
     gift_exclusion: 18000
     rmd_start_age: 73
     # vintage: 2024, source: IRS Rev. Proc. 2023-34 §3.03 (MFS set explicitly: its 15% bound is not always half the
@@ -1035,6 +1034,11 @@ tax_years:
     limit_ira_catch_up: 1000
     limit_hsa_self: 4300
     limit_hsa_family: 8550
+    # vintage: 2025, source: IRS Notice 2024-80 (IRC §414(v)(2)(E), SECURE 2.0 §109: catch-up at ages 60-63)
+    limit_401k_catch_up_60_63: 11250
+    # vintage: 2025, source: IRS Rev. Proc. 2024-40: §125(i) health FSA limit, §132(f) monthly transit/parking
+    limit_health_fsa: 3300
+    limit_commuter_monthly: 325
     gift_exclusion: 19000
     rmd_start_age: 73
     # vintage: 2025, source: IRS Rev. Proc. 2024-40 §2.03 (MFS set explicitly: its 15% bound is not always half the
@@ -1132,6 +1136,11 @@ tax_years:
     limit_ira_catch_up: 1100
     limit_hsa_self: 4400
     limit_hsa_family: 8750
+    # vintage: 2026, source: IRS Notice 2025-67 (IRC §414(v)(2)(E), SECURE 2.0 §109: catch-up at ages 60-63)
+    limit_401k_catch_up_60_63: 11250
+    # vintage: 2026, source: IRS Rev. Proc. 2025-32 (IRB 2025-45): §125(i) health FSA limit, §132(f) monthly transit/parking
+    limit_health_fsa: 3400
+    limit_commuter_monthly: 340
     gift_exclusion: 19000
     rmd_start_age: 73
     # vintage: 2026, source: IRS Rev. Proc. 2025-32 §4.03 (MFS set explicitly: its 15% bound is not always half the

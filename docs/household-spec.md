@@ -48,7 +48,7 @@ A complete household: metadata, optional economy overrides, people, relationship
 | `economy` | [Economy](#economy) (optional) |  | — |  | Economy overrides. |
 | `people` | list[[Person](#person)] |  | **required** |  | The people in the household (one family). |
 | `relationships` | [Relationships](#relationships) |  | {} |  | Marriages. |
-| `withdrawal_order` | list[`"bank"` \\| `"brokerage"` \\| `"roth_basis"` \\| `"pretax"` \\| `"roth_earnings"`] (optional) |  | — | `Family.withdrawal_order` | Household payment waterfall: the order sources are drawn to pay bills and taxes, across every member. Each source exactly once, starting with 'bank'. Defaults to bank, brokerage, roth_basis, pretax, roth_earnings. |
+| `withdrawal_order` | list[`"bank"` \\| `"fixed_income"` \\| `"brokerage"` \\| `"roth_basis"` \\| `"pretax"` \\| `"roth_earnings"` \\| `"reserve"`] (optional) |  | — | `Family.withdrawal_order` | Household payment waterfall: the order sources are drawn to pay bills and taxes, across every member. Each source exactly once, starting with 'bank'. Defaults to bank, fixed_income, brokerage, roth_basis, pretax, roth_earnings, reserve (fixed_income and reserve may be left out: they then take those places). |
 | `events` | list[one of: [MarryEvent](#marryevent), [DivorceEvent](#divorceevent), [RetireEvent](#retireevent), [ChangeJobEvent](#changejobevent), [MoveEvent](#moveevent), [BuyHomeEvent](#buyhomeevent), [SellHomeEvent](#sellhomeevent), [OneTimeExpenseEvent](#onetimeexpenseevent), [RecurringExpenseEvent](#recurringexpenseevent), [ChangeSpendingEvent](#changespendingevent), [AddAccountEvent](#addaccountevent), [ContributeEvent](#contributeevent), [ConvertToRothEvent](#converttorothevent), [ClaimSocialSecurityEvent](#claimsocialsecurityevent), [DieEvent](#dieevent)] |  | [] |  | Dated life events. |
 | `actuals` | map[integer → [ActualRecords](#actualrecords)] (optional) |  | — |  | What the household's real documents say, by tax year (filed 1040 lines, W-2s, 1099s, statement balances): read by 'life-model reconcile' and the backtest, ignored by the builder. Keep real documents in my-models/ (git-ignored). |
 
@@ -140,8 +140,9 @@ Builds: `Person`.
 | `giving` | list[[Donation](#donation)] |  | [] |  | Charitable giving. |
 | `children` | list[[Child](#child)] |  | [] |  | Child dependents. |
 | `self_employment` | [SelfEmployment](#selfemployment) (optional) |  | — |  | Self-employment income (Schedule C). |
-| `contribution_plans` | list[[ContributionPlan](#contributionplan)] (optional) |  | — |  | Recurring contributions. NOT YET SUPPORTED (Plan 27 D4): rejected by the validator. |
-| `savings_policy` | [SavingsPolicy](#savingspolicy) (optional) |  | — |  | Surplus sweep above a cash floor. NOT YET SUPPORTED (Plan 27 D4): rejected by the validator. |
+| `contribution_plans` | list[[ContributionPlan](#contributionplan)] (optional) |  | — | `ContributionPlan` | Recurring contributions (person.add_contribution_plan). |
+| `savings_policy` | [SavingsPolicy](#savingspolicy) (optional) |  | — | `SavingsPolicy` | Surplus sweep above a cash floor (person.savings_policy). |
+| `roth_conversion` | [RothConversion](#rothconversion) (optional) |  | — | `RothConversionPolicy` | A standing yearly Roth conversion (person.roth_conversion_policy). |
 
 ## Spending
 
@@ -181,11 +182,13 @@ Builds: `Job + Salary`.
 | `raise_pct` | number \\| `"economy"` | percent (typically > 1) | `0.0` | `Salary.yearly_increase` | Yearly raise; 'economy' follows wage growth. The core default 0 means the salary never rises (the validator warns). |
 | `bonus_pct` | number | percent | `0.0` | `Salary.yearly_bonus` | Yearly bonus as a percent of base salary. |
 | `stock_plan` | [StockPlan](#stockplan) (optional) |  | — |  | RSU plan attached to this job. |
-| `start_year` | integer (optional) | year | — |  | First year the job pays. NOT YET SUPPORTED (Plan 27 D3): rejected by the validator. |
-| `end_year` | integer (optional) | year | — |  | Last year the job pays. NOT YET SUPPORTED (Plan 27 D3): rejected by the validator. |
-| `bonus_fixed_annual` | number (optional) | USD/year | — |  | Fixed-dollar bonus. NOT YET SUPPORTED (Plan 27 D3): rejected by the validator. |
-| `raises` | list[list[integer, number]] (optional) |  | — |  | (year, raise percent) schedule. NOT YET SUPPORTED (Plan 27 D3): rejected by the validator. |
-| `payroll` | [Payroll](#payroll) (optional) |  | — | `Job.payroll` | Pre-tax payroll deductions (the dependent-care FSA; the others are Plan 27 D3). |
+| `start_year` | integer \\| string (optional) | year | — | `Job.start_year` | First year (or YYYY-MM month) the job pays; unset: from the start. |
+| `end_year` | integer \\| string (optional) | year | — | `Job.end_year` | Last year (its December, or the YYYY-MM month) the job pays; then the job ends (no more pay, match or vests; unvested match is forfeited). |
+| `bonus_fixed_annual` | number (optional) | USD/year | — | `Bonus.fixed_annual` | Fixed-dollar yearly bonus (added to any bonus_pct target). |
+| `bonus_range_pct` | list[number, number] (optional) | percent | — | `Bonus.range_pct` | Payout range of the bonus as percents of target, e.g. [50, 150]: each year's multiplier is drawn between them (seeded). |
+| `signon_bonus` | number | USD | `0.0` | `Bonus.signon` | One-time sign-on bonus with the first paycheck. |
+| `raises` | list[list[integer, number]] (optional) |  | — | `Salary.raises` | (year, raise percent) pairs: the raise taking effect in each listed year (raise_pct applies to the others). |
+| `payroll` | [Payroll](#payroll) (optional) |  | — | `Job.payroll` | Pre-tax payroll deductions. |
 
 ## StockPlan
 
@@ -203,19 +206,26 @@ Builds: `StockPlan`.
 | `signon_vesting_schedule_pct` | list[number] (optional) | percent | — | `StockPlan.signon_schedule` | Vesting schedule of the sign-on grant (defaults to vesting_schedule_pct). |
 | `disposition` | `"sell"` \\| `"hold"` |  | `"sell"` | `StockPlan.disposition` | Sell vested shares, or hold them in the first brokerage account. |
 | `growth_pct` | number \\| `"economy"` | percent (typically > 1) | `"economy"` | `StockPlan.growth_rate` | Company stock growth; 'economy' follows the equity return. |
-| `existing_grants` | list[[StockGrant](#stockgrant)] (optional) |  | — |  | Grants made before the start year with unvested shares. NOT YET SUPPORTED (Plan 27 D1): rejected by the validator. |
-| `espp_discount_pct` | number (optional) | percent | — |  | ESPP purchase discount. NOT YET SUPPORTED (Plan 27 PR B): rejected by the validator. |
+| `existing_grants` | list[[StockGrant](#stockgrant)] (optional) |  | — | `StockPlan.existing_grants` | Grants made before the start year with unvested shares (their real grant years). |
+| `espp_discount_pct` | number (optional) | percent | — | `ESPP.discount_pct` | ESPP purchase discount (at most 15, IRC §423(b)(6)); with espp_contribution_pct it adds an employee stock purchase plan. |
+| `espp_contribution_pct` | number (optional) | percent | — | `ESPP.contribution_pct` | ESPP contribution, percent of gross pay (after tax), buying at each purchase month within the $25,000-a-year §423(b)(8) limit; the discount is W-2 income (not FICA). |
+| `espp_purchase_months` | list[integer] |  | `[6, 12]` | `ESPP.purchase_months` | Months the ESPP buys in. |
+| `espp_lookback` | boolean |  | `False` | `ESPP.lookback` | The ESPP price uses the lower of the offering-start and purchase prices. |
+| `espp_disposition` | `"sell"` \\| `"hold"` |  | `"sell"` | `ESPP.disposition` | Sell ESPP shares at purchase, or hold them in the first brokerage account. |
 | `options` | list[[StockOption](#stockoption)] |  | [] | `StockPlan.options` | Stock options (ISO / NSO) to exercise. |
 
 ## StockGrant
 
-An existing (already granted, partly unvested) equity grant (Plan 27 D1).
+An existing (already granted, partly unvested) equity grant (Plan 27 D1). Vests before the start are taken as done (a vest happens in January; a run starting later in the year has had that year's).
+
+Builds: `StockGrant`.
 
 | Field | Type | Unit | Default | Maps to | Description |
 |---|---|---|---|---|---|
-| `grant_year` | integer | year | **required** |  | Year granted. |
-| `value` | number | USD | **required** |  | Grant value at grant. |
-| `vesting_schedule_pct` | list[number] | percent | **required** |  | Percent vesting each year. |
+| `grant_year` | integer | year | **required** | `StockGrant.grant_year` | Year granted. |
+| `value` | number | USD | **required** | `StockGrant.value_at_grant` | Grant value at grant (the award's dollar value). |
+| `vesting_schedule_pct` | list[number] | percent | **required** | `StockGrant.schedule` | Percent vesting 1, 2, ... years after the grant year (must sum to 100). |
+| `unvested_value` | number (optional) | USD | — | `StockGrant.unvested_value` | Current market value of the still-unvested shares, from the equity statement (revalues the grant); unset keeps it at its grant value. |
 
 ## StockOption
 
@@ -233,19 +243,19 @@ Builds: `StockOption`.
 
 ## Payroll
 
-Pre-tax payroll deductions (Plan 27 D3; the dependent-care FSA is supported since Plan 31).
+Pre-tax payroll deductions from the pay stub (Plan 27 D3; see :mod:`life_model.work.payroll`).
 
 Builds: `PayrollDeductions`.
 
 | Field | Type | Unit | Default | Maps to | Description |
 |---|---|---|---|---|---|
-| `health_premium_monthly` | number | USD/month | `0.0` |  | Health premium. NOT YET SUPPORTED (Plan 27 D3): rejected by the validator. |
-| `dental_vision_monthly` | number | USD/month | `0.0` |  | Dental/vision. NOT YET SUPPORTED (Plan 27 D3): rejected by the validator. |
-| `fsa_annual` | number | USD/year | `0.0` |  | Health FSA. NOT YET SUPPORTED (Plan 27 D3): rejected by the validator. |
+| `health_premium_monthly` | number | USD/month | `0.0` | `PayrollDeductions.health_premium_monthly` | Employee share of the health premium out of each paycheck (pre-tax §125: excluded from wages and FICA). |
+| `dental_vision_monthly` | number | USD/month | `0.0` | `PayrollDeductions.dental_vision_monthly` | Dental and vision premiums out of each paycheck (pre-tax §125). |
+| `fsa_annual` | number | USD/year | `0.0` | `PayrollDeductions.fsa_annual` | Health FSA election (pre-tax, up to the year's §125(i) limit; it pays medical bills the spending already carries, so take-home cash is unchanged). |
 | `dependent_care_fsa_annual` | number | USD/year | `0.0` | `PayrollDeductions.dependent_care_fsa_annual` | Dependent-care FSA election (W-2 box 10): excluded from wages and FICA up to the Form 2441 limit ($5,000; $7,500 from 2026), and it reduces the expenses the dependent care credit can use. |
-| `hsa_employee_annual` | number | USD/year | `0.0` |  | Employee HSA. NOT YET SUPPORTED (Plan 27 D3): rejected by the validator. |
-| `hsa_employer_annual` | number | USD/year | `0.0` |  | Employer HSA. NOT YET SUPPORTED (Plan 27 D3): rejected by the validator. |
-| `commuter_monthly` | number | USD/month | `0.0` |  | Commuter benefit. NOT YET SUPPORTED (Plan 27 D3): rejected by the validator. |
+| `hsa_employee_annual` | number | USD/year | `0.0` | `PayrollDeductions.hsa_employee_annual` | Employee HSA contributions through payroll (pre-tax §125, W-2 box 12 W) into the person's first HSA, within the HSA limit. |
+| `hsa_employer_annual` | number | USD/year | `0.0` | `PayrollDeductions.hsa_employer_annual` | Employer HSA contributions (never wages), paid a twelfth a month while the job pays. |
+| `commuter_monthly` | number | USD/month | `0.0` | `PayrollDeductions.commuter_monthly` | Transit / parking through payroll, excluded from wages and FICA up to the year's §132(f) monthly limit. |
 
 ## BankAccount
 
@@ -263,31 +273,34 @@ Builds: `BankAccount`.
 | `interest_pct` | number \\| `"economy"` | percent | `"economy"` | `BankAccount.interest_rate` | Annual interest rate (APR, compounded per 'compounding'); 'economy' (the core default) follows the economy's cash yield. Interest is taxed as ordinary income. |
 | `primary` | boolean |  | `False` |  | Receives income and pays bills first. Exactly one per person when they have several bank accounts; otherwise the first in canonical order is primary. |
 | `compounding` | `"monthly"` \\| `"annual"` (optional) |  | — | `BankAccount.compounding` | How interest_pct compounds: 'monthly' (an APR) or 'annual' (enter an APY). Defaults to the configured convention. |
-| `reserve` | boolean |  | `False` |  | Emergency reserve not drawn for ordinary bills. NOT YET SUPPORTED (Plan 27 D2/D4): rejected by the validator. |
+| `reserve` | boolean |  | `False` | `BankAccount.reserve` | An emergency reserve: income is not deposited here and the waterfall draws it only after every other source. |
 
 ## FixedIncomeAccount
 
-A CD, Treasury, I-bond or bond fund holding (Plan 27 D2). Until it lands, statements with these are often entered as a bank account named "Bonds"; the validator warns about that stand-in because it is spent like checking.
+A CD, Treasury, I bond or bond fund holding (Plan 27 D2; see :mod:`life_model.account.fixed_income`). A bank account named "Bonds" is spent like checking; this keeps the instrument's own rules: a CD's interest and early-withdrawal penalty, a Treasury's state-exempt coupon and maturity, an I bond's composite rate, lock and tax deferral, a bond fund's distributions and average-cost basis.
 
-**Not yet supported (Plan 27 D2).**
-
-Builds: `FixedIncomeHolding (Plan 27)`.
+Builds: `FixedIncomeHolding`.
 
 | Field | Type | Unit | Default | Maps to | Description |
 |---|---|---|---|---|---|
 | `kind` | `"fixed_income"` |  | **required** |  |  |
 | `id` | string (optional) |  | — |  | Optional identifier for this account, unique across the spec. Required when another entry references it (a 401k's job, an event's target, a relative event's anchor). |
-| `instrument` | `"cd"` \\| `"treasury"` \\| `"i_bond"` \\| `"bond_fund"` |  | **required** |  | Instrument type. |
-| `face` | number | USD | **required** |  | Face value / current value. |
-| `rate_pct` | number | percent | **required** |  | Coupon or yield. |
-| `maturity` | string (optional) | YYYY-MM | — |  | Maturity month. |
-| `state_tax_exempt` | boolean |  | `False` |  | Interest exempt from state tax (Treasuries). |
-| `early_withdrawal_penalty_months` | integer |  | `0` |  | CD penalty in months of interest. |
-| `reserve` | boolean |  | `True` |  | Not drawn by the waterfall unless all else is exhausted. |
+| `instrument` | `"cd"` \\| `"treasury"` \\| `"i_bond"` \\| `"bond_fund"` |  | **required** | `FixedIncomeHolding.kind` | Instrument type. |
+| `name` | string (optional) |  | — | `FixedIncomeHolding.name` | Issuer or fund name. |
+| `face` | number | USD | **required** | `FixedIncomeHolding.face` | Current value on the statement (a Treasury's face). |
+| `rate_pct` | number | percent | **required** | `FixedIncomeHolding.rate_pct` | A CD's APR, a Treasury's coupon, an I bond's fixed rate, or a fund's distribution yield. |
+| `maturity` | string (optional) | YYYY-MM | — | `FixedIncomeHolding.maturity` | Maturity month (unset: never; an I bond's is 30 years). |
+| `purchased` | string (optional) | YYYY-MM | — | `FixedIncomeHolding.purchased` | Purchase / issue month (an I bond's lock, penalty and rate resets; a fund's holding period). Defaults to the first simulated month. |
+| `state_tax_exempt` | boolean (optional) |  | — | `FixedIncomeHolding.state_tax_exempt` | Interest exempt from state tax (default: true for Treasuries and I bonds). |
+| `tax_exempt` | boolean |  | `False` | `FixedIncomeHolding.tax_exempt` | Interest exempt from federal tax (a municipal fund). |
+| `early_withdrawal_penalty_months` | integer |  | `0` | `FixedIncomeHolding.early_withdrawal_penalty_months` | CD penalty in months of interest. |
+| `reserve` | boolean |  | `True` | `FixedIncomeHolding.reserve` | Not drawn by the waterfall unless all else is exhausted (false: drawn right after the bank). |
+| `accrued_interest` | number | USD | `0.0` | `FixedIncomeHolding.accrued_interest` | An I bond's interest included in face (taxed at redemption). |
+| `cost_basis` | number (optional) | USD | — | `FixedIncomeHolding.cost_basis` | A bond fund's cost basis (defaults to face). |
 
 ## BrokerageAccount
 
-A taxable brokerage account. Enter either ``balance`` (one lot with no embedded gain) or ``lots``. Lots with embedded gains are built through the undocumented core workaround ``BrokerageAccount.deposit_with_basis`` (one call per lot on an account opened empty); Plan 27 D1 adds a ``lots=`` constructor argument.
+A taxable brokerage account. Enter either ``balance`` (one lot with no embedded gain) or ``lots`` (the statement's tax lots with their basis and acquisition dates, ``BrokerageAccount(lots=)``).
 
 Builds: `BrokerageAccount`.
 
@@ -297,12 +310,12 @@ Builds: `BrokerageAccount`.
 | `id` | string (optional) |  | — |  | Optional identifier for this account, unique across the spec. Required when another entry references it (a 401k's job, an event's target, a relative event's anchor). |
 | `company` | string |  | `"Brokerage"` | `BrokerageAccount.company` | Brokerage name. |
 | `balance` | number (optional) | USD | — | `BrokerageAccount.balance` | Balance, seeded as one lot with basis equal to the balance (no embedded gain). Mutually exclusive with lots. |
-| `lots` | list[[TaxLot](#taxlot)] (optional) |  | — | `BrokerageAccount.deposit_with_basis` | Opening tax lots (value, cost basis, acquired year), built via deposit_with_basis. |
-| `growth_pct` | number \\| `"economy"` | percent (typically > 1) | `"economy"` | `BrokerageAccount.growth_rate` | Total annual return; 'economy' follows the equity return (and varies under stochastic runs). |
-| `dividend_yield_pct` | number (optional) | percent | — | `BrokerageAccount.dividend_yield` | Qualified-dividend yield carved out of the return; defaults to the configured yield. |
-| `allocation_pct` | map[string → number] (optional) | percent | — |  | Asset allocation in percent by asset class, e.g. {equity: 70, bond: 30}. NOT YET SUPPORTED (Plan 27 D5): rejected by the validator. |
-| `expense_ratio_pct` | number (optional) | percent | — |  | Fund expense ratio. NOT YET SUPPORTED (Plan 27 D5): rejected by the validator. |
-| `reinvest_dividends` | boolean |  | `True` |  | False pays dividends to the bank instead. NOT YET SUPPORTED (Plan 27 item 1): rejected by the validator. |
+| `lots` | list[[TaxLot](#taxlot)] (optional) |  | — | `BrokerageAccount.lots` | Opening tax lots (value, cost basis, acquired year and month). |
+| `growth_pct` | number \\| `"economy"` | percent (typically > 1) | `"economy"` | `BrokerageAccount.growth_pct` | Total annual return; 'economy' follows the equity return (and varies under stochastic runs). |
+| `dividend_yield_pct` | number (optional) | percent | — | `BrokerageAccount.dividend_yield_pct` | Qualified-dividend yield carved out of the return; defaults to the configured yield. |
+| `allocation_pct` | map[`"equity"` \\| `"bond"` \\| `"cash"` → number] (optional) | percent | — | `Investment.allocation` | Asset allocation in percent by asset class (equity, bond, cash; sums to 100), e.g. {equity: 70, bond: 30}: the account grows at the blend of the economy's returns, rebalanced yearly. A numeric growth_pct overrides it. |
+| `expense_ratio_pct` | number (optional) | percent | — | `Investment.expense_ratio_pct` | Fund expense ratio (percent a year), netted out of the return. |
+| `reinvest_dividends` | boolean |  | `True` | `BrokerageAccount.reinvest_dividends` | False pays dividends to the bank instead. |
 
 ## TaxLot
 
@@ -313,6 +326,7 @@ One brokerage tax lot.
 | `value` | number | USD | **required** |  | Market value at the as-of date. |
 | `cost_basis` | number | USD | **required** |  | Cost basis. |
 | `acquired_year` | integer (optional) | year | — |  | Year acquired (long-term once held a year). Defaults to the start year. |
+| `acquired_month` | integer (optional) |  | — |  | Month acquired (defaults to January of an earlier year, else the first simulated month). |
 
 ## Job401k
 
@@ -324,19 +338,23 @@ Builds: `Job401kAccount`.
 |---|---|---|---|---|---|
 | `kind` | `"401k"` |  | **required** |  |  |
 | `id` | string (optional) |  | — |  | Optional identifier for this account, unique across the spec. Required when another entry references it (a 401k's job, an event's target, a relative event's anchor). |
-| `job` | string (optional) |  | — | `Job401kAccount.job` | Id of the person's job offering the plan. A standalone (old-employer) plan without a job is NOT YET SUPPORTED (Plan 27 D3). |
+| `job` | string (optional) |  | — | `Job401kAccount.job` | Id of the person's job offering the plan. Unset: a standalone (old-employer) plan, which grows, pays RMDs and is drawn by the waterfall but takes no contributions. |
 | `pretax_balance` | number | USD | `0.0` | `Job401kAccount.pretax_balance` | Pre-tax balance. |
 | `roth_balance` | number | USD | `0.0` | `Job401kAccount.roth_balance` | Roth balance. |
-| `pretax_contrib_pct` | number | percent (typically > 1) | `0.0` | `Job401kAccount.pretax_contrib_percent` | Pre-tax deferral, percent of plan pay (base salary, plus bonus with match_on_bonus). |
-| `roth_contrib_pct` | number | percent (typically > 1) | `0.0` | `Job401kAccount.roth_contrib_percent` | Roth deferral, percent of plan pay (base salary, plus bonus with match_on_bonus). |
-| `growth_pct` | number \\| `"economy"` | percent (typically > 1) | `"economy"` | `Job401kAccount.average_growth` | Annual return; 'economy' follows the equity return. |
+| `pretax_contrib_pct` | number | percent (typically > 1) | `0.0` | `Job401kAccount.pretax_contrib_pct` | Pre-tax deferral, percent of plan pay (base salary, plus bonus with match_on_bonus). |
+| `roth_contrib_pct` | number | percent (typically > 1) | `0.0` | `Job401kAccount.roth_contrib_pct` | Roth deferral, percent of plan pay (base salary, plus bonus with match_on_bonus). |
+| `growth_pct` | number \\| `"economy"` | percent (typically > 1) | `"economy"` | `Job401kAccount.growth_pct` | Annual return; 'economy' follows the equity return. |
 | `match_tiers` | list[[MatchTier](#matchtier)] (optional) |  | — | `Job401kAccount.match_tiers` | The employer match as the plan states it, tier by tier over the deferral rate: [{match_pct: 100, up_to_pay_pct: 3}, {match_pct: 50, up_to_pay_pct: 2}] is 100% of the first 3% of pay deferred plus 50% of the next 2%. |
 | `match_on_bonus` | boolean |  | `False` | `Job401kAccount.match_on_bonus` | Plan pay includes the bonus (deferral percentages and match tiers apply to salary + bonus). |
 | `match_vesting_years` | integer | years | `0` | `Job401kAccount.match_vesting_years` | Cliff vesting of employer money (0 = immediately vested); unvested match is forfeited if the job ends first. |
 | `company_match_pct` | number | percent (typically > 1) | `0.0` | `Job401kAccount.company_match_percent` | DEPRECATED (the validator warns): core's legacy match, this percent OF THE DEFERRAL capped at this percent of pay (6 with a 6% deferral on $100k matches $360). Use match_tiers; a dollar-for-dollar match up to 6% of pay is [{match_pct: 100, up_to_pay_pct: 6}]. Mutually exclusive with match_tiers. |
-| `after_tax_balance` | number (optional) | USD | — |  | After-tax (non-Roth) bucket. NOT YET SUPPORTED (Plan 27 D3): rejected by the validator. |
-| `roth_basis` | number (optional) | USD | — |  | Roth contribution basis. NOT YET SUPPORTED (Plan 27 D3): rejected by the validator. |
-| `allocation_pct` | map[string → number] (optional) | percent | — |  | Asset allocation in percent by asset class, e.g. {equity: 70, bond: 30}. NOT YET SUPPORTED (Plan 27 D5): rejected by the validator. |
+| `after_tax_balance` | number (optional) | USD | — | `Job401kAccount.after_tax_balance` | After-tax (non-Roth) bucket: contributions plus their earnings (pre-tax money). |
+| `after_tax_basis` | number (optional) | USD | — | `Job401kAccount.after_tax_basis` | After-tax contributions in after_tax_balance (defaults to all of it). |
+| `after_tax_contrib_pct` | number | percent | `0.0` | `Job401kAccount.after_tax_contrib_pct` | After-tax (non-Roth) contributions, percent of plan pay (outside 402(g), inside 415(c)). |
+| `in_plan_roth_conversion` | boolean |  | `False` | `Job401kAccount.in_plan_roth_conversion` | Convert each after-tax contribution to Roth as it is made (the mega backdoor). |
+| `roth_basis` | number (optional) | USD | — | `Job401kAccount.roth_basis` | Roth contributions in roth_balance: a Roth distribution before 59.5 is taxed and penalized on its earnings share. Unset treats the whole Roth balance as basis. |
+| `allocation_pct` | map[`"equity"` \\| `"bond"` \\| `"cash"` → number] (optional) | percent | — | `Investment.allocation` | Asset allocation in percent by asset class (equity, bond, cash; sums to 100), e.g. {equity: 70, bond: 30}: the account grows at the blend of the economy's returns, rebalanced yearly. A numeric growth_pct overrides it. |
+| `expense_ratio_pct` | number (optional) | percent | — | `Investment.expense_ratio_pct` | Fund expense ratio (percent a year), netted out of the return. |
 
 ## MatchTier
 
@@ -360,11 +378,13 @@ Builds: `TraditionalIRA`.
 | `balance` | number | USD | `0.0` | `TraditionalIRA.balance` | Balance. |
 | `growth_pct` | number \\| `"economy"` | percent (typically > 1) | `"economy"` | `TraditionalIRA.growth_rate` | Annual return; 'economy' follows the equity return. |
 | `contribution_limit_annual` | number (optional) | USD/year | — | `TraditionalIRA.contribution_limit` | Override of the annual contribution limit (shared across IRAs). |
-| `nondeductible_basis` | number (optional) | USD | — |  | Form 8606 after-tax basis. NOT YET SUPPORTED (Plan 27 D1): rejected by the validator. |
+| `nondeductible_basis` | number (optional) | USD | — | `TraditionalIRA.nondeductible_basis` | Form 8606 basis (line 14 of the last filed 8606): distributions and conversions recover it pro rata across the person's traditional IRAs. |
+| `allocation_pct` | map[`"equity"` \\| `"bond"` \\| `"cash"` → number] (optional) | percent | — | `Investment.allocation` | Asset allocation in percent by asset class (equity, bond, cash; sums to 100), e.g. {equity: 70, bond: 30}: the account grows at the blend of the economy's returns, rebalanced yearly. A numeric growth_pct overrides it. |
+| `expense_ratio_pct` | number (optional) | percent | — | `Investment.expense_ratio_pct` | Fund expense ratio (percent a year), netted out of the return. |
 
 ## RothIRA
 
-A Roth IRA. The whole opening balance is treated as contribution basis (Plan 27 item 3).
+A Roth IRA. Withdrawals follow the Roth ordering: contributions, then conversions, then earnings.
 
 Builds: `RothIRA`.
 
@@ -375,8 +395,10 @@ Builds: `RothIRA`.
 | `balance` | number | USD | `0.0` | `RothIRA.balance` | Balance. |
 | `growth_pct` | number \\| `"economy"` | percent (typically > 1) | `"economy"` | `RothIRA.growth_rate` | Annual return; 'economy' follows the equity return. |
 | `contribution_limit_annual` | number (optional) | USD/year | — | `RothIRA.contribution_limit` | Override of the annual contribution limit (shared across IRAs). |
-| `contribution_basis` | number (optional) | USD | — |  | Contribution basis (withdrawable any time). NOT YET SUPPORTED (Plan 27 D1): rejected by the validator. |
-| `conversion_basis` | number (optional) | USD | — |  | Conversion basis. NOT YET SUPPORTED (Plan 27 D1): rejected by the validator. |
+| `contribution_basis` | number (optional) | USD | — | `RothIRA.contribution_basis` | Regular contributions in the balance (withdrawable tax- and penalty-free any time). Unset: the whole balance less conversion_basis (no earnings). |
+| `conversion_basis` | number (optional) | USD | — | `RothIRA.conversion_basis` | Converted amounts in the balance (assumed more than five years old: tax- and penalty-free). |
+| `allocation_pct` | map[`"equity"` \\| `"bond"` \\| `"cash"` → number] (optional) | percent | — | `Investment.allocation` | Asset allocation in percent by asset class (equity, bond, cash; sums to 100), e.g. {equity: 70, bond: 30}: the account grows at the blend of the economy's returns, rebalanced yearly. A numeric growth_pct overrides it. |
+| `expense_ratio_pct` | number (optional) | percent | — | `Investment.expense_ratio_pct` | Fund expense ratio (percent a year), netted out of the return. |
 
 ## HealthSavingsAccount
 
@@ -391,9 +413,11 @@ Builds: `HealthSavingsAccount`.
 | `coverage` | `"individual"` \\| `"family"` |  | `"individual"` | `HealthSavingsAccount.hsa_type` | HDHP coverage tier (sets the limit). |
 | `balance` | number | USD | `0.0` | `HealthSavingsAccount.balance` | Balance. |
 | `growth_pct` | number \\| `"economy"` | percent (typically > 1) | `"economy"` | `HealthSavingsAccount.growth_rate` | Annual return; 'economy' follows the equity return. |
-| `employer_contribution_annual` | number (optional) | USD/year | — | `HealthSavingsAccount.employer_contribution` | Employer contribution per year (continues after retirement until Plan 27 D3). Defaults to the configured amount. |
+| `employer_contribution_annual` | number (optional) | USD/year | — | `HealthSavingsAccount.employer_contribution` | Employer contribution per year, at each year start while the person has an active job (prefer the job's payroll.hsa_employer_annual, paid per paycheck). Defaults to the configured amount. |
 | `contribution_limit_annual` | number (optional) | USD/year | — | `HealthSavingsAccount.contribution_limit` | Override of the annual contribution limit. |
-| `basis` | number (optional) | USD | — |  | Contribution basis. NOT YET SUPPORTED (Plan 27 D1): rejected by the validator. |
+| `basis` | number (optional) | USD | — | `HealthSavingsAccount.basis` | Contribution basis (informational: HSA distributions are tax-free for medical costs). |
+| `allocation_pct` | map[`"equity"` \\| `"bond"` \\| `"cash"` → number] (optional) | percent | — | `Investment.allocation` | Asset allocation in percent by asset class (equity, bond, cash; sums to 100), e.g. {equity: 70, bond: 30}: the account grows at the blend of the economy's returns, rebalanced yearly. A numeric growth_pct overrides it. |
+| `expense_ratio_pct` | number (optional) | percent | — | `Investment.expense_ratio_pct` | Fund expense ratio (percent a year), netted out of the return. |
 
 ## Plan529
 
@@ -411,7 +435,9 @@ Builds: `Plan529`.
 | `growth_pct` | number \\| `"economy"` | percent (typically > 1) | `"economy"` | `Plan529.growth_rate` | Annual return; 'economy' follows the equity return. |
 | `contribution_limit_annual` | number (optional) | USD/year | — | `Plan529.annual_contribution_limit` | Annual limit override. |
 | `lifetime_contribution_limit` | number (optional) | USD | — | `Plan529.lifetime_contribution_limit` | Lifetime limit override. |
-| `basis` | number (optional) | USD | — |  | Contribution basis. NOT YET SUPPORTED (Plan 27 D1): rejected by the validator. |
+| `basis` | number (optional) | USD | — | `Plan529.basis` | Contributions in the balance; the rest is earnings, taxed and penalized pro rata on a non-qualified withdrawal. Unset: the whole balance. |
+| `allocation_pct` | map[`"equity"` \\| `"bond"` \\| `"cash"` → number] (optional) | percent | — | `Investment.allocation` | Asset allocation in percent by asset class (equity, bond, cash; sums to 100), e.g. {equity: 70, bond: 30}: the account grows at the blend of the economy's returns, rebalanced yearly. A numeric growth_pct overrides it. |
+| `expense_ratio_pct` | number (optional) | percent | — | `Investment.expense_ratio_pct` | Fund expense ratio (percent a year), netted out of the return. |
 
 ## InheritedPretaxAccount
 
@@ -768,23 +794,44 @@ Builds: `Job (kind='self_employed')`.
 
 ## ContributionPlan
 
-A recurring contribution (Plan 27 D4).
+A recurring contribution (Plan 27 D4; ``life_model.policies.ContributionPlan``).
+
+Builds: `ContributionPlan`.
 
 | Field | Type | Unit | Default | Maps to | Description |
 |---|---|---|---|---|---|
-| `account` | string |  | **required** |  | Target account id. |
-| `amount_annual` | number (optional) | USD/year | — |  | Dollars per year. |
-| `pay_pct` | number (optional) | percent | — |  | Percent of pay. |
-| `source` | `"bank"` \\| `"payroll"` |  | `"bank"` |  | Where the money comes from. |
+| `account` | string |  | **required** |  | Target account id (a 401k, IRA, HSA, brokerage, 529, bank or fixed income). |
+| `amount_annual` | number (optional) | USD/year | — | `ContributionPlan.amount_annual` | Dollars per year, spread over the months. |
+| `max_out` | boolean |  | `False` | `ContributionPlan.amount_annual` | Contribute the account's annual limit (instead of amount_annual / pay_pct). |
+| `pay_pct` | number (optional) | percent | — | `ContributionPlan.pct_of_pay` | Percent of gross pay. |
+| `source` | `"bank"` \\| `"payroll"` |  | `"bank"` | `ContributionPlan.source` | 'bank' (moved after the month's bills, never more than the bank holds) or 'payroll' (a 401k deferral, or a pre-tax HSA deferral). |
+| `bucket` | `"pretax"` \\| `"roth"` \\| `"after_tax"` (optional) |  | — | `ContributionPlan.bucket` | For a 401k: which bucket (default pretax). |
+| `months` | integer \\| list[integer] |  | `12` | `ContributionPlan.months` | Contribute in the first n months of each year (12: monthly), or in the listed months. |
 
 ## SavingsPolicy
 
-Surplus sweep above a cash floor (Plan 27 D4).
+Surplus sweep above a cash floor, once a year after the taxes are paid (Plan 27 D4).
+
+Builds: `SavingsPolicy`.
 
 | Field | Type | Unit | Default | Maps to | Description |
 |---|---|---|---|---|---|
-| `cash_floor` | number | USD | **required** |  | Cash kept in the bank. |
-| `sweep_to` | string |  | **required** |  | Account receiving the surplus. |
+| `cash_floor` | number | USD | **required** | `SavingsPolicy.cash_floor` | Cash kept in the person's (non-reserve) bank accounts. |
+| `sweep_to` | string |  | **required** | `SavingsPolicy.sweep_to` | Account receiving the surplus (brokerage, fixed income, bank, or a tax-advantaged account within its room). |
+
+## RothConversion
+
+A standing Roth conversion every December before the year's taxes (Plan 27).
+
+Builds: `RothConversionPolicy`.
+
+| Field | Type | Unit | Default | Maps to | Description |
+|---|---|---|---|---|---|
+| `fill_bracket_pct` | number (optional) | percent | — | `RothConversionPolicy.fill_bracket_pct` | Convert enough to fill the return's ordinary taxable income to the top of this bracket (12, 22, ...). |
+| `amount_annual` | number (optional) | USD/year | — | `RothConversionPolicy.amount_annual` | Or convert this many dollars a year. |
+| `source` | string (optional) |  | — |  | Source account id (a traditional IRA, or a 401k in plan); default every traditional IRA. |
+| `target` | string (optional) |  | — |  | Roth IRA id (default the first, opened if needed). |
+| `until_age` | integer (optional) |  | — |  | Stop converting once the person reaches this age. |
 
 ## Relationships
 
@@ -997,9 +1044,7 @@ A one-time contribution from the bank into an account. Tax-advantaged accounts t
 
 ## ConvertToRothEvent
 
-Roth conversion (Plan 27).
-
-**Not yet supported (Plan 27 item 3).**
+Convert pre-tax money to a Roth IRA (``life_model.policies.convert_to_roth``): pro rata to the traditional IRAs' Form 8606 basis, the taxable part is ordinary income this year (no 10% additional tax). A ``fill_bracket_pct`` conversion happens in December of the event's year (it needs the year's income).
 
 | Field | Type | Unit | Default | Maps to | Description |
 |---|---|---|---|---|---|
@@ -1008,8 +1053,10 @@ Roth conversion (Plan 27).
 | `person` | string |  | **required** |  | Person the event applies to. |
 | `name` | string (optional) |  | — |  | Description shown in the event list. |
 | `action` | `"convert_to_roth"` |  | **required** |  |  |
-| `amount` | number | USD | **required** |  | Amount converted. |
-| `source` | string (optional) |  | — |  | Source account id. |
+| `amount` | number (optional) | USD | — |  | Amount converted. |
+| `fill_bracket_pct` | number (optional) | percent | — |  | Or convert enough to fill ordinary taxable income to the top of this bracket. |
+| `source` | string (optional) |  | — |  | Source account id (a traditional IRA, or a 401k: an in-plan rollover); default every traditional IRA. |
+| `target` | string (optional) |  | — |  | Roth IRA id (default the first, opened if needed). |
 
 ## ClaimSocialSecurityEvent
 

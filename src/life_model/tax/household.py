@@ -437,8 +437,11 @@ def _apply_ira_phaseouts(unit: "TaxUnit") -> None:
         if e.income_type == IncomeType.ORDINARY and e.source == "ira_deduction"
     )
     magi = unit.agi() + deducted
-    limit = unit.config.retirement.ira.contribution_limit
+    from ..account.traditional_IRA import ira_contribution_limit
+
     for member in unit.members:
+        # The phase-out reduces the member's own limit, the age-50 catch-up included (Pub. 590-A worksheets).
+        limit = ira_contribution_limit(member, member.model.year)
         contributed = _ira_contributions(member, "traditional")
         if contributed > 0:
             spouse_covered = any(active_participant(m) for m in unit.members if m is not member)

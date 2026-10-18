@@ -25,6 +25,8 @@ people:
     salary_annual: 50000
     raise_pct: 1
     bonus_pct: 1
+    payroll:
+      health_premium_monthly: 250
   accounts:
   - kind: bank
     company: Bank

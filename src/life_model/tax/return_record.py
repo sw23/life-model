@@ -46,6 +46,8 @@ ADJUSTMENT_SOURCES = frozenset(
         "student_loan_interest",
         "se_tax_deduction",
         "self_employed_plan",
+        # Plan 27 D2: a CD's early withdrawal penalty (IRC §62(a)(9), Schedule 1 line 18).
+        "early_withdrawal_penalty",
     }
 )
 #: Capital-gain entry sources that are netting adjustments, not realized gains.

@@ -73,28 +73,28 @@ def _legacy_populate(env: FinancialLifeEnv):
         )
         items: dict[str, Any] = {}
         items["bank"] = BankAccount(
-            owner=person, company="Bank", type="Checking", balance=household["initial_bank_balance"], interest_rate=0.5
+            owner=person, company="Bank", type="Checking", balance=household["initial_bank_balance"], interest_pct=0.5
         )
         items["job"] = Job(
             owner=person,
             company="Company",
             role="Employee",
             salary=Salary(
-                model=model, base=household["initial_salary"], yearly_increase=config["salary_growth"], yearly_bonus=1
+                model, base_annual=household["initial_salary"], raise_pct=config["salary_growth"], bonus_pct=1
             ),
         )
         items["401k"] = Job401kAccount(
             job=items["job"],
             pretax_balance=float(household.get("initial_401k_pretax") or 0.0),
             roth_balance=float(household.get("initial_401k_roth") or 0.0),
-            average_growth=config["account_growth"],
+            growth_pct=config["account_growth"],
         )
         items["brokerage"] = BrokerageAccount(
-            person=person, company="Brokerage", balance=float(household.get("initial_brokerage") or 0.0)
+            person, company="Brokerage", balance=float(household.get("initial_brokerage") or 0.0)
         )
-        items["traditional_ira"] = TraditionalIRA(person=person)
-        items["roth_ira"] = RothIRA(person=person)
-        items["hsa"] = HealthSavingsAccount(person=person, hsa_type=HSAType.INDIVIDUAL)
+        items["traditional_ira"] = TraditionalIRA(person)
+        items["roth_ira"] = RothIRA(person)
+        items["hsa"] = HealthSavingsAccount(person, hsa_type=HSAType.INDIVIDUAL)
         for i, age in enumerate(household.get("children_ages", ()) or ()):
             Child(person, f"Child{i + 1}", model.start_year - int(age))
         if household.get("models_healthcare", False):

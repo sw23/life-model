@@ -133,26 +133,6 @@ def not_yet_supported_findings(spec: s.HouseholdSpec) -> list[Finding]:
                         "not_yet_supported",
                     )
                 )
-    located = [
-        (f"people[{p_index}].accounts[{a_index}]", account)
-        for p_index, person in enumerate(spec.people)
-        for a_index, account in enumerate(person.accounts)
-    ] + [
-        (f"events[{e_index}].account", e.account)
-        for e_index, e in enumerate(spec.events)
-        if isinstance(e, s.AddAccountEvent)
-    ]
-    for account_path, account in located:
-        if isinstance(account, s.Job401k) and account.job is None:
-            findings.append(
-                Finding(
-                    ERROR,
-                    f"{account_path}.job",
-                    "A 401k without a job (an old-employer plan) is not yet supported (Plan 27 D3).",
-                    "Reference one of the person's jobs, or roll it into a traditional_ira for now.",
-                    "not_yet_supported",
-                )
-            )
     return findings
 
 
@@ -456,6 +436,13 @@ class _SpecChecker:
                     "add {kind: bank, balance: ...}.",
                     "no_bank_account",
                 )
+            if banks and all(a.reserve for a in banks):
+                self.error(
+                    f"{path}.accounts",
+                    f"{p.name}'s only bank accounts are emergency reserves; income needs a spending account.",
+                    "add a bank account without reserve: true.",
+                    "only_reserve_banks",
+                )
             primaries = [a for a in banks if a.primary]
             if len(primaries) > 1:
                 self.error(
@@ -475,7 +462,8 @@ class _SpecChecker:
                         f"{path}.accounts[{j}]",
                         f"bank account '{bank.company} {bank.type}' looks like a stand-in for bonds/CDs/Treasuries; "
                         "it is spent like checking and its interest is not taxed.",
-                        "use kind: fixed_income once supported (Plan 27 D2); until then mark the intent in a comment.",
+                        "use kind: fixed_income (a CD, Treasury, I bond or bond fund), or reserve: true for an emergency "
+                        "fund.",
                         "bonds_as_bank",
                     )
             if p.jobs and p.retirement_age < p.age:
@@ -534,6 +522,9 @@ class _SpecChecker:
             for j, account in enumerate(p.accounts):
                 apath = f"{path}.accounts[{j}]"
                 self.check_account_refs(account, apath, job_ids, child_ids)
+                self.check_account_plan27(account, apath)
+            self.check_policies(p, path)
+            self.check_payroll(p, path)
             for e_index, event in enumerate(self.spec.events):
                 if isinstance(event, s.AddAccountEvent) and event.person == p.id:
                     self.check_account_refs(event.account, f"events[{e_index}].account", job_ids, child_ids)
@@ -550,6 +541,129 @@ class _SpecChecker:
             for j, policy in enumerate(p.insurance):
                 if isinstance(policy, s.LifeInsurance) and policy.beneficiary is not None:
                     self.check_person_ref(policy.beneficiary, f"{path}.insurance[{j}].beneficiary")
+
+    def check_account_plan27(self, account, path: str) -> None:
+        """Plan 27 account rules: a standalone 401k takes no contributions; an allocation needs growth to
+        follow the economy."""
+        if isinstance(account, s.Job401k) and account.job is None:
+            if account.pretax_contrib_pct or account.roth_contrib_pct or account.after_tax_contrib_pct:
+                self.error(
+                    f"{path}.job",
+                    "a 401k without a job (an old employer's plan) takes no contributions.",
+                    "remove the contribution percentages, or name the job offering the plan.",
+                    "standalone_401k_contributions",
+                )
+            if account.match_tiers or account.company_match_pct:
+                self.error(
+                    f"{path}.match_tiers",
+                    "a 401k without a job has no employer match.",
+                    code="standalone_401k_contributions",
+                )
+        allocation = getattr(account, "allocation_pct", None)
+        if allocation is not None:
+            total = sum(allocation.values())
+            if abs(total - 100) > 1e-6:
+                self.error(
+                    f"{path}.allocation_pct",
+                    f"allocation must sum to 100 percent, got {total:g}.",
+                    code="allocation_sum",
+                )
+            if getattr(account, "growth_pct", "economy") != "economy":
+                self.warn(
+                    f"{path}.allocation_pct",
+                    "a numeric growth_pct overrides the allocation (and disconnects the account from stochastic runs).",
+                    "set growth_pct: economy to grow at the allocation's blend of the economy's returns.",
+                    "allocation_ignored",
+                )
+
+    def _person_accounts(self, p: s.Person) -> dict:
+        accounts = {a.id: a for a in p.accounts if a.id is not None}
+        for event in self.spec.events:
+            if isinstance(event, s.AddAccountEvent) and event.person == p.id and event.account.id is not None:
+                accounts[event.account.id] = event.account
+        return accounts
+
+    def check_policies(self, p: s.Person, path: str) -> None:
+        """Contribution plans, the savings sweep and the Roth conversion name the person's own accounts of
+        a kind they can use."""
+        accounts = self._person_accounts(p)
+        limited = ("401k", "traditional_ira", "roth_ira", "hsa", "529")
+        for k, plan in enumerate(p.contribution_plans or ()):
+            ppath = f"{path}.contribution_plans[{k}]"
+            account = accounts.get(plan.account)
+            if account is None:
+                self.error(
+                    f"{ppath}.account",
+                    f"unknown account {plan.account!r} (one of {p.name}'s account ids)",
+                    code="unknown_reference",
+                )
+                continue
+            kind = account.kind
+            if kind in ("pension", "annuity", "inherited_pretax", "trust", "daf"):
+                self.error(f"{ppath}.account", f"recurring contributions to a {kind} account are not supported.")
+            if kind == "401k":
+                if plan.source != "payroll":
+                    self.error(f"{ppath}.source", "401k contributions come from payroll (source: payroll).")
+                if account.job is None:
+                    self.error(f"{ppath}.account", "a 401k without a job takes no contributions.")
+            elif plan.bucket is not None:
+                self.error(f"{ppath}.bucket", "bucket is for 401k plans.")
+            if plan.source == "payroll" and kind not in ("401k", "hsa"):
+                self.error(f"{ppath}.source", "payroll contributions go to a 401k or an HSA; use source: bank.")
+            if plan.source == "payroll" and kind == "hsa" and not p.jobs:
+                self.error(f"{ppath}.source", f"{p.name} has no W-2 job to deduct the HSA contribution from.")
+            if plan.max_out and kind not in limited:
+                self.error(f"{ppath}.max_out", f"a {kind} account has no annual limit to max out.")
+        policy = p.savings_policy
+        if policy is not None:
+            account = accounts.get(policy.sweep_to)
+            if account is None:
+                self.error(
+                    f"{path}.savings_policy.sweep_to", f"unknown account {policy.sweep_to!r}", code="unknown_reference"
+                )
+            elif account.kind not in ("brokerage", "fixed_income", "bank", "traditional_ira", "roth_ira", "hsa", "529"):
+                self.error(f"{path}.savings_policy.sweep_to", f"cannot sweep cash into a {account.kind} account.")
+        rc = p.roth_conversion
+        if rc is not None:
+            self.check_conversion_refs(accounts, rc.source, rc.target, f"{path}.roth_conversion")
+
+    def check_conversion_refs(self, accounts: dict, source, target, path: str) -> None:
+        if source is not None:
+            account = accounts.get(source)
+            if account is None or account.kind not in ("traditional_ira", "401k"):
+                self.error(
+                    f"{path}.source",
+                    f"{source!r} is not a traditional_ira or 401k of the person",
+                    code="unknown_reference",
+                )
+        if target is not None:
+            account = accounts.get(target)
+            if account is None or account.kind != "roth_ira":
+                self.error(f"{path}.target", f"{target!r} is not a roth_ira of the person", code="unknown_reference")
+
+    def check_payroll(self, p: s.Person, path: str) -> None:
+        """Payroll HSA money needs an HSA; a health FSA over the year's limit is cut to it."""
+        has_hsa = any(a.kind == "hsa" for a in p.accounts)
+        fsa_limit = self.config.tax_year(self.start).limit_health_fsa
+        for j, job in enumerate(p.jobs):
+            payroll = job.payroll
+            if payroll is None:
+                continue
+            if (payroll.hsa_employee_annual or payroll.hsa_employer_annual) and not has_hsa:
+                self.error(
+                    f"{path}.jobs[{j}].payroll",
+                    "payroll HSA contributions need an HSA account (kind: hsa).",
+                    "add {kind: hsa, ...} to the person's accounts.",
+                    "payroll_hsa_without_hsa",
+                )
+            if fsa_limit is not None and payroll.fsa_annual > fsa_limit:
+                self.warn(
+                    f"{path}.jobs[{j}].payroll.fsa_annual",
+                    f"the health FSA election {payroll.fsa_annual:,.0f} is over the {self.start} limit "
+                    f"({fsa_limit:,.0f}); only the limit is excluded from wages.",
+                    None,
+                    "fsa_over_limit",
+                )
 
     def check_person_ref(self, pid: str, path: str) -> None:
         if pid not in self.people:
@@ -722,6 +836,10 @@ class _SpecChecker:
                         f"one-time contributions to a {target[2].kind} account are not supported.",
                         "use the 401k's contribution percentages, or a brokerage/IRA/HSA/529/bank account.",
                     )
+            if isinstance(event, s.ConvertToRothEvent) and event.person in self.people:
+                self.check_conversion_refs(
+                    self._person_accounts(self.people[event.person]), event.source, event.target, path
+                )
             if isinstance(event, s.RecurringExpenseEvent) and event.until is not None:
                 last = self.resolve(event.until, event.person, by_id)
                 if year is not None and last is not None and last < year:
@@ -907,7 +1025,7 @@ def validate_model(model) -> list[Finding]:
                     WARNING,
                     f"{path}.bank_accounts[{bank.company} {bank.type}]",
                     "this bank account looks like a stand-in for bonds/CDs/Treasuries; it is spent like checking.",
-                    "use a fixed-income holding once supported (Plan 27 D2).",
+                    "use a FixedIncomeHolding (or BankAccount(reserve=True) for an emergency fund).",
                     "bonds_as_bank",
                 )
         for home in person.homes:
@@ -996,6 +1114,15 @@ def validate_model(model) -> list[Finding]:
             override = agent._growth_rate_override
             if override is not None and 0 < override < 1:
                 findings.append(_fraction_finding(f"account[{type(agent).__name__}].growth_rate", override))
+            if override is not None and agent.allocation is not None:
+                add(
+                    WARNING,
+                    f"account[{type(agent).__name__}].allocation",
+                    "an explicit growth rate overrides the allocation (and disconnects the account from stochastic "
+                    "runs).",
+                    "pass growth_pct=None to grow at the allocation's blend of the economy's returns.",
+                    "allocation_ignored",
+                )
         if isinstance(agent, LifeEvents):
             for life_event in agent.life_events:
                 if life_event.year < model.start_year:
