@@ -195,7 +195,9 @@ class TestMoneyConservationBugs(unittest.TestCase):
         SocialSecurity(person, withdrawal_start_age=67, income_history=EARNINGS_HISTORY)
         model.run()
         benefits = [e for e in model.ledger if e.kind == "benefit" and e.source == "Social Security"]
-        self.assertEqual(sorted({e.year for e in benefits}), [2026, 2027])
+        # Plan 32: the death (January 2028, at 72) comes after that month's benefit, then nothing.
+        self.assertEqual(max((e.year, e.month) for e in benefits), (2028, 1))
+        self.assertEqual(sorted({e.year for e in benefits}), [2026, 2027, 2028])
         self.assertEqual(person.cash, 0)
         assert_conservation(model)
 
@@ -250,8 +252,9 @@ class TestMoneyConservationBugs(unittest.TestCase):
         Pension(bob, "Utility", vesting_years=1, benefit_amount=20000, survivor_percent=50)
         model.run()
         self.assertTrue(sue.is_deceased)
-        paid = {(e.year, e.to_account) for e in model.ledger if e.kind == "benefit"}
-        self.assertNotIn(2029, {year for year, _ in paid})  # Sue died in 2029
+        paid = {(e.year, e.month) for e in model.ledger if e.kind == "benefit"}
+        # Sue died in January 2029, after that month's survivor benefit (Plan 32: deaths are monthly).
+        self.assertEqual(max(paid), (2029, 1))
         self.assertEqual(sue.cash, 0)
         assert_conservation(model)
 

@@ -11,6 +11,7 @@ from ..insurance.social_security import Income, SocialSecurity
 from ..model import LifeModel
 from ..people.family import Family
 from ..people.person import Person, Spending
+from .helpers import run_months
 
 # TODO - Add unit test for the scenario below:
 # For example a person who had maximum-taxable earnings in each year since
@@ -242,16 +243,16 @@ class TestSocialSecurityBenefitsAndWageBase(unittest.TestCase):
         """Benefits deposit as cash and record an SS_BENEFIT ledger entry."""
         from ..tax.income import IncomeType
 
-        _model, person = self._person(start_year=2030, age=67)
+        model, person = self._person(start_year=2030, age=67)
         income_history = [(y, 60000) for y in range(1985, 2025)]
         ss = SocialSecurity(person=person, withdrawal_start_age=67, income_history=income_history)
         bank_before = person.bank_account_balance
-        ss.pre_step()
+        run_months(model, ss.pre_step)  # twelve monthly benefits
         yearly_pia = ss.get_pia() * 12
         self.assertGreater(yearly_pia, 0)
         self.assertAlmostEqual(person.bank_account_balance - bank_before, yearly_pia, places=2)
         self.assertTrue(any(e.income_type == IncomeType.SS_BENEFIT for e in person.income.entries))
-        self.assertEqual(person.stat_ss_income, yearly_pia)
+        self.assertAlmostEqual(person.stat_ss_income, yearly_pia, places=6)
 
     def test_benefit_taxable_portion_zero_when_no_other_income(self):
         """A modest benefit with no other income falls below the provisional threshold."""

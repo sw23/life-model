@@ -3,10 +3,11 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 import html
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from ..base_classes import Benefit
 from ..ledger import FlowKind
+from ..model import snap_money
 from ..people.person import Person
 from ..tax.income import IncomeType
 
@@ -18,10 +19,11 @@ class Pension(Benefit):
     """Models a defined-benefit pension plan that pays a person a flat annual benefit in retirement.
 
     The benefit is wired into the simulation like the :class:`~life_model.insurance.social_security.SocialSecurity`
-    agent: once the person is eligible, each ``pre_step`` deposits the benefit as cash and records it
-    in the income ledger as :class:`~life_model.tax.income.IncomeType.PENSION` — ordinary taxable
-    income with **no FICA** (retirees pay no payroll tax on pension income). A cost-of-living
-    adjustment compounds the benefit each year in ``post_step``.
+    agent: once the person is eligible, each month's ``pre_step`` deposits a twelfth of the annual
+    benefit as cash and records it in the income ledger as
+    :class:`~life_model.tax.income.IncomeType.PENSION` — ordinary taxable income with **no FICA**
+    (retirees pay no payroll tax on pension income). A cost-of-living adjustment compounds the
+    benefit at each year end.
 
     The annual benefit is either given directly (``benefit_amount``) or accrued from the standard
     defined-benefit formula ``years_of_service x benefit_multiplier% x final_salary``. Benefits are
@@ -39,6 +41,10 @@ class Pension(Benefit):
     """
 
     STATS_OWNED = frozenset({"stat_pension_income"})
+    MONTHLY = True
+    # Service accrues at year end before the salary escalator (10) so "final salary" is this year's;
+    # the COLA follows it.
+    STEP_PRIORITY: ClassVar[dict[str, int]] = {"on_year_end": 5}
 
     def __init__(
         self,
@@ -113,7 +119,7 @@ class Pension(Benefit):
         if not self.is_vested:
             return False
         if self.start_age is not None:
-            return self.person.age >= self.start_age
+            return self.person.age_years_fractional >= self.start_age
         return self.person.is_retired
 
     def sponsoring_job(self) -> "Job | None":
@@ -144,22 +150,19 @@ class Pension(Benefit):
         return 0.0
 
     def pre_step(self):
-        # Deposit the benefit and record it as ordinary (non-FICA) income once eligible. This
-        # mirrors the SocialSecurity agent: benefit -> income ledger + cash. Runs at the default
-        # pre_step priority (0), after the person ages (-20); nothing here reads other income, so
-        # its order relative to wages and Social Security (also 0) does not matter.
-        benefit = self.get_annual_benefit()
-        self.stat_pension_income = benefit
+        # Deposit the month's benefit and record it as ordinary (non-FICA) income once eligible.
+        # This mirrors the SocialSecurity agent: benefit -> income ledger + cash. Nothing here reads
+        # other income, so its order relative to wages and Social Security (also 0) does not matter.
+        benefit = self.get_annual_benefit() / 12
         if benefit > 0:
+            self.stat_pension_income = snap_money(self.stat_pension_income + benefit)
             self.person.income.add(IncomeType.PENSION, benefit, source="pension")
             self.person.receive_cash(benefit, source=f"{self.company} pension", kind=FlowKind.BENEFIT)
 
-    def step(self):
-        # Service for a year worked at the sponsor (step stage: after this year's payroll was booked,
-        # before year-end salary escalators, so "final salary" is this year's).
+    def on_year_end(self):
+        # Service for a year worked at the sponsor (after the year's payroll, before the salary
+        # escalator, so "final salary" is this year's).
         self.accrue_service()
-
-    def post_step(self):
         # Compound the cost-of-living adjustment while the benefit is in pay so it keeps pace with
         # inflation over a long retirement.
         if self.cola_percent and self.is_eligible():

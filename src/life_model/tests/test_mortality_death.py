@@ -447,7 +447,8 @@ class TestPensionSurvivorAtDeath(unittest.TestCase):
         pension_income = dict(zip(df["Year"], df["Pension Income"]))
         # Breadwinner dies at start of 2027 (age 76). 2026 full benefit, 2027+ reduced to survivor.
         self.assertEqual(pension_income[2026], 40000)
-        self.assertEqual(pension_income[2027], 20000)
+        # Plan 32: the death comes in January after that month's full payment, then the survivor's.
+        self.assertAlmostEqual(pension_income[2027], 40000 / 12 + 20000 * 11 / 12, places=2)
         self.assertEqual(pension_income[2030], 20000)
 
     def test_single_life_pension_terminates(self):
@@ -461,7 +462,8 @@ class TestPensionSurvivorAtDeath(unittest.TestCase):
         df = model.datacollector.get_model_vars_dataframe()
         pension_income = dict(zip(df["Year"], df["Pension Income"]))
         self.assertEqual(pension_income[2026], 40000)  # full benefit the year before death
-        self.assertEqual(pension_income[2027], 0)  # terminates at death (2027, age 76)
+        # Terminates at death (January 2027, age 76), after that month's payment (Plan 32).
+        self.assertAlmostEqual(pension_income[2027], 40000 / 12, places=2)
         self.assertEqual(pension_income[2030], 0)
 
     def test_survivor_transfer_runs_before_benefit_sweep(self):
@@ -503,7 +505,8 @@ class TestPensionSurvivorAtDeath(unittest.TestCase):
         # benefit is paid to the non-retired widow every year from 2027 on — not $0 until she
         # retires.
         self.assertEqual(pension_income[2026], 40000)
-        self.assertEqual(pension_income[2027], 20000)
+        # Plan 32: the death comes in January after that month's full payment, then the survivor's.
+        self.assertAlmostEqual(pension_income[2027], 40000 / 12 + 20000 * 11 / 12, places=2)
         self.assertEqual(pension_income[2030], 20000)
 
     def test_no_spouse_survivor_pension_still_terminates(self):

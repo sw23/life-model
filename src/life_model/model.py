@@ -101,9 +101,14 @@ class Stat:
         """Aggregate the stat over the agents whose class declares it in ``STATS_OWNED``.
 
         Only owners are counted, so a stat can never be double counted by an agent type that
-        merely inherited a zero, and a write to an undeclared agent cannot leak into the total.
+        merely inherited a zero, and a write to an undeclared agent cannot leak into the total. A flow
+        stat also counts what agents removed earlier in the year (a decedent, a closed account)
+        accumulated before they left.
         """
         values = [getattr(agent, self.name) for agent in model.agents if self.name in agent.STATS_OWNED]
+        departed = getattr(model, "_departed_flows", {}).get(self.name) if self.flow else None
+        if departed:
+            values.append(departed)
         if not values:
             return self.default
         return self.aggregator(values)
@@ -657,6 +662,8 @@ class LifeModel(mesa.Model):
         self._year_ledger_start = 0
         #: Model-level rows collected each month when ``collect="month"`` (see :meth:`monthly_frame`).
         self._monthly_rows: list[dict] = []
+        # This year's flow stats of agents removed during it (see LifeModelAgent.remove).
+        self._departed_flows: dict[str, float] = {}
         # Attributes snapshotted before post_step (see add_agent_stat(..., pre_post=True)).
         self._pre_post_attrs: set[str] = {"base_salary", "base_spending"}
         self._closing_sheet = None
@@ -939,6 +946,7 @@ class LifeModel(mesa.Model):
         for agent in self.agents:
             for name in flows & agent.STATS_OWNED:
                 setattr(agent, name, 0)
+        self._departed_flows = {}
 
     @classmethod
     def _flow_stat_names(cls) -> frozenset[str]:
@@ -1257,6 +1265,18 @@ class LifeModelAgent(mesa.Agent):
 
     def post_step(self):
         """Post-step phase. Called for all agents after the step phase."""
+
+    def remove(self):
+        """Remove the agent from the model, keeping this year's flow stats (income, spending, taxes,
+        ...) it accumulated in the year's model totals."""
+        model = self.model
+        departed = getattr(model, "_departed_flows", None)
+        if departed is not None:
+            for name in model._flow_stat_names() & self.STATS_OWNED:
+                value = getattr(self, name, 0) or 0
+                if value:
+                    departed[name] = departed.get(name, 0.0) + value
+        super().remove()
 
     def on_year_start(self):
         """Year-start phase: once per simulated year, before the first month's ``pre_step``."""

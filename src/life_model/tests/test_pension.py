@@ -11,6 +11,7 @@ from ..model import LifeModel
 from ..people.family import Family
 from ..people.person import Person, Spending
 from ..tax.income import IncomeType
+from .helpers import run_months
 
 
 class TestPension(unittest.TestCase):
@@ -52,16 +53,16 @@ class TestPension(unittest.TestCase):
         BankAccount(person, "Bank", balance=0, interest_rate=0)
         pension = Pension(person, "MegaCorp", vesting_years=5, benefit_amount=30000)
 
-        # Isolate the deposit (before the year's tax settlement runs in the step stage).
-        pension.pre_step()
+        # Isolate the deposits (before the year's tax settlement): a year is twelve monthly payments.
+        run_months(model, pension.pre_step)
 
         # The full benefit is deposited as cash.
         self.assertEqual(person.bank_account_balance, 30000)
         # It is ordinary taxable income but NOT FICA wages.
         entries = [e for e in person.income.entries if e.income_type == IncomeType.PENSION]
-        self.assertEqual(len(entries), 1)
-        self.assertEqual(entries[0].amount, 30000)
-        self.assertEqual(entries[0].fica_wages, 0.0)
+        self.assertEqual(len(entries), 12)
+        self.assertEqual(sum(e.amount for e in entries), 30000)
+        self.assertEqual({e.fica_wages for e in entries}, {0.0})
         # Pension fills only the ordinary column of the ledger, never FICA wages.
         self.assertEqual(person.income.ordinary_taxable, 30000)
         self.assertEqual(person.income.fica_wages, 0.0)

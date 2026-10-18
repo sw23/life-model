@@ -345,6 +345,64 @@ class TestMonthlyMortality(unittest.TestCase):
         assert_conservation(model, monthly=True)
 
 
+class TestMonthlyBenefits(unittest.TestCase):
+    def test_social_security_starts_in_the_claim_month(self):
+        from ..insurance.social_security import SocialSecurity
+        from .scenarios import EARNINGS_HISTORY
+
+        model = LifeModel(start_year=2026, end_year=2027)
+        person = Person(Family(model), "Pat", None, 60, Spending(model, 0), birth="1964-03")
+        BankAccount(person, "Bank", balance=0, interest_rate=0)
+        ss = SocialSecurity(person, withdrawal_start_age=62.5, income_history=EARNINGS_HISTORY)
+        self.assertEqual(ss.claim_period, (2026, 9))  # 62 in March 2026, 62.5 in September
+        model.run()
+        months = sorted((e.year, e.month) for e in model.ledger if e.source == "Social Security")
+        self.assertEqual(months[0], (2026, 9))
+        self.assertEqual(len(months), 4 + 12)
+        frame = model.get_yearly_stat_df(styled=False).set_index("Year")
+        self.assertAlmostEqual(frame.loc[2026, "SS Income"], 4 * ss.get_pia(2026), places=2)
+
+    def test_pension_and_annuity_pay_monthly(self):
+        from ..account.pension import Pension
+        from ..insurance.annuity import Annuity, AnnuityType
+
+        model = LifeModel(start_year=2026, end_year=2026)
+        person = Person(Family(model), "Pat", 70, 65, Spending(model, 0))
+        BankAccount(person, "Bank", balance=0, interest_rate=0)
+        Pension(person, "Co", vesting_years=1, benefit_amount=24000)
+        annuity = Annuity(person, AnnuityType.IMMEDIATE, initial_balance=100000, interest_rate=4.0)
+        model.run()
+        pension_months = [e for e in model.ledger if e.kind == "benefit" and e.source == "Co pension"]
+        self.assertEqual([e.month for e in pension_months], list(range(1, 13)))
+        self.assertEqual({round(e.amount, 2) for e in pension_months}, {2000.0})
+        payouts = [e for e in model.ledger if e.cause == "annuity payout"]
+        self.assertEqual(len(payouts), 12)
+        self.assertAlmostEqual(annuity.stat_payouts_received, 12 * annuity.monthly_payout, places=6)
+
+    def test_flows_of_an_agent_removed_mid_year_stay_in_the_years_totals(self):
+        from ..account.pension import Pension
+
+        model = LifeModel(start_year=2026, end_year=2026)
+        person = Person(
+            Family(model),
+            "Pat",
+            None,
+            65,
+            Spending(model, 0),
+            birth="1946-05",
+            mortality_mode=MortalityMode.FIXED_AGE,
+            death_age=80,
+        )
+        heir = Person(person.family, "Kim", 40, 65, Spending(model, 0))
+        BankAccount(heir, "Bank", balance=0, interest_rate=0)
+        BankAccount(person, "Bank", balance=0, interest_rate=0)
+        Pension(person, "Co", vesting_years=1, benefit_amount=12000)
+        model.run()
+        # Paid January through May (Pat turns 80 and dies in May); the pension ends with Pat.
+        frame = model.get_yearly_stat_df(styled=False, extra_columns=["Pension Income"]).set_index("Year")
+        self.assertAlmostEqual(frame.loc[2026, "Pension Income"], 5000, places=2)
+
+
 class TestEventsInTheirMonth(unittest.TestCase):
     def test_an_event_fires_in_its_month(self):
         model = LifeModel(start_year=2026, end_year=2026)

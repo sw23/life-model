@@ -6,6 +6,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any, cast
 
 from ..config.financial_config import resolve_financial_config as _fin
+from ..economy import annual_to_monthly
 from ..ledger import FlowKind
 from ..model import Event, EventKind, LifeModel, LifeModelAgent
 from ..people.mortality import get_chance_of_mortality
@@ -207,7 +208,11 @@ def calculate_annuity_factor(
 
 
 class Annuity(LifeModelAgent):
+    """An annuity: an accumulation balance credited interest monthly, then (once annuitized) a
+    reserve paying one monthly payout per month and credited interest monthly."""
+
     STATS_OWNED = frozenset({"stat_annuity_balance"})
+    MONTHLY = True
 
     def __init__(
         self,
@@ -344,7 +349,7 @@ class Annuity(LifeModelAgent):
     @property
     def is_payout_eligible(self) -> bool:
         """Whether the contract has reached its automatic annuitization age (never, when it has none)."""
-        return self.payout_start_age is not None and self.person.age >= self.payout_start_age
+        return self.payout_start_age is not None and self.person.age_years_fractional >= self.payout_start_age
 
     @property
     def accumulation_rate(self) -> float:
@@ -352,6 +357,13 @@ class Annuity(LifeModelAgent):
         if self.tracks_equity:
             return self.model.economy.equity_return(self.model.year)
         return self.interest_rate
+
+    @property
+    def monthly_accumulation_rate(self) -> float:
+        """This month's credited rate (percent) on the accumulation balance."""
+        if self.tracks_equity:
+            return self.model.economy.monthly_rate("equity_return")
+        return annual_to_monthly(self.interest_rate)
 
     @property
     def surrender_charge_amount(self) -> float:
@@ -626,7 +638,7 @@ class Annuity(LifeModelAgent):
         return net_value
 
     def step(self):
-        """Process annuity for the current year"""
+        """Credit the month's interest to the reserve (annuitized) or the accumulation balance."""
         if not self.is_active:
             return
 
@@ -634,11 +646,11 @@ class Annuity(LifeModelAgent):
         interest_earned = 0.0
         if self.is_annuitized:
             if self.annuitized_reserve > 0:
-                interest_earned = self.annuitized_reserve * (self.interest_rate / 100)
+                interest_earned = self.annuitized_reserve * (annual_to_monthly(self.interest_rate) / 100)
                 self.annuitized_reserve += interest_earned
                 self.stat_interest_earned += interest_earned
         elif self.balance > 0:
-            interest_earned = self.balance * (self.accumulation_rate / 100)
+            interest_earned = self.balance * (self.monthly_accumulation_rate / 100)
             self.balance += interest_earned
             self.stat_interest_earned += interest_earned
         self.model.ledger.post(
@@ -649,19 +661,14 @@ class Annuity(LifeModelAgent):
         self.stat_annuitized_reserve = self.annuitized_reserve
 
     def pre_step(self):
-        """Pre-step processing: auto-annuitize when eligible, then pay out for the year.
-
-        Payouts are recorded here (in pre_step) so their taxable portion is in the income ledger
-        before the tax unit settles taxes in the step stage.
-        """
+        """Auto-annuitize when eligible, then make the month's payout (its taxable portion lands on
+        the income ledger for the year's return)."""
         # Auto-annuitize once the contract's payout age is reached (immediately for IMMEDIATE).
         if not self.is_annuitized and self.is_active and self.is_payout_eligible:
             self.annuitize()
 
-        # Make the year's 12 monthly payouts.
         if self.is_annuitized and self.is_active:
-            for _ in range(12):
-                self.make_payout()
+            self.make_payout()
 
     def settle_owner_death(self, inheritor: Person | None) -> None:
         """Apply the contract's death terms when its current owner dies.

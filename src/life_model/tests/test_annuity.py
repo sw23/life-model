@@ -10,6 +10,7 @@ from ..insurance.annuity import Annuity, AnnuityPayoutType, AnnuityType
 from ..model import LifeModel
 from ..people.family import Family
 from ..people.person import Person, Spending
+from .helpers import run_months
 
 
 class TestAnnuity(unittest.TestCase):
@@ -49,7 +50,7 @@ class TestAnnuity(unittest.TestCase):
         )
 
         initial_balance = annuity.balance
-        annuity.step()
+        run_months(self.model, annuity.step)  # a year of monthly credits
 
         # Should have grown by 5%
         expected_balance = initial_balance * 1.05

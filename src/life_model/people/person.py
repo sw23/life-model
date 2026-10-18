@@ -1741,8 +1741,10 @@ class Person(LifeModelAgent):
         # Drop the deceased from their family so no tax unit is built for them.
         if self in self.family.members:
             self.family.members.remove(self)
-        # Zero the deceased's own statistics so the model's per-agent sums exclude them.
-        for name in self.STATS_OWNED:
+        # Zero the deceased's balance statistics so the model's per-agent sums exclude them (their
+        # flows so far this year stay in the year's totals; see LifeModelAgent.remove).
+        flows = self.model._flow_stat_names()
+        for name in self.STATS_OWNED - flows:
             setattr(self, name, 0)
         self.remove()
 
