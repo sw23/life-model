@@ -113,3 +113,14 @@ job); no existing pension test has a job at its sponsor. `Family.combined_spendi
 one-time expenses (`test_family.py` has none, so its 20,000 is unchanged). End-of-life costs the
 decedent's bank can't cover are now billed to the inheritor in the death year and deducted from
 the estate-tax base instead of being forgiven (the existing tests' decedents had enough cash).
+
+## ExampleSimulation.ipynb
+
+The notebook is committed without outputs, so there is no stored golden to re-baseline. It was
+re-executed (nbconvert) and its tables checked: ages now equal the constructor ages in the first
+row and John is 50 in the marriage year (2029), when the joint return lowers taxes. Two edits:
+the per-year table joined agent rows (indexed by step, from 1) to model rows (indexed from 0) and
+then dropped the first row, which showed every age one year too young next to the following
+year's flows and ended in an all-MISSING row; it now shifts the agent index and keeps every year.
+John's 401k uses `match_tiers=[(50, 6)]` instead of the deprecated `company_match_percent=50`
+(which matched 50% of a 20% deferral, i.e. 10% of pay; now 3% of pay).
