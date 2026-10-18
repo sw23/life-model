@@ -94,12 +94,17 @@ class IncomeEntry:
     #: ``"capital_loss_deduction"``). Tax computations ignore it; the year's tax return uses it to put
     #: each entry on the right line (adjustments vs. other income, pensions vs. annuities, ...).
     source: str | None = None
+    #: The month (1-12) the entry was booked in, when the ledger has a clock: a part-year return allocates
+    #: income to the state of residence that month (Plan 31 D4).
+    month: int | None = None
 
 
 class IncomeLedger:
     """Accumulates a person's income entries for the current simulated year."""
 
-    def __init__(self):
+    def __init__(self, clock=None):
+        #: A callable returning the current month (1-12), stamped on each entry (None: unstamped).
+        self.clock = clock
         self.entries: list[IncomeEntry] = []
         # Additional federal tax from early-withdrawal / non-qualified-distribution penalties (e.g.
         # 10% on early pre-tax distributions, 20% on non-medical HSA distributions), by source.
@@ -126,14 +131,19 @@ class IncomeLedger:
         self, income_type: IncomeType, amount: float, fica_wages: float = 0.0, *, source: str | None = None
     ) -> None:
         """Append an income entry (``source`` labels it for the tax return; keyword-only)."""
-        self.entries.append(IncomeEntry(income_type, amount, fica_wages, source=source))
+        self.entries.append(IncomeEntry(income_type, amount, fica_wages, source=source, month=self._month()))
+
+    def _month(self) -> int | None:
+        return self.clock() if self.clock is not None else None
 
     def add_social_security(self, gross: float) -> None:
         """Record Social Security benefits received (gross). The taxable portion depends on the
         whole return's provisional income, so it starts at 0 and the tax unit sets it at settlement
         (:meth:`set_taxable_social_security`)."""
         if gross > 0:
-            self.entries.append(IncomeEntry(IncomeType.SS_BENEFIT, 0.0, gross=gross, source="social_security"))
+            self.entries.append(
+                IncomeEntry(IncomeType.SS_BENEFIT, 0.0, gross=gross, source="social_security", month=self._month())
+            )
 
     @property
     def social_security_benefits(self) -> float:
@@ -236,9 +246,24 @@ class IncomeLedger:
         return sum(e.amount for e in self.entries if e.income_type == IncomeType.SELF_EMPLOYMENT)
 
     @property
+    def retirement_income(self) -> float:
+        """Pre-tax retirement distributions and pensions this year (a state's retirement exclusion base)."""
+        return sum(
+            e.amount for e in self.entries if e.income_type in (IncomeType.PRETAX_DISTRIBUTION, IncomeType.PENSION)
+        )
+
+    @property
     def wages(self) -> float:
         """W-2 box 1 wages (ordinary wage entries, net of pre-tax deferrals and excluded benefits)."""
         return sum(e.amount for e in self.entries if e.income_type == IncomeType.WAGES)
+
+    def totals_by_type_and_month(self) -> "dict[int | None, dict[IncomeType, float]]":
+        """:meth:`totals_by_type` split by the month each entry was booked in (Plan 31 D4)."""
+        out: dict[int | None, dict[IncomeType, float]] = {}
+        for entry in self.entries:
+            totals = out.setdefault(entry.month, {income_type: 0.0 for income_type in IncomeType})
+            totals[entry.income_type] += entry.amount
+        return out
 
     def totals_by_type(self) -> "dict[IncomeType, float]":
         """Taxable amount contributed by each income type, preferential types included.

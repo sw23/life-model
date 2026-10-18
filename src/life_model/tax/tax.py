@@ -125,6 +125,13 @@ class TaxesDue:
         self.credit_details: dict[str, dict[str, float]] = {}
         #: Earned income of the return (for the earned-income credits).
         self.earned_income = 0.0
+        # --- Plan 31 tasks 6-7 ---
+        #: Form 2210 underpayment penalty (paid with the balance due; not in ``total``).
+        self.estimated_tax_penalty = 0.0
+        #: Excess advance premium tax credit repaid (Form 8962 line 29; in ``federal``).
+        self.excess_advance_ptc = 0.0
+        #: Form 8962's figures (a dict), when the return has marketplace coverage.
+        self.ptc_detail: dict[str, float] | None = None
 
     @property
     def penalties(self) -> float:

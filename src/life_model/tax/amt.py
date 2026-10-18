@@ -60,7 +60,8 @@ class AMTResult:
 
 def _by_status(params: "AMTYear", filing_status: FilingStatus) -> tuple[float, float, float]:
     """(exemption, phase-out start, 28% breakpoint) for the status."""
-    if filing_status == FilingStatus.MARRIED_FILING_JOINTLY:
+    # "A joint return or a surviving spouse" (IRC §55(d)(1)(A), (d)(2)(A)).
+    if filing_status.joint_rates:
         return params.exemption_joint, params.phaseout_start_joint, params.breakpoint
     if filing_status == FilingStatus.MARRIED_FILING_SEPARATELY:
         return params.exemption_separate, params.phaseout_start_separate, params.breakpoint_separate

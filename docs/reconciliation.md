@@ -66,7 +66,7 @@ sheet. Every line the records carry gets a status:
 | `green` | within $2 or 0.05% (whole-dollar rounding on a filed return); line 16 and the totals after it within $10 (the Tax Table taxes the midpoint of a $50 row; the engine computes the exact schedule); balances within $5 or 0.5% |
 | `yellow` | within $100 or 2% |
 | `red` | further off |
-| `not_modeled` | the engine has no equivalent yet (withholding, the refund, payroll deductions, IRA basis) |
+| `not_modeled` | the engine has no equivalent yet (or, without `payroll.withholding`, withholding and the refund) |
 
 and anything not green gets a likely cause:
 
@@ -74,9 +74,9 @@ and anything not green gets a likely cause:
 |---|---|---|
 | `missing_income_source` | the document shows income the spec lacks | add the account, job or income |
 | `input_difference` | both have it, amounts differ | correct the spec input (salary, balance, rate) |
-| `unmodeled_credit` / `unmodeled_deduction` | a credit or deduction the engine does not compute (foreign tax credit, ACA premium tax credit, energy credits, ...) or computes from an input the spec lacks (care or college costs, a child's income) | add the input (`children[].care_expenses_annual`, `payroll.dependent_care_fsa_annual`, ...); otherwise none yet (Plan 31 task 6 adds the premium tax credit) |
+| `unmodeled_credit` / `unmodeled_deduction` | a credit or deduction the engine does not compute (foreign tax credit, energy credits, ...) or computes from an input the spec lacks (care or college costs, a child's income, marketplace coverage) | add the input (`children[].care_expenses_annual`, `payroll.dependent_care_fsa_annual`, `insurance[].marketplace`, ...); otherwise none yet |
 | `unit_mismatch` | off by 12x or 100x | a monthly amount entered as annual, or a fraction as a percent |
-| `timing` | withholding, estimated payments, the refund or balance due | none yet (taxes settle as a year-end lump; Plan 31 D3) |
+| `timing` | withholding, estimated payments, the refund or balance due of a household that settles as a December lump | set `payroll.withholding` (`w4_default`, or the W-4's entries) and `estimated_payments` (the validator suggests it when the W-2s show box 2) |
 | `missing_input` | needs a spec field the engine does not take yet | none yet (a 1099-B's per-sale basis, the 1098 lines) |
 | `unmodeled_line` | a line with no engine equivalent | none |
 | `propagated` | a total off only because a line it adds up is off | fix the line it names (`follows 1040 line 2b`) |
@@ -107,9 +107,12 @@ Every `TaxReturn` field maps onto the year's lines; since Plan 31 each credit ha
 | Dependent care, education (nonrefundable part), saver's, prior-year minimum tax credits | Schedule 3 lines 2, 3, 4, 6b (7, 8); 1040 line 20; Forms 2441 line 11, 8863 line 19, 8880 line 12 |
 | Earned income credit; refundable American opportunity credit | 1040 line 27 (27a); line 29, Form 8863 line 8 |
 | NIIT, Additional Medicare Tax, early-distribution and HSA additional taxes | Schedule 2; 1040 line 23 |
+| Withholding (with `payroll.withholding`) | W-2 boxes 2, 4, 6, 17 (per employer); 1040 lines 25a, 25c, 25d; Schedule 3 line 11 (excess Social Security from several employers); the paystub's federal withholding |
+| Estimated payments, the refund or balance due, the penalty | 1040 lines 26, 33, 34, 35a, 37, 38; Form 2210 lines 4, 6, 9, 19 |
+| ACA premium tax credit | Form 8962 lines 3, 5, 7, 8a, 11a-11f, 24-29; Schedule 3 lines 9, 15; 1040 lines 31, 32; Schedule 2 lines 1a, 1z, 3 (excess advance credit repaid) |
+| State return | state AGI, taxable income, tax, withheld (a part-year return compares the share of the record's state) |
 
-Not modeled yet: withholding, estimated payments and the refund (Plan 31 task 6, `timing`), the ACA
-premium tax credit and the foreign tax credit. Form 8606 basis is recovered pro rata on distributions and
+Not modeled yet: the foreign tax credit, Form 1099 withholding (box 4). Form 8606 basis is recovered pro rata on distributions and
 Roth conversions (Plan 27: 8606 lines 2 and 14, 1099-R box 2a); Treasury coupons are 1099-INT box 3.
 
 ## Household goldens
@@ -117,7 +120,11 @@ Roth conversions (Plan 27: 8606 lines 2 and 14, 1099-R box 2a); Treasury coupons
 `src/life_model/tests/goldens/households/` holds synthetic households for 2024, 2025 and 2026: the six
 of Plan 29 (single renter with a student loan; married homeowners who itemize, with two children; head
 of household; a retiree couple with RMDs, Social Security, the §63(f) amount and Medicare; an early
-retiree harvesting gains; married filing separately) and twelve of Plan 31 (the earned income and
+retiree harvesting gains; married filing separately), five of Plan 31's tasks 6-7 for 2024-2026
+(withholding with the April refund or balance due; estimated payments with a Form 2210 penalty; the
+ACA premium tax credit with advance payments and the repayment limit; a qualifying surviving spouse; head
+of household with a dependent parent), twelve for 2025-2026 (a California-to-Texas part-year mover's
+Form 540NR; one W-2 state return per new state pack) and twelve of Plan 31's tasks 1-5 (the earned income and
 additional child tax credits; dependent care with an FSA; the American opportunity credit with a 529;
 the saver's credit and the 2026 non-itemizer deduction; an ISO exercise with AMT, and the next year's
 minimum tax credit; a self-employed filer with SE tax, a SEP and the QBI deduction; the kiddie tax

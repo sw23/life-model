@@ -23,8 +23,11 @@ from .mortality import get_blended_chance_of_mortality, get_chance_of_mortality,
 from .types import GenderAtBirth, MortalityMode
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from ..dependents.child import Child
     from ..insurance.social_security import SocialSecurity
+    from ..tax.payments import EstimatedPayments
 
 
 class Person(LifeModelAgent):
@@ -74,6 +77,9 @@ class Person(LifeModelAgent):
         death_age: int | None = None,
         state: str | None = None,
         birth: str | None = None,
+        residency: "Sequence[tuple[str, str]] | None" = None,
+        widowed_year: int | None = None,
+        estimated_payments: "EstimatedPayments | None" = None,
     ):
         """Person
 
@@ -95,12 +101,26 @@ class Person(LifeModelAgent):
             mortality_mode (MortalityMode, optional): How death is determined each year. Defaults to
                 ``IMMORTAL`` (the person never dies) so existing simulations stay deterministic.
             death_age (int, optional): Age of death when ``mortality_mode`` is ``FIXED_AGE``.
-            state (str, optional): Two-letter state of residence for state income tax. Defaults to
-                ``None``, which falls back to ``config.tax.state.default_state``. A
-                single state applies to the whole tax unit (no part-year/multi-state).
+            state (str, optional): Two-letter state of residence for state income tax (a state with a
+                tax pack, or ``"DEFAULT"`` for the flat default rate). Defaults to ``None``, which falls
+                back to ``config.tax.state.default_state``. A code without a pack raises
+                :class:`~life_model.config.models.UnknownStateError` (Plan 31 D4).
             birth (str, optional): Birth month ``"YYYY-MM"`` (keyword-only). When given with
                 ``age``, the two must agree.
+            residency (optional): The residency timeline ``[("YYYY-MM", state), ...]`` (keyword-only; Plan
+                31 D4): the state from each month on. Before its first entry the person lives in
+                ``state``. A unit files in its head's state each month: a year with moves files part-year
+                returns (wages by the months worked in each state, other income by residence at receipt).
+            widowed_year (int, optional): The year a spouse died before the run (keyword-only): the person
+                files as a qualifying surviving spouse for the two following years while a dependent child
+                lives with them (IRC §2(a); Plan 31 D5).
+            estimated_payments (optional): Quarterly federal estimated tax payments
+                (:class:`~life_model.tax.payments.EstimatedPayments`; keyword-only, Plan 31 D3).
         """
+        # A state without a tax pack is refused before the person joins the model (Plan 31 D4).
+        for code in [state, *(entry[1] for entry in residency or ())]:
+            if code is not None:
+                family.model.config.tax.state.resolve_state_code(code)
         super().__init__(family.model)
         self.family = family
         self.name = name
@@ -128,7 +148,19 @@ class Person(LifeModelAgent):
         if getattr(spending, "person", None) is None:
             spending.person = self  # whose spending it is (reporting: the agent frame's Owner column)
             spending._start_schedule()
-        self.state = state
+        #: The residency timeline: ``(month index, state)`` from that month on (Plan 31 D4).
+        self._residency: list[tuple[int, str | None]] = []
+        self._set_residency(state, residency)
+        #: The year this person's spouse died (qualifying surviving spouse for two years after; Plan 31 D5).
+        self.spouse_death_year: int | None = widowed_year
+        #: Federal estimated tax payments policy (Plan 31 D3).
+        self.estimated_payments = estimated_payments
+        #: Tax payments by tax year (withholding, estimated payments; Plan 31 D3).
+        self.tax_payments: dict = {}
+        #: The balance due on a filed return, payable in April (a liability, ``TaxDue:<id>``), and a refund
+        #: receivable in April (an asset, ``TaxRefund:<id>``) (Plan 31 D3).
+        self.taxes_owed = 0.0
+        self.tax_refund_due = 0.0
         self.gender = gender
         self.mortality_mode = mortality_mode
         self.death_age = death_age
@@ -151,7 +183,7 @@ class Person(LifeModelAgent):
         self.debt = 0
         # Per-person income ledger: separates FICA wages from ordinary taxable income so that
         # payroll tax and income tax each see the correct base (see tax/income.py).
-        self.income = IncomeLedger()
+        self.income = IncomeLedger(clock=self._income_month)
         self.spouse = None
         # Per-year record of this member's share of the tax unit's AGI, stamped during
         # ``TaxUnit.settle_year``. Medicare/IRMAA reads this with a two-year lookback.
@@ -306,6 +338,82 @@ class Person(LifeModelAgent):
     def children(self):
         """Get all child dependents for this person from the registry"""
         return self.model.registries.children.get_items(self)
+
+    # --- residency (Plan 31 D4) ---
+
+    def _set_residency(self, state: str | None, residency) -> None:
+        from ..model import month_index, parse_year_month
+
+        start = month_index(self.model.year, self.model.month)
+        timeline: list[tuple[int, str | None]] = [(start, state)]
+        for when, code in residency or ():
+            year, month = parse_year_month(when) if isinstance(when, str) else when
+            timeline.append((month_index(year, month), code))
+        timeline.sort(key=lambda item: item[0])
+        for _, code in timeline:
+            self._check_state(code)
+        # A later entry for the same month replaces an earlier one (the timeline's own first month wins
+        # over ``state``).
+        merged: dict[int, str | None] = {}
+        for index, code in timeline:
+            merged[index] = code
+        self._residency = sorted(merged.items())
+
+    def _check_state(self, code: str | None) -> None:
+        """Raise :class:`~life_model.config.models.UnknownStateError` for a state with no tax pack."""
+        if code is not None:
+            self.model.config.tax.state.resolve_state_code(code)
+
+    @property
+    def state(self) -> str | None:
+        """The state of residence this month (from the residency timeline)."""
+        return self.state_at(self.model.year, self.model.month)
+
+    @state.setter
+    def state(self, value: str | None) -> None:
+        """Move to ``value`` from the current month on (later entries of the timeline are kept)."""
+        from ..model import month_index
+
+        self._check_state(value)
+        now = month_index(self.model.year, self.model.month)
+        merged = dict(getattr(self, "_residency", []))
+        merged[now] = value
+        self._residency = sorted(merged.items())
+
+    @property
+    def residency(self) -> "list[tuple[str, str | None]]":
+        """The residency timeline as ``[("YYYY-MM", state), ...]``."""
+        return [(f"{index // 12}-{index % 12 + 1:02d}", code) for index, code in self._residency]
+
+    def state_at(self, year: int, month: int = 12) -> str | None:
+        """The state of residence in ``year``-``month``."""
+        from ..model import month_index
+
+        target = month_index(year, month)
+        current = self._residency[0][1] if self._residency else None
+        for index, code in self._residency:
+            if index > target:
+                break
+            current = code
+        return current
+
+    def states_in_year(self, year: int) -> "list[str | None]":
+        """The states lived in during ``year``, in order (one entry for a full-year resident)."""
+        states: list[str | None] = []
+        for month in range(1, 13):
+            code = self.state_at(year, month)
+            if not states or states[-1] != code:
+                states.append(code)
+        return states
+
+    def _income_month(self) -> int:
+        """The month income booked now belongs to (stamped on income entries for part-year returns)."""
+        return self.model.month
+
+    @property
+    def qualifying_relatives(self):
+        """Dependents other than children (a supported parent: :class:`~life_model.dependents.dependent.Dependent`)."""
+        return self.model.registries.qualifying_relatives.get_items(self)
 
     @property
     def donations(self):
@@ -1279,6 +1387,8 @@ class Person(LifeModelAgent):
         """
         self.spouse = spouse
         self.filing_status = FilingStatus.MARRIED_FILING_JOINTLY
+        # Remarrying ends qualifying-surviving-spouse status (IRC §2(a)(2)(A)).
+        self.spouse_death_year = None
         if link_spouse:
             # Merge the spouse's family into this person's family so the couple settles as a
             # single joint tax unit (otherwise each spouse could sit in a separate family and
@@ -1368,8 +1478,9 @@ class Person(LifeModelAgent):
         return year - self.birth_year
 
     def on_year_start(self):
-        # A surviving spouse files jointly for the year of the death, then switches to single the
-        # following year (qualifying-widow treatment is a documented simplification, not modeled).
+        # A surviving spouse files jointly for the year of the death, then single the following year; the
+        # tax unit files as a qualifying surviving spouse for two years while a dependent child lives with
+        # them (TaxUnit.build_units; Plan 31 D5).
         if self._widowed_year is not None and self.model.year > self._widowed_year:
             self.filing_status = FilingStatus.SINGLE
             self._widowed_year = None
@@ -1437,8 +1548,9 @@ class Person(LifeModelAgent):
         Simplifications (documented, backlog for later refinement):
           * Non-spouse inherited pre-tax accounts follow ``estate.inherited_pretax_mode``: the
             SECURE Act 10-year even spread (default) or the death-year lump sum.
-          * A widowed spouse files jointly in the death year and single thereafter (no
-            qualifying-widow years).
+          * A widowed spouse files jointly in the death year, then (Plan 31 D5) as a qualifying
+            surviving spouse for two years while a dependent child lives with them, else single or
+            head of household.
           * Pensions with a survivor election continue a reduced stream to a surviving spouse;
             single-life pensions and life-only annuities simply stop; no state estate taxes.
         """
@@ -1898,6 +2010,18 @@ class Person(LifeModelAgent):
         if self.cash:
             inheritor.receive_cash(self.cash, kind=FlowKind.INHERITANCE, from_account=cash_label(self), cause=cause)
             self.cash = 0.0
+        # A return's balance due or refund passes with the estate (Plan 31 D3).
+        for attribute, prefix in (("taxes_owed", "TaxDue"), ("tax_refund_due", "TaxRefund")):
+            amount = getattr(self, attribute)
+            if amount:
+                setattr(self, attribute, 0.0)
+                setattr(inheritor, attribute, getattr(inheritor, attribute) + amount)
+                ends = (f"{prefix}:{inheritor.unique_id}", f"{prefix}:{self.unique_id}")
+                if prefix == "TaxRefund":
+                    ends = ends[::-1]
+                self.model.ledger.post(
+                    amount, FlowKind.INHERITANCE, from_account=ends[0], to_account=ends[1], cause=cause, agent=inheritor
+                )
         if self.debt:
             debt = self.debt
             self.debt = 0
@@ -1943,6 +2067,8 @@ class Person(LifeModelAgent):
                     agent.balance = 0.0
         self.cash = 0.0
         self.debt = 0
+        self.taxes_owed = 0.0
+        self.tax_refund_due = 0.0
 
     def _settle_trusts_on_death(self, inheritor: Optional["Person"]):
         """Settle this person's trusts at death: revocable trusts pay out to their beneficiaries
@@ -1983,6 +2109,7 @@ class Person(LifeModelAgent):
         approximate the Social Security survivor benefit."""
         spouse.spouse = None
         spouse._widowed_year = self.model.year
+        spouse.spouse_death_year = self.model.year
         spouse.deceased_spouse_this_year = self
         # Social Security survivor approximation: the survivor receives at least the deceased's
         # benefit (max of own vs. deceased's), applied as a monthly floor once benefits start.

@@ -28,8 +28,11 @@ units are in [units-and-conventions.md](units-and-conventions.md).
 | Statement | Spec |
 |---|---|
 | Statement date | `meta.as_of: 2026-01`; `meta.start_year` is the first simulated year |
-| Ages, state, retirement plans | `people[].age` (age during `start_year`), `state`, `retirement_age`, `gender`, `mortality` |
-| Pay stub / offer letter | `jobs[]`: `company`, `salary_annual`, `bonus_pct`, `raise_pct` |
+| Ages, state, retirement plans | `people[].age` (age during `start_year`), `state` (a packed state, or `DEFAULT` deliberately), a planned move as `residency: [[YYYY-MM, state]]`, `retirement_age`, `gender`, `mortality`; `widowed_year` for a spouse who died recently |
+| Pay stub / offer letter | `jobs[]`: `company`, `salary_annual`, `bonus_pct`, `raise_pct`; `payroll.withholding` (`w4_default`, or the W-4's entries) when taxes are withheld |
+| Estimated tax vouchers (1040-ES) | `estimated_payments` (`quarterly` amounts, or `policy: safe_harbor` with last year's tax) |
+| Form 1095-A (marketplace coverage) | `insurance[]` `kind: health` with `marketplace: {slcsp_monthly, advance_monthly}` |
+| A supported parent or other relative | `dependents[]` (`relationship`, `gross_income_annual`, `lives_with`) |
 | Budget or bank history | `spending.amount_annual` (living costs, excluding housing, debt payments, taxes and the costs the model adds itself, such as children's cost bands), `growth_pct`; optional `categories` (`amount_annual` or `amount_monthly`, `essential`, `start_year`/`end_year`) and an age `schedule` (a retirement spending smile). **Spending is per person and adds up across the household**: give the whole budget on one spouse (leave the other's `spending` out) or split it |
 | Bank statements | `accounts[]` `kind: bank`: `balance`, `interest_pct` (APR; `compounding: annual` for an APY), one `primary: true`; a joint account once, under either spouse, with `joint: true` (the other spouse then needs no bank account); an emergency fund as its own `reserve: true` account |
 | 401k statement | `kind: 401k`, `job:` (the job's `id`), `pretax_balance`, `roth_balance`, `pretax_contrib_pct`, `roth_contrib_pct`, `match_tiers` |
@@ -43,7 +46,7 @@ units are in [units-and-conventions.md](units-and-conventions.md).
 | Pension / annuity statements | `kind: pension` (`benefit_annual` or the formula with `salary_history_annual`, `normal_retirement_age`, `early_retirement_reduction_pct`, `survivor_reduction_pct`, `employee_basis`, `lump_sum_option`); `kind: annuity` (`basis`, `purchase_year`, `qualified`, `in_payout` with `payout_monthly`) |
 | SSA statement | `social_security.pia_override_monthly` (the full-retirement-age benefit) **with** `earnings_history` (year: covered earnings, from the same statement): the estimate assumes work until full retirement age, and the history lets an earlier retirement lower it; `claim_age`, `fra_from_birth_year`, `spousal_benefit` |
 | Children | `children[]`: `name`, `birth_year`, `birth_month`, `cost_override_annual` / `college_cost_annual` (the configured bands are added on top of spending unless overridden: 0 when the budget already includes the child), `care_expenses_annual` (until the 13th birthday), and `kind: 529` accounts that name them as `beneficiary` |
-| Health insurance after a job ends | `insurance[]` `kind: health` with `premium_annual`, `coverage_start_age` (the retirement age) and `coverage_end_age: 64`; `healthcare: {medicare: true}` from 65. Payroll premiums stop with the job |
+| Health insurance after a job ends | `insurance[]` `kind: health` with `premium_annual`, `coverage_start_age` (the retirement age) and `coverage_end_age: 64` (for marketplace coverage add `marketplace: {slcsp_monthly, advance_monthly}`, which earns the ACA premium tax credit); `healthcare: {medicare: true}` from 65. Payroll premiums stop with the job |
 | Term life policy | `kind: life`, `policy: term`, `issue_year` and `issue_month` (premiums on the anniversary; coverage ends at the last anniversary) |
 | Marriage | `relationships.marriages[]`: `spouses` (the first is the tax-unit head), `filing_status` |
 | Plans | `events[]`: `at: {year}` / `{age}` / `{relative: {after, years}}`, `person`, `action` (`retire`, `change_job`, `move`, `buy_home`, `one_time_expense`, `recurring_expense`, `change_spending`, `contribute`, `convert_to_roth`, `claim_social_security`, `refinance`, `heloc_draw`, `disability`, ...) |
@@ -160,8 +163,9 @@ Describe the household as of January 1 of that year (`meta.start_year: 2025`; a 
 the year reconciles only the simulated months). Every line comes
 back green, yellow or red with the likely cause of a difference: fix `input_difference` and
 `missing_income_source` lines in the spec; `unmodeled_credit`/`unmodeled_deduction` lines are tax
-features the engine lacks; `timing` lines (withholding, refund) and `missing_input` lines (payroll
-deductions, IRA basis) are not modeled yet; `propagated` totals follow the line they name. See
+features the engine lacks; `timing` lines (withholding, refund) mean the spec settles taxes as a December
+lump: set `payroll.withholding` and `estimated_payments` (the validator suggests it); `missing_input` lines
+need an input the spec does not take yet; `propagated` totals follow the line they name. See
 [reconciliation.md](reconciliation.md) for the format and the tolerances.
 
 ## 8. Present the results

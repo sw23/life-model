@@ -100,10 +100,14 @@ take precedence over the packaged ones.
 
 State income tax is configured per state under `tax.state.packs`. Each pack
 describes one state's tax; a person opts in with the keyword-only
-`Person(..., state="CA")` argument. People without a `state` use
-`tax.state.default_state` (packaged default: `DEFAULT`, the legacy flat rate). A
-married couple files in the head-of-unit's state; part-year and multi-state
-filing are not modeled.
+`Person(..., state="CA")` argument (or a residency timeline,
+`Person(..., residency=[("2026-07", "TX")])`). People without a `state` use
+`tax.state.default_state` (packaged default: `DEFAULT`, the flat rate on the
+federal-style base). `DEFAULT` is a deliberate choice: a state code without a
+pack raises `UnknownStateError` when the person is built (and is a spec
+validation error); nothing falls back silently (Plan 31 D4). A married couple
+files in the head-of-unit's state; a year in which the head moved files
+part-year returns (below).
 
 ```yaml
 tax:
@@ -115,36 +119,100 @@ tax:
         flat_rate: 3.07                # EITHER flat_rate ...
         retirement_income_taxable: false   # exempt pre-tax 401k/IRA distributions & RMDs
         ss_taxable: false                  # exempt the taxable portion of Social Security
-      CA:
-        brackets:                      # ... OR progressive [lower, upper, rate] rows
-          single:                      # per filing status; missing statuses fall back
-            - [0, 10756, 1.0]          #   to `single`
-            - [10757, 25499, 2.0]
-            # ... last row's upper bound is .inf
-        standard_deduction:            # state standard deduction (default 0)
-          single: 5706
-          married_filing_jointly: 11412
+      NJ:
+        years:                         # one full pack per tax year (Plan 31)
+          2025:
+            brackets:                  # ... OR progressive [lower, upper, rate] rows
+              single: [[0, 20000, 1.4], [20001, 35000, 1.75], ...]   # last upper .inf
+              married_filing_jointly: [...]
+              head_of_household: [...] # missing statuses fall back (below)
+            standard_deduction: {single: 0, married_filing_jointly: 0}
+            personal_exemption: 1000   # per filer (both spouses on a joint return)
+            dependent_exemption: 1500  # per dependent
+            additional_exemption_65: 1000
+            retirement_exclusion:      # per person, or per_return; tiers by age / birth year
+              - {amount_by_status: {single: 75000, married_filing_jointly: 100000}, min_age: 62,
+                 per_return: true, income_limit: 150000}
+          2026: ...
 ```
 
 Rules enforced at load time (Pydantic `ValidationError`, not a tax-time surprise):
 exactly one of `flat_rate`/`brackets` per pack (`flat_rate: 0` models a
 no-income-tax state), bracket rows must be contiguous (`lower == previous upper +
 1`, first row starts at 0), `brackets` must define at least `single`, pack keys
-must be valid state codes, and `default_state` must have a pack.
+must be valid state codes, `default_state` must have a pack, and a pack with
+`years` sets everything per year.
 
-The state taxable-income base starts from the unit's ordinary income and
-subtracts categories the pack exempts (pre-tax retirement distributions when
+**Years.** A pack with `years` uses, for a simulated year, the latest entry at
+or before it (the earliest entry before the table, the latest after it: state
+amounts are not inflation-projected). The year's config view resolves it.
+
+**Filing statuses.** `head_of_household` and `married_filing_separately` fall
+back to `single` (brackets and standard deduction); a qualifying surviving
+spouse uses `married_filing_jointly`.
+
+**The base.** The state taxable-income base starts from the unit's income and
+subtracts what the pack exempts (pre-tax retirement distributions when
 `retirement_income_taxable: false`; the Social Security taxable portion unless
-`ss_taxable: true`) plus the state standard deduction. State income tax paid
-joins property tax in the federal SALT itemized deduction, subject to the
-year's SALT cap (see below). The `DEFAULT` pack applies a single flat
-`tax_rate` to the federal AGI base.
+`ss_taxable: true`; gains with `capital_gains_taxable: false`; a partial
+`retirement_exclusion` of distributions and pensions, or an age deduction against
+any income with `applies_to: any` and `phaseout_start`), then the standard
+deduction and exemptions (`personal_exemption`, `dependent_exemption`,
+`additional_exemption_65`, `exemption_by_agi` bands, a per-child
+`child_deduction` by AGI band). The tax is the flat rate or brackets
+(`bracket_base_tax` for a schedule with jumps, Ohio's) less nonrefundable
+credits (`personal_credit`, `senior_credit`, `dependent_credit`,
+`other_dependent_credit`, phased out by `credit_phaseout`). State income tax
+paid joins property tax in the federal SALT itemized deduction, subject to the
+year's SALT cap (see below). The `DEFAULT` pack applies a single flat `tax_rate`
+to the federal AGI base.
 
-The packaged packs (CA, NY, TX, FL, WA, PA, IL, MA) are 2025-vintage and stamped
-with their state DOR sources in the YAML; refresh them annually alongside the
-federal data (see the `refresh-financial-data` checklist). Local/city income
-taxes, state EITCs/credits, and state-specific exclusions (e.g. NY's $20k
-retirement exclusion) are not modeled.
+**Part-year residents.** Income entries carry the month they were booked in;
+each month's income belongs to the head's state that month (wages by the
+months worked there, investment income by residence at receipt). Each state
+taxes its share by the income-ratio method of California's Form 540NR and New
+York's IT-203: the tax as a full-year resident on the year's income, times the
+state's share of the base (deductions, exemptions and credits prorated the same
+way). `TaxReturn.state_return.parts` lists each state's share; states with
+other part-year methods are approximated by this one.
+
+**Packs.** CA, NY (2025 and 2026, with head-of-household schedules; California's
+exemption credits) and the eleven added by Plan 31 (OH, GA, NC, MI, NJ, VA, AZ,
+TN, IN, MO, MD: 2025 and 2026, from each state's revenue department; the ten
+next-largest states by Census Bureau Vintage 2025 estimates, plus Maryland,
+11th) are year-keyed; TX, FL, WA, PA, IL and MA are single 2025-vintage packs.
+Every pack is stamped with its sources in the YAML; refresh them annually
+alongside the federal data (see the `refresh-financial-data` checklist). Not
+modeled: local, city and county income taxes (NYC, Ohio and Michigan cities,
+Indiana and Maryland counties), state EITCs, New York's tax benefit recapture
+and pension exclusion, Ohio's $20 exemption, joint filing and retirement credits,
+Missouri's federal income tax deduction and per-spouse computation (its joint
+rows double the thresholds), Arizona's dependent credit phase-out and public
+pension subtraction, New Jersey's pension exclusion between $100,000 and $150,000
+of income (the full cap applies to $150,000), Maryland's 2% capital gain surtax.
+Georgia's retirement exclusion is applied to retirement income only (the state
+also lets it cover investment income and $5,000 of wages). The packs' items marked
+`TODO(verify)` (2026 amounts the states had not published by October 2026) are
+listed in [rebaseline-plan-31.md](rebaseline-plan-31.md).
+
+**State withholding** (with `payroll.withholding`): the pack's tax on each
+paycheck's taxable wages annualized, a twelfth a month; bonuses and RSU vests at
+the flat rate or the marginal rate at the annualized wages. An approximation of
+each state's own withholding formula.
+
+## Withholding, estimated tax and the premium tax credit (Plan 31)
+
+`tax_years.<year>.withholding` holds IRS Pub. 15-T's Worksheet 1A amounts and
+annual percentage method tables (2024-2026; projected years derive the tables
+from the year's brackets and standard deduction, which reproduces the published
+2024 and 2026 tables; the 2025 tables were published before OBBBA's 2025
+standard deduction) and Pub. 15's supplemental rates (22%, 37% over $1,000,000).
+`tax.federal.estimated_tax` holds Form 2210's rules (90% / 100% / 110% over
+$150,000 of prior-year AGI, the $1,000 threshold) and the IRS underpayment rates
+by quarter (later quarters reuse the latest). `tax_years.<year>.premium_tax_credit`
+holds Form 8962's applicable percentage bands, the poverty guideline the year's
+return uses, the 400% cap (none 2021-2025) and the repayment limits (none from
+2026); `qualifying_relative_income_limit` the §152(d)(1)(B) amount.
 
 ## Year-indexed tax parameters
 

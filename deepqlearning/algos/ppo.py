@@ -27,7 +27,7 @@ import numpy as np
 import torch
 from torch import nn, optim
 
-from .base import ActResult, Algorithm, StepBatch, masked_categorical
+from .base import ActResult, Algorithm, StepBatch, distribution_mode, policy_distribution
 from .networks import build_encoder
 
 
@@ -126,6 +126,7 @@ class PPOAgent(Algorithm):
     """Clipped-surrogate PPO over a discrete action space, with optional legal-action masking."""
 
     on_policy = True
+    supports_multidiscrete = True
     name = "ppo"
 
     @staticmethod
@@ -184,8 +185,8 @@ class PPOAgent(Algorithm):
         """
         with torch.no_grad():
             logits, values = self.policy(self._to_tensor(obs))
-            dist = masked_categorical(logits, legal)
-            actions = dist.sample() if training else dist.probs.argmax(dim=1)
+            dist = policy_distribution(logits, legal, self.action_nvec)
+            actions = dist.sample() if training else distribution_mode(dist)
             log_probs = dist.log_prob(actions)
         return ActResult(
             actions.cpu().numpy().astype(np.int64),
@@ -193,6 +194,12 @@ class PPOAgent(Algorithm):
         )
 
     # --- storing -----------------------------------------------------------------------------
+
+    def _stored_action(self, action):
+        """An ``int`` for a ``Discrete`` space, an integer vector for a ``MultiDiscrete`` one."""
+        if self.action_nvec is not None:
+            return np.asarray(action, dtype=np.int64).reshape(len(self.action_nvec))
+        return int(action)
 
     def observe(self, batch: StepBatch) -> None:
         """Append each row to its stream's rollout segment."""
@@ -206,7 +213,7 @@ class PPOAgent(Algorithm):
                 {
                     "obs": np.asarray(batch.obs[i]),
                     "next_obs": np.asarray(batch.next_obs[i]),
-                    "action": int(batch.actions[i]),
+                    "action": self._stored_action(batch.actions[i]),
                     "reward": float(batch.rewards[i]),
                     "terminated": bool(batch.terminated[i]),
                     "truncated": bool(batch.truncated[i]),
@@ -286,7 +293,7 @@ class PPOAgent(Algorithm):
                 index = order[start : start + minibatch_size]
                 index_list = index.tolist()
                 logits, values = self.policy(data["obs"][index])
-                dist = masked_categorical(logits, [data["legal"][i] for i in index_list])
+                dist = policy_distribution(logits, [data["legal"][i] for i in index_list], self.action_nvec)
                 log_probs = dist.log_prob(data["actions"][index])
                 entropy = dist.entropy().mean()
 

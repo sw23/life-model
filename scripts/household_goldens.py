@@ -185,6 +185,126 @@ QCD_LIMIT = {2024: 105000, 2025: 108000, 2026: 111000}
 IRA_PHASEOUT_SINGLE = {2024: (77000, 87000), 2025: (79000, 89000), 2026: (81000, 91000)}
 IRA_LIMIT = {2024: 7000, 2025: 7000, 2026: 7500}
 
+# --- Plan 31 tasks 6-7: payments, the premium tax credit, states (fetched 2026-10-18) ----------------
+
+#: A qualifying surviving spouse uses the joint rate schedule, standard deduction and capital-gains
+#: breakpoints (IRC §1(a), §63(c)(2)(B), §1(h)); "joint" amounts elsewhere only where the statute says
+#: "joint return or surviving spouse" (NIIT §1411(b)(1), AMT §55(d)(1)(A), §63(f)'s married amount).
+for _table in (BRACKETS, STANDARD, CAPITAL_GAINS):
+    for _year in _table:
+        _table[_year]["qss"] = _table[_year]["mfj"]
+
+#: IRS Pub. 15-T (2024, 2025, 2026) Worksheet 1A: Step 1g ($12,900 joint, $8,600 otherwise) and the annual
+#: percentage method tables (standard schedules): rows (over, tentative amount, percent). The 2025 tables
+#: were published before OBBBA raised the 2025 standard deduction, so they still reflect $15,000 / $30,000.
+STEP_1G = {"married_filing_jointly": 12900, "single": 8600, "head_of_household": 8600}
+PUB_15T = {
+    2024: {
+        "single": [
+            (0, 0, 0),
+            (6000, 0, 10),
+            (17600, 1160, 12),
+            (53150, 5426, 22),
+            (106525, 17168.50, 24),
+            (197950, 39110.50, 32),
+            (249725, 55678.50, 35),
+            (615350, 183647.25, 37),
+        ],
+        "married_filing_jointly": [
+            (0, 0, 0),
+            (16300, 0, 10),
+            (39500, 2320, 12),
+            (110600, 10852, 22),
+            (217350, 34337, 24),
+            (400200, 78221, 32),
+            (503750, 111357, 35),
+            (747500, 196669.50, 37),
+        ],
+    },
+    2025: {
+        "single": [
+            (0, 0, 0),
+            (6400, 0, 10),
+            (18325, 1192.50, 12),
+            (54875, 5578.50, 22),
+            (109750, 17651, 24),
+            (203700, 40199, 32),
+            (256925, 57231, 35),
+            (632750, 188769.75, 37),
+        ],
+        "married_filing_jointly": [
+            (0, 0, 0),
+            (17100, 0, 10),
+            (40950, 2385, 12),
+            (114050, 11157, 22),
+            (223800, 35302, 24),
+            (411700, 80398, 32),
+            (518150, 114462, 35),
+            (768700, 202154.50, 37),
+        ],
+    },
+    2026: {
+        "single": [
+            (0, 0, 0),
+            (7500, 0, 10),
+            (19900, 1240, 12),
+            (57900, 5800, 22),
+            (113200, 17966, 24),
+            (209275, 41024, 32),
+            (263725, 58448, 35),
+            (648100, 192979.25, 37),
+        ],
+        "married_filing_jointly": [
+            (0, 0, 0),
+            (19300, 0, 10),
+            (44100, 2480, 12),
+            (120100, 11600, 22),
+            (230700, 35932, 24),
+            (422850, 82048, 32),
+            (531750, 116896, 35),
+            (788000, 206583.50, 37),
+        ],
+    },
+}
+#: Form 2210 (2024, 2025) penalty worksheet: rate periods April 16-June 30, July-September, October-December,
+#: January 1-April 15 of the next year, each at that period's underpayment rate (IR-2023-219 ... IR-2026-98,
+#: Rev. Rul. 2026-5, -10), simple interest over the days of the period's year. 2024: 8% (366 days), then 7%
+#: from January 2025; 2025: 7%; 2026: 7% (Q2 2026 is 6%, but April 1-15 is in rate period 4 of 2025's form)
+#: through 2026, and the 2027 first-quarter rate is not announced: 7% assumed (TODO(verify)).
+PENALTY_RATES = {2024: (0.08, 0.08, 0.08, 0.07), 2025: (0.07, 0.07, 0.07, 0.07), 2026: (0.06, 0.07, 0.07, 0.07)}
+#: Form 8962: HHS poverty guidelines the year's return uses (base, per additional person): 2024 return the
+#: 2023 guidelines, 2025 the 2024 ones (Instructions for Form 8962 Table 1-1), 2026 the 2025 ones (90 FR 5917,
+#: IRC §36B(d)(3)(B)). Applicable percentage bands (low, high, initial, final): 2024-2025 Table 2 (ARPA/IRA);
+#: 2026 Rev. Proc. 2025-25. Repayment limits (low, high, single, other): Rev. Procs. 2023-34 §3.07, 2024-40
+#: §3.07; none from 2026 (OBBBA §71305).
+POVERTY = {2024: (14580, 5140), 2025: (15060, 5380), 2026: (15650, 5500)}
+APPLICABLE = {
+    2024: [
+        (0, 150, 0, 0),
+        (150, 200, 0, 2),
+        (200, 250, 2, 4),
+        (250, 300, 4, 6),
+        (300, 400, 6, 8.5),
+        (400, INF, 8.5, 8.5),
+    ],
+    2026: [
+        (0, 133, 2.10, 2.10),
+        (133, 150, 3.14, 4.19),
+        (150, 200, 4.19, 6.60),
+        (200, 250, 6.60, 8.44),
+        (250, 300, 8.44, 9.96),
+        (300, 400, 9.96, 9.96),
+    ],
+}
+APPLICABLE[2025] = APPLICABLE[2024]
+REPAYMENT = {
+    2024: [(0, 200, 375, 750), (200, 300, 950, 1900), (300, 400, 1575, 3150)],
+    2025: [(0, 200, 375, 750), (200, 300, 975, 1950), (300, 400, 1625, 3250)],
+    2026: [],
+}
+#: §152(d)(1)(B) qualifying relative gross income limit: Rev. Procs. 2023-34 §3.24, 2024-40 §3.24, 2025-32 §3.23.
+RELATIVE_LIMIT = {2024: 5050, 2025: 5200, 2026: 5300}
+
 
 # --------------------------------------------------------------------------------------------------
 # Arithmetic helpers
@@ -256,6 +376,26 @@ class W2:
     pretax_401k: float = 0.0
     #: Dependent-care FSA election (box 10; excluded from boxes 1, 3 and 5).
     fsa: float = 0.0
+    #: Federal income tax withheld by a default Form W-4 (Pub. 15-T) with this W-4 filing status.
+    w4_status: str | None = None
+    year: int = 0
+
+    def withheld(self) -> tuple[float, str]:
+        """Box 2: twelve monthly paychecks by Pub. 15-T Worksheet 1A (no W-4 entries)."""
+        if self.w4_status is None:
+            return 0.0, ""
+        monthly = (self.gross - self.pretax_401k - self.fsa) / 12
+        annual = monthly * 12
+        adjusted = max(annual - STEP_1G[self.w4_status], 0.0)
+        over, base, rate = max(row for row in PUB_15T[self.year][self.w4_status] if adjusted >= row[0])
+        tentative = base + (adjusted - over) * rate / 100
+        per_month = tentative / 12
+        how = (
+            f"Pub. 15-T Worksheet 1A, each month: 1a {money(monthly)}; 1c x 12 = {money(annual)}; 1g "
+            f"{money(STEP_1G[self.w4_status])}; 1i {money(adjusted)}; table row over {money(over)}: {money(base)} + "
+            f"{rate}% = {money(tentative)}; 2h / 12 = {money(per_month)}; box 2 = 12 paychecks"
+        )
+        return cents(per_month * 12), how
 
 
 @dataclass
@@ -289,6 +429,17 @@ class Return:
     savers_contributions: list = field(default_factory=list)
     #: A traditional IRA contribution by a single active participant in a workplace plan.
     ira_contribution: float = 0.0
+    # Plan 31 tasks 6-7
+    pension: float = 0.0
+    #: Qualifying relatives (the credit for other dependents; not EIC children).
+    relatives: int = 0
+    #: Estimated tax payments (each installment) and the prior year's tax and AGI (Form 2210).
+    estimated: tuple = ()
+    prior_tax: float = 0.0
+    prior_agi: float = 0.0
+    #: Marketplace coverage (Form 1095-A, per month: premium, SLCSP, advance) and the family size.
+    marketplace: tuple | None = None
+    family_size: int = 1
     lines: dict[str, float] = field(default_factory=dict)
     schedules: dict[str, dict[str, float]] = field(default_factory=dict)
     work: list[str] = field(default_factory=list)
@@ -301,8 +452,8 @@ class Return:
     #: A nonrefundable credit was limited by the tax (so it carries the Tax Table difference).
     tax_limited: bool = False
 
-    def line(self, key: str, value: float, how: str) -> float:
-        value = cents(value)
+    def line(self, key: str, value: float, how: str, places: int = 2) -> float:
+        value = cents(value) if places == 2 else round(value, places)
         if key.startswith("S"):
             schedule, line = key[1:].split(":")
             self.schedules.setdefault(schedule, {})[line] = value
@@ -310,7 +461,8 @@ class Return:
         else:
             self.lines[key] = value
             label = f"Form 1040 line {key}"
-        self.work.append(f"| {label} | {how} | {money(value)} |")
+        shown = money(value) if places == 2 else f"{value:.{places}f}"
+        self.work.append(f"| {label} | {how} | {shown} |")
         return value
 
     def note(self, text: str) -> None:
@@ -356,10 +508,12 @@ class Dependent:
 def work_return(r: "Return") -> "Return":
     y, status = r.year, r.status
     mfj = status == "mfj"
+    qss = status == "qss"
     v2025 = y >= 2025  # 7a / 11a-11b / 12e / 13a-13b numbering
     deps = r.dependents
     ctc_children = r.children_under_17 + sum(1 for d in deps if d.age < 17)
     other_dependents = sum(1 for d in deps if d.age >= 17 and (d.age < 19 or (d.student and d.age < 24)))
+    other_dependents += r.relatives
     eitc_children = r.children_under_17 + sum(1 for d in deps if d.age < 19 or (d.student and d.age < 24))
 
     # Form 8814 (parents' election) for each child with interest and dividends only, under 10 x base.
@@ -427,7 +581,11 @@ def work_return(r: "Return") -> "Return":
     else:
         r.line("4a", r.ira_distributions, "1099-R box 1 (required minimum distributions)")
         l4b = r.line("4b", r.ira_distributions, "1099-R box 2a (no basis: fully taxable)")
-    l5b = r.line("5b", 0.0, "no pensions")
+    if r.pension:
+        r.line("5a", r.pension, "1099-R box 1 (pension)")
+        l5b = r.line("5b", r.pension, "1099-R box 2a (no employee contributions: fully taxable)")
+    else:
+        l5b = r.line("5b", 0.0, "no pensions")
     line7 = "7a" if v2025 else "7"
     l7 = r.line(
         line7,
@@ -565,7 +723,7 @@ def work_return(r: "Return") -> "Return":
     # Deductions
     standard = STANDARD[y][status]
     married_amount, unmarried_amount = ADDITIONAL_65[y]
-    extra_65 = r.ages_65_plus * (married_amount if status in ("mfj", "mfs") else unmarried_amount)
+    extra_65 = r.ages_65_plus * (married_amount if status in ("mfj", "mfs", "qss") else unmarried_amount)
     std_total = standard + extra_65
     itemized = salt = 0.0
     limitation = 0.0
@@ -747,7 +905,7 @@ def work_return(r: "Return") -> "Return":
 
     # Form 6251 (AMT) with Part III, and Form 8801 Part I for the credit it creates.
     a = AMT[y]
-    k = 1 if mfj else 2 if status == "mfs" else 0
+    k = 1 if mfj or qss else 2 if status == "mfs" else 0
     breakpoint = a["break"] / (2 if status == "mfs" else 1)
 
     def tentative_minimum_tax(include_iso: bool) -> tuple[float, float, float]:
@@ -800,10 +958,20 @@ def work_return(r: "Return") -> "Return":
                 f"= {money(amt)} - that = {money(amt_generated)}"
             )
     r.amt_credit_generated = amt_generated
-    l17 = r.line("17", amt, "Form 6251 line 11 (Schedule 2 line 3)" if amt else "no AMT (Schedule 2 line 3)")
+    ptc_net, repayment = form_8962(r, agi)
+    if repayment:
+        r.line("S2:1a", repayment, "Form 8962 line 29")
+        r.line("S2:1z", repayment, "line 1a")
+    l17 = r.line(
+        "17",
+        amt + repayment,
+        ("Form 6251 line 11 (Schedule 2 line 3)" if amt else "no AMT (Schedule 2 line 3)")
+        + (" + the excess advance premium tax credit (Schedule 2 line 1a)" if repayment else ""),
+    )
     if amt:
         r.line("S2:2", amt, "Form 6251 line 11")
-        r.line("S2:3", amt, "1z + 2")
+    if amt or repayment:
+        r.line("S2:3", amt + repayment, "1z + 2")
     l18 = r.line("18", l16 + l17, "16 + 17")
     tax18 = l18
 
@@ -926,7 +1094,7 @@ def work_return(r: "Return") -> "Return":
     add_se = max(se_net - max(threshold - medicare_wages, 0.0), 0.0) * 0.009 if se_net else 0.0
     add_medicare = add_wages + add_se
     nii = r.interest + qd + max(r.long_term_gain, 0.0)
-    niit_threshold = {"mfj": 250000.0, "mfs": 125000.0}.get(status, 200000.0)
+    niit_threshold = {"mfj": 250000.0, "qss": 250000.0, "mfs": 125000.0}.get(status, 200000.0)
     niit = min(nii, max(agi - niit_threshold, 0.0)) * 0.038
     lines_2026 = y == 2026
     if se_tax:
@@ -997,7 +1165,150 @@ def work_return(r: "Return") -> "Return":
     r.line("28", actc, "Schedule 8812 line 27" if actc else "no additional child tax credit (credit fully used)")
     if edu_ref:
         r.line("29", edu_ref, "Form 8863 line 8")
+    payments(r, total, eitc, actc, edu_ref, ptc_net, add_wages)
     return r
+
+
+def form_8962(r: "Return", agi: float) -> tuple[float, float]:
+    """Form 8962 (annual method when all twelve months are alike, else monthly): (net credit, repayment)."""
+    if r.marketplace is None:
+        return 0.0, 0.0
+    y = r.year
+    months = list(r.marketplace)
+    base, per = POVERTY[y]
+    poverty = base + (r.family_size - 1) * per
+    l3 = agi  # no tax-exempt interest, no Social Security, no foreign income
+    over = l3 > 4 * poverty
+    l5 = 401 if over else math.floor(l3 * 100 / poverty)
+    figure = 0.0
+    for low, high, initial, final in APPLICABLE[y]:
+        if low <= l5 < high:
+            value = initial if high == INF else initial + (final - initial) * (l5 - low) / (high - low)
+            figure = float(Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)) / 100
+            break
+    else:
+        figure = APPLICABLE[y][-1][3] / 100
+    eligible = l5 >= 100 and not (y >= 2026 and over)
+    l8a = float(Decimal(str(l3 * figure)).quantize(Decimal(1), rounding=ROUND_HALF_UP))
+    premium = sum(m[0] for m in months)
+    slcsp = sum(m[1] for m in months)
+    advance = sum(m[2] for m in months)
+    r.note(
+        f"Form 8962: 1 family size {r.family_size}; 3 household income {money(l3)}; 4 poverty line {money(poverty)} "
+        f"(base {money(base)} + {r.family_size - 1} x {money(per)}); 5 = {l5}%; 7 applicable figure {figure:.4f} "
+        f"(linear in the band, to 0.01%); 8a = 3 x 7 = {money(l8a)}"
+    )
+    r.line("S8962:3", l3, "household income (AGI; no tax-exempt interest or Social Security)")
+    r.line("S8962:5", l5, "line 3 / line 4, truncated to a whole percent", places=0)
+    r.line("S8962:7", figure, "Table 2", places=4)
+    r.line("S8962:8a", l8a, "line 3 x line 7, to the dollar")
+    alike = len(months) == 12 and all(m[:2] == months[0][:2] for m in months)
+    assert alike, "the goldens' coverage is the same all year (annual method, line 11)"
+    l11d = max(slcsp - l8a, 0.0)
+    allowed = min(premium, l11d) if eligible else 0.0
+    r.line("S8962:11a", premium, "1095-A line 33A")
+    r.line("S8962:11b", slcsp, "1095-A line 33B")
+    r.line("S8962:11d", l11d, "11b - 11c (8a)")
+    r.line("S8962:11e", allowed, "smaller of 11a and 11d")
+    r.line("S8962:11f", advance, "1095-A line 33C")
+    r.line("S8962:24", allowed, "line 11e")
+    r.line("S8962:25", advance, "line 11f")
+    net = max(allowed - advance, 0.0)
+    r.line("S8962:26", net, "24 - 25 (Schedule 3 line 9)")
+    repayment = 0.0
+    if advance > allowed:
+        excess = r.line("S8962:27", advance - allowed, "25 - 24")
+        limit = None
+        for low, high, single, other in REPAYMENT[y]:
+            if low <= l5 < high:
+                limit = single if r.status == "single" else other
+        repayment = excess if limit is None else min(excess, limit)
+        how = f"smaller of line 27 and the Table 5 limit {money(limit)}" if limit is not None else "no limit"
+        if y < 2026:
+            if limit is not None:
+                r.line("S8962:28", limit, "Table 5 (household income under 400%)")
+            r.line("S8962:29", repayment, how)
+        else:
+            r.note("2026: no repayment limit (OBBBA §71305); line 27 is repaid in full (lines 28-29 reserved)")
+    return net, repayment
+
+
+def form_2210(r: "Return", current_tax: float, withheld: float) -> float:
+    """Form 2210 Part I and the regular method's penalty worksheet (four rate periods, simple interest)."""
+    import datetime
+
+    y = r.year
+    l4 = current_tax
+    l7 = l4 - withheld
+    if l4 < 1000 or l7 < 1000 or not r.prior_tax:
+        return 0.0
+    l5 = l4 * 0.90
+    l8 = r.prior_tax * (1.10 if r.prior_agi > 150000 else 1.0)
+    l9 = min(l5, l8)
+    r.line("S2210:4", l4, "tax after credits + other taxes - refundable credits")
+    r.line("S2210:6", withheld, "withholding (deemed paid a quarter on each due date)")
+    r.line("S2210:9", l9, f"smaller of 90% of line 4 ({money(l5)}) and last year's tax ({money(l8)})")
+    if l9 <= withheld:
+        return 0.0
+    due = [datetime.date(y, 4, 15), datetime.date(y, 6, 15), datetime.date(y, 9, 15), datetime.date(y + 1, 1, 15)]
+    end = datetime.date(y + 1, 4, 15)
+    period_ends = [datetime.date(y, 6, 30), datetime.date(y, 9, 30), datetime.date(y, 12, 31), end]
+    rates = PENALTY_RATES[y]
+    days_in = [366 if y % 4 == 0 else 365] * 3 + [366 if (y + 1) % 4 == 0 else 365]
+    installment = l9 / 4
+    paid = [withheld / 4 + (r.estimated[i] if i < len(r.estimated) else 0.0) for i in range(4)]
+    penalty = 0.0
+    work = []
+    for i in range(4):
+        short = max(installment - paid[i], 0.0)
+        assert paid[i] <= installment, "the goldens pay less than each installment (no overpayment carried)"
+        for k in range(4):
+            low = max(due[i], period_ends[k - 1]) if k else due[i]
+            days = (period_ends[k] - low).days
+            if days <= 0 or not short:
+                continue
+            penalty += short * days / days_in[k] * rates[k]
+            work.append(f"{money(short)} x {days}/{days_in[k]} x {rates[k]:.2f}")
+    r.note(
+        f"Form 2210: required installments {money(installment)} each (line 9 / 4); paid by each due date (withholding "
+        f"/ 4 + estimate): {', '.join(money(p) for p in paid)}; penalty worksheet: " + " + ".join(work)
+    )
+    return r.line("S2210:19", penalty, "Penalty Worksheet line 14")
+
+
+def payments(
+    r: "Return", total_tax: float, eitc: float, actc: float, edu_ref: float, ptc_net: float, add_wages: float
+) -> None:
+    """Form 1040 lines 25-38."""
+    y = r.year
+    if not (any(w.w4_status for w in r.w2) or r.estimated or r.marketplace is not None):
+        return
+    box2 = sum(w.withheld()[0] for w in r.w2)
+    l25a = r.line("25a", box2, "W-2 box 2")
+    # Form 8959 line 24: Additional Medicare Tax withheld (none: no employer paid over $200,000).
+    l25c = r.line("25c", 0.0, "Form 8959 line 24")
+    l25d = r.line("25d", l25a + l25c, "25a + 25b + 25c")
+    l26 = r.line("26", sum(r.estimated), "Form 1040-ES payments (April, June, September and January)")
+    s3_9 = 0.0
+    if r.marketplace is not None:
+        s3_9 = r.line("S3:9", ptc_net, "Form 8962 line 26")
+        r.line("S3:15", s3_9, "lines 9-14")
+    l31 = r.line("31", s3_9, "Schedule 3 line 15")
+    other = eitc + actc + edu_ref + l31
+    r.line("32c" if y >= 2026 else "32", other, "27 + 28 + 29 + 30 + 31")
+    l33 = r.line("33", l25d + l26 + other, "25d + 26 + 32")
+    tax_2210 = total_tax - other
+    penalty = form_2210(r, tax_2210, l25d) if r.estimated else 0.0
+    if l33 > total_tax:
+        over = r.line(
+            "34", l33 - total_tax - penalty, f"33 - {'24c' if y >= 2026 else '24'} (less the line 38 penalty)"
+        )
+        r.line("35a", over, "refunded")
+        r.line("37", 0.0, "nothing owed")
+    else:
+        r.line("34", 0.0, "no overpayment")
+        r.line("37", total_tax - l33 + penalty, f"{'24c' if y >= 2026 else '24'} - 33 + the line 38 penalty")
+    r.line("38", penalty, "Form 2210 line 19" if penalty else "no estimated tax penalty")
 
 
 def w2_boxes(w: W2, year: int) -> dict[str, float]:
@@ -1150,6 +1461,251 @@ def households(year: int) -> dict[str, dict]:
         ],
     }
     out.update(plan31_households(year))
+    out.update(plan31b_households(year))
+    return out
+
+
+# --------------------------------------------------------------------------------------------------
+# State returns (Plan 31 D4): a single filer with wages only, from each state's 2025 / 2026 rules
+# --------------------------------------------------------------------------------------------------
+
+
+def _schedule(income: float, rows) -> float:
+    """Marginal schedule ``rows`` of (upper, rate %) on ``income``."""
+    tax, lower = 0.0, 0.0
+    for upper, rate in rows:
+        if income <= lower:
+            break
+        tax += (min(income, upper) - lower) * rate / 100
+        lower = upper
+    return tax
+
+
+#: Each state's rules for a single wage earner (no dependents, under 65), with the source of each year:
+#: deduction (standard deduction plus personal exemption) and the tax on the taxable income.
+STATE_SINGLE = {
+    # Ohio IT 1040 instructions 2025 pp.17-18, ORC 5747.02(A)(3)(b)-(c), 5747.025: exemption $2,150 for MAGI
+    # $40,001-$80,000; $0 to $26,050, then a base tax plus 2.75% (2025: 3.125% over $100,000).
+    "OH": {
+        2025: (
+            lambda agi: 2150.0 if 40000 < agi <= 80000 else 2400.0 if agi <= 40000 else 1900.0,
+            lambda ti: (
+                0.0
+                if ti <= 26050
+                else 342 + (min(ti, 100000) - 26050) * 0.0275
+                if ti <= 100000
+                else 2394.32 + (ti - 100000) * 0.03125
+            ),
+        ),
+        2026: (
+            lambda agi: 2150.0 if 40000 < agi <= 80000 else 2400.0 if agi <= 40000 else 1900.0,
+            lambda ti: 0.0 if ti <= 26050 else 332 + (ti - 26050) * 0.0275,
+        ),
+    },
+    # Georgia IT-511 (2025): $12,000 standard deduction, 5.19%; HB 463 (2026): $15,000, 4.99%.
+    "GA": {2025: (lambda agi: 12000.0, lambda ti: ti * 0.0519), 2026: (lambda agi: 15000.0, lambda ti: ti * 0.0499)},
+    # NCDOR D-401 (2025): $12,750 standard deduction, 4.25%; 2026: 3.99% (S.L. 2026-41).
+    "NC": {2025: (lambda agi: 12750.0, lambda ti: ti * 0.0425), 2026: (lambda agi: 12750.0, lambda ti: ti * 0.0399)},
+    # Michigan MI-1040 (2025): $5,800 exemption, 4.25%; Form 446 (2026): $5,900.
+    "MI": {2025: (lambda agi: 5800.0, lambda ti: ti * 0.0425), 2026: (lambda agi: 5900.0, lambda ti: ti * 0.0425)},
+    # NJ-1040 (2025) Tax Rate Schedule A (single); $1,000 exemption; 2026 NJ-1040-ES: unchanged.
+    "NJ": {
+        y: (
+            lambda agi: 1000.0,
+            lambda ti: _schedule(
+                ti,
+                [
+                    (20000, 1.4),
+                    (35000, 1.75),
+                    (40000, 3.5),
+                    (75000, 5.525),
+                    (500000, 6.37),
+                    (1000000, 8.97),
+                    (INF, 10.75),
+                ],
+            ),
+        )
+        for y in (2025, 2026)
+    },
+    # Virginia Form 760 (2025) and 760ES (2026): $8,750 standard deduction + $930 exemption; 2/3/5/5.75%.
+    "VA": {
+        y: (lambda agi: 8750.0 + 930.0, lambda ti: _schedule(ti, [(3000, 2.0), (5000, 3.0), (17000, 5.0), (INF, 5.75)]))
+        for y in (2025, 2026)
+    },
+    # Arizona Form 140 (2025): $15,750 standard deduction, 2.5%; 2026 (A.R.S. 43-1041(H)): $16,100.
+    "AZ": {2025: (lambda agi: 15750.0, lambda ti: ti * 0.025), 2026: (lambda agi: 16100.0, lambda ti: ti * 0.025)},
+    # Tennessee: no tax on wages (the Hall tax was repealed from 2021).
+    "TN": {y: (lambda agi: 0.0, lambda ti: 0.0) for y in (2025, 2026)},
+    # Indiana IT-40 (2025): $1,000 exemption, 3.0%; Departmental Notice #1 (2026): 2.95%.
+    "IN": {2025: (lambda agi: 1000.0, lambda ti: ti * 0.03), 2026: (lambda agi: 1000.0, lambda ti: ti * 0.0295)},
+    # Missouri MO-1040 (2025): the federal standard deduction ($15,750) and the tax chart (thresholds of $1,313);
+    # MO-1040ES (2026): $16,100 and thresholds of $1,348; 4.7% at the top.
+    "MO": {
+        2025: (
+            lambda agi: 15750.0,
+            lambda ti: _schedule(
+                ti,
+                [(1313, 0), (2626, 2.0), (3939, 2.5), (5252, 3.0), (6565, 3.5), (7878, 4.0), (9191, 4.5), (INF, 4.7)],
+            ),
+        ),
+        2026: (
+            lambda agi: 16100.0,
+            lambda ti: _schedule(
+                ti,
+                [(1348, 0), (2696, 2.0), (4044, 2.5), (5392, 3.0), (6740, 3.5), (8088, 4.0), (9436, 4.5), (INF, 4.7)],
+            ),
+        ),
+    },
+    # Maryland Resident Booklet (2025): $3,350 standard deduction + $3,200 exemption (AGI to $100,000), Schedule I
+    # (state rates; county tax not included); 2026: $3,400 standard deduction.
+    "MD": {
+        y: (
+            lambda agi, sd=sd: sd + (3200.0 if agi <= 100000 else 0.0),
+            lambda ti: _schedule(
+                ti,
+                [
+                    (1000, 2.0),
+                    (2000, 3.0),
+                    (3000, 4.0),
+                    (100000, 4.75),
+                    (125000, 5.0),
+                    (150000, 5.25),
+                    (250000, 5.5),
+                    (500000, 5.75),
+                    (1000000, 6.25),
+                    (INF, 6.5),
+                ],
+            ),
+        )
+        for y, sd in ((2025, 3350.0), (2026, 3400.0))
+    },
+}
+
+#: California Schedule X (2025: FTB 2025 tax rate schedules; 2026: FTB Tax News October 2026), standard
+#: deduction and personal exemption credit (2025 Form 540 / 540NR booklet; 2026 indexing).
+CA_SINGLE = {
+    2025: (
+        [
+            (11079, 1),
+            (26264, 2),
+            (41452, 4),
+            (57542, 6),
+            (72724, 8),
+            (371479, 9.3),
+            (445771, 10.3),
+            (742953, 11.3),
+            (1000000, 12.3),
+            (INF, 13.3),
+        ],
+        5706.0,
+        153.0,
+    ),
+    2026: (
+        [
+            (11456, 1),
+            (27157, 2),
+            (42861, 4),
+            (59498, 6),
+            (75197, 8),
+            (384109, 9.3),
+            (460927, 10.3),
+            (768213, 11.3),
+            (1000000, 12.3),
+            (INF, 13.3),
+        ],
+        5900.0,
+        158.0,
+    ),
+}
+
+
+def state_return(r: "Return", state: str, wages: float) -> dict:
+    """The state return of a single wage earner (state AGI, taxable income, tax)."""
+    deduction, tax = STATE_SINGLE[state][r.year]
+    ded = deduction(wages)
+    ti = max(wages - ded, 0.0)
+    t = tax(ti)
+    r.note(
+        f"{state} return: income {money(wages)}; deductions and exemptions {money(ded)}; taxable {money(ti)}; tax {money(t)}"
+    )
+    return {"state": state, "agi": cents(wages), "taxable_income": cents(ti), "tax": cents(t)}
+
+
+def california_540nr(r: "Return", total: float, california: float) -> dict:
+    """Form 540NR for a part-year resident with wages only: line 19 taxable income as a resident; line 31 its tax;
+    32 CA AGI; 35 CA taxable income = line 19 x CA AGI / total AGI (the standard deduction prorated); 36 the CA tax
+    rate (31 / 19); 37 = 35 x 36; 38-39 the exemption credit prorated by 35 / 19; 41 = 37 - 39."""
+    rows, standard, credit = CA_SINGLE[r.year]
+    l19 = total - standard
+    l31 = _schedule(l19, rows)
+    ratio = california / total
+    l35 = l19 * ratio
+    rate = l31 / l19
+    l37 = l35 * rate
+    l39 = credit * l35 / l19
+    tax = l37 - l39
+    r.note(
+        f"Form 540NR: 17 AGI as a resident {money(total)}; 18 standard deduction {money(standard)}; 19 {money(l19)}; "
+        f"31 tax on 19 (Schedule X) {money(l31)}; 32 CA AGI (January-June wages) {money(california)}; 35 CA taxable "
+        f"income = 19 x 32 / 17 = {money(l35)}; 36 rate = 31 / 19 = {rate:.6f}; 37 = {money(l37)}; 39 exemption credit "
+        f"{money(credit)} x 35 / 19 = {money(l39)}; tax = {money(tax)}"
+    )
+    return {"state": "CA", "agi": cents(california), "taxable_income": cents(l35), "tax": cents(tax)}
+
+
+def plan31b_households(year: int) -> dict[str, dict]:
+    """Plan 31 tasks 6-7 goldens: payments, the premium tax credit, filing statuses, residency, state packs."""
+    out = {}
+    alex = W2("alex", "Example Analytics", 85000.0, 85000.0 * 0.05, w4_status="single", year=year)
+    out["withholding_single"] = {
+        "description": "single W-2 earner with a 5% 401(k) deferral, a default Form W-4 (Pub. 15-T withholding) and "
+        "savings interest: the refund or balance due settled in April",
+        "returns": [Return(year, "single", w2=[alex], interest=1000.0)],
+    }
+    out["estimated_payments_penalty"] = {
+        "description": "single retiree on a $90,000 pension paying $2,000 quarterly estimates against a $14,000 "
+        "prior-year tax: the underpayment penalty (Form 2210)",
+        "returns": [
+            Return(year, "single", pension=90000.0, estimated=(2000.0,) * 4, prior_tax=14000.0, prior_agi=95000.0)
+        ],
+    }
+    advance = {2024: 0.0, 2025: 1800.0, 2026: 1600.0}[year]
+    out["aca_ptc_early_retirees"] = {
+        "description": "pre-65 couple filing jointly on a $48,000 pension with marketplace coverage ($22,000 premium, "
+        "$1,700 a month second-lowest-cost silver plan): the premium tax credit (Form 8962)"
+        + (f", ${advance:,.0f} a month of advance payments" if advance else ", no advance payments"),
+        "returns": [
+            Return(year, "mfj", pension=48000.0, marketplace=((22000.0 / 12, 1700.0, advance),) * 12, family_size=2)
+        ],
+    }
+    morgan = W2("morgan", "Example County", 70000.0)
+    out["qss_widow"] = {
+        "description": "a parent whose spouse died the year before, with a ten-year-old: qualifying surviving spouse "
+        "and the child tax credit",
+        "returns": [Return(year, "qss", w2=[morgan], children_under_17=1)],
+    }
+    riley = W2("riley", "Example County", 60000.0)
+    assert 3000 < RELATIVE_LIMIT[year]
+    out["hoh_dependent_parent"] = {
+        "description": "single filer supporting a parent (gross income $3,000, under the qualifying-relative limit) "
+        "who lives elsewhere: head of household and the $500 credit for other dependents",
+        "returns": [Return(year, "hoh", w2=[riley], relatives=1)],
+    }
+    if year >= 2025:
+        mover = W2("alex", "Example Analytics", 120000.0)
+        out["part_year_mover"] = {
+            "description": "single W-2 earner who moves from California to Texas at the start of July: the federal "
+            "return and a part-year California return (Form 540NR)",
+            "returns": [Return(year, "single", w2=[mover])],
+            "state": lambda r: california_540nr(r, 120000.0, 60000.0),
+        }
+        for state in STATE_SINGLE:
+            casey = W2("casey", "Example Analytics", 65000.0)
+            out[f"state_{state.lower()}"] = {
+                "description": f"single W-2 earner ($65,000) in {state}: the federal return and the {state} state return",
+                "returns": [Return(year, "single", w2=[casey])],
+                "state": lambda r, state=state: state_return(r, state, 65000.0),
+            }
     return out
 
 
@@ -1348,9 +1904,19 @@ def write(name: str, year: int, info: dict) -> None:
     for r in returns:
         prefix = f"{r.filer}/" if r.filer else ""
         exact[f"{prefix}1040:16"] = r.exact_tax
-        for line in ("16", "18", "22", "24", "24a", "24c"):
+        for line in ("16", "18", "22", "24", "24a", "24c", "34", "35a", "37"):
             if line in r.lines:
                 tolerances[f"{prefix}1040:{line}"] = r.tax_table_bound
+        if "2210" in r.schedules:
+            # Form 2210 line 4 starts from line 22 (the Tax Table amount); the engine uses the exact schedule. The
+            # penalty moves by the rate times a fraction of a year on that difference: within $0.50.
+            for line in ("4", "9"):
+                tolerances[f"{prefix}schedule 2210:{line}"] = r.tax_table_bound
+            tolerances[f"{prefix}schedule 2210:19"] = 0.5
+            tolerances[f"{prefix}1040:38"] = 0.5
+            for line in ("34", "35a", "37"):
+                if line in r.lines:
+                    tolerances[f"{prefix}1040:{line}"] = r.tax_table_bound + 0.5
         for key in info.get("loose_lines", []):
             tolerances[f"{prefix}{key}"] = 0.10
         if r.tax_limited:
@@ -1382,6 +1948,8 @@ def write(name: str, year: int, info: dict) -> None:
         if r.filer:
             entry = {"filer": r.filer, **entry}
         actual_returns.append(entry)
+    if "state" in info:
+        actual_returns[0]["state_return"] = info["state"](returns[0])
     if len(actual_returns) == 1 and "filer" not in actual_returns[0]:
         expected["actuals"] = dict(actual_returns[0])
     else:
@@ -1389,6 +1957,8 @@ def write(name: str, year: int, info: dict) -> None:
     w2_out = []
     for w in w2s:
         boxes = w2_boxes(w, year)
+        if w.w4_status:
+            boxes["2"] = w.withheld()[0]
         box12 = {"D": cents(w.pretax_401k)} if w.pretax_401k else {}
         w2_out.append({"person": w.person, "employer": w.employer, "boxes": boxes, "box12": box12})
     if w2_out:
@@ -1494,6 +2064,11 @@ def write(name: str, year: int, info: dict) -> None:
             f"box 5 = {money(boxes['5'])}; box 6 = 1.45% (+0.9% over $200,000) = {money(boxes['6'])}"
             + (f"; box 10 = {money(w.fsa)}." if w.fsa else ".")
         )
+        if w.w4_status:
+            md.append("")
+            md.append(
+                f"W-2 box 2 ({w.w4_status} Form W-4, no other entries): {w.withheld()[1]} = {money(w.withheld()[0])}."
+            )
     md.append("")
     for r in returns:
         if r.filer:

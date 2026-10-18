@@ -74,6 +74,7 @@ class Insurance(LifeModelAgent):
         elimination_months: int = 3,
         benefit_end_age: float | None = None,
         benefits_taxable: bool = False,
+        marketplace=None,
     ):
         """Models insurance coverage for a person
 
@@ -101,6 +102,10 @@ class Insurance(LifeModelAgent):
             benefits_taxable: DISABILITY: True when the premiums were paid by the employer or pre-tax
                 (benefits are then taxable income, IRC §104(a)(3), §105(a)); False (default): an
                 individually paid policy, whose benefits are tax-free.
+            marketplace: HEALTH bought on the ACA marketplace
+                (:class:`~life_model.tax.ptc.MarketplaceCoverage`; keyword-only, Plan 31 task 6): the premium
+                is paid a twelfth a month while coverage is active, net of any advance premium tax credit,
+                and the year's premium tax credit is figured on the return (Form 8962).
         """
         person, annual_premium, premium_increase_rate = owner, premium_annual, premium_increase_pct
         super().__init__(cast(LifeModel, person.model))
@@ -144,6 +149,12 @@ class Insurance(LifeModelAgent):
         #: DISABILITY: the claim's ``(month index it pays from, monthly benefit)`` once disabled.
         self.disability_claim: tuple[int, float] | None = None
         self.stat_disability_benefits = 0.0
+        if marketplace is not None and insurance_type != InsuranceType.HEALTH:
+            raise ValueError("marketplace coverage is a HEALTH policy")
+        self.marketplace = marketplace
+        #: This year's covered months: ``(enrollment premium, SLCSP premium, advance credit)`` (Form 1095-A).
+        self.ptc_months: list[tuple[float, float, float]] = []
+        self._advance_estimate: tuple[int, float] | None = None
 
         # Register with model
         self.model.registries.general_insurance_policies.register(person, self)
@@ -376,10 +387,55 @@ class Insurance(LifeModelAgent):
 
     def pre_step(self):
         """Pay the annual premium in the first month of each year (January, or the start month); a
-        disability claim's monthly benefit (premiums are waived while it is open)."""
+        disability claim's monthly benefit (premiums are waived while it is open). Marketplace coverage pays
+        a twelfth of the premium each covered month, net of the advance premium tax credit."""
+        if self.marketplace is not None:
+            self._marketplace_month()
+            return
         if self.model.is_year_start and self.is_coverage_active and self.disability_claim is None:
             self.pay_premium()
         self._pay_disability_benefit()
+
+    def _marketplace_month(self) -> None:
+        if self.model.is_year_start:
+            self.ptc_months = []
+        if self.person.is_deceased or not self.is_coverage_active:
+            return
+        premium = self.annual_premium / 12
+        growth = self.annual_premium / self.base_annual_premium if self.base_annual_premium else 1.0
+        slcsp = self.marketplace.slcsp_monthly * growth
+        advance = self._advance_monthly(premium, slcsp)
+        self.ptc_months.append((premium, slcsp, advance))
+        self.person.spending.add_expense(premium - advance, category="insurance_premium")
+        self.stat_premiums_paid += premium - advance
+
+    def _advance_monthly(self, premium: float, slcsp: float) -> float:
+        """This month's advance premium tax credit (1095-A column C)."""
+        advance = self.marketplace.advance_monthly
+        if advance is None:
+            return 0.0
+        if advance != "estimate":
+            return min(float(advance), premium)
+        year = self.model.year
+        if self._advance_estimate is None or self._advance_estimate[0] != year:
+            self._advance_estimate = (year, self._estimate_advance(premium, slcsp))
+        return self._advance_estimate[1]
+
+    def _estimate_advance(self, premium: float, slcsp: float) -> float:
+        """The marketplace's estimate: the monthly credit last year's household income would earn (no
+        estimate without a prior return)."""
+        from ..people.tax_unit import TaxUnit
+        from ..tax.household import dependent_counts
+        from ..tax.ptc import estimated_advance_monthly
+
+        params = self.model.year_config.tax.federal.premium_tax_credit
+        income = self.person.agi_history.get(self.model.year - 1)
+        if params is None or income is None:
+            return 0.0
+        unit = TaxUnit.for_member(self.person)
+        counts = dependent_counts(unit)
+        size = (2 if unit.filing_status.name == "MARRIED_FILING_JOINTLY" else 1) + counts["ctc"] + counts["other"]
+        return estimated_advance_monthly(income, size, premium, slcsp, unit.filing_status, params)
 
     def _repr_html_(self):
         desc = "<ul>"

@@ -57,7 +57,8 @@ class NIITConfig(StrictModel):
 
     def threshold_for(self, filing_status) -> int:
         """MAGI threshold above which the surtax applies, for a filing status."""
-        if filing_status.value == 2:
+        # A qualifying surviving spouse shares the joint threshold (IRC §1411(b)(1)).
+        if filing_status.value in (2, 5):
             return self.married_filing_jointly
         if filing_status.value == 3:
             return self.head_of_household
@@ -339,6 +340,89 @@ class SelfEmploymentTaxConfig(StrictModel):
     max_plan_rate: float = Field(default=25.0, ge=0, le=100)
 
 
+class WithholdingTable(StrictModel):
+    """Pub. 15-T annual percentage method table rows per W-4 filing status: ``[over (column A), tentative
+    amount (column C), percent (column D)]``."""
+
+    married_filing_jointly: list[list[float]]
+    single: list[list[float]]
+    head_of_household: list[list[float]]
+
+
+class WithholdingYear(StrictModel):
+    """Federal income tax withholding for a year (Plan 31 D3): IRS Pub. 15-T Worksheet 1A's Step 1g amounts
+    and annual percentage method tables (standard and Form W-4 Step 2 checkbox), and Pub. 15 section 7's
+    supplemental-wage rates. A projected year (past the published table) has no tables: they are derived
+    from the year's brackets and standard deduction the way Pub. 15-T builds them."""
+
+    step1g_joint: float = Field(ge=0)
+    step1g_other: float = Field(ge=0)
+    standard: WithholdingTable | None = None
+    checkbox: WithholdingTable | None = None
+    supplemental_rate: float = Field(ge=0, le=100)
+    supplemental_over_1m_rate: float = Field(ge=0, le=100)
+    supplemental_threshold: float = Field(default=1000000, ge=0)
+    #: Additional Medicare Tax is withheld on an employer's wages over this, whatever the filing status.
+    additional_medicare_threshold: float = Field(default=200000, ge=0)
+
+
+class PovertyLine(StrictModel):
+    """HHS poverty guideline (48 states and DC): ``base`` for one person plus ``per_person`` for each more."""
+
+    base: float = Field(ge=0)
+    per_person: float = Field(ge=0)
+
+    def for_family(self, size: int) -> float:
+        return self.base + max(0, size - 1) * self.per_person
+
+
+class PremiumTaxCreditYear(StrictModel):
+    """ACA premium tax credit for a year (IRC §36B, Form 8962; Plan 31 task 6)."""
+
+    #: ``[low, high, initial, final]``: household income as a percent of the poverty line from ``low`` to
+    #: ``high``, applicable percentage rising linearly from ``initial`` to ``final`` (percents).
+    applicable_percentage: list[list[float]]
+    #: Above this percent of the poverty line no credit (``.inf``: no cap, 2021-2025).
+    max_fpl_pct: float = float("inf")
+    #: Below this percent no credit.
+    min_fpl_pct: float = 100.0
+    #: The poverty guideline the year's return uses (the prior year's).
+    poverty_line: PovertyLine
+    #: ``[low, high, single, other]`` repayment limits on excess advance payments; None amounts: no limit.
+    repayment_limit: list[list[float | None]] = Field(default_factory=list)
+
+
+class EstimatedTaxConfig(StrictModel):
+    """Estimated tax and the underpayment penalty (IRC §6654, Form 2210; Plan 31 D3).
+
+    The penalty is Form 2210's regular method: each due date's required installment is a quarter of the
+    required annual payment (the smaller of ``required_current_pct`` of this year's tax and
+    ``required_prior_pct`` of last year's, ``required_prior_high_income_pct`` when last year's AGI was over
+    ``high_income_agi``, half that for a separate return); withholding is deemed paid in four equal parts
+    on the due dates; each underpayment accrues simple interest at the quarter's underpayment rate from its
+    due date until a later payment covers it or April 15. No penalty when the tax after withholding is
+    under ``minimum_balance_due`` or last year's tax was zero.
+    """
+
+    required_current_pct: float = Field(default=90.0, ge=0, le=100)
+    required_prior_pct: float = Field(default=100.0, ge=0)
+    required_prior_high_income_pct: float = Field(default=110.0, ge=0)
+    high_income_agi: float = Field(default=150000, ge=0)
+    minimum_balance_due: float = Field(default=1000, ge=0)
+    #: ``"YYYYQn"`` -> the IRS individual underpayment rate (percent a year). Later quarters use the latest.
+    underpayment_rates: dict[str, float] = Field(default_factory=dict)
+
+    def rate_for(self, year: int, quarter: int) -> float:
+        key = f"{year}Q{quarter}"
+        if key in self.underpayment_rates:
+            return self.underpayment_rates[key]
+        known = sorted(self.underpayment_rates, key=lambda k: (int(k[:4]), int(k[-1])))
+        before = [k for k in known if (int(k[:4]), int(k[-1])) <= (year, quarter)]
+        if before:
+            return self.underpayment_rates[before[-1]]
+        return self.underpayment_rates[known[0]] if known else 0.0
+
+
 class FederalTaxConfig(StrictModel):
     standard_deduction: StandardDeductionConfig
     tax_brackets: TaxBracketsConfig
@@ -385,6 +469,12 @@ class FederalTaxConfig(StrictModel):
     ltc_premium_limits: list[LTCPremiumLimit] | None = None
     #: §401(a)(17) compensation limit (caps the pay a SEP / solo 401(k) contribution is figured on).
     compensation_limit: float | None = Field(default=None, ge=0)
+    # Plan 31 task 6-7 (year-indexed, copied from ``tax_years``).
+    withholding: WithholdingYear | None = None
+    premium_tax_credit: PremiumTaxCreditYear | None = None
+    qualifying_relative_income_limit: float | None = Field(default=None, ge=0)
+    #: Estimated tax rules and the underpayment rates (static).
+    estimated_tax: EstimatedTaxConfig = Field(default_factory=EstimatedTaxConfig)
     # Estate transfer parameters (defaults let existing configs load without these keys).
     # The unified exemption shelters estate value below it; transfers to a surviving spouse are
     # fully sheltered by the unlimited marital deduction regardless of the exemption.
@@ -455,10 +545,53 @@ DEFAULT_STATE_KEY = "DEFAULT"
 
 
 class StateStandardDeductionConfig(StrictModel):
-    """State standard deduction by filing status (defaults to 0 — no deduction)."""
+    """State standard deduction by filing status (defaults to 0 — no deduction). Head of household and
+    married filing separately fall back to ``single`` when not given (Plan 31 D4)."""
 
     single: int = Field(default=0, ge=0)
     married_filing_jointly: int = Field(default=0, ge=0)
+    head_of_household: int | None = Field(default=None, ge=0)
+    married_filing_separately: int | None = Field(default=None, ge=0)
+
+
+class StateRetirementExclusion(StrictModel):
+    """A state's partial exclusion of retirement income (pre-tax distributions and pensions), or an age
+    deduction against any income (``applies_to: any``) (Plan 31 D4).
+
+    Per person who is ``min_age`` (to ``max_age``) by the end of the year and born in ``born_from`` -
+    ``born_through``: up to ``amount`` (or ``amount_by_status``) of that person's retirement income. With
+    ``per_return`` the amount is a cap for the whole return. ``income_limit``: no exclusion when federal AGI is
+    over it. ``phaseout_start``: the total is reduced a dollar per dollar of federal AGI over the status's
+    amount (Virginia's age deduction).
+    """
+
+    amount: float = Field(default=0.0, ge=0)
+    amount_by_status: dict[str, float] | None = None
+    min_age: int = Field(default=0, ge=0)
+    max_age: int | None = None
+    born_from: int | None = None
+    born_through: int | None = None
+    per_return: bool = False
+    income_limit: float | None = None
+    phaseout_start: dict[str, float] | None = None
+    applies_to: Literal["retirement", "any"] = "retirement"
+
+
+class StateCreditPhaseout(StrictModel):
+    """Exemption credits reduced by ``per_step`` dollars each for every ``step`` (or part) of federal AGI over
+    the status's ``start`` (California: $6 per $2,500; ``step_separate`` for a separate return)."""
+
+    start: dict[str, float]
+    step: float = Field(gt=0)
+    per_step: float = Field(ge=0)
+    step_separate: float | None = None
+
+
+#: Filing-status keys a state pack's brackets may define (missing ones fall back: head of household and
+#: married filing separately to ``single``, a qualifying surviving spouse to ``married_filing_jointly``).
+STATE_BRACKET_STATUSES = frozenset(
+    {"single", "married_filing_jointly", "head_of_household", "married_filing_separately"}
+)
 
 
 class StateTaxPack(StrictModel):
@@ -466,7 +599,15 @@ class StateTaxPack(StrictModel):
 
     Exactly one of ``flat_rate`` or ``brackets`` must be set. ``flat_rate`` of ``0`` models a
     no-income-tax state (TX/FL/WA). ``brackets`` mirrors the federal ``[lower, upper, rate]`` shape,
-    keyed by filing status (``single`` required; other statuses fall back to ``single``).
+    keyed by filing status (``single`` required; head of household and married filing separately fall
+    back to ``single``, a qualifying surviving spouse to ``married_filing_jointly``).
+
+    Plan 31 D4: ``years`` holds a full pack per tax year (each validated like a pack); a simulated year
+    uses the latest entry at or before it (the earliest before the table, the latest after it: state
+    amounts are not inflation-projected). A pack with ``years`` sets nothing else.
+    ``personal_exemption`` / ``dependent_exemption`` are subtracted per filer / dependent with the
+    standard deduction; ``personal_credit`` / ``dependent_credit`` are nonrefundable credits against the
+    state tax; ``retirement_exclusion`` is a partial retirement-income exclusion.
     """
 
     flat_rate: float | None = Field(default=None, ge=0, le=100)
@@ -480,9 +621,39 @@ class StateTaxPack(StrictModel):
     # Whether capital gains and qualified dividends are taxed by the state. The large majority of
     # states tax them as ordinary income, so this defaults to True and only the exceptions set it.
     capital_gains_taxable: bool = True
+    # Plan 31 D4
+    personal_exemption: float = Field(default=0.0, ge=0)
+    dependent_exemption: float = Field(default=0.0, ge=0)
+    personal_credit: float = Field(default=0.0, ge=0)
+    dependent_credit: float = Field(default=0.0, ge=0)
+    #: Credit for a dependent who is not a child under 17 (None: ``dependent_credit``).
+    other_dependent_credit: float | None = Field(default=None, ge=0)
+    #: Credit per filer 65 or older (California's senior exemption credit).
+    senior_credit: float = Field(default=0.0, ge=0)
+    credit_phaseout: StateCreditPhaseout | None = None
+    #: Extra exemption per filer 65 or older.
+    additional_exemption_65: float = Field(default=0.0, ge=0)
+    #: Exemptions by federal AGI band, per status: ``[[agi_max, amount], ...]`` (replaces the flat amounts).
+    exemption_by_agi: dict[str, list[list[float]]] | None = None
+    #: A deduction per child under 17 by federal AGI band, per status: ``[[agi_low, agi_high, amount], ...]``.
+    child_deduction: dict[str, list[list[float]]] | None = None
+    #: Tax at the start of each bracket row (a schedule with jumps, Ohio's): tax = base + rate x the amount over
+    #: the row's start; replaces marginal accumulation.
+    bracket_base_tax: list[float] | None = None
+    retirement_exclusion: "StateRetirementExclusion | list[StateRetirementExclusion] | None" = None
+    years: "dict[int, StateTaxPack] | None" = None
 
     @model_validator(mode="after")
     def _validate_pack(self) -> "StateTaxPack":
+        if self.years is not None:
+            if not self.years:
+                raise ValueError("StateTaxPack.years must list at least one year")
+            if self.flat_rate is not None or self.brackets is not None:
+                raise ValueError("StateTaxPack: a pack with 'years' sets its rates in each year, not at the top level")
+            for year, pack in self.years.items():
+                if pack.years is not None:
+                    raise ValueError(f"StateTaxPack.years[{year}] cannot itself have 'years'")
+            return self
         if self.flat_rate is not None and self.brackets is not None:
             raise ValueError("StateTaxPack: set exactly one of 'flat_rate' or 'brackets', not both")
         if self.flat_rate is None and self.brackets is None:
@@ -490,12 +661,22 @@ class StateTaxPack(StrictModel):
         if self.brackets is not None:
             if "single" not in self.brackets:
                 raise ValueError("StateTaxPack.brackets must define at least the 'single' filing status")
-            valid_statuses = {"single", "married_filing_jointly", "head_of_household"}
             for status, rows in self.brackets.items():
-                if status not in valid_statuses:
+                if status not in STATE_BRACKET_STATUSES:
                     raise ValueError(f"StateTaxPack.brackets: unknown filing status '{status}'")
                 self._validate_brackets(status, rows)
         return self
+
+    def for_year(self, year: int | None) -> "StateTaxPack":
+        """The pack in effect for tax ``year`` (itself when it has no ``years`` table)."""
+        if self.years is None:
+            return self
+        published = sorted(self.years)
+        if year is None or year > published[-1]:
+            return self.years[published[-1]]
+        if year < published[0]:
+            return self.years[published[0]]
+        return self.years[max(y for y in published if y <= year)]
 
     @staticmethod
     def _validate_brackets(status: str, rows: "list[list[int | float]]") -> None:
@@ -526,12 +707,20 @@ class StateTaxPack(StrictModel):
             prev_upper = upper
 
 
+class UnknownStateError(ValueError):
+    """A state code with no state tax pack (Plan 31 D4: never a silent flat-rate fallback)."""
+
+
 class StateTaxConfig(StrictModel):
     """State tax configuration: a set of per-state packs plus the resident default.
 
     The scalar ``tax_rate`` key is supported: when present it synthesizes the ``DEFAULT`` pack as
     a flat rate, so a YAML/scenario that sets only ``tax_rate`` loads as a single flat-rate pack.
     ``tax_rate`` remains readable for callers that want the flat rate directly.
+
+    ``DEFAULT`` is an explicit choice (a flat rate on the federal-style base): a person with no state
+    files there (``default_state``), and anyone may select it by name. A state code with no pack is an
+    error (:class:`UnknownStateError`), never a silent fallback (Plan 31 D4).
     """
 
     tax_rate: float | None = Field(default=6.0, ge=0, le=100)
@@ -553,25 +742,29 @@ class StateTaxConfig(StrictModel):
             )
         return self
 
-    def get_pack(self, state: str | None) -> "StateTaxPack":
-        """Resolve the pack for a resident.
+    def has_pack(self, state: str | None) -> bool:
+        """Whether ``state`` resolves to a pack (None resolves to ``default_state``)."""
+        return state is None or state in self.packs
 
-        Uses the resident's ``state`` when a matching pack exists, otherwise ``default_state``,
-        otherwise ``DEFAULT``. Never raises: an unknown residency falls back to the default pack.
+    def get_pack(self, state: str | None, year: int | None = None) -> "StateTaxPack":
+        """Resolve the pack for a resident in tax ``year`` (a year-keyed pack's entry; see
+        :meth:`StateTaxPack.for_year`).
+
+        ``state=None`` uses ``default_state``. A code with no pack raises :class:`UnknownStateError`.
         """
-        if state and state in self.packs:
-            return self.packs[state]
-        if self.default_state in self.packs:
-            return self.packs[self.default_state]
-        return self.packs[DEFAULT_STATE_KEY]
+        return self.packs[self.resolve_state_code(state)].for_year(year)
 
     def resolve_state_code(self, state: str | None) -> str:
         """Return the pack key a resident resolves to (see :meth:`get_pack`)."""
-        if state and state in self.packs:
-            return state
-        if self.default_state in self.packs:
+        if state is None:
             return self.default_state
-        return DEFAULT_STATE_KEY
+        if state in self.packs:
+            return state
+        known = ", ".join(sorted(code for code in self.packs if code != DEFAULT_STATE_KEY))
+        raise UnknownStateError(
+            f"no state tax pack for {state!r} (packed: {known}; or 'DEFAULT', the flat rate on the federal-style "
+            "base, chosen deliberately)"
+        )
 
 
 class MedicareThresholdConfig(StrictModel):
@@ -1080,6 +1273,13 @@ class YearlyTaxParameters(StrictModel):
     #: IRC §132(f)(2) monthly qualified transportation fringe exclusion (transit and vanpool; parking has
     #: the same limit).
     limit_commuter_monthly: int | None = Field(default=None, ge=0)
+    # Plan 31 tasks 6-7. Each optional: None leaves the feature off.
+    #: Pub. 15-T withholding tables and supplemental rates.
+    withholding: WithholdingYear | None = None
+    #: ACA premium tax credit tables (Form 8962).
+    premium_tax_credit: PremiumTaxCreditYear | None = None
+    #: IRC §152(d)(1)(B): a qualifying relative's gross income must be less than this.
+    qualifying_relative_income_limit: float | None = Field(default=None, ge=0)
 
 
 class StochasticEconomyConfig(StrictModel):

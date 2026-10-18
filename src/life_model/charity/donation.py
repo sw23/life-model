@@ -173,7 +173,9 @@ class Donation(LifeModelAgent):
         from ..tax.income import IncomeEntry, IncomeType
 
         # On Form 1040 line 4a (gross) but not 4b (taxable): a zero-amount entry carrying the gross.
-        self.person.income.entries.append(IncomeEntry(IncomeType.PRETAX_DISTRIBUTION, 0.0, gross=taken, source="qcd"))
+        self.person.income.entries.append(
+            IncomeEntry(IncomeType.PRETAX_DISTRIBUTION, 0.0, gross=taken, source="qcd", month=self.model.month)
+        )
         self.qcd_this_year += taken
         self.stat_charitable_donations += taken
         self.stat_total_donated += taken

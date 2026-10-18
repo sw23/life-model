@@ -198,6 +198,7 @@ def canonical(spec: s.HouseholdSpec) -> s.HouseholdSpec:
                     "insurance": _sorted(p.insurance, INSURANCE_KIND_ORDER),
                     "giving": _sorted(p.giving),
                     "children": _sorted(p.children),
+                    "dependents": _sorted(p.dependents),
                 }
             )
         )
@@ -438,6 +439,9 @@ class _Builder:
             death_age=p.death_age,
             state=p.state if p.state is not None else self.spec.meta.default_state,
             birth=p.birth,
+            residency=[tuple(entry) for entry in p.residency] if p.residency else None,
+            widowed_year=p.widowed_year,
+            estimated_payments=_estimated_payments(p.estimated_payments),
         )
         person.spec_id = p.id
         self.built.people[p.id] = person
@@ -468,7 +472,9 @@ class _Builder:
         if job.payroll is not None and any(job.payroll.model_dump().values()):
             from ..work.payroll import PayrollDeductions
 
-            payroll = PayrollDeductions(**job.payroll.model_dump())
+            values = job.payroll.model_dump()
+            values["withholding"] = _withholding(job.payroll.withholding)
+            payroll = PayrollDeductions(**values)
         return Job(
             person,
             company=job.company,
@@ -975,6 +981,7 @@ class _Builder:
             elimination_months=policy.elimination_months,
             benefit_end_age=policy.benefit_end_age,
             benefits_taxable=policy.benefits_taxable,
+            marketplace=_marketplace(policy.marketplace),
         )
 
     # --- SS, healthcare, giving ---
@@ -1156,6 +1163,24 @@ class _Builder:
                     birth_month=child.birth_month,
                 ),
             )
+        for p, i, dependent in each("dependents"):
+            from ..dependents.dependent import Dependent
+
+            self._register(
+                p,
+                "dependents",
+                i,
+                dependent,
+                Dependent(
+                    self.person(p.id),
+                    dependent.name,
+                    relationship=dependent.relationship,
+                    birth_year=dependent.birth_year,
+                    gross_income_annual=dependent.gross_income_annual,
+                    support_annual=dependent.support_annual,
+                    lives_with=dependent.lives_with,
+                ),
+            )
         for p, i, item in each("accounts", lambda a: a.kind in LATE_ACCOUNT_KINDS):
             self._register(p, "accounts", i, item, self.build_account(self.person(p.id), p, item))
         for p in people:
@@ -1260,3 +1285,36 @@ def _populate(model: LifeModel, spec: s.HouseholdSpec) -> BuiltHousehold:
 def is_spec_agent(agent: LifeModelAgent) -> bool:
     """Whether ``agent`` was built from a spec entry that carried an explicit id."""
     return getattr(agent, "spec_id", None) is not None
+
+
+def _withholding(value):
+    """The core withholding policy of a spec ``payroll.withholding`` (Plan 31 D3)."""
+    from ..tax.payments import W4, FlatWithholding
+
+    if value is None or value == "w4_default":
+        return value
+    if value.w4 is not None:
+        return W4(**value.w4.model_dump())
+    return FlatWithholding(pct=value.wages_pct, amount_monthly=value.amount_monthly)
+
+
+def _estimated_payments(value):
+    from ..tax.payments import EstimatedPayments
+
+    if value is None:
+        return None
+    quarterly = tuple(value.quarterly) if isinstance(value.quarterly, list) else value.quarterly
+    return EstimatedPayments(
+        quarterly=quarterly,
+        policy=value.policy,
+        prior_year_tax=value.prior_year_tax,
+        prior_year_agi=value.prior_year_agi,
+    )
+
+
+def _marketplace(value):
+    from ..tax.ptc import MarketplaceCoverage
+
+    if value is None:
+        return None
+    return MarketplaceCoverage(slcsp_monthly=value.slcsp_monthly, advance_monthly=value.advance_monthly)

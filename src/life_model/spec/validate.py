@@ -255,6 +255,7 @@ class _SpecChecker:
         self.check_unmarried_adults()
         self.check_growth()
         self.check_actuals()
+        self.check_withholding_inputs()
         self.check_tax_inputs()
         self.check_children()
         self.check_retirement_gaps()
@@ -593,14 +594,17 @@ class _SpecChecker:
             if code not in packs:
                 self.error(
                     path,
-                    f"no state tax pack for {code!r}; core would silently tax it at the default flat rate.",
-                    f"use one of {sorted(c for c in packs if c != DEFAULT_STATE_KEY)}, or leave it unset.",
+                    f"no state tax pack for {code!r}; the engine refuses a state it has no tax pack for.",
+                    f"use one of {sorted(c for c in packs if c != DEFAULT_STATE_KEY)}, or 'DEFAULT' (a flat "
+                    "rate on the federal-style base) deliberately.",
                     "unknown_state",
                 )
 
         check(self.spec.meta.default_state, "meta.default_state")
         for i, p in enumerate(self.spec.people):
             check(p.state, f"people[{i}].state")
+            for k, (when, code) in enumerate(p.residency or ()):
+                check(code, f"people[{i}].residency[{k}]")
         for i, event in enumerate(self.spec.events):
             if isinstance(event, s.MoveEvent):
                 check(event.state, f"events[{i}].state")
@@ -982,6 +986,33 @@ class _SpecChecker:
             account = accounts.get(target)
             if account is None or account.kind != "roth_ira":
                 self.error(f"{path}.target", f"{target!r} is not a roth_ira of the person", code="unknown_reference")
+
+    def check_withholding_inputs(self) -> None:
+        """Suggest withholding when the records show it (W-2 box 2) but no job withholds (Plan 31 D3)."""
+        if not self.spec.actuals:
+            return
+        withholds = any(
+            job.payroll is not None and job.payroll.withholding is not None for p in self.spec.people for job in p.jobs
+        )
+        estimates = any(p.estimated_payments is not None for p in self.spec.people)
+        for year, records in self.spec.actuals.items():
+            if not withholds and any(w2.boxes.get("2") for w2 in records.w2):
+                self.warn(
+                    f"actuals.{year}.w2",
+                    "the W-2s show federal tax withheld (box 2) but no job withholds: the model pays the year's "
+                    "taxes as a December lump, so box 2, the refund and the April settlement cannot reconcile.",
+                    "set payroll.withholding on the jobs ('w4_default', or the W-4's entries) so withholding, the "
+                    "refund or balance due and its April settlement are modeled.",
+                    "withholding_suggested",
+                )
+            lines = [r.form_1040 for r in records.all_returns()]
+            if not estimates and any(line.get("26") for line in lines):
+                self.warn(
+                    f"actuals.{year}",
+                    "the return shows estimated tax payments (1040 line 26) but no one pays estimates.",
+                    "add estimated_payments (quarterly amounts or a policy) to the person who pays them.",
+                    "estimated_payments_suggested",
+                )
 
     def check_payroll(self, p: s.Person, path: str) -> None:
         """Payroll HSA money needs an HSA; a health FSA over the year's limit is cut to it; employer HSA money
@@ -1471,7 +1502,7 @@ def validate_model(model) -> list[Finding]:
             add(
                 ERROR,
                 f"{path}.state",
-                f"no state tax pack for {person.state!r}; taxed at the default flat rate.",
+                f"no state tax pack for {person.state!r}: there is no fallback rate (Plan 31 D4).",
                 None,
                 "unknown_state",
             )

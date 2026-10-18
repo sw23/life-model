@@ -7,7 +7,9 @@
 
 Every environment the training stack can train on is reachable by a short string name:
 
-* ``financial`` / ``financial:<scenario>`` — the life-model financial environment.
+* ``financial`` / ``financial:<scenario>`` — the life-model financial environment (config
+  ``action_space="flat"|"factored"``, ``decision_interval="year"|"quarter"|"month"``, and, for a
+  factored env driven by DQN, ``flatten_policies="auto"|"joint"|"sequential"``).
 
 Factories are imported lazily inside the factory call, so importing the registry never pays for
 importing ``life_model``. Names that need an optional dependency declare it in
@@ -123,8 +125,11 @@ FINANCIAL_SCENARIOS = ("basic", "high_earner", "low_earner", "mid_career")
 def _financial_factory(scenario: str) -> Callable[[dict], gym.Env]:
     def factory(config: dict) -> gym.Env:
         from .financial.environment import FinancialLifeEnvGenerator
+        from .financial.flatten import maybe_flatten
 
-        return FinancialLifeEnvGenerator.create_scenario_env(scenario, config)
+        # ``flatten_policies`` (factored space only) exposes the MultiDiscrete standing policies as
+        # Discrete for DQN (see financial/flatten.py).
+        return maybe_flatten(FinancialLifeEnvGenerator.create_scenario_env(scenario, config), config)
 
     return factory
 

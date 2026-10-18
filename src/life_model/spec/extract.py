@@ -74,6 +74,21 @@ class _Extractor:
 
     # --- ids ---
 
+    def _first_period(self) -> tuple[int, int]:
+        return self.start, self.model.month
+
+    def residency(self, person) -> "list[tuple[str, str]] | None":
+        """The moves still ahead of the spec's start (the residency timeline after the first month)."""
+        from ..model import month_index
+
+        first = month_index(*self._first_period())
+        moves = [
+            (f"{index // 12}-{index % 12 + 1:02d}", code)
+            for index, code in getattr(person, "_residency", [])
+            if index > first and code is not None
+        ]
+        return moves or None
+
     def pid(self, person) -> str:
         return self.person_ids[person.unique_id]
 
@@ -219,7 +234,14 @@ class _Extractor:
             else f"{person.birth_year:04d}-{person.birth_month:02d}",
             gender=person.gender.value,
             retirement_age=person.retirement_age,
-            state=None if person.state == default_state else person.state,
+            state=None
+            if person.state_at(*self._first_period()) == default_state
+            else person.state_at(*self._first_period()),
+            residency=self.residency(person),
+            widowed_year=person.spouse_death_year
+            if person.spouse_death_year is not None and person.spouse is None
+            else None,
+            estimated_payments=_estimated_payments_spec(person.estimated_payments),
             mortality=mortality,
             death_age=death_age,
             spending=self.spending(person.spending),
@@ -232,6 +254,20 @@ class _Extractor:
             healthcare=self.healthcare(person),
             giving=_sorted(self.giving(person)),
             children=_sorted(children),
+            dependents=_sorted(
+                [
+                    s.Dependent(
+                        id=self.item_id(d),
+                        name=d.name,
+                        relationship=d.relationship,
+                        birth_year=d.birth_year,
+                        gross_income_annual=d.gross_income_annual,
+                        support_annual=d.support_annual,
+                        lives_with=d.lives_with,
+                    )
+                    for d in person.qualifying_relatives
+                ]
+            ),
             self_employment=self.self_employment(person, job_ids),
             **self.policies(person),
         )
@@ -363,6 +399,7 @@ class _Extractor:
                 from dataclasses import asdict
 
                 values = asdict(job.payroll)
+                values["withholding"] = _withholding_spec(job.payroll.withholding)
                 if any(values.values()):
                     payroll = s.Payroll(**values)
             salary = job.salary
@@ -976,6 +1013,12 @@ class _Extractor:
                     elimination_months=policy.elimination_months,
                     benefit_end_age=policy.benefit_end_age,
                     benefits_taxable=policy.benefits_taxable,
+                    marketplace=s.Marketplace(
+                        slcsp_monthly=policy.marketplace.slcsp_monthly,
+                        advance_monthly=policy.marketplace.advance_monthly,
+                    )
+                    if getattr(policy, "marketplace", None) is not None
+                    else None,
                 )
             )
         return out
@@ -1134,3 +1177,32 @@ def _invest(account) -> dict:
 def spec_from_model(model) -> s.HouseholdSpec:
     """Read a :class:`~life_model.spec.schema.HouseholdSpec` off ``model`` (see the module docstring)."""
     return _Extractor(model).run()
+
+
+def _withholding_spec(policy):
+    """The spec form of a core withholding policy (Plan 31 D3)."""
+    from dataclasses import asdict
+
+    from ..tax.payments import W4
+
+    if policy is None:
+        return None
+    if isinstance(policy, W4):
+        if policy == W4():
+            return "w4_default"
+        return s.Withholding(w4=s.W4Spec(**asdict(policy)))
+    return s.Withholding(wages_pct=policy.pct, amount_monthly=policy.amount_monthly)
+
+
+def _estimated_payments_spec(policy):
+    if policy is None:
+        return None
+    quarterly = list(policy.quarterly) if policy.quarterly is not None else None
+    if quarterly is not None and len(set(quarterly)) == 1:
+        quarterly = quarterly[0]
+    return s.EstimatedPayments(
+        quarterly=quarterly,
+        policy=policy.policy,
+        prior_year_tax=policy.prior_year_tax,
+        prior_year_agi=policy.prior_year_agi,
+    )

@@ -141,6 +141,63 @@ def masked_categorical(logits: torch.Tensor, legal_actions_batch: Sequence[Seque
     return Categorical(logits=logits.masked_fill(~mask, POLICY_MASK_LOGIT))
 
 
+class FactoredCategorical:
+    """Independent masked categoricals, one per slot of a ``MultiDiscrete`` action space.
+
+    The policy head emits ``sum(nvec)`` logits; slot ``i`` owns the slice ``[sum(nvec[:i]),
+    sum(nvec[:i+1]))``. Legal actions are given in the same concatenated index space (the form the
+    environment publishes in ``info["legal_mask"]``). The joint log-probability is the sum of the
+    slot log-probabilities and the entropy is the sum of the slot entropies (the slots are
+    independent given the state). A slot with no legal entry recorded in a row is left unmasked.
+    """
+
+    def __init__(self, logits: torch.Tensor, legal_actions_batch: Sequence[Sequence[int]], nvec: Sequence[int]):
+        self.nvec = [int(n) for n in nvec]
+        mask = torch.zeros_like(logits, dtype=torch.bool)
+        for i, legal in enumerate(legal_actions_batch):
+            if len(legal):
+                mask[i, list(legal)] = True
+            else:
+                mask[i, :] = True
+        self.dists: list[Categorical] = []
+        start = 0
+        for n in self.nvec:
+            chunk_mask = mask[:, start : start + n]
+            # A row whose slot has nothing legal (not published) keeps every value of that slot.
+            chunk_mask = chunk_mask | ~chunk_mask.any(dim=1, keepdim=True)
+            chunk = logits[:, start : start + n].masked_fill(~chunk_mask, POLICY_MASK_LOGIT)
+            self.dists.append(Categorical(logits=chunk))
+            start += n
+
+    def sample(self) -> torch.Tensor:
+        return torch.stack([d.sample() for d in self.dists], dim=1)
+
+    def mode(self) -> torch.Tensor:
+        return torch.stack([d.probs.argmax(dim=1) for d in self.dists], dim=1)
+
+    def log_prob(self, actions: torch.Tensor) -> torch.Tensor:
+        actions = actions.long()
+        return torch.stack([d.log_prob(actions[:, i]) for i, d in enumerate(self.dists)], dim=1).sum(dim=1)
+
+    def entropy(self) -> torch.Tensor:
+        return torch.stack([d.entropy() for d in self.dists], dim=1).sum(dim=1)
+
+
+def policy_distribution(logits: torch.Tensor, legal_actions_batch: Sequence[Sequence[int]], nvec=None):
+    """The masked action distribution for a policy head: a :class:`FactoredCategorical` for a
+    ``MultiDiscrete`` space (``nvec`` given), else :func:`masked_categorical`."""
+    if nvec is not None:
+        return FactoredCategorical(logits, legal_actions_batch, nvec)
+    return masked_categorical(logits, legal_actions_batch)
+
+
+def distribution_mode(dist) -> torch.Tensor:
+    """The most likely action of each row (greedy evaluation)."""
+    if isinstance(dist, FactoredCategorical):
+        return dist.mode()
+    return dist.probs.argmax(dim=1)
+
+
 def as_box_space(obs_space) -> spaces.Space:
     """Accept either a Gymnasium space or a plain flat size, and return a space."""
     if isinstance(obs_space, spaces.Space):
@@ -153,9 +210,24 @@ def as_discrete_space(action_space) -> spaces.Discrete:
     """Accept either a ``Discrete`` space or a plain action count, and return a ``Discrete``."""
     if isinstance(action_space, spaces.Discrete):
         return action_space
+    if isinstance(action_space, spaces.MultiDiscrete):
+        raise TypeError(
+            f"This algorithm needs a Discrete action space, got {action_space}. Wrap a factored "
+            "(MultiDiscrete) environment in envs.financial.flatten.FlattenPolicies, or set the env config "
+            "'flatten_policies' (see deepqlearning/README.md)."
+        )
     if isinstance(action_space, spaces.Space):
         raise TypeError(f"Only Discrete action spaces are supported, got {action_space}")
     return spaces.Discrete(int(action_space))
+
+
+def as_action_space(action_space) -> spaces.Space:
+    """Accept a ``Discrete`` or ``MultiDiscrete`` space (or a plain action count) and return it."""
+    if isinstance(action_space, spaces.MultiDiscrete):
+        if np.asarray(action_space.nvec).ndim != 1:
+            raise TypeError(f"Only one-dimensional MultiDiscrete spaces are supported, got {action_space}")
+        return action_space
+    return as_discrete_space(action_space)
 
 
 class Algorithm(ABC):
@@ -168,17 +240,31 @@ class Algorithm(ABC):
     ``obs_space``/``action_space`` accept either the environment's Gymnasium spaces or plain
     integer sizes, so a caller that only knows "34 features, 52 actions" does not have to
     construct spaces.
+
+    An algorithm that sets :attr:`supports_multidiscrete` also accepts a ``MultiDiscrete`` action
+    space (factored categorical heads): ``action_nvec`` is then the slot sizes, ``action_size`` the
+    width of the policy head and of the legal mask (``sum(nvec)``), and actions are integer vectors.
     """
 
     on_policy: ClassVar[bool] = False
     name: ClassVar[str] = "algorithm"
+    supports_multidiscrete: ClassVar[bool] = False
 
     def __init__(self, obs_space, action_space, config: dict | None = None):
         self.obs_space = as_box_space(obs_space)
-        self.action_space = as_discrete_space(action_space)
+        if self.supports_multidiscrete:
+            self.action_space = as_action_space(action_space)
+        else:
+            self.action_space = as_discrete_space(action_space)
         self.obs_shape = tuple(self.obs_space.shape)
         self.state_size = int(np.prod(self.obs_shape))
-        self.action_size = int(self.action_space.n)
+        if isinstance(self.action_space, spaces.MultiDiscrete):
+            #: Slot sizes of a factored (MultiDiscrete) action space; ``None`` for ``Discrete``.
+            self.action_nvec: tuple[int, ...] | None = tuple(int(n) for n in self.action_space.nvec)
+            self.action_size = int(sum(self.action_nvec))
+        else:
+            self.action_nvec = None
+            self.action_size = int(self.action_space.n)
 
         self.config = dict(self.default_config())
         if config:
@@ -220,9 +306,12 @@ class Algorithm(ABC):
         rest ignore it.
         """
 
-    def select_action(self, ob: np.ndarray, legal_actions: Sequence[int], training: bool = False) -> int:
-        """Single-observation convenience wrapper over :meth:`act`."""
+    def select_action(self, ob: np.ndarray, legal_actions: Sequence[int], training: bool = False):
+        """Single-observation convenience wrapper over :meth:`act`: an ``int`` for a ``Discrete``
+        space, an integer vector (one entry per slot) for a ``MultiDiscrete`` one."""
         result = self.act(np.expand_dims(np.asarray(ob), 0), [list(legal_actions)], training=training)
+        if self.action_nvec is not None:
+            return np.asarray(result.actions[0], dtype=np.int64)
         return int(result.actions[0])
 
     # --- checkpointing ---------------------------------------------------------------------

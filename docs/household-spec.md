@@ -127,7 +127,10 @@ Builds: `Person`.
 | `birth` | string (optional) | YYYY-MM | — | `Person.birth` | Birth month (YYYY-MM) for exact ages: 59.5, the retirement month, Social Security and Medicare start in the right month. Must agree with age. When missing, January is assumed (the validator warns). |
 | `gender` | `"male"` \\| `"female"` \\| `"other"` |  | `"other"` | `Person.gender` | Gender at birth for the mortality table ('other' blends). |
 | `retirement_age` | number | age | **required** | `Person.retirement_age` | Age at which every job stops. |
-| `state` | string (optional) |  | — | `Person.state` | Two-letter state of residence (defaults to meta.default_state). |
+| `state` | string (optional) |  | — | `Person.state` | Two-letter state of residence with a state tax pack, or 'DEFAULT' (the flat default rate, chosen deliberately); defaults to meta.default_state. A state without a pack is an error. |
+| `residency` | list[list[string, string]] (optional) |  | — | `Person.residency` | Moves: [[YYYY-MM, state], ...], the state from each month on (before the first, 'state'). A year with a move files part-year state returns: wages by the months worked in each state, other income by residence when received (Plan 31 D4). |
+| `widowed_year` | integer (optional) | year | — | `Person.widowed_year` | The year a spouse died before the run: qualifying surviving spouse for the two following years while a dependent child lives with the person (Plan 31 D5). |
+| `estimated_payments` | [EstimatedPayments](#estimatedpayments) (optional) |  | — | `Person.estimated_payments` | Federal estimated tax payments (Plan 31 D3). |
 | `mortality` | `"immortal"` \\| `"stochastic"` \\| `"fixed_age"` |  | `"immortal"` | `Person.mortality_mode` | How death is decided each year. |
 | `death_age` | integer (optional) | age | — | `Person.death_age` | Age of death for mortality 'fixed_age'. |
 | `spending` | [Spending](#spending) (optional) |  | — |  | This person's living spending. Spending is per person and adds across the household: the household's budget is the sum of every person's amount_annual, so give the whole household budget on one spouse (and leave the other spouse's spending out, or 0) or split it between them, never the full budget on each. Required for a person without a spouse (relationships.marriages) whose spending holds the budget; a spouse who leaves it out spends nothing of their own. |
@@ -140,10 +143,24 @@ Builds: `Person`.
 | `healthcare` | [Healthcare](#healthcare) (optional) |  | — |  | Opt-in healthcare cost agents. |
 | `giving` | list[[Donation](#donation)] |  | [] |  | Charitable giving. |
 | `children` | list[[Child](#child)] |  | [] |  | Child dependents. |
+| `dependents` | list[[Dependent](#dependent)] |  | [] |  | Dependents other than children (a supported parent; Plan 31 D5). |
 | `self_employment` | [SelfEmployment](#selfemployment) (optional) |  | — |  | Self-employment income (Schedule C). |
 | `contribution_plans` | list[[ContributionPlan](#contributionplan)] (optional) |  | — | `ContributionPlan` | Recurring contributions (person.add_contribution_plan). |
 | `savings_policy` | [SavingsPolicy](#savingspolicy) (optional) |  | — | `SavingsPolicy` | Surplus sweep above a cash floor (person.savings_policy). |
 | `roth_conversion` | [RothConversion](#rothconversion) (optional) |  | — | `RothConversionPolicy` | A standing yearly Roth conversion (person.roth_conversion_policy). |
+
+## EstimatedPayments
+
+Federal estimated tax payments (Form 1040-ES; Plan 31 D3): fixed quarterly amounts or a safe-harbor policy.
+
+Builds: `EstimatedPayments`.
+
+| Field | Type | Unit | Default | Maps to | Description |
+|---|---|---|---|---|---|
+| `quarterly` | list[number] \\| number (optional) | USD | — | `EstimatedPayments.quarterly` | The four installments (April, June, September, January of the next year), or one amount each. |
+| `policy` | `"safe_harbor"` \\| `"current_year"` (optional) |  | — | `EstimatedPayments.policy` | 'safe_harbor': last year's tax (110% when last year's AGI was over $150,000); 'current_year': 90% of this year's projected tax; each less the withholding expected, a quarter per installment. |
+| `prior_year_tax` | number (optional) | USD | — | `EstimatedPayments.prior_year_tax` | Last year's tax (Form 2210 line 8 base) for the first simulated year. |
+| `prior_year_agi` | number (optional) | USD | — | `EstimatedPayments.prior_year_agi` | Last year's AGI (the 110% test). |
 
 ## Spending
 
@@ -260,6 +277,34 @@ Builds: `PayrollDeductions`.
 | `hsa_employee_annual` | number | USD/year | `0.0` | `PayrollDeductions.hsa_employee_annual` | Employee HSA contributions through payroll (pre-tax §125, W-2 box 12 W) into the person's first HSA, within the HSA limit. |
 | `hsa_employer_annual` | number | USD/year | `0.0` | `PayrollDeductions.hsa_employer_annual` | Employer HSA contributions (never wages), paid a twelfth a month while the job pays. The preferred place for employer HSA money: leave the HSA account's employer_contribution_annual unset (both set is a validation error). |
 | `commuter_monthly` | number | USD/month | `0.0` | `PayrollDeductions.commuter_monthly` | Transit / parking through payroll, excluded from wages and FICA up to the year's §132(f) monthly limit. |
+| `withholding` | `"w4_default"` \\| [Withholding](#withholding) (optional) |  | — | `PayrollDeductions.withholding` | Tax withholding (Plan 31 D3): 'w4_default' (a W-4 with no entries), or {w4: {...}} / {wages_pct} / {amount_monthly}. Federal (Pub. 15-T; bonuses and RSU vests as supplemental wages), Social Security, Medicare and state tax are withheld from each paycheck, and the household's balance due or refund is settled in April of the next year. Unset: no withholding, the year's taxes paid as a December lump. |
+
+## Withholding
+
+A paycheck withholding policy: a W-4, a percent of taxable wages, or a fixed monthly amount (exactly one).
+
+Builds: `W4 | FlatWithholding`.
+
+| Field | Type | Unit | Default | Maps to | Description |
+|---|---|---|---|---|---|
+| `w4` | [W4Spec](#w4spec) (optional) |  | — |  | A Form W-4 (Pub. 15-T percentage method). |
+| `wages_pct` | number (optional) | percent | — | `FlatWithholding.pct` | Federal withholding as a percent of each paycheck's taxable wages. |
+| `amount_monthly` | number (optional) | USD/month | — | `FlatWithholding.amount_monthly` | Federal withholding in dollars each month. |
+
+## W4Spec
+
+A Form W-4 (2020 or later): the inputs of IRS Pub. 15-T's percentage method (Plan 31 D3).
+
+Builds: `W4`.
+
+| Field | Type | Unit | Default | Maps to | Description |
+|---|---|---|---|---|---|
+| `filing_status` | `"single"` \\| `"married_filing_jointly"` \\| `"head_of_household"` (optional) |  | — | `W4.filing_status` | Step 1(c) filing status (married filing separately checks 'single'); unset: the return's status. |
+| `multiple_jobs` | boolean |  | `False` | `W4.multiple_jobs` | Step 2(c): the two-jobs checkbox (half the standard deduction and brackets). |
+| `dependents_annual` | number | USD/year | `0.0` | `W4.dependents_annual` | Step 3: credits for dependents. |
+| `other_income_annual` | number | USD/year | `0.0` | `W4.other_income_annual` | Step 4(a): other income. |
+| `deductions_annual` | number | USD/year | `0.0` | `W4.deductions_annual` | Step 4(b): deductions beyond the standard deduction. |
+| `extra_monthly` | number | USD/month | `0.0` | `W4.extra_monthly` | Step 4(c): extra withholding each (monthly) paycheck. |
 
 ## BankAccount
 
@@ -775,7 +820,19 @@ Builds: `Insurance`.
 | `benefit_max_monthly` | number (optional) | USD/month | — | `Insurance.benefit_max_monthly` | Disability: monthly benefit cap. |
 | `elimination_months` | integer | months | `3` | `Insurance.elimination_months` | Disability: months before benefits start. |
 | `benefit_end_age` | number (optional) | age | — | `Insurance.benefit_end_age` | Disability: age benefits stop (coverage_end_age, else 65, when unset). |
+| `marketplace` | [Marketplace](#marketplace) (optional) |  | — | `Insurance.marketplace` | health: bought on the ACA marketplace (premium paid monthly while covered, net of any advance credit; the premium tax credit on the return). |
 | `benefits_taxable` | boolean |  | `False` | `Insurance.benefits_taxable` | Disability: premiums paid by the employer or pre-tax, so benefits are taxable (else tax-free). |
+
+## Marketplace
+
+ACA marketplace coverage (Form 1095-A): the premium tax credit's inputs (Plan 31 task 6).
+
+Builds: `MarketplaceCoverage`.
+
+| Field | Type | Unit | Default | Maps to | Description |
+|---|---|---|---|---|---|
+| `slcsp_monthly` | number | USD/month | **required** | `MarketplaceCoverage.slcsp_monthly` | Second-lowest-cost silver plan premium for the people covered (1095-A column B), start-year dollars (grows with the premium). |
+| `advance_monthly` | number \\| `"estimate"` (optional) | USD/month | — | `MarketplaceCoverage.advance_monthly` | Advance premium tax credit paid to the insurer (1095-A column C): dollars a month, 'estimate' (from the last return's income), or unset (none: the whole credit on the return). |
 
 ## SocialSecurity
 
@@ -851,6 +908,22 @@ What a child costs unless the spec says otherwise, in start-year dollars a year,
 | childcare | 0-5 | $12,000 | counts as dependent care expenses (credit, dependent-care FSA); replaced by cost_override_annual |
 | school age | 6-17 | $8,000 | replaced by cost_override_annual |
 | college | 18-21 | $28,000 | paid from the child's 529 plans first; replaced by college_cost_annual (0: no college) |
+
+## Dependent
+
+A dependent other than a child: a qualifying relative such as a parent the person supports (Plan 31 D5). Gives the credit for other dependents ($500) while the dependent's gross income is under the year's limit, and head of household to an unmarried supporter (a parent need not live with them).
+
+Builds: `Dependent`.
+
+| Field | Type | Unit | Default | Maps to | Description |
+|---|---|---|---|---|---|
+| `id` | string (optional) |  | — |  | Optional identifier for this dependent, unique across the spec. Required when another entry references it (a 401k's job, an event's target, a relative event's anchor). |
+| `name` | string |  | **required** | `Dependent.name` | The dependent's name. |
+| `relationship` | `"parent"` \\| `"grandparent"` \\| `"sibling"` \\| `"adult_child"` \\| `"other_relative"` \\| `"member_of_household"` |  | `"parent"` | `Dependent.relationship` | Relationship to the person. |
+| `birth_year` | integer (optional) | year | — | `Dependent.birth_year` | Birth year. |
+| `gross_income_annual` | number | USD/year | `0.0` | `Dependent.gross_income_annual` | The dependent's own gross income (Social Security does not count), in start-year dollars. |
+| `support_annual` | number | USD/year | `0.0` | `Dependent.support_annual` | What the person spends supporting the dependent, in start-year dollars (paid monthly). |
+| `lives_with` | boolean |  | `False` | `Dependent.lives_with` | Lives with the person (needed for head of household unless a parent). |
 
 ## SelfEmployment
 

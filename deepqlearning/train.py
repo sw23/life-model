@@ -169,7 +169,8 @@ def evaluate_agent(algo, env, num_episodes: int = 10, financial: bool = False, c
         from deepqlearning.evaluation.baselines import evaluate_all_baselines
 
         seeds = [2_000_000 + i for i in range(num_episodes)]
-        baseline_scores = evaluate_all_baselines(env, seeds)
+        # Baselines act on the raw env (a FlattenPolicies view's sub-steps are the agent's, not theirs).
+        baseline_scores = evaluate_all_baselines(env.unwrapped, seeds)
         print("\nBaseline comparison (same seeds):")
         print(f"  Agent:           {avg_reward:8.2f}")
         for name, score in baseline_scores.items():
@@ -178,13 +179,14 @@ def evaluate_agent(algo, env, num_episodes: int = 10, financial: bool = False, c
     return episode_results
 
 
-def run_protocol_report(agent, env_config, preset, out_path, n_eval, master_seed=12345):
+def run_protocol_report(agent, env_config, preset, out_path, n_eval, master_seed=12345, agent_policy=None):
     """Run the statistical protocol on the trained agent + all baselines, print the comparison
-    table, and write the JSON report."""
+    table, and write the JSON report. ``agent_policy`` overrides how the agent acts on the raw env
+    (a Q-agent trained through ``FlattenPolicies`` composes its factored action)."""
     from deepqlearning.evaluation.protocol import EvalProtocol, format_comparison_table
 
     protocol = EvalProtocol(env_config=env_config, reward_preset=preset, n_eval=n_eval, master_seed=master_seed)
-    report = protocol.run(agent=agent)
+    report = protocol.run(agent=agent, agent_policy=agent_policy)
     print("\n" + format_comparison_table(report))
     with open(out_path, "w") as f:
         json.dump(report, f, indent=2)
@@ -229,6 +231,27 @@ def build_parser() -> argparse.ArgumentParser:
         choices=sorted(REWARD_PRESETS),
         help="Reward objective preset (financial environments only)",
     )
+    parser.add_argument(
+        "--action-space",
+        type=str,
+        default=None,
+        choices=["flat", "factored"],
+        help="Financial action space: flat Discrete(52) one-off moves (default) or factored standing policies",
+    )
+    parser.add_argument(
+        "--decision-interval",
+        type=str,
+        default=None,
+        choices=["year", "quarter", "month"],
+        help="Months simulated per decision (financial; default year)",
+    )
+    parser.add_argument(
+        "--flatten-policies",
+        type=str,
+        default=None,
+        choices=["auto", "joint", "sequential"],
+        help="Expose the factored space as Discrete for DQN (FlattenPolicies; financial, factored only)",
+    )
     parser.add_argument("--protocol-eval", action="store_true", help="Run the statistical protocol at the end")
     parser.add_argument("--protocol-n-eval", type=int, default=50, help="Episodes per policy per condition")
     parser.add_argument(
@@ -265,6 +288,9 @@ def _reject_financial_only_flags(args, parser) -> None:
         used.append("--reward-preset")
     if args.warm_start_teacher:
         used.append("--warm-start-teacher")
+    for flag in ("action_space", "decision_interval", "flatten_policies"):
+        if getattr(args, flag):
+            used.append("--" + flag.replace("_", "-"))
     if used:
         parser.error(f"{', '.join(used)} apply to financial environments only, but --env is {args.env!r}")
 
@@ -286,7 +312,20 @@ def main():
 
     for directory in ("models", "plots", "results"):
         Path(BASE_PATH, directory).mkdir(exist_ok=True)
+    env_config = dict(overrides["env"])
+    if is_financial:
+        if args.action_space:
+            env_config["action_space"] = args.action_space
+        if args.decision_interval:
+            env_config["decision_interval"] = args.decision_interval
+        if args.flatten_policies:
+            env_config["flatten_policies"] = args.flatten_policies
     run_key = f"{args.env.replace(':', '_')}_{args.algo}"
+    space = env_config.get("action_space", "flat")
+    interval = env_config.get("decision_interval", "year")
+    if (space, interval) != ("flat", "year"):
+        # Runs on another action space or decision interval never overwrite the default runs.
+        run_key += f"_{space}_{interval}"
     if args.seed is not None:
         # Network initialization and exploration draw from these generators; the environments are
         # seeded through the trainers' base_seed below.
@@ -301,7 +340,6 @@ def main():
     model_path = str(BASE_PATH / "models" / f"{run_key}.pt")
 
     # Build the environment first: the algorithm is sized from its spaces.
-    env_config = dict(overrides["env"])
     if is_financial:
         env_config.setdefault("reward_preset", args.reward_preset)
     print(f"Creating environment {args.env} (domain: {spec.domain})")
@@ -332,7 +370,9 @@ def main():
 
     # The exact config the env was built with, so the vector trainer and the protocol rebuild it
     # faithfully rather than falling back to the registry defaults.
-    resolved_env_config = dict(getattr(env, "config", env_config))
+    resolved_env_config = dict(getattr(env.unwrapped, "config", env_config))
+    # A Q-agent trained through FlattenPolicies acts on the raw env by composing its factored action.
+    agent_policy = env.agent_policy(algo) if hasattr(env, "agent_policy") else None
 
     trainer = None
     if not args.eval_only:
@@ -395,7 +435,14 @@ def main():
     # Statistical protocol report: agent vs every baseline on shared seeds.
     if args.protocol_eval:
         report_path = BASE_PATH / "results" / f"protocol_report_{run_key}_{args.reward_preset}.json"
-        run_protocol_report(algo, resolved_env_config, args.reward_preset, str(report_path), args.protocol_n_eval)
+        run_protocol_report(
+            algo,
+            resolved_env_config,
+            args.reward_preset,
+            str(report_path),
+            args.protocol_n_eval,
+            agent_policy=agent_policy,
+        )
 
     # Plot results (episodic trainer only — the vectorized trainer has no per-episode curve)
     if (args.plot_results or args.save_plots) and trainer is not None:

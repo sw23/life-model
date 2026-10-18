@@ -57,6 +57,9 @@ def pool_reports(reports: list[dict], labels: list[str] | None = None) -> dict:
     for key in ("reward_preset", "master_seed", "n_eval"):
         if any(r[key] != first[key] for r in reports):
             raise ValueError(f"reports disagree on {key!r}; pool only runs evaluated identically")
+    for key, default in (("action_space", "flat"), ("decision_interval", "year")):
+        if any(r.get(key, default) != first.get(key, default) for r in reports):
+            raise ValueError(f"reports disagree on {key!r}; pool only runs evaluated identically")
     labels = labels or [f"run{i}" for i in range(len(reports))]
     rng = np.random.default_rng(first["master_seed"])
 
@@ -64,6 +67,8 @@ def pool_reports(reports: list[dict], labels: list[str] | None = None) -> dict:
         "reward_preset": first["reward_preset"],
         "master_seed": first["master_seed"],
         "n_eval": first["n_eval"],
+        "action_space": first.get("action_space", "flat"),
+        "decision_interval": first.get("decision_interval", "year"),
         "n_runs": len(reports),
         "runs": labels,
         "bar": list(PLANNER_BASELINES),

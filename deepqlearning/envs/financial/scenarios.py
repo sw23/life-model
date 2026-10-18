@@ -372,6 +372,8 @@ def household_spec(
                 "start_year": start_year,
                 "end_year": start_year + max_steps,
                 "scenario": household.get("economy_scenario"),
+                # The flat DEFAULT state rate, chosen explicitly (Plan 31 D4: no silent fallback).
+                "default_state": "DEFAULT",
             },
             "people": [person],
         }

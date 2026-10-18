@@ -46,7 +46,12 @@ def additional_standard_deduction(
     amounts = config.tax.federal.additional_standard_deduction
     if amounts is None:
         return 0.0
-    married = filing_status in (FilingStatus.MARRIED_FILING_JOINTLY, FilingStatus.MARRIED_FILING_SEPARATELY)
+    # The unmarried amount is for an individual "not married and not a surviving spouse" (IRC §63(f)(3)).
+    married = filing_status in (
+        FilingStatus.MARRIED_FILING_JOINTLY,
+        FilingStatus.MARRIED_FILING_SEPARATELY,
+        FilingStatus.QUALIFYING_SURVIVING_SPOUSE,
+    )
     per_person = amounts.married if married else amounts.unmarried
     age = config.tax.federal.senior_deduction.age
     # Age 65 by the end of the tax year (IRS: born before January 2 of the following year), not this month.

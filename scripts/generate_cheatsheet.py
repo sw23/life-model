@@ -146,16 +146,27 @@ def silent_defaults() -> list[tuple[str, str, str]]:
             "FilingStatus.SINGLE",
             (
                 "Every person files single until married (`Person.marry` or a spec `relationships.marriages` "
-                "entry, which defaults to `joint`). Head of household needs a qualifying child."
+                "entry, which defaults to `joint`). Head of household needs a qualifying child or a qualifying "
+                "relative (`Dependent`); qualifying surviving spouse needs `widowed_year` (or a death in the run) and a "
+                "dependent child."
             ),
         ),
         (
             "`Person(state=None)`",
             f"`tax.state.default_state` = {state.default_state!r}",
             (
-                f"The DEFAULT pack: a flat {state.tax_rate:g}% on the federal AGI base. An unknown state code is "
-                "**not** an error in core: it silently falls back to the default pack. The spec validator rejects "
-                "unknown codes (`meta.default_state`, `people[].state`)."
+                f"The DEFAULT pack: a flat {state.tax_rate:g}% on the federal AGI base. A state code without a pack "
+                "raises `UnknownStateError` (core and spec alike; Plan 31 D4); pass `state='DEFAULT'` to choose the flat "
+                "rate deliberately."
+            ),
+        ),
+        (
+            "`PayrollDeductions(withholding=None)`, `Person(estimated_payments=None)`",
+            "None",
+            (
+                "No withholding or estimated payments: the year's taxes are paid as a December lump. With either, "
+                "taxes are withheld from paychecks / paid quarterly and the balance due or refund settles in April "
+                "(Plan 31 D3)."
             ),
         ),
         (

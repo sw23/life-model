@@ -390,6 +390,67 @@ class Spending(SpecModel):
     )
 
 
+class W4Spec(SpecModel):
+    """A Form W-4 (2020 or later): the inputs of IRS Pub. 15-T's percentage method (Plan 31 D3)."""
+
+    CORE_CLASS = "W4"
+
+    filing_status: Literal["single", "married_filing_jointly", "head_of_household"] | None = spec_field(
+        None,
+        description="Step 1(c) filing status (married filing separately checks 'single'); unset: the return's status.",
+        core="W4.filing_status",
+    )
+    multiple_jobs: bool = spec_field(
+        False,
+        description="Step 2(c): the two-jobs checkbox (half the standard deduction and brackets).",
+        core="W4.multiple_jobs",
+    )
+    dependents_annual: NonNegativeMoney = spec_field(
+        0.0, description="Step 3: credits for dependents.", unit="USD/year", core="W4.dependents_annual"
+    )
+    other_income_annual: NonNegativeMoney = spec_field(
+        0.0, description="Step 4(a): other income.", unit="USD/year", core="W4.other_income_annual"
+    )
+    deductions_annual: NonNegativeMoney = spec_field(
+        0.0,
+        description="Step 4(b): deductions beyond the standard deduction.",
+        unit="USD/year",
+        core="W4.deductions_annual",
+    )
+    extra_monthly: NonNegativeMoney = spec_field(
+        0.0,
+        description="Step 4(c): extra withholding each (monthly) paycheck.",
+        unit="USD/month",
+        core="W4.extra_monthly",
+    )
+
+
+class Withholding(SpecModel):
+    """A paycheck withholding policy: a W-4, a percent of taxable wages, or a fixed monthly amount (exactly one)."""
+
+    CORE_CLASS = "W4 | FlatWithholding"
+
+    w4: W4Spec | None = spec_field(None, description="A Form W-4 (Pub. 15-T percentage method).")
+    wages_pct: NonNegativePercent | None = spec_field(
+        None,
+        description="Federal withholding as a percent of each paycheck's taxable wages.",
+        unit="percent",
+        core="FlatWithholding.pct",
+    )
+    amount_monthly: NonNegativeMoney | None = spec_field(
+        None,
+        description="Federal withholding in dollars each month.",
+        unit="USD/month",
+        core="FlatWithholding.amount_monthly",
+    )
+
+    @model_validator(mode="after")
+    def _exactly_one(self) -> "Withholding":
+        if sum(v is not None for v in (self.w4, self.wages_pct, self.amount_monthly)) != 1:
+            raise ValueError("withholding: give exactly one of w4, wages_pct or amount_monthly")
+        return self
+
+
 class Payroll(SpecModel):
     """Pre-tax payroll deductions from the pay stub (Plan 27 D3; see :mod:`life_model.work.payroll`)."""
 
@@ -443,6 +504,14 @@ class Payroll(SpecModel):
         "monthly limit.",
         unit="USD/month",
         core="PayrollDeductions.commuter_monthly",
+    )
+    withholding: Literal["w4_default"] | Withholding | None = spec_field(
+        None,
+        description="Tax withholding (Plan 31 D3): 'w4_default' (a W-4 with no entries), or {w4: {...}} / {wages_pct} / "
+        "{amount_monthly}. Federal (Pub. 15-T; bonuses and RSU vests as supplemental wages), Social Security, "
+        "Medicare and state tax are withheld from each paycheck, and the household's balance due or refund is "
+        "settled in April of the next year. Unset: no withholding, the year's taxes paid as a December lump.",
+        core="PayrollDeductions.withholding",
     )
 
 
@@ -1992,6 +2061,26 @@ class LifeInsurance(SpecModel):
         return self
 
 
+class Marketplace(SpecModel):
+    """ACA marketplace coverage (Form 1095-A): the premium tax credit's inputs (Plan 31 task 6)."""
+
+    CORE_CLASS = "MarketplaceCoverage"
+
+    slcsp_monthly: NonNegativeMoney = spec_field(
+        description="Second-lowest-cost silver plan premium for the people covered (1095-A column B), start-year "
+        "dollars (grows with the premium).",
+        unit="USD/month",
+        core="MarketplaceCoverage.slcsp_monthly",
+    )
+    advance_monthly: NonNegativeMoney | Literal["estimate"] | None = spec_field(
+        None,
+        description="Advance premium tax credit paid to the insurer (1095-A column C): dollars a month, 'estimate' "
+        "(from the last return's income), or unset (none: the whole credit on the return).",
+        unit="USD/month",
+        core="MarketplaceCoverage.advance_monthly",
+    )
+
+
 class GeneralInsurance(SpecModel):
     """A general insurance policy (premium-only in core except for claims)."""
 
@@ -2058,6 +2147,12 @@ class GeneralInsurance(SpecModel):
         description="Disability: age benefits stop (coverage_end_age, else 65, when unset).",
         unit="age",
         core="Insurance.benefit_end_age",
+    )
+    marketplace: Marketplace | None = spec_field(
+        None,
+        description="health: bought on the ACA marketplace (premium paid monthly while covered, net of any advance "
+        "credit; the premium tax credit on the return).",
+        core="Insurance.marketplace",
     )
     benefits_taxable: bool = spec_field(
         False,
@@ -2195,6 +2290,74 @@ class Donation(SpecModel):
 
 
 Giving = Annotated[Donation, Field(discriminator="kind")]
+
+
+class Dependent(SpecModel):
+    """A dependent other than a child: a qualifying relative such as a parent the person supports (Plan 31 D5).
+    Gives the credit for other dependents ($500) while the dependent's gross income is under the year's
+    limit, and head of household to an unmarried supporter (a parent need not live with them)."""
+
+    CORE_CLASS = "Dependent"
+
+    id: Identifier | None = _id_field("dependent")
+    name: str = spec_field(description="The dependent's name.", core="Dependent.name")
+    relationship: Literal[
+        "parent", "grandparent", "sibling", "adult_child", "other_relative", "member_of_household"
+    ] = spec_field("parent", description="Relationship to the person.", core="Dependent.relationship")
+    birth_year: Year | None = spec_field(None, description="Birth year.", unit="year", core="Dependent.birth_year")
+    gross_income_annual: NonNegativeMoney = spec_field(
+        0.0,
+        description="The dependent's own gross income (Social Security does not count), in start-year dollars.",
+        unit="USD/year",
+        core="Dependent.gross_income_annual",
+    )
+    support_annual: NonNegativeMoney = spec_field(
+        0.0,
+        description="What the person spends supporting the dependent, in start-year dollars (paid monthly).",
+        unit="USD/year",
+        core="Dependent.support_annual",
+    )
+    lives_with: bool = spec_field(
+        False,
+        description="Lives with the person (needed for head of household unless a parent).",
+        core="Dependent.lives_with",
+    )
+
+
+class EstimatedPayments(SpecModel):
+    """Federal estimated tax payments (Form 1040-ES; Plan 31 D3): fixed quarterly amounts or a safe-harbor policy."""
+
+    CORE_CLASS = "EstimatedPayments"
+
+    quarterly: list[NonNegativeMoney] | NonNegativeMoney | None = spec_field(
+        None,
+        description="The four installments (April, June, September, January of the next year), or one amount each.",
+        unit="USD",
+        core="EstimatedPayments.quarterly",
+    )
+    policy: Literal["safe_harbor", "current_year"] | None = spec_field(
+        None,
+        description="'safe_harbor': last year's tax (110% when last year's AGI was over $150,000); 'current_year': 90% "
+        "of this year's projected tax; each less the withholding expected, a quarter per installment.",
+        core="EstimatedPayments.policy",
+    )
+    prior_year_tax: NonNegativeMoney | None = spec_field(
+        None,
+        description="Last year's tax (Form 2210 line 8 base) for the first simulated year.",
+        unit="USD",
+        core="EstimatedPayments.prior_year_tax",
+    )
+    prior_year_agi: NonNegativeMoney | None = spec_field(
+        None, description="Last year's AGI (the 110% test).", unit="USD", core="EstimatedPayments.prior_year_agi"
+    )
+
+    @model_validator(mode="after")
+    def _one(self) -> "EstimatedPayments":
+        if (self.quarterly is None) == (self.policy is None):
+            raise ValueError("estimated_payments: give exactly one of quarterly or policy")
+        if isinstance(self.quarterly, list) and len(self.quarterly) != 4:
+            raise ValueError("estimated_payments.quarterly: four amounts (or one)")
+        return self
 
 
 class Child(SpecModel):
@@ -2472,7 +2635,27 @@ class Person(SpecModel):
         description="Age at which every job stops.", unit="age", core="Person.retirement_age"
     )
     state: str | None = spec_field(
-        None, description="Two-letter state of residence (defaults to meta.default_state).", core="Person.state"
+        None,
+        description="Two-letter state of residence with a state tax pack, or 'DEFAULT' (the flat default rate, chosen "
+        "deliberately); defaults to meta.default_state. A state without a pack is an error.",
+        core="Person.state",
+    )
+    residency: list[tuple[YearMonth, str]] | None = spec_field(
+        None,
+        description="Moves: [[YYYY-MM, state], ...], the state from each month on (before the first, 'state'). A year "
+        "with a move files part-year state returns: wages by the months worked in each state, other income by "
+        "residence when received (Plan 31 D4).",
+        core="Person.residency",
+    )
+    widowed_year: Year | None = spec_field(
+        None,
+        description="The year a spouse died before the run: qualifying surviving spouse for the two following years "
+        "while a dependent child lives with the person (Plan 31 D5).",
+        unit="year",
+        core="Person.widowed_year",
+    )
+    estimated_payments: EstimatedPayments | None = spec_field(
+        None, description="Federal estimated tax payments (Plan 31 D3).", core="Person.estimated_payments"
     )
     mortality: Literal["immortal", "stochastic", "fixed_age"] = spec_field(
         "immortal", description="How death is decided each year.", core="Person.mortality_mode"
@@ -2497,6 +2680,9 @@ class Person(SpecModel):
     healthcare: Healthcare | None = spec_field(None, description="Opt-in healthcare cost agents.")
     giving: list[Giving] = spec_field(default_factory=list, description="Charitable giving.")
     children: list[Child] = spec_field(default_factory=list, description="Child dependents.")
+    dependents: list[Dependent] = spec_field(
+        default_factory=list, description="Dependents other than children (a supported parent; Plan 31 D5)."
+    )
     self_employment: SelfEmployment | None = spec_field(None, description="Self-employment income (Schedule C).")
     contribution_plans: list[ContributionPlan] | None = spec_field(
         None, description="Recurring contributions (person.add_contribution_plan).", core="ContributionPlan"

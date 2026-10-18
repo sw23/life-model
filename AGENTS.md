@@ -79,7 +79,16 @@ fixtures use only synthetic names (a test enforces an allowlist).
   care benefits, IRA and Roth phase-outs, student loan interest), `credits.py` (an ordered registry:
   EITC, dependent care, education, saver's, CTC/ODC with Schedule 8812 Part II, prior-year minimum
   tax credit; nonrefundable before refundable, each limited to the tax the earlier ones left),
-  `amt.py`, `qbi.py`, `self_employment.py`, `deductions.py`. Self-employment is
+  `amt.py`, `qbi.py`, `self_employment.py`, `deductions.py`, `ptc.py` (the ACA premium tax credit, Form
+  8962, for `Insurance(HEALTH, marketplace=MarketplaceCoverage(...))`), `payments.py` (withholding by IRS
+  Pub. 15-T, estimated payments, Form 2210), `state.py` (year-keyed state packs, part-year returns).
+  Tax payments (Plan 31 D3) are opt-in: `PayrollDeductions(withholding="w4_default" | W4(...) |
+  FlatWithholding(...))` withholds federal, FICA (per employer) and state tax from each paycheck (bonuses and
+  RSU vests as supplemental wages), `Person(estimated_payments=EstimatedPayments(...))` pays quarterly; such a
+  unit's December settlement figures the return and accrues the balance due (`TaxDue:<id>`, a liability) or
+  refund (`TaxRefund:<id>`, an asset), paid in April. Without either the year settles as a December lump.
+  Filing statuses (Plan 31 D5): head of household for a dependent child or a qualifying relative
+  (`Dependent`), qualifying surviving spouse for two years after a spouse's death. Self-employment is
   `Job(kind="self_employed")` (profit paid monthly; the SEP via `sep_account`, or a solo 401(k) via a
   `Job401kAccount` on the job, contributed with December's payment on the year's profit);
   ISO/NSO exercises are `StockPlan(options=[StockOption(...)])`. Every parameter is the year's
@@ -118,6 +127,16 @@ fixtures use only synthetic names (a test enforces an allowlist).
   `default_financial_config()`. `config_manager.config` is a deprecated shim library code must not
   import (a test enforces it). Scenarios are YAML overlays in `config/data/scenarios/`
   (`list_scenarios()`; `stochastic` turns on random economy draws).
+- **RL environment** (`deepqlearning/envs/financial/`, Plan 32 D8/D9). `FinancialLifeEnv(config=
+  {"action_space": "flat" | "factored", "decision_interval": "year" | "quarter" | "month"})`: the
+  flat `Discrete(52)` one-off moves stay the default; the factored `MultiDiscrete` space is ten
+  standing-policy slots (`policies.py`) that set the Plan 27 `ContributionPlan` / `SavingsPolicy` /
+  `RothConversionPolicy` objects, the household `withdrawal_order`, retirement and the Social Security
+  claim, with per-slot legal masks. An env step runs 12, 3 or 1 monthly model steps; `"year"` must
+  stay bit-identical to `model.step_year()` (a twin-env test). PPO/REINFORCE take `MultiDiscrete`
+  natively; DQN goes through `flatten.py:FlattenPolicies`. Baselines exist in both spaces under the
+  same names (`baselines_for`). The SLM candidate generator can emit plans as policy vectors
+  (`candidate_policy(name, action_space="factored")`); the flat path is its default.
 - **Agent interface.** `life_model/api.py` (one-call functions; `life_model.run/compare/validate/
   explain`), `life_model/cli.py` (the `life-model` console script and `python -m life_model`),
   `life_model/mcp.py` (optional stdio MCP server, extra `life-model[mcp]`). Keep these thin: no
@@ -183,14 +202,19 @@ golden's inputs and review the `worksheet.md` diff) and `python scripts/backtest
 
 - Results depend on `STEP_PRIORITY` then construction order within a stage. Settlement is
   order-independent, but a married unit files in its head's state (the first spouse constructed;
-  the spec builder makes it the first spouse in `relationships.marriages`).
+  the spec builder makes it the first spouse in `relationships.marriages`), following the head's
+  residency timeline.
 - Silent defaults: `Person` is immortal and files single unless told otherwise; `Spending` and
   `Salary` growth default to 0%; rent rises 5%; investments grow at 7%; cash earns 0% and surplus
   cash is never invested without a `SavingsPolicy`; every child costs the configured bands on top of
   spending; health costs stop with the job (no coverage before Medicare, no Medicare premiums without
-  `healthcare`); an unknown state code silently falls back to a flat 6%. The spec validator warns or
+  `healthcare`); a person with no state files in `DEFAULT` (a flat 6% of the federal-style base);
+  taxes are paid as a December lump unless a job withholds or the person pays estimates. An unknown
+  state code is an error (`UnknownStateError`), never a silent fallback. The spec validator warns or
   errors on these (a spec keeps a warning on purpose with `meta.accepted_warnings`); direct
   construction does not. See [docs/constructor-cheatsheet.md](docs/constructor-cheatsheet.md).
+- Bank-sourced contribution plans hold back the tax the year's income still owes (and last year's
+  balance due until April), so a plan contributes less than its amount when taxes are not withheld.
 - Historical simulation results had correctness bugs (married-couple housing, FICA on retirement
   income, the RMD age table, and more; see the re-baseline logs). Investigate surprising numbers
   rather than papering over them.

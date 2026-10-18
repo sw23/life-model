@@ -58,15 +58,36 @@ def _is_student(child) -> bool:
     return bool(getattr(child, "in_college_band", False))
 
 
+def _is_dependent_child(child, dep) -> bool:
+    """A qualifying child (IRC §152(c)(3)): under 19 at year end, or a student under 24."""
+    age = child.age
+    return 0 <= age and (
+        age < dep.dependent_age_limit or (_is_student(child) and age < dep.student_dependent_age_limit)
+    )
+
+
+def has_dependent_child(member: "Person") -> bool:
+    """Whether ``member`` has a dependent child this year (a qualifying child; Plan 31 D5)."""
+    dep = member.model.config.dependents
+    return any(_is_dependent_child(child, dep) for child in member.children)
+
+
+def qualifying_relatives(unit: "TaxUnit") -> list:
+    """The unit's qualifying relatives this year (a supported parent; Plan 31 D5)."""
+    year = unit.members[0].model.year
+    return [d for m in unit.members for d in getattr(m, "qualifying_relatives", ()) if d.qualifies(year)]
+
+
 def dependent_counts(unit: "TaxUnit") -> dict[str, int]:
     """Children by the credit they qualify for: ``ctc`` (under 17), ``other`` (credit for other
-    dependents: 17-18, or a student under 24), ``eitc`` (under 19, or a student under 24) and ``care``
-    (under 13 with care expenses this year)."""
+    dependents: 17-18, a student under 24, or a qualifying relative), ``eitc`` (under 19, or a student
+    under 24), ``care`` (under 13 with care expenses this year) and ``relatives`` (qualifying relatives, a
+    supported parent: in ``other``, not EITC children)."""
     dep = unit.config.dependents
     ctc = other = eitc = care = 0
     for child in _children(unit):
         age = child.age
-        dependent = age < dep.dependent_age_limit or (_is_student(child) and age < dep.student_dependent_age_limit)
+        dependent = _is_dependent_child(child, dep)
         if age <= dep.ctc_qualifying_age_max:
             ctc += 1
         elif dependent:
@@ -75,7 +96,8 @@ def dependent_counts(unit: "TaxUnit") -> dict[str, int]:
             eitc += 1
         if age < 13 and getattr(child, "care_expenses_this_year", 0.0) > 0:
             care += 1
-    return {"ctc": ctc, "other": other, "eitc": eitc, "care": care}
+    relatives = len(qualifying_relatives(unit))
+    return {"ctc": ctc, "other": other + relatives, "eitc": eitc, "care": care, "relatives": relatives}
 
 
 def care_expenses(unit: "TaxUnit") -> float:
@@ -305,6 +327,39 @@ def _post_form_8814(unit: "TaxUnit") -> None:
             head.income.add(IncomeType.ORDINARY, included - qualified, source=FORM_8814_SOURCE)
 
 
+def marketplace_months(unit: "TaxUnit") -> "list[tuple[float, float, float]]":
+    """The unit's marketplace coverage months this year, summed across its members' policies by month."""
+    months: list[tuple[float, float, float]] = []
+    for member in unit.members:
+        for policy in member.model.registries.general_insurance_policies.get_items(member):
+            if getattr(policy, "marketplace", None) is None:
+                continue
+            for index, month in enumerate(policy.ptc_months):
+                if index < len(months):
+                    months[index] = tuple(a + b for a, b in zip(months[index], month, strict=True))
+                else:
+                    months.append(month)
+    return months
+
+
+def premium_tax_credit_figures(unit: "TaxUnit", agi: float, counts: dict) -> "dict[str, float] | None":
+    """Form 8962 for the unit's marketplace coverage (None without any): household income is AGI plus
+    tax-exempt interest and the nontaxable part of Social Security; the family is the filers and their
+    dependents."""
+    from .ptc import premium_tax_credit
+
+    params = unit.config.tax.federal.premium_tax_credit
+    months = marketplace_months(unit)
+    if params is None or not months:
+        return None
+    exempt = sum(m.income.tax_exempt_interest for m in unit.members)
+    nontaxable_ss = sum(m.income.social_security_benefits - m.income.taxable_social_security for m in unit.members)
+    household_income = max(0.0, agi + exempt + nontaxable_ss)
+    filers = 2 if unit.filing_status.name == "MARRIED_FILING_JOINTLY" else 1
+    size = filers + counts["ctc"] + counts["other"]
+    return premium_tax_credit(household_income, size, months, unit.filing_status, params)
+
+
 # --------------------------------------------------------------------------------------------------
 # AMT, kiddie tax and credits on the TaxesDue
 # --------------------------------------------------------------------------------------------------
@@ -354,6 +409,12 @@ def finish_federal(
             taxes.amt_credit_generated = minimum_tax_credit_generated(result, exclusion, regular_tax)
 
     counts = dependent_counts(unit)
+    # Form 8962: the excess advance credit repaid is Schedule 2 line 1a, part of line 17 (before the credits).
+    ptc = premium_tax_credit_figures(unit, agi, counts)
+    if ptc is not None:
+        taxes.ptc_detail = dict(ptc)
+        taxes.excess_advance_ptc = ptc["repayment"]
+        taxes.federal += ptc["repayment"]
     earned = earned_incomes(unit, taxes)
     taxes.earned_income = sum(earned)
     benefits = sum(m.income.dependent_care_benefits for m in unit.members)
@@ -363,7 +424,7 @@ def finish_federal(
         year=unit.members[0].model.year,
         filing_status=status,
         agi=agi,
-        tax_before_credits=regular_tax + taxes.amt,
+        tax_before_credits=regular_tax + taxes.amt + taxes.excess_advance_ptc,
         regular_tax=regular_tax,
         tentative_minimum_tax=tentative,
         earned_income=earned,
@@ -381,6 +442,7 @@ def finish_federal(
         payroll_taxes_withheld=sum(taxes.ss_by_worker) + sum(taxes.medicare_by_worker),
         se_tax_deduction=sum(se.deduction for se in taxes.se_by_worker),
         amt_credit_carryforward=carryforward,
+        ptc=ptc,
     )
     for line in apply_credits(facts, config):
         taxes.credits += line.total
@@ -450,7 +512,7 @@ def _apply_ira_phaseouts(unit: "TaxUnit") -> None:
                     params.separate
                     if status == FilingStatus.MARRIED_FILING_SEPARATELY
                     else params.traditional_joint
-                    if status == FilingStatus.MARRIED_FILING_JOINTLY
+                    if status.joint_rates
                     else params.traditional_single
                 )
             elif spouse_covered and status == FilingStatus.MARRIED_FILING_JOINTLY:
@@ -472,7 +534,7 @@ def _apply_ira_phaseouts(unit: "TaxUnit") -> None:
                 params.separate
                 if status == FilingStatus.MARRIED_FILING_SEPARATELY
                 else params.roth_joint
-                if status == FilingStatus.MARRIED_FILING_JOINTLY
+                if status.joint_rates
                 else params.roth_single
             )
             fraction = range_.fraction_allowed(magi)
