@@ -15,6 +15,7 @@ and priority depend on each other's effects.
 
 import random
 import unittest
+from typing import Any
 
 from ..account.bank import BankAccount
 from ..account.brokerage import BrokerageAccount
@@ -232,6 +233,182 @@ class TestConstructionOrderProperty(unittest.TestCase):
             for seed in SHUFFLE_SEEDS:
                 with self.subTest(household=name, seed=seed):
                     self.assert_frames_match(baseline, run_household(builder, seed), f"{name} seed {seed}")
+
+
+# --- Plan 25: the same property over the household-spec examples -----------------------------
+
+
+def _spec_example(name: str, years: int = 25):
+    from ..spec import canonical, load_example
+
+    spec = canonical(load_example(name))
+    meta = spec.meta.model_copy(update={"end_year": spec.meta.start_year + years - 1})
+    return spec.model_copy(update={"meta": meta})
+
+
+def run_spec_shuffled_lists(name: str, seed: int | None):
+    """Build an example spec through the builder after shuffling every list in it."""
+    import json
+    import warnings
+
+    from ..spec import HouseholdSpec, build_model, dumps
+    from .test_spec_builder import _shuffled
+
+    data = json.loads(dumps(_spec_example(name), "json"))
+    if seed is not None:
+        data = _shuffled(data, random.Random(seed))
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)  # SpecWarning too: events past the shortened end year
+        model = build_model(HouseholdSpec.model_validate(data))
+    model.run()
+    assert model.datacollector is not None
+    return model.datacollector.get_model_vars_dataframe()
+
+
+def run_spec_shuffled_construction(name: str, seed: int | None):
+    """Construct an example spec's agents directly (the builder's per-item core calls) in shuffled order.
+
+    Steps are grouped only where core needs one agent before another: a job with its 401k, stock plan
+    and sponsored pensions; a child with the 529s naming it; a person's bank accounts in their
+    primary-first order (``bank_accounts[0]`` receives income by definition, not by accident).
+    """
+    import warnings
+
+    from ..dependents.child import Child
+    from ..healthcare import LongTermCare, MedicalCosts, Medicare
+    from ..lifeevents import LifeEvents as _LifeEvents
+    from ..spec import create_model
+    from ..spec import events as ev
+    from ..spec.builder import _Builder
+
+    spec = _spec_example(name)
+    model = create_model(spec)
+    builder = _Builder(model, spec)
+    people_steps: list[Any] = [lambda p=p: builder.build_person(p) for p in spec.people]
+    steps: list[Any] = []
+    for p in spec.people:
+
+        def person(p=p):
+            return builder.person(p.id)
+
+        def register(collection, index, item, agent, p=p):
+            builder._register(p, collection, index, item, agent)
+
+        banks = [(i, a) for i, a in enumerate(p.accounts) if a.kind == "bank"]
+        steps.append(
+            lambda p=p, banks=banks: [
+                register("accounts", i, a, builder.build_account(person(p), p, a)) for i, a in banks
+            ]
+        )
+        for j, job in enumerate(p.jobs):
+
+            def job_group(p=p, j=j, job=job):
+                agent = builder.build_job(person(p), job)
+                register("jobs", j, job, agent)
+                for i, a in enumerate(p.accounts):
+                    if (a.kind == "401k" and a.job == job.id) or (a.kind == "pension" and a.job == job.id and job.id):
+                        register("accounts", i, a, builder.build_account(person(p), p, a))
+                if job.stock_plan is not None:
+                    builder.build_stock_plan(agent, job.stock_plan)
+
+            steps.append(job_group)
+        for i, a in enumerate(p.accounts):
+            if a.kind in ("bank", "401k", "529") or (a.kind == "pension" and a.job is not None):
+                continue
+            steps.append(lambda p=p, i=i, a=a: register("accounts", i, a, builder.build_account(person(p), p, a)))
+        for collection, build in (
+            ("debts", builder.build_debt),
+            ("housing", builder.build_housing),
+            ("insurance", builder.build_insurance),
+            ("giving", builder.build_donation),
+        ):
+            for i, item in enumerate(getattr(p, collection)):
+                steps.append(
+                    lambda p=p, i=i, item=item, c=collection, b=build: register(c, i, item, b(person(p), item))
+                )
+        for i, child in enumerate(p.children):
+
+            def child_group(p=p, i=i, child=child):
+                register("children", i, child, Child(person(p), child.name, child.birth_year))
+                for k, a in enumerate(p.accounts):
+                    if a.kind == "529" and a.beneficiary == child.id:
+                        register("accounts", k, a, builder.build_account(person(p), p, a))
+
+            steps.append(child_group)
+        if p.healthcare is not None:
+            hc = p.healthcare
+            for flag, cls in (
+                (hc.medical_costs, MedicalCosts),
+                (hc.medicare, Medicare),
+                (hc.long_term_care, LongTermCare),
+            ):
+                if flag:
+                    steps.append(lambda p=p, cls=cls: cls(person(p)))
+    for marriage in spec.relationships.marriages:
+        if marriage.year is None or marriage.year <= model.start_year:
+            head, spouse = marriage.spouses
+            steps.append(
+                lambda m=marriage, h=head, w=spouse: builder.marry(
+                    builder.person(h), builder.person(w), m.filing_status
+                )
+            )
+
+    def social_security_and_events():
+        timing = ev.EventTiming(builder)
+        claims = ev.apply_build_time_events(builder, timing)
+        for p in spec.people:
+            if p.social_security is not None:
+                claim = claims.get(p.id, p.social_security.claim_age)
+                builder.build_social_security(builder.person(p.id), p, claim)
+        return timing
+
+    if seed is not None:
+        # People keep the spec's order: the first spouse listed in relationships heads the unit, and
+        # the head is a modeling choice, not an accident of construction. (It matters: the household
+        # waterfall draws the members' banks in member order, so with different bank rates the
+        # interest earned depends on whose bank pays first.)
+        steps = random.Random(seed).sample(steps, len(steps))
+    for step in people_steps:
+        step()
+    for step in steps:
+        step()
+    # Social Security needs the build-time claim/death events (resolved from every person's age) and
+    # the event schedule references built items, so these two come last, as in the builder.
+    timing = social_security_and_events()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        life_events = ev.compile_events(builder, timing)
+        if life_events:
+            _LifeEvents(model, life_events)
+    model.run()
+    assert model.datacollector is not None
+    return model.datacollector.get_model_vars_dataframe()
+
+
+SPEC_EXAMPLES = ("married_homeowners", "single_renter", "retiree_couple")
+
+
+class TestSpecExampleConstructionOrder(unittest.TestCase):
+    """The construction-order property over every buildable household-spec example."""
+
+    assert_frames_match = TestConstructionOrderProperty.assert_frames_match
+
+    def test_shuffled_spec_lists(self):
+        for name in SPEC_EXAMPLES:
+            baseline = run_spec_shuffled_lists(name, None)
+            for seed in SHUFFLE_SEEDS:
+                with self.subTest(example=name, seed=seed):
+                    self.assert_frames_match(baseline, run_spec_shuffled_lists(name, seed), f"{name} seed {seed}")
+
+    def test_shuffled_direct_construction(self):
+        for name in SPEC_EXAMPLES:
+            baseline = run_spec_shuffled_lists(name, None)
+            self.assert_frames_match(baseline, run_spec_shuffled_construction(name, None), f"{name} declared")
+            for seed in SHUFFLE_SEEDS:
+                with self.subTest(example=name, seed=seed):
+                    self.assert_frames_match(
+                        baseline, run_spec_shuffled_construction(name, seed), f"{name} seed {seed}"
+                    )
 
 
 if __name__ == "__main__":
