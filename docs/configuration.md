@@ -296,6 +296,18 @@ given no explicit schedule (`four_year`, `three_year`, `front_loaded`, `back_loa
 or `even`, which spans `equity_comp.default_vesting_years`). These are modeling
 conventions rather than published figures, so they carry no `vintage` stamp.
 
+## Housing, insurance and Social Security statement rules (Plan 27, 27b)
+
+| Config path | What it sets | Source |
+|---|---|---|
+| `tax.federal.mortgage_interest_debt_limit`, `mortgage_interest_grandfathered_debt_limit`, `mortgage_interest_grandfather_date` | $750,000 acquisition-debt limit; $1,000,000 for debt incurred on or before 2017-12 (months are compared) | IRC §163(h)(3) |
+| `housing.pmi_ltv_threshold`, `housing.pmi_termination_ltv` | PMI cancellation at 80% of the original value (by balance), automatic termination at 78% of the original schedule (and at the term's midpoint) | 12 U.S.C. 4901-4902 |
+| `social_security.full_retirement_age_by_birth_year` | `[first birth year, years, months]` rows, used with `SocialSecurity(fra_from_birth_year=True)` | SSA OACT NRA table |
+| `social_security.spousal_benefit_percent` | half of the worker's PIA (reduced 25/36 of 1% a month for 36 months, 5/12 beyond) | 42 U.S.C. 402(b), 402(q) |
+| `social_security.earnings_test` | exempt amounts by year, the projection bases and the $1-for-$2 / $1-for-$3 ratios | SSA OACT rtea.html, rtdet.html |
+| `insurance.pension.simplified_method_single`, `simplified_method_joint` | anticipated payments for recovering an employee's after-tax pension basis | IRS Pub. 575 Tables 1-2 |
+| `insurance.pension.lump_sum_interest_rate` | rate for a lump sum's present value and the actuarial survivor reduction when a plan states neither (assumption) | — |
+
 ## Economy (inflation & returns)
 
 A single `EconomyModel` per simulation supplies the year's economic rates —
