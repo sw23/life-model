@@ -49,7 +49,8 @@ def additional_standard_deduction(
     married = filing_status in (FilingStatus.MARRIED_FILING_JOINTLY, FilingStatus.MARRIED_FILING_SEPARATELY)
     per_person = amounts.married if married else amounts.unmarried
     age = config.tax.federal.senior_deduction.age
-    return per_person * sum(1 for member in members if member.age >= age)
+    # Age 65 by the end of the tax year (IRS: born before January 2 of the following year), not this month.
+    return per_person * sum(1 for member in members if member.age_in(member.model.year) >= age)
 
 
 def deductible_insurance_premiums(person: "Person") -> float:
@@ -67,7 +68,9 @@ def deductible_insurance_premiums(person: "Person") -> float:
         if paid_year != year:
             continue
         if policy.insurance_type == InsuranceType.LONG_TERM_CARE and limits is not None:
-            cap = next((row.limit for row in limits if person.age <= row.max_age), limits[-1].limit)
+            # §213(d)(10): the attained age before the close of the tax year.
+            attained = person.age_in(year)
+            cap = next((row.limit for row in limits if attained <= row.max_age), limits[-1].limit)
             total += min(premium, cap)
     return total
 

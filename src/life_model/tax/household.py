@@ -367,7 +367,8 @@ def finish_federal(
         regular_tax=regular_tax,
         tentative_minimum_tax=tentative,
         earned_income=earned,
-        ages=[m.age for m in unit.members],
+        # Ages at the end of the tax year (the EIC's 25-64 test, the saver's credit's 18).
+        ages=[m.age_in(m.model.year) for m in unit.members],
         investment_income=investment_income(unit, additional_preferential, additional_short_term),
         ctc_children=counts["ctc"],
         other_dependents=counts["other"],

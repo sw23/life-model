@@ -101,3 +101,47 @@ Plan 31 item:
 The example notebook stores no outputs, so it needs no re-baseline (it executes cleanly). All four
 packaged examples, including the now-buildable `self_employed` one, run 50 years under
 `LifeModel(checks="strict")` with no invariant violation.
+
+## Merging Plan 32 (the monthly engine)
+
+`fourth-wave` (Plan 32's monthly engine) was merged into this branch after tasks 1-5 were written. No
+golden's expected values changed, and no Plan 31 golden needed a spec-input restatement.
+
+Conflicts (resolved in the merge commit): `work/job.py`, `people/tax_unit.py`,
+`account/traditional_IRA.py`, `charity/donation.py`, `dependents/child.py`, `spec/validate.py`,
+`tax/deductions.py`, `docs/index.rst`, `docs/constructor-cheatsheet.md` (regenerated). How each Plan 31
+feature runs on the monthly engine:
+
+* **Self-employment** (`Job(kind="self_employed")`): the month's net profit (a twelfth of receipts less
+  a twelfth of expenses, plus the bonus month's bonus) is paid to the bank every month like a paycheck,
+  with no withholding (task 6). The owner's **SEP / solo 401(k) contributions are made with the December
+  payment**, figured on the year's profit and the year's W-2 Social Security wages (Pub. 560's worksheet
+  works on the year's net earnings; SEP and profit-sharing deposits may be made until the filing
+  deadline and a sole proprietor's deferral is figured on the year's earned income), and limited to the
+  cash on hand. A self-employed job that ends before December makes no contribution that year.
+* **Dependent-care FSA**: a twelfth of the election comes out of each paycheck (wages, FICA wages and
+  the Social Security record), and the year-to-date paycheck sums carry it.
+* **QCD**: the RMD is set at the year start and paid in twelfths (Plan 32); the IRA makes the year's QCDs
+  in the year-start stage, with the year's donations, when the owner is 70½ by exact age that month,
+  and pays the rest of the RMD (required less QCD) in twelfths. A donor not yet 70½ in the first month
+  gives in cash.
+* **Stock gifts, ISO / NSO exercises, LTC premiums**: at the year start (Plan 32's timing for donations,
+  vests and premiums); monthly conservation and the month-level `no_draw_above_cash_floor` hold.
+* **Children**: the dependent care and education expenses accumulate month by month over the year; the
+  529 keeps the year's first $4,000 of college costs out of its draws for the AOTC.
+* **Settlement**: Plan 32 settles taxes only in December; Plan 31's year-end adjustments
+  (`post_year_end_adjustments`) replace its student-loan block there.
+
+Age rules (every Plan 31 test uses the age at the end of the tax year, `Person.age_in(year)`, except the
+QCD's exact-age test at the distribution): the §63(f) amount (65 by December 31) was reading the current
+month's completed age and now reads the year-end age, as do the EIC's 25-64 test, the saver's credit's
+18 and the §213(d)(10) long-term care premium age band. (The senior deduction already used
+`age_in(year)` after Plan 32.)
+
+Engine/reporting fix found by the goldens on the monthly engine: `reconciliation._w2_simulated` read the
+dependent-care FSA from the last booked paycheck (December's twelfth), so W-2 boxes 1, 3, 5 and 10 of
+`dependent_care_mfj` were off by eleven twelfths of the election; it now reads the year's paychecks.
+
+Test changes: `test_plan31_household.py` advances a year with `step_year()` (a `step()` is a month);
+`spec_helpers.not_yet_supported()` uses a job `end_year` (Plan 27 D3) because Plan 32 made `birth`
+supported.

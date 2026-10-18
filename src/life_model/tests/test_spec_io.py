@@ -153,7 +153,7 @@ class TestExamples(unittest.TestCase):
         findings = validate_spec(HouseholdSpec.model_validate(not_yet_supported()))
         self.assertTrue(findings)
         self.assertTrue(all(f.code == "not_yet_supported" for f in findings), findings)
-        self.assertTrue(any("Plan 32" in f.message for f in findings))
+        self.assertTrue(any("Plan 27" in f.message for f in findings))
 
     def test_load_build_extract_dump_is_stable(self):
         for name in RUNNABLE_EXAMPLES:

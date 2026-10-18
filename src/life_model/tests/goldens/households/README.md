@@ -72,6 +72,14 @@ the 2026 draft forms' line numbers.
 * `iso_amt_credit`: the spec starts the year before (the exercise year), so the credit carryforward is
   the engine's own; the script works that prior return the same way (`iso_amt_single`).
 
+The Plan 31 goldens reproduce every line on the monthly engine (Plan 32) with their specs unchanged:
+the profit, wages and dependent-care FSA are paid a twelfth a month and sum to the year's documents; the
+SEP contribution is made with December's payment on the year's profit; donations, the QCD (which the
+IRA makes in the year's first month and deducts from the RMD paid in twelfths), the stock gift and the ISO
+exercise happen at the year start; the 529 keeps the year's first $4,000 of college costs for the AOTC
+month by month. One reporting fix was needed: the reconciliation's W-2 box 10 read only December's FSA
+paycheck instead of the year's (docs/rebaseline-plan-31.md).
+
 ## Expected failures
 
 * `retiree_couple_2026`: `spending:medicare_premiums_annual`: the 2026 IRMAA tier depends on 2024 MAGI,

@@ -54,7 +54,7 @@ class TestQualifiedCharitableDistribution(unittest.TestCase):
         lee = _person(model, "Lee", 75)
         ira = TraditionalIRA(lee, balance=500000, growth_rate=0)
         Donation(lee, "Food Bank", annual_amount=10000, donation_type=DonationType.QCD)
-        model.step()
+        model.step_year()
         rmd = 500000 / 24.6
         self.assertAlmostEqual(ira.balance, 500000 - rmd, places=2)  # the QCD is part of the RMD
         r = model.tax_returns[2024]
@@ -69,7 +69,7 @@ class TestQualifiedCharitableDistribution(unittest.TestCase):
         _job(pat, 50000)
         TraditionalIRA(pat, balance=100000, growth_rate=0)
         donation = Donation(pat, "Food Bank", annual_amount=1000, donation_type=DonationType.QCD)
-        model.step()
+        model.step_year()
         self.assertEqual(donation.cash_given_this_year, 1000)
         self.assertEqual(model.tax_returns[2024].itemized_components["charity"], 1000)
 
@@ -82,7 +82,7 @@ class TestAppreciatedStockGift(unittest.TestCase):
         brokerage = BrokerageAccount(pat, "Example Brokerage", balance=0, growth_rate=0, dividend_yield=0)
         brokerage.deposit_with_basis(50000, 10000, acquired_year=2015)
         Donation(pat, "Food Bank", annual_amount=40000, donation_type=DonationType.STOCK)
-        model.step()
+        model.step_year()
         r = model.tax_returns[2024]
         self.assertAlmostEqual(brokerage.balance, 10000)
         self.assertEqual(r.long_term_gains_realized, 0)
@@ -103,7 +103,7 @@ class TestIRAPhaseouts(unittest.TestCase):
         Job401kAccount(job, pretax_contrib_percent=0)  # eligible to defer: an active participant
         ira = TraditionalIRA(alex, balance=0, growth_rate=0)
         ira.contribute(7000)
-        model.step()
+        model.step_year()
         r = model.tax_returns[2024]
         self.assertAlmostEqual(r.adjustments["ira_deduction"], 3500)
         self.assertAlmostEqual(ira.nondeductible_basis, 3500)
@@ -114,7 +114,7 @@ class TestIRAPhaseouts(unittest.TestCase):
         _job(alex, 200000)
         ira = TraditionalIRA(alex, balance=0, growth_rate=0)
         ira.contribute(7000)
-        model.step()
+        model.step_year()
         self.assertAlmostEqual(model.tax_returns[2024].adjustments["ira_deduction"], 7000)
 
     def test_roth_excess_over_the_magi_limit_is_returned(self):
@@ -124,7 +124,7 @@ class TestIRAPhaseouts(unittest.TestCase):
         _job(alex, 153500)
         roth = RothIRA(alex, balance=0, growth_rate=0)
         roth.contribute(7000)
-        model.step()
+        model.step_year()
         self.assertAlmostEqual(roth.balance, 3500)
         self.assertEqual(check_model(model), [])
 
@@ -138,7 +138,7 @@ class TestStudentLoanPerReturn(unittest.TestCase):
         for person in (a, b):
             _job(person, 40000)
             StudentLoan(person, StudentLoanType.FEDERAL_UNSUBSIDIZED, 50000, 8.0, 10, "State University")
-        model.step()
+        model.step_year()
         r = model.tax_returns[2024]
         self.assertEqual(r.filing_status, FilingStatus.MARRIED_FILING_JOINTLY.name)
         self.assertAlmostEqual(r.adjustments["student_loan_interest"], 2500)  # §221(b)(1): per return
@@ -149,7 +149,7 @@ class TestLongTermCarePremiums(unittest.TestCase):
         model = _model(2024)
         pat = _person(model, "Pat", 72)
         Insurance(pat, InsuranceType.LONG_TERM_CARE, "Example Mutual", annual_premium=8000, coverage_amount=100000)
-        model.step()
+        model.step_year()
         # Over 70: $5,880 (Rev. Proc. 2023-34 §3.28); no income, so no 7.5% floor.
         self.assertAlmostEqual(model.tax_returns[2024].itemized_components["medical"], 5880)
         self.assertEqual(deductible_insurance_premiums(pat), 0)  # a new year: nothing paid yet
@@ -161,7 +161,7 @@ class TestChildTaxCreditAge(unittest.TestCase):
         parent = _person(model)
         _job(parent, 80000)
         Child(parent, "Junior", birth_year=2009)  # 17 at the end of 2026
-        model.step()
+        model.step_year()
         r = model.tax_returns[2026]
         self.assertEqual(r.credits_nonrefundable["child_tax_credit"], 500)  # ODC, not the $2,200 CTC
 
@@ -195,7 +195,7 @@ class TestSelfEmployment(unittest.TestCase):
         sam = _person(model, "Sam")
         _job(sam, 150000)
         Job(sam, "Example Consulting LLC", "Owner", Salary(model, base=100000), kind="self_employed")
-        model.step()
+        model.step_year()
         line = model.tax_returns[2025].fica[0]
         self.assertAlmostEqual(line.self_employment_tax, 26100 * 0.124 + 92350 * 0.029, places=2)
 
@@ -218,7 +218,7 @@ class TestDependentCareFSA(unittest.TestCase):
         _job(jane, 45000)
         Child(john, "Junior", birth_year=2020)
         Child(john, "Kit", birth_year=2022)
-        model.step()
+        model.step_year()
         r = model.tax_returns[2024]
         self.assertAlmostEqual(r.wages, 110000)
         self.assertAlmostEqual(r.fica[0].wages, 65000)
@@ -247,7 +247,7 @@ class TestIncentiveStockOptions(unittest.TestCase):
         BrokerageAccount(sam, "Example Brokerage", balance=0, growth_rate=0)
         job = _job(sam, 100000)
         StockPlan(job, growth_rate=0, options=[StockOption("nso", 2024, exercise_cost=10000, value=30000)])
-        model.step()
+        model.step_year()
         r = model.tax_returns[2024]
         self.assertAlmostEqual(r.wages, 120000)
         self.assertEqual(r.amt, 0)
@@ -259,7 +259,7 @@ class TestKiddieTax(unittest.TestCase):
         parent = _person(model)
         _job(parent, 150000)
         Child(parent, "Kit", birth_year=2012, interest_annual=2000, dividends_annual=3000)
-        model.step()
+        model.step_year()
         r = model.tax_returns[2024]
         self.assertEqual(r.kiddie_tax, 130)
         self.assertAlmostEqual(r.other_income_by_source["form_8814"], 960)
@@ -270,7 +270,7 @@ class TestKiddieTax(unittest.TestCase):
         parent = _person(model)
         _job(parent, 150000)
         Child(parent, "Kit", birth_year=2012, interest_annual=13000)
-        model.step()
+        model.step_year()
         self.assertEqual(model.tax_returns[2024].kiddie_tax, 0)
 
 
@@ -409,7 +409,7 @@ class TestSolo401k(unittest.TestCase):
         )
         account = Job401kAccount(job, pretax_contrib_percent=20, average_growth=0)
         SocialSecurity(casey, withdrawal_start_age=67, income_history=[])
-        model.step()
+        model.step_year()
         # Net earnings 184,700; SE tax = 12.4% x 168,600 + 2.9% x 184,700 = 26,262.70; half 13,131.35.
         # Compensation 186,868.65: deferral 20% capped at 402(g) $23,000; employer 20% = 37,373.73;
         # together 60,373.73 under 415(c) $69,000.
@@ -420,3 +420,36 @@ class TestSolo401k(unittest.TestCase):
         # Social Security credit: net earnings, capped at the wage base.
         self.assertEqual(casey.social_security.income_history[-1].amount, 168600)
         self.assertEqual(check_model(model), [])
+
+
+class TestMonthlyTiming(unittest.TestCase):
+    """Plan 31 on the monthly engine (Plan 32): profit and the FSA per month, the SEP in December."""
+
+    def test_profit_monthly_and_sep_with_the_december_payment(self):
+        model = _model(2024)
+        casey = _person(model, "Casey", 45, bank=50000)
+        sep = TraditionalIRA(casey, balance=0, growth_rate=0)
+        Job(
+            casey,
+            "Example Consulting LLC",
+            "Owner",
+            Salary(model, base=120000),
+            kind="self_employed",
+            sep_account=sep,
+            plan_contribution_percent=25,
+        )
+        for _ in range(11):
+            model.step()
+        self.assertAlmostEqual(casey.income.self_employment_income, 110000)
+        self.assertEqual(sep.balance, 0)
+        model.step()  # December: the last payment and the year's SEP contribution, then settlement
+        self.assertGreater(sep.balance, 0)
+        self.assertAlmostEqual(model.tax_returns[2024].business_income, 120000)
+
+    def test_fsa_comes_out_of_each_paycheck(self):
+        model = _model(2024)
+        john = _person(model, "John")
+        _job(john, 60000, payroll=PayrollDeductions(dependent_care_fsa_annual=1200))
+        model.step()
+        self.assertAlmostEqual(john.income.dependent_care_benefits, 100)
+        self.assertAlmostEqual(john.fica_wages, 4900)

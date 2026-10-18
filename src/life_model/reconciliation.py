@@ -586,11 +586,7 @@ def _w2_simulated(sim: _Year, person, employer: str) -> dict[str, float | None]:
     flows = _employer_flows(sim, person, employer)
     fica = sim.model.config_for_year(sim.year).tax.fica
     # A dependent-care FSA election is paid out of gross pay but excluded from boxes 1, 3 and 5 (box 10).
-    fsa = sum(
-        job._booked.fsa
-        for job in person.jobs
-        if job.company == employer and job._booked is not None and job._booked_year == sim.year
-    )
+    fsa = sum(job._ytd.fsa for job in person.jobs if job.company == employer and job._ytd_year == sim.year)
     gross = flows["gross"] - fsa
     ss_wages = min(gross, fica.social_security_max_income)
     # Employers withhold the Additional Medicare Tax on wages over $200,000 whatever the filing status.

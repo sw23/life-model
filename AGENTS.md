@@ -79,9 +79,11 @@ fixtures use only synthetic names (a test enforces an allowlist).
   EITC, dependent care, education, saver's, CTC/ODC with Schedule 8812 Part II, prior-year minimum
   tax credit; nonrefundable before refundable, each limited to the tax the earlier ones left),
   `amt.py`, `qbi.py`, `self_employment.py`, `deductions.py`. Self-employment is
-  `Job(kind="self_employed")` (SEP via `sep_account`, solo 401(k) via a `Job401kAccount` on the job);
+  `Job(kind="self_employed")` (profit paid monthly; the SEP via `sep_account`, or a solo 401(k) via a
+  `Job401kAccount` on the job, contributed with December's payment on the year's profit);
   ISO/NSO exercises are `StockPlan(options=[StockOption(...)])`. Every parameter is the year's
-  (`tax_years`); a config without one leaves that feature off.
+  (`tax_years`); a config without one leaves that feature off. Age tests use the age at the end of the
+  tax year (`Person.age_in(year)`), not the current month's age.
 - **Construction.** The recommended path is the household spec (`life_model.spec`, Plan 25):
   `build_model(load(path))` validates, canonicalizes list order and constructs agents in a fixed
   order (`spec/builder.py` docstring). Direct constructors remain the low-level API; keep their

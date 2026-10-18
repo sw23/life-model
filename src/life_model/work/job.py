@@ -118,7 +118,7 @@ class Job(LifeModelAgent):
             salary (Salary): Salary of the job. For ``kind="self_employed"`` it is the business's gross
                 receipts (raises and the bonus percentage grow and add to them).
             kind: ``"w2"`` (default) or ``"self_employed"``: a sole proprietorship whose net profit
-                (receipts less ``expenses_annual``) is paid to the bank like wages but is Schedule C
+                (receipts less ``expenses_annual``) is paid to the bank a twelfth a month like wages but is Schedule C
                 income: no FICA withholding, self-employment tax on Schedule SE (sharing the Social
                 Security wage base with the person's W-2 wages), half of it an adjustment, and the
                 qualified business income deduction. No withholding or estimated payments until Plan 31
@@ -131,6 +131,7 @@ class Job(LifeModelAgent):
                 owner's own contribution is figured with Pub. 560's self-employed rate (rate / (1 + rate))
                 on net profit less half of SE tax, within the §401(a)(17) and §415(c) limits. A solo 401(k)
                 is a ``Job401kAccount`` on this job: its deferral percentages apply to the same net earnings.
+                The contributions are made with December's payment, on the year's profit.
             sstb: The business is a specified service trade or business (§199A(d)(2)).
         """
         if kind not in self.KINDS:
