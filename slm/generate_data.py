@@ -45,7 +45,9 @@ from concurrent.futures import ProcessPoolExecutor
 
 import numpy as np
 
-from .households import SLM_SCENARIOS, resolved_ss_claim_age, sample_households
+from deepqlearning.envs.financial.scenarios import household_spec
+
+from .households import SLM_SCENARIOS, sample_households
 from .prompts import (
     OUT_OF_SCOPE_DOMAINS,
     REFUSAL_TRAIN_PHRASINGS,
@@ -88,25 +90,17 @@ def _trial_seeds(generation_seed: int, index: int, n_trials: int) -> list[int]:
 
 
 def _to_profile(scenario: str, household: dict) -> HouseholdProfile:
-    """Convert a sampled household dict (enum gender) to the schema profile (string gender)."""
-    return HouseholdProfile(
+    """Project a sampled household (RL env dict) onto the schema profile via its ``HouseholdSpec``.
+
+    The household composition comes from the spec the RL environment builds; the plan context the
+    spec does not carry (match offer, retirement spending ratio) comes from the household dict.
+    """
+    return HouseholdProfile.from_household_spec(
+        household_spec(household),
         scenario=scenario,
-        person_start_age=int(household["person_start_age"]),
-        person_retirement_age=int(household["person_retirement_age"]),
-        person_gender=household["person_gender"].name.capitalize(),
-        initial_salary=float(household["initial_salary"]),
-        initial_bank_balance=float(household["initial_bank_balance"]),
-        initial_spending=float(household["initial_spending"]),
-        economy_scenario=household.get("economy_scenario"),
-        children_ages=[int(a) for a in household.get("children_ages", [])],
-        models_healthcare=bool(household.get("models_healthcare", False)),
-        ss_claim_age=resolved_ss_claim_age(household),
         retirement_spending_ratio=float(household.get("retirement_spending_ratio", 1.0)),
         employer_match_rate=float(household.get("employer_match_rate", 0.0)),
         employer_match_cap=float(household.get("employer_match_cap", 0.0)),
-        initial_401k_pretax=float(household.get("initial_401k_pretax", 0.0)),
-        initial_401k_roth=float(household.get("initial_401k_roth", 0.0)),
-        initial_brokerage=float(household.get("initial_brokerage", 0.0)),
     )
 
 

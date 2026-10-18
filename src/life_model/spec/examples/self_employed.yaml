@@ -1,0 +1,56 @@
+# Synthetic example household (not real data): a self-employed consultant. Self-employment income
+# (Schedule C profit, SE tax, SEP-IRA) is NOT YET SUPPORTED (Plan 31): the validator rejects this
+# spec with a not_yet_supported error until that plan lands. Everything else is supported.
+spec_version: 1
+meta:
+  name: Self-employed consultant
+  description: Synthetic example. A 38-year-old consultant with self-employment income (not yet
+    supported, Plan 31), a family HSA and a taxable brokerage account.
+  as_of: 2026-01
+  start_year: 2026
+  end_year: 2080
+people:
+- id: morgan
+  name: Morgan
+  age: 38
+  retirement_age: 62
+  state: TX
+  spending:
+    amount_annual: 48000
+    growth_pct: economy
+  accounts:
+  - kind: bank
+    company: Business Checking
+    balance: 38000
+    interest_pct: 0.25
+  - kind: brokerage
+    balance: 95000
+  - kind: hsa
+    coverage: family
+    balance: 9000
+  - kind: traditional_ira
+    balance: 60000
+  self_employment:
+    business: Example Consulting LLC
+    net_profit_annual: 140000
+    growth_pct: economy
+    sep_ira_contrib_pct: 15
+  social_security:
+    claim_age: 67
+    earnings_history:
+      2010: 41000
+      2011: 43000
+      2012: 46000
+      2013: 49000
+      2014: 52000
+      2015: 56000
+      2016: 60000
+      2017: 64000
+      2018: 70000
+      2019: 76000
+      2020: 81000
+      2021: 88000
+      2022: 95000
+      2023: 104000
+      2024: 112000
+      2025: 120000

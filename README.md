@@ -27,6 +27,24 @@ Check out the example simulation notebook:
 python -m pip install life-model
 ```
 
+### Describing a household
+A household can be written as a YAML or JSON **household spec** (people, jobs, accounts, debts,
+home, insurance, Social Security records and dated events) instead of Python:
+
+```python
+from life_model.spec import build_model, load, validate_spec
+
+spec = load("my-models/household.yaml")   # my-models/ is git-ignored: keep real data there
+for finding in validate_spec(spec):       # errors and warnings before anything runs
+    print(finding)
+model = build_model(spec)
+model.run()
+```
+
+Synthetic examples ship in `life_model/spec/examples/` (`life_model.spec.load_example("married_homeowners")`),
+every field is documented in [docs/household-spec.md](docs/household-spec.md), and
+`python -m life_model.spec schema` prints the JSON Schema.
+
 ### Interactive Dashboard
 For a web-based interface to run simulations:
 ```bash
