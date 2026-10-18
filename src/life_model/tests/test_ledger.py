@@ -91,9 +91,12 @@ class TestLedgerEntries(unittest.TestCase):
         BrokerageAccount(person, "Broker", balance=200000)
         model.run()
         sales = [e for e in model.ledger if e.kind == "sale"]
-        self.assertEqual(len(sales), 1)
-        self.assertEqual(sales[0].cause, "fund 2026 bills and taxes")
-        self.assertTrue(sales[0].is_transfer)
+        # Plan 32: each month's bills sell what the bank can't cover; December also funds the taxes.
+        bill_sales = [e for e in sales if e.cause != "fund 2026 taxes"]
+        self.assertEqual([e.month for e in bill_sales], list(range(1, 13)))
+        for sale in bill_sales:
+            self.assertEqual(sale.cause, f"pay 2026-{sale.month:02d} bills")
+        self.assertTrue(all(sale.is_transfer for sale in sales))
         assert_conservation(model)
 
 
@@ -214,8 +217,8 @@ class TestMoneyConservationBugs(unittest.TestCase):
         model.step_year()
         self.assertTrue(person.is_deceased)
         self.assertEqual(person.debt, 0)
-        # The heir's settlement repaid the inherited debt (with a year of interest).
-        repaid = [e for e in model.ledger.for_year(2027) if e.cause == "repay unpaid bills carried from last year"]
+        # The heir's settlement repaid the inherited debt (with a month of interest, Plan 32).
+        repaid = [e for e in model.ledger.for_year(2027) if e.cause == "repay unpaid bills"]
         self.assertGreater(sum(e.amount for e in repaid), carried)
         assert_conservation(model)
 

@@ -4,12 +4,19 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 import html
+from typing import ClassVar
 
 from ..model import LifeModelAgent
 from ..people.person import Person
 
 
 class Apartment(LifeModelAgent):
+    """A rental: ``monthly_rent`` paid with each month's bills, raised at year end."""
+
+    MONTHLY = True
+    # The rent escalator runs at year end, after the year's taxes (0).
+    STEP_PRIORITY: ClassVar[dict[str, int]] = {"on_year_end": 10}
+
     def __init__(self, person: Person, name: str, monthly_rent: float, yearly_increase: float | None = 5):
         """Apartment
 
@@ -46,6 +53,6 @@ class Apartment(LifeModelAgent):
     def _repr_html_(self):
         return f"{html.escape(self.name)}, monthly rent ${self.monthly_rent:,}"
 
-    def post_step(self):
+    def on_year_end(self):
         # Rent escalator runs after the year's rent has been paid (consume-then-advance).
         self.monthly_rent += self.monthly_rent * (self.yearly_increase / 100)

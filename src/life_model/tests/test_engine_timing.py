@@ -515,7 +515,15 @@ class TestBankInterestIsIncome(unittest.TestCase):
         account = BankAccount(person, "Savings", balance=100000, interest_rate=5, compounding="annual")
         model.run()
         taxes = person.stat_taxes_paid
-        self.assertAlmostEqual(account.balance, 100000 + 5000 - 10000 - taxes, places=2)
+        # Plan 32: each month's interest (before the month's bills) on the balance left after the
+        # previous month's bills; the year's taxes are paid in December.
+        monthly_rate = 1.05 ** (1 / 12) - 1
+        balance = interest = 0.0
+        balance = 100000.0
+        for _month in range(12):
+            interest += balance * monthly_rate
+            balance += balance * monthly_rate - 10000 / 12
+        self.assertAlmostEqual(account.balance, 100000 + interest - 10000 - taxes, places=2)
         self.assertAlmostEqual(account.stat_useable_balance, account.balance, places=6)
 
 

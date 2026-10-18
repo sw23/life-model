@@ -32,11 +32,17 @@ class PremiumIncreaseType(Enum):
 
 
 class LifeInsurance(LifeModelAgent):
+    """A life insurance policy: the year's premium is charged once a year, in the first month of the
+    year; at year end the premium is re-priced, whole-life cash value and policy loans accrue a year
+    of growth and interest, and an over-borrowed policy lapses."""
+
     STATS_OWNED = frozenset({"stat_premium_payments", "stat_cash_value", "stat_death_benefit_paid"})
+    MONTHLY = True
 
     # The premium's affordability check reads the household's balances, so it runs after the
-    # year's income and benefits have been deposited (pre_step 0), whatever the construction order.
-    STEP_PRIORITY: ClassVar[dict[str, int]] = {"pre_step": 10}
+    # month's income and benefits have been deposited (pre_step 0), whatever the construction order.
+    # The year-end update runs before the tax settlement (0): a lapse's taxable gain is this year's.
+    STEP_PRIORITY: ClassVar[dict[str, int]] = {"pre_step": 10, "on_year_end": -5}
 
     def __init__(
         self,
@@ -397,13 +403,12 @@ class LifeInsurance(LifeModelAgent):
         return benefit_amount
 
     def pre_step(self):
-        """Pre-step phase: Pay premiums before other expenses"""
-        # Only pay premiums in pre_step to ensure they happen before other expenses
-        if self.is_active and not self.is_term_expired:
+        """Pay the year's premium in the first month of the year (January, or the start month)."""
+        if self.model.is_year_start and self.is_active and not self.is_term_expired:
             self.make_premium_payment()
 
-    def step(self):
-        """Yearly step function"""
+    def on_year_end(self):
+        """Year end: term expiry, premium re-pricing, cash value growth, policy-loan interest, lapse."""
         if not self.is_active:
             self.stat_policy_active = 0
             return

@@ -4,6 +4,7 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 import html
+from typing import ClassVar
 
 from ..base_classes import Loan
 from ..ledger import FlowKind
@@ -14,7 +15,14 @@ from ..tax.income import IncomeType
 
 
 class Home(LifeModelAgent):
+    """A home: paid for monthly (a twelfth of the year's property tax, insurance, upkeep, HOA and PMI,
+    plus one mortgage payment) with the household's bills, appreciated once a year at year end
+    (property tax is assessed on the value through the year)."""
+
     STATS_OWNED = frozenset({"stat_home_value", "stat_home_equity"})
+    MONTHLY = True
+    # Appreciation at year end, after the year's taxes (0) read the year's property tax.
+    STEP_PRIORITY: ClassVar[dict[str, int]] = {"on_year_end": 10}
 
     def __init__(
         self,
@@ -59,7 +67,8 @@ class Home(LifeModelAgent):
         self.total_improvements: float = 0.0
         self.sold: bool = False
 
-        #: This year's housing payment by line (see :meth:`make_yearly_payment`).
+        #: The last housing payment by line (see :meth:`make_monthly_payment` and
+        #: :meth:`make_yearly_payment`).
         self.year_payment: dict[str, float] = {}
 
         # Bind the mortgage to this owner (a Mortgage is constructed before its Home, so it defers
@@ -245,11 +254,35 @@ class Home(LifeModelAgent):
         )
         return net_proceeds
 
-    def make_yearly_payment(self, extra_to_principal: float = 0) -> float:
-        """Pay this year's housing costs: home expenses, PMI, and the mortgage.
+    def make_monthly_payment(self) -> float:
+        """Pay this month's housing costs: a twelfth of the year's home expenses and PMI, and one
+        mortgage payment. Improvement spending accrues to the cost basis. ``year_payment`` holds the
+        month's lines. Returns the cash paid."""
+        if self.sold:
+            self.year_payment = {}
+            return 0.0
+        lines = {name: amount / 12 for name, amount in self.expenses.year_lines().items()}
+        self.total_improvements += self.expenses.improvement_amount / 12
+        pmi = self._pmi_for_year() / 12
+        if pmi:
+            lines["pmi"] = pmi
+        total = sum(lines.values())
+        if self.mortgage is not None:
+            before = self.mortgage.principal
+            interest_before = self.mortgage.interest_paid_this_year
+            paid = self.mortgage.service_month()
+            if before > 0:
+                lines["mortgage"] = paid
+                lines["mortgage_interest"] = self.mortgage.interest_paid_this_year - interest_before
+                lines["mortgage_principal_before"] = before
+            total += paid
+        self.year_payment = lines
+        return total
 
-        The mortgage amortizes internally as twelve monthly payments. Improvement spending accrues
-        to the cost basis. Returns the total cash paid for housing this year.
+    def make_yearly_payment(self, extra_to_principal: float = 0) -> float:
+        """Pay a year of housing costs at once: home expenses, PMI, and the mortgage (twelve
+        payments). For direct callers; the engine pays housing monthly (:meth:`make_monthly_payment`).
+        Improvement spending accrues to the cost basis. Returns the total cash paid.
         """
         if self.sold:
             return 0.0
@@ -282,9 +315,9 @@ class Home(LifeModelAgent):
         principal = self.mortgage.principal if self.mortgage is not None else 0.0
         self.stat_home_equity = self.home_value - principal
 
-    def post_step(self):
+    def on_year_end(self):
         # Appreciate at year end (consume-then-advance): property tax for the year is assessed
-        # on the beginning-of-year value during the step stage.
+        # on the value through the year.
         if self.sold or self.person.is_deceased:
             # A home left behind by a decedent with no heir is off every balance sheet.
             return
@@ -296,6 +329,10 @@ class Home(LifeModelAgent):
 
 
 class HomeExpenses(LifeModelAgent):
+    MONTHLY = True
+    # Escalators at year end, after the year's taxes (0).
+    STEP_PRIORITY: ClassVar[dict[str, int]] = {"on_year_end": 10}
+
     def __init__(
         self,
         model: LifeModel,
@@ -350,7 +387,7 @@ class HomeExpenses(LifeModelAgent):
         lines["hoa"] = self.hoa_amount
         return {name: amount for name, amount in lines.items() if amount}
 
-    def post_step(self):
+    def on_year_end(self):
         # Escalators run after the year's expenses have been paid (consume-then-advance).
         self.maintenance_amount += self.maintenance_amount * (self.maintenance_increase / 100)
         self.improvement_amount += self.improvement_amount * (self.improvement_increase / 100)
@@ -401,14 +438,11 @@ class Mortgage(Loan):
         self.principal = loan_amount if principal is None else principal
         self.monthly_payment = self.calculate_monthly_payment() if monthly_payment is None else monthly_payment
 
-        # Interest actually charged this year, captured as the year is amortized so the itemized
-        # mortgage-interest deduction isn't understated by reading the post-payment principal.
-        self.interest_paid_this_year = self.get_interest_amount("year")
-
-        # Interest actually charged this year, captured before the payment reduces the principal.
-        # The itemized mortgage-interest deduction reads this so it isn't understated by using the
-        # post-payment principal.
+        # Interest charged this year, accumulated payment by payment from each year start (the
+        # itemized mortgage-interest deduction reads it). Until the first year starts it holds the
+        # year's simple-interest estimate; a mortgage taken out mid-run starts at zero (_attach).
         self.interest_paid_this_year = self.get_interest_for_year()
+        self._principal_paid_this_year = 0.0
 
         self.stat_principal_payment_history = []
         self.stat_interest_payment_history = []
@@ -423,6 +457,8 @@ class Mortgage(Loan):
         """Bind this mortgage to its owner and register it as a model agent."""
         self.person = person
         LifeModelAgent.__init__(self, person.model)
+        if self.model.current_stage is not None or self.model.period > 0:
+            self.interest_paid_this_year = 0.0  # taken out mid-run: this year's payments accumulate
         self.model.registries.mortgages.register(person, self)
 
     def get_monthly_payment(self) -> float:

@@ -427,6 +427,13 @@ class TestWithdrawalSolverWithGains(unittest.TestCase):
         self.assertGreater(sum(a.pretax_balance for a in person.all_retirement_accounts), 0)
 
 
+def _settle_a_year(person) -> None:
+    """Plan 32: the month's bills are paid monthly and the year's taxes in December."""
+    unit = TaxUnit([person])
+    run_months(person.model, unit.settle_month)
+    unit.settle_year()
+
+
 class TestBrokerageFundsSpending(unittest.TestCase):
     """Brokerage accounts are tapped for spending after the bank but before retirement accounts,
     realizing capital-gains tax on the way (settlement approach B: preview-sized draw)."""
@@ -451,7 +458,7 @@ class TestBrokerageFundsSpending(unittest.TestCase):
         _, person, account, acct401k = self._retiree_with_brokerage(
             bank=0.0, spending=60000, broker_value=200000, broker_basis=50000, pretax=1000000
         )
-        TaxUnit([person]).settle_year()
+        _settle_a_year(person)
 
         self.assertEqual(person.debt, 0)
         self.assertEqual(acct401k.pretax_balance, 1000000)  # 401k never touched
@@ -463,7 +470,7 @@ class TestBrokerageFundsSpending(unittest.TestCase):
         _, person, _account, _ = self._retiree_with_brokerage(
             bank=0.0, spending=60000, broker_value=200000, broker_basis=50000
         )
-        TaxUnit([person]).settle_year()
+        _settle_a_year(person)
 
         self.assertGreater(person.income.preferential_income, 0)
         self.assertGreater(person.stat_taxes_paid, 0)
@@ -475,7 +482,7 @@ class TestBrokerageFundsSpending(unittest.TestCase):
         _, person, account, _ = self._retiree_with_brokerage(
             bank=100000, spending=60000, broker_value=200000, broker_basis=50000
         )
-        TaxUnit([person]).settle_year()
+        _settle_a_year(person)
 
         self.assertEqual(account.balance, 200000)
         self.assertEqual(person.income.preferential_income, 0)
@@ -485,7 +492,7 @@ class TestBrokerageFundsSpending(unittest.TestCase):
         _, person, account, acct401k = self._retiree_with_brokerage(
             bank=0.0, spending=120000, broker_value=50000, broker_basis=50000, pretax=1000000
         )
-        TaxUnit([person]).settle_year()
+        _settle_a_year(person)
 
         self.assertEqual(person.debt, 0)
         self.assertEqual(account.balance, 0)  # brokerage exhausted first

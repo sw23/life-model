@@ -460,6 +460,55 @@ class TestMonthlyInvestments(unittest.TestCase):
         self.assertAlmostEqual(account.balance, 1000 * 1.12**0.5, places=6)
 
 
+class TestMonthlyBills(unittest.TestCase):
+    def test_spending_rent_and_one_time_expenses_are_paid_in_their_month(self):
+        from ..housing.apartment import Apartment
+
+        model = LifeModel(start_year=2026, end_year=2026)
+        person = Person(Family(model), "Pat", 40, 70, Spending(model, base=12000))
+        BankAccount(person, "Bank", balance=100000, interest_rate=0)
+        Apartment(person, "Flat", monthly_rent=1500, yearly_increase=0)
+        LifeEvents(model, [LifeEvent(2026, "trip", person.spending.add_expense, 4000, month=5)])
+        model.run()
+        spending = {}
+        for entry in model.ledger:
+            if entry.kind in ("spending", "housing"):
+                spending[entry.month] = spending.get(entry.month, 0.0) + entry.amount
+        self.assertEqual(spending[1], 1000 + 1500)
+        self.assertEqual(spending[5], 1000 + 1500 + 4000)
+        self.assertEqual(set(spending), set(range(1, 13)))
+        self.assertEqual(person.bank_account_balance, 100000 - 12000 - 18000 - 4000)
+
+    def test_loan_payoff_month_follows_the_amortization_schedule(self):
+        from ..debt.car_loan import CarLoan
+
+        model = LifeModel(start="2026-04", end_year=2032)
+        person = Person(Family(model), "Pat", 40, 70, Spending(model, 0))
+        BankAccount(person, "Bank", balance=100000, interest_rate=0)
+        loan = CarLoan(person, loan_amount=30000, length_years=5, yearly_interest_rate=6.0, name="Car")
+        paid_off = None
+        while model.running:
+            model.step()
+            if paid_off is None and loan.principal < 0.01:
+                paid_off = model.period  # months paid (the step just taken was payment number `period`)
+        self.assertEqual(paid_off, 60)  # 60 payments: April 2026 through March 2031
+        payments = [e for e in model.ledger if e.cause == "principal: Car"]
+        self.assertEqual((payments[0].year, payments[0].month), (2026, 4))
+        self.assertEqual((payments[-1].year, payments[-1].month), (2031, 3))
+
+    def test_short_months_draw_the_waterfall_and_carry_unpaid_bills(self):
+        model = LifeModel(start_year=2026, end_year=2026)
+        person = Person(Family(model), "Pat", 40, 70, Spending(model, base=24000))
+        BankAccount(person, "Bank", balance=5000, interest_rate=0)
+        model.run()
+        # $2,000 a month: the bank covers January and February and half of March; the rest is
+        # carried as debt from March on, with a month of interest each month.
+        shortfalls = model.event_log.of_kind("shortfall_debt")
+        self.assertEqual(shortfalls[0].cause, "unpaid 2026-03 bills")
+        self.assertAlmostEqual(shortfalls[0].amount, 1000.0, places=2)
+        assert_conservation(model, monthly=True)
+
+
 class TestEventsInTheirMonth(unittest.TestCase):
     def test_an_event_fires_in_its_month(self):
         model = LifeModel(start_year=2026, end_year=2026)

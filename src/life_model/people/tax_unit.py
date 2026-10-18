@@ -8,7 +8,7 @@ import warnings
 from typing import TYPE_CHECKING
 
 from ..ledger import FlowKind, debt_label
-from ..model import Event, EventKind, round_money
+from ..model import Event, EventKind, round_money, snap_money
 from ..tax.credits import child_tax_credit_parts
 from ..tax.deductions import deductible_charity, senior_deduction, settle_charitable_carryforwards
 from ..tax.federal import FilingStatus, get_federal_standard_deduction
@@ -634,7 +634,7 @@ class TaxUnit:
     def _under_retirement_age(member: "Person") -> bool:
         from ..limits import federal_retirement_age
 
-        return member.age < federal_retirement_age(member.model.config)
+        return member.age_years_fractional < federal_retirement_age(member.model.config)
 
     def _fund_bills(self, bills: float) -> TaxesDue:
         """Move enough money into the members' banks to pay ``bills`` + the year's taxes, walking
@@ -847,82 +847,142 @@ class TaxUnit:
                 member.income.add(income_type, -take, source="capital_loss_carryforward")
                 remaining -= take
 
-    def settle_year(self):
-        """Settle the tax year for this unit: taxes, spending, housing, and debt.
+    # ------------------------------------------------------------------
+    # Monthly bills
+    # ------------------------------------------------------------------
 
-        Every bill and tax is posted to the ledger by line (``_BillLine``), from the household's
-        payer account (:meth:`_payer_account`), once the year's payment is made.
+    def _carried_debt_lines(self, interest_by_member: dict[int, float]) -> "tuple[list[_BillLine], float]":
+        """Unpaid bills carried as debt are repaid with this month's bills, after a month of interest
+        (credit-card-like by default): unpaid bills are a real liability, not a free loan. Zeroes the
+        members' ``debt`` (whatever can't be paid is borrowed again)."""
+        rate = self.config.debt.effective_unpaid_balance_interest_rate / 100 / 12
+        lines: list[_BillLine] = []
+        total = 0.0
+        for member in self.members:
+            if not member.debt:
+                continue
+            interest = member.debt * rate
+            interest_by_member[member.unique_id] = interest_by_member.get(member.unique_id, 0.0) + interest
+            carried = member.debt + interest
+            total += carried
+            lines.append(
+                _BillLine(carried, FlowKind.DEBT_SERVICE, member, "repay unpaid bills", to_account=debt_label(member))
+            )
+            lines.append(
+                _BillLine(
+                    interest,
+                    FlowKind.DEBT_SERVICE,
+                    member,
+                    "interest on unpaid bills",
+                    from_account=debt_label(member),
+                    sink="interest on unpaid bills",
+                )
+            )
+            member.debt = 0
+        return lines, total
+
+    def _spending_lines(self, spending_by_member: dict[int, float]) -> "tuple[list[_BillLine], float]":
+        """This month's living spending (a twelfth of the base) and one-time expenses, by category."""
+        lines: list[_BillLine] = []
+        total = 0.0
+        for member in self.living_members:
+            month = member.spending.take_month_lines()
+            amount = sum(month.values())
+            spending_by_member[member.unique_id] = spending_by_member.get(member.unique_id, 0.0) + amount
+            total += amount
+            for category, line_amount in month.items():
+                kind = FlowKind.PREMIUM if category.endswith("premium") else FlowKind.SPENDING
+                sink = "living expenses" if category == "base" else category.replace("_", " ")
+                lines.append(_BillLine(line_amount, kind, member, sink, sink=sink))
+        return lines, total
+
+    def _housing_and_debt_lines(
+        self, housing_by_member: dict[int, float], interest_by_member: dict[int, float]
+    ) -> "tuple[list[_BillLine], float]":
+        """This month's housing (home costs and a mortgage payment, rent) and personal-debt payments
+        (car loans, credit cards, student loans: one payment each)."""
+        lines: list[_BillLine] = []
+        total = 0.0
+        for member in self.living_members:
+            uid = member.unique_id
+            housing = 0.0
+            interest = 0.0
+            for home in member.homes:
+                housing += home.make_monthly_payment()
+                interest += home.year_payment.get("mortgage_interest", 0.0)
+                lines.extend(self._housing_lines(member, home))
+            for apartment in member.apartments:
+                housing += apartment.monthly_rent
+                rent = f"rent: {apartment.name}"
+                lines.append(_BillLine(apartment.monthly_rent, FlowKind.HOUSING, member, rent, sink=rent))
+            debt_paid = 0.0
+            for debt, paid, debt_interest, before, after in member.debt_service.service_month_detail():
+                debt_paid += paid
+                interest += debt_interest
+                lines.extend(_loan_lines(member, debt, paid, debt_interest, before, after, FlowKind.DEBT_SERVICE))
+            housing_by_member[uid] = housing_by_member.get(uid, 0.0) + housing
+            interest_by_member[uid] = interest_by_member.get(uid, 0.0) + interest
+            total += housing + debt_paid
+        return lines, total
+
+    def settle_month(self):
+        """Pay this month's bills (living spending, one-time expenses, housing, debt payments and
+        repaying carried debt) through the household waterfall.
+
+        Tax-free qualified HSA reimbursements of medical costs come first, then the members' banks,
+        then each later source of ``withdrawal_order`` raises only what is still unpaid (unsized: the
+        gains, distributions and penalties a draw creates are on the members' ledgers and are taxed
+        when the year settles). Each bill is posted to the ledger by line from the household's payer
+        account; a shortfall becomes debt on the head, repaid (with interest) with next month's bills.
         """
+        model = self.members[0].model
         spending_by_member: dict[int, float] = {}
         housing_by_member: dict[int, float] = {}
         interest_by_member: dict[int, float] = {}
-        debt_payment_by_member: dict[int, float] = {}
+        debt_lines, carried = self._carried_debt_lines(interest_by_member)
+        spending_lines, spending = self._spending_lines(spending_by_member)
+        housing_lines, housing = self._housing_and_debt_lines(housing_by_member, interest_by_member)
+        bill_lines = debt_lines + spending_lines + housing_lines
+        bills = carried + spending + housing
+        when = f"{model.year}-{model.month:02d}"
+        if bills > 0:
+            self._draw_hsa_for_medical(bills)
+            with model.ledger.caused_by(f"pay {when} bills"):
+                remaining = self._pay_from_banks(bills)
+                for source in self.withdrawal_order[1:]:
+                    if remaining < 0.005:
+                        break
+                    self._raise_cash(source, remaining)
+                    remaining = self._pay_from_banks(remaining)
+            shortfall = round_money(max(0.0, remaining))
+            payer = self._payer_account()
+            for line in bill_lines:
+                line.post(model.ledger, payer)
+            self.members[0].add_debt(shortfall, to_account=payer, cause=f"unpaid {when} bills")
+        for member in self.members:
+            uid = member.unique_id
+            member.stat_money_spent = snap_money(member.stat_money_spent + spending_by_member.get(uid, 0.0))
+            member.stat_housing_costs = snap_money(member.stat_housing_costs + housing_by_member.get(uid, 0.0))
+            member.stat_interest_paid = snap_money(member.stat_interest_paid + interest_by_member.get(uid, 0.0))
+
+    # ------------------------------------------------------------------
+    # Year-end settlement
+    # ------------------------------------------------------------------
+
+    def settle_year(self):
+        """Settle the tax year for this unit (in December, after the month's bills): the year's
+        taxes, from the year's income ledger.
+
+        The household waterfall (all banks, all brokerage, Roth basis under 59.5, pre-tax, remaining
+        Roth) moves into the banks only what the taxes still need, each taxable step sized against
+        the tax it triggers. The taxes are posted to the ledger by line (``_BillLine``) from the
+        household's payer account (:meth:`_payer_account`); a shortfall becomes debt.
+        """
         model = self.members[0].model
         year = model.year
         bill_lines: list[_BillLine] = []
 
-        # Personal debt carried by members is settled exactly once (fixes double-pay / phantom
-        # debt): zero it here and fold it into this year's bills.
-        # The carried balance accrues a year of interest (credit-card-like by default) before it
-        # is repaid: unpaid bills are a real liability, not a free loan.
-        debt_rate = self.config.debt.effective_unpaid_balance_interest_rate / 100
-        existing_debt = sum(m.debt for m in self.members)
-        carried_interest_by_member = {m.unique_id: m.debt * debt_rate for m in self.members}
-        existing_debt += sum(carried_interest_by_member.values())
-        for member in self.members:
-            spending_by_member[member.unique_id] = 0.0
-            housing_by_member[member.unique_id] = 0.0
-            interest_by_member[member.unique_id] = 0.0
-            if member.debt:
-                carried = member.debt + carried_interest_by_member[member.unique_id]
-                cause = "repay unpaid bills carried from last year"
-                bill_lines.append(
-                    _BillLine(carried, FlowKind.DEBT_SERVICE, member, cause, to_account=debt_label(member))
-                )
-                bill_lines.append(
-                    _BillLine(
-                        carried_interest_by_member[member.unique_id],
-                        FlowKind.DEBT_SERVICE,
-                        member,
-                        "interest on unpaid bills",
-                        from_account=debt_label(member),
-                        sink="interest on unpaid bills",
-                    )
-                )
-            member.debt = 0
-
         for member in self.living_members:
-            spending_by_member[member.unique_id] = member.spending.get_yearly_spending()
-            for category, amount in member.spending.year_spending_lines().items():
-                kind = FlowKind.PREMIUM if category.endswith("premium") else FlowKind.SPENDING
-                sink = "living expenses" if category == "base" else category.replace("_", " ")
-                bill_lines.append(_BillLine(amount, kind, member, sink, sink=sink))
-
-            member_housing = 0.0
-            member_interest = 0.0
-            for home in member.homes:
-                # Amortize the mortgage (12 monthly periods) then read the interest actually
-                # charged this year — captured on the mortgage as the year is amortized.
-                member_housing += home.make_yearly_payment()
-                if home.mortgage is not None:
-                    member_interest += home.mortgage.interest_paid_this_year
-                bill_lines.extend(self._housing_lines(member, home))
-            for apartment in member.apartments:
-                member_housing += apartment.yearly_rent
-                rent = f"rent: {apartment.name}"
-                bill_lines.append(_BillLine(apartment.yearly_rent, FlowKind.HOUSING, member, rent, sink=rent))
-
-            # Service the member's personal debts (car loans, credit cards, student loans). Each
-            # debt accrues 12 months of interest and receives 12 scheduled payments internally; the
-            # cash paid is folded into this year's bills, the interest into the interest statistic.
-            member_debt_paid = 0.0
-            member_debt_interest = 0.0
-            for debt, paid, interest, before, after in member.debt_service.service_year_detail():
-                member_debt_paid += paid
-                member_debt_interest += interest
-                bill_lines.extend(_loan_lines(member, debt, paid, interest, before, after, FlowKind.DEBT_SERVICE))
-            member_interest += member_debt_interest
-
             # Above-the-line student-loan interest deduction (IRC §221): the interest actually paid
             # on student loans this year, capped, reduces ordinary taxable income (not FICA wages).
             student_loan_interest = sum(sl.interest_paid_this_year for sl in member.student_loans)
@@ -933,21 +993,8 @@ class TaxUnit:
             if student_loan_deduction > 0:
                 member.income.add(IncomeType.ORDINARY, -student_loan_deduction, source="student_loan_interest")
 
-            housing_by_member[member.unique_id] = member_housing
-            interest_by_member[member.unique_id] = member_interest + carried_interest_by_member[member.unique_id]
-            debt_payment_by_member[member.unique_id] = member_debt_paid
-
-        total_spending = sum(spending_by_member.values())
-        total_housing = sum(housing_by_member.values())
-        total_debt_payments = sum(debt_payment_by_member.values())
-        bills = total_spending + total_housing + total_debt_payments + existing_debt
-
-        # Tax-free qualified HSA reimbursements of this year's medical costs come first, then the
-        # household waterfall (all banks, all brokerage, Roth basis under 59.5, pre-tax, remaining
-        # Roth) moves into the banks only what bills + taxes still need. Proceeds land in the bank,
-        # so each step sizes against the topped-up balance and does nothing once it is covered.
-        self._draw_hsa_for_medical(bills)
-        with model.ledger.caused_by(f"fund {year} bills and taxes"):
+        bills = 0.0
+        with model.ledger.caused_by(f"fund {year} taxes"):
             taxes = self._fund_bills(bills)
 
         # The year's return, from exactly the taxes about to be paid and the ledger they came from.
@@ -990,9 +1037,9 @@ class TaxUnit:
             shortfall = 0.0
         for line in bill_lines:
             line.post(model.ledger, payer)
-        self.members[0].add_debt(shortfall, to_account=payer, cause=f"unpaid {year} bills and taxes")
+        self.members[0].add_debt(shortfall, to_account=payer, cause=f"unpaid {year} taxes")
 
-        self._record_stats(taxes, spending_by_member, housing_by_member, interest_by_member, tax_return)
+        self._record_stats(taxes, tax_return)
         # Which deduction the return took: the itemized amount (split like the income taxes), or 0
         # when it took the standard one.
         shares = self._member_shares() if len(self.members) > 1 else {self.members[0].unique_id: 1.0}
@@ -1001,7 +1048,7 @@ class TaxUnit:
         self._fold_decedent_stats()
 
     def _housing_lines(self, member: "Person", home) -> "list[_BillLine]":
-        """The ledger lines of a home's year of payments (``home.year_payment``)."""
+        """The ledger lines of a home's last payment (``home.year_payment``: a month's)."""
         lines = []
         payment = dict(home.year_payment)
         mortgage_paid = payment.pop("mortgage", 0.0)
@@ -1091,15 +1138,8 @@ class TaxUnit:
             return {m.unique_id: 1.0 / len(self.members) for m in self.members}
         return {uid: weight / total for uid, weight in weights.items()}
 
-    def _record_stats(
-        self,
-        taxes: TaxesDue,
-        spending_by_member: dict[int, float],
-        housing_by_member: dict[int, float],
-        interest_by_member: dict[int, float],
-        tax_return: "TaxReturn | None" = None,
-    ):
-        """Record the year's settlement stats on every member.
+    def _record_stats(self, taxes: TaxesDue, tax_return: "TaxReturn | None" = None):
+        """Record the year's tax stats on every member.
 
         Tax stats are on **every member**: payroll taxes (Social Security, Medicare) and penalties
         are each member's own; the unit's income taxes (federal, state, NIIT), credits and claimed
@@ -1108,11 +1148,6 @@ class TaxUnit:
         A one-person unit gets the return's figures unchanged.
         """
         for member in self.members:
-            member.stat_money_spent = spending_by_member[member.unique_id]
-            member.stat_housing_costs = housing_by_member[member.unique_id]
-            member.stat_interest_paid = interest_by_member[member.unique_id]
-            member.stat_bank_balance = member.bank_account_balance
-            member.stat_brokerage_balance = member.brokerage_balance
             totals = member.income.totals_by_type()
             member.stat_capital_gains = (
                 totals[IncomeType.SHORT_TERM_CAPITAL_GAIN] + totals[IncomeType.LONG_TERM_CAPITAL_GAIN]

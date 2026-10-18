@@ -86,9 +86,14 @@ class TestDonation(unittest.TestCase):
         # The donation takes all $3000 available (partial), leaving nothing for spending.
         self.assertEqual(donation.stat_charitable_donations, 3000)
         self.assertEqual(self.bank_account.balance, 0)
-        # The full $50k spending is now unfunded and becomes debt.
+        # The full $50k spending is now unfunded and becomes debt. Plan 32: the bills are monthly and
+        # carried debt accrues a month of interest before each month's repayment attempt.
         self.assertGreater(self.person.debt, 0)
-        self.assertEqual(self.person.debt, 50000)
+        monthly_rate = self.model.config.debt.effective_unpaid_balance_interest_rate / 100 / 12
+        debt = 0.0
+        for _month in range(12):
+            debt = debt * (1 + monthly_rate) + 50000 / 12
+        self.assertAlmostEqual(self.person.debt, debt, delta=0.05)
 
     def test_donation_with_sufficient_funds_after_expenses(self):
         """Test donation succeeds when funds remain after bills/spending"""

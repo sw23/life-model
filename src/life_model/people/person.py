@@ -1748,6 +1748,13 @@ class Person(LifeModelAgent):
             setattr(self, name, 0)
         self.remove()
 
+    def collect_stats(self):
+        """Year-end balances (after December's bills and the year's taxes)."""
+        if self.is_deceased:
+            return
+        self.stat_bank_balance = self.bank_account_balance
+        self.stat_brokerage_balance = self.brokerage_balance
+
     def on_year_end(self):
         # After the year's return was settled: next year's ledger and limits start empty.
         self.income.clear()
@@ -1756,12 +1763,20 @@ class Person(LifeModelAgent):
 
 
 class Spending(LifeModelAgent):
+    """A person's living spending: an annual ``base`` paid a twelfth a month, plus one-time expenses
+    paid with the bills of the month they are added in (an expense added after the month's bills
+    were paid is paid the next month). The base escalates at year end."""
+
+    MONTHLY = True
+    # The escalator runs at year end after the year's taxes are settled (0).
+    STEP_PRIORITY: ClassVar[dict[str, int]] = {"on_year_end": 10}
+
     def __init__(self, model: LifeModel, base: float = 0, yearly_increase: float | None = 0):
         """Spending
 
         Args:
             model (LifeModel): LifeModel instance.
-            base (float): Base spending amount.
+            base (float): Base spending amount (a year's; paid monthly).
             yearly_increase (float, optional): Yearly percentage increase in spending. 10 = 10%.
                 Pass None to grow with the economy's inflation each year. Defaults to 0 (no increase).
         """
@@ -1770,9 +1785,12 @@ class Spending(LifeModelAgent):
         self._yearly_increase_override = yearly_increase
         #: The person whose spending this is (set by ``Person``).
         self.person = None
+        #: This year's one-time expenses (added so far this year).
         self.one_time_expenses = 0
         #: This year's one-time expenses by category (they sum to ``one_time_expenses``).
         self.one_time_by_category: dict[str, float] = {}
+        # One-time expenses not yet paid, by category (paid with the next month's bills).
+        self._unpaid_by_category: dict[str, float] = {}
 
     @property
     def yearly_increase(self) -> float:
@@ -1786,7 +1804,8 @@ class Spending(LifeModelAgent):
         self._yearly_increase_override = value
 
     def add_expense(self, amount: float, *, category: str = "one_time"):
-        """Adds a one-time expense.
+        """Adds a one-time expense, paid with this month's bills (or next month's, when added after
+        this month's bills were paid).
 
         Args:
             amount (float): Amount of expense to add.
@@ -1795,6 +1814,26 @@ class Spending(LifeModelAgent):
         """
         self.one_time_expenses += amount
         self.one_time_by_category[category] = self.one_time_by_category.get(category, 0.0) + amount
+        self._unpaid_by_category[category] = self._unpaid_by_category.get(category, 0.0) + amount
+
+    @property
+    def unpaid_one_time_expenses(self) -> float:
+        """One-time expenses added but not yet paid."""
+        return sum(self._unpaid_by_category.values())
+
+    def month_base(self) -> float:
+        """This month's share of the base spending (a twelfth)."""
+        return self.base / 12
+
+    def take_month_lines(self) -> dict[str, float]:
+        """This month's bills by category: ``base`` (a twelfth of the base) plus every unpaid one-time
+        category. Marks the one-time expenses as paid (the tax unit pays the lines)."""
+        lines = {"base": self.month_base()} if self.base else {}
+        for category, amount in self._unpaid_by_category.items():
+            if amount:
+                lines[category] = lines.get(category, 0.0) + amount
+        self._unpaid_by_category = {}
+        return lines
 
     def year_spending_lines(self) -> dict[str, float]:
         """This year's spending by category: ``base`` plus each one-time category (any amount added
@@ -1809,7 +1848,7 @@ class Spending(LifeModelAgent):
         return lines
 
     def get_yearly_spending(self) -> float:
-        """Gets yearly spending."""
+        """This year's spending: the base plus the one-time expenses added so far this year."""
         return self.base + self.one_time_expenses
 
     @property
@@ -1826,9 +1865,10 @@ class Spending(LifeModelAgent):
         """
         self.base = self.base * (base_percent / 100)
 
-    def post_step(self):
-        # Consume-then-advance: the year's spending is read during the step stage; only after
-        # it has been spent do we clear one-time expenses and apply the yearly increase.
+    def on_year_end(self):
+        # Consume-then-advance: the year's spending was paid month by month; only after the year
+        # end do we start next year's one-time tally and apply the yearly increase. One-time
+        # expenses added after December's bills stay unpaid and are paid in January.
         self.base += self.base * (self.yearly_increase / 100)
         self.one_time_expenses = 0
         self.one_time_by_category = {}

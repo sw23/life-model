@@ -5,14 +5,18 @@
 import html
 from typing import TYPE_CHECKING
 
-from ..model import LifeModelAgent
+from ..model import LifeModelAgent, snap_money
 
 if TYPE_CHECKING:
     from ..people.person import Person, Spending
 
 
 class Child(LifeModelAgent):
+    """A child dependent: the age band's yearly cost is charged a twelfth each month (college months
+    drawn from the child's 529 plans first)."""
+
     STATS_OWNED = frozenset({"stat_dependent_costs"})
+    MONTHLY = True
 
     def __init__(self, person: "Person", name: str, birth_year: int):
         """Models a child dependent for a person
@@ -102,18 +106,15 @@ class Child(LifeModelAgent):
         return adult
 
     def pre_step(self):
-        """Charge this year's child cost to the owning person's spending.
+        """Charge this month's child cost (a twelfth of the year's) to the owning person's spending.
 
-        Runs in the pre_step stage so the expense is present when the tax unit reads
-        ``get_yearly_spending()`` during the step stage (cross-stage ordering, safe under
-        construction-order execution). Costs flow through ``Spending.add_expense`` (one-time
-        expenses), never ``base`` — ``base`` is compounded by inflation in ``Spending.post_step``
-        and would otherwise double-count.
+        Runs in the pre_step stage so the expense is pending when the tax unit pays the month's bills
+        in the step stage. Costs flow through ``Spending.add_expense`` (one-time expenses), never
+        ``base`` — ``base`` is compounded by inflation at year end and would otherwise double-count.
         """
-        self.stat_dependent_costs = 0.0
         if self.person.is_deceased:
             return
-        cost = self.yearly_cost()
+        cost = self.yearly_cost() / 12
         if cost <= 0:
             return
         if self.in_college_band:
@@ -125,7 +126,7 @@ class Child(LifeModelAgent):
             # making the 529 machinery load-bearing.
             self._draw_college_from_529s(cost)
         self.person.spending.add_expense(cost, category="dependents")
-        self.stat_dependent_costs = cost
+        self.stat_dependent_costs = snap_money(self.stat_dependent_costs + cost)
 
     def _draw_college_from_529s(self, amount: float) -> float:
         """Draw ``amount`` of qualified education expenses from the owner's 529 plans whose

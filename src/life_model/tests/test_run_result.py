@@ -191,7 +191,7 @@ class TestExplain(unittest.TestCase):
         ):
             self.assertIn(heading, text)
         self.assertIn("solver target", text)
-        self.assertIn("fund 2026 bills and taxes", text)
+        self.assertIn("fund 2026 taxes", text)  # Plan 32: bills are paid monthly, taxes in December
 
     def test_explain_married_homeowners(self):
         text = married_homeowners(years=6).run().explain(2030)

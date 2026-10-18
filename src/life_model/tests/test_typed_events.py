@@ -85,16 +85,23 @@ class TestEngineEvents(unittest.TestCase):
         job.retired = True
         Job401kAccount(job, pretax_balance=500000)
         model.run()
-        (sale,) = model.event_log.of_kind(EventKind.FORCED_SALE)
-        self.assertGreater(sale.amount, 40000)  # the whole (grown) brokerage account
+        # Plan 32: the month's bills sell the brokerage until it is gone, then draw pre-tax money,
+        # month by month; December's tax settlement draws a sized pre-tax amount for the taxes.
+        sales = model.event_log.of_kind(EventKind.FORCED_SALE)
+        self.assertGreater(sum(sale.amount for sale in sales), 40000)  # the whole (grown) brokerage account
         self.assertEqual(person.brokerage_balance, 0)
-        self.assertEqual(sale.cause, "fund 2026 bills and taxes")
-        (withdrawal,) = model.event_log.of_kind(EventKind.PRETAX_WITHDRAWAL)
-        self.assertEqual(withdrawal.cause, "fund 2026 bills and taxes")
-        self.assertAlmostEqual(withdrawal.amount, withdrawal.details["target"], places=2)
-        self.assertGreater(withdrawal.amount, 120000 - 41000)
+        for sale in sales:
+            self.assertRegex(sale.cause, r"^pay 2026-\d\d bills$")
+        withdrawals = model.event_log.of_kind(EventKind.PRETAX_WITHDRAWAL)
+        *monthly, taxes = withdrawals
+        for withdrawal in monthly:
+            self.assertRegex(withdrawal.cause, r"^pay 2026-\d\d bills$")
+        self.assertEqual(taxes.cause, "fund 2026 taxes")
+        self.assertAlmostEqual(taxes.amount, taxes.details["target"], places=2)
+        total = sum(withdrawal.amount for withdrawal in withdrawals)
+        self.assertGreater(total, 120000 - 41000)
         (penalty,) = model.event_log.of_kind(EventKind.PENALTY)  # 10% early-withdrawal tax at 50
-        self.assertAlmostEqual(penalty.amount, withdrawal.amount * 0.10, places=2)
+        self.assertAlmostEqual(penalty.amount, total * 0.10, places=2)
 
     def test_rmds_shortfalls_and_life_events_are_logged(self):
         model = LifeModel(start_year=2026, end_year=2027)

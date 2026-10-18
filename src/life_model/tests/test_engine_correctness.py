@@ -192,13 +192,14 @@ class TestFamilyDebtPaidOnce(unittest.TestCase):
         self.assertEqual(b.debt, 0)
 
     def test_carried_debt_accrues_a_year_of_interest(self):
-        """Plan 04 item 14: unpaid bills are a real liability, repaid with a year of interest."""
+        """Plan 04 item 14: unpaid bills are a real liability, repaid with interest. Plan 32: bills
+        are paid monthly, so the carried debt is repaid in January with a month of interest."""
         model, _a, b, bank = self._married_with_debt(debt_rate=18.0)
 
         model.step_year()
 
-        self.assertAlmostEqual(bank.balance, 100000 - 10000 * 1.18, places=6)
-        self.assertAlmostEqual(b.stat_interest_paid, 1800, places=6)
+        self.assertAlmostEqual(bank.balance, 100000 - 10000 * (1 + 0.18 / 12), places=6)
+        self.assertAlmostEqual(b.stat_interest_paid, 10000 * 0.18 / 12, places=6)
         self.assertEqual(b.debt, 0)
 
 

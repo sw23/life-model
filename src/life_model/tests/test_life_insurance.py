@@ -132,7 +132,7 @@ class TestLifeInsurance(unittest.TestCase):
         self.assertGreater(initial_cash_value, 0)
 
         # Simulate cash value growth
-        policy.step()
+        policy.on_year_end()
         self.assertGreater(policy.cash_value, initial_cash_value)
 
     def test_whole_life_loan_functionality(self):
@@ -183,7 +183,7 @@ class TestLifeInsurance(unittest.TestCase):
             self.model.step_year()
 
         self.assertTrue(policy.is_term_expired)
-        policy.step()
+        policy.on_year_end()
         self.assertFalse(policy.is_active)
 
     def test_premium_increase(self):
@@ -197,7 +197,7 @@ class TestLifeInsurance(unittest.TestCase):
         )
 
         initial_premium = policy.monthly_premium
-        policy.step()
+        policy.on_year_end()
         self.assertGreater(policy.monthly_premium, initial_premium)
         expected_premium = initial_premium * 1.05
         self.assertAlmostEqual(policy.monthly_premium, expected_premium, places=2)
@@ -253,7 +253,7 @@ class TestLifeInsurance(unittest.TestCase):
         initial_loan_balance = policy.outstanding_loan_balance
 
         # Step to accumulate interest
-        policy.step()
+        policy.on_year_end()
         expected_balance = initial_loan_balance * 1.06
         self.assertAlmostEqual(policy.outstanding_loan_balance, expected_balance, places=2)
 
@@ -277,7 +277,7 @@ class TestLifeInsurance(unittest.TestCase):
         )
 
         whole_policy.make_premium_payment()
-        whole_policy.step()
+        whole_policy.on_year_end()
 
         self.assertGreater(whole_policy.stat_cash_value, 0)
 
@@ -332,7 +332,7 @@ class TestLifeInsurance(unittest.TestCase):
 
         # Make payments to build cash value
         policy.make_premium_payment()
-        policy.step()
+        policy.on_year_end()
         initial_cash_value = policy.cash_value
 
         # Age the policy to get better surrender value
@@ -535,7 +535,7 @@ class TestLifeInsuranceLoansAndSurrender(unittest.TestCase):
         policy.total_premiums_paid = 1000
         policy.take_loan(9000)  # max cap
         self.assertFalse(policy.is_lapsed)
-        policy.step()  # loan balance 13,500 > cash value 10,000 -> lapse
+        policy.on_year_end()  # loan balance 13,500 > cash value 10,000 -> lapse
         self.assertTrue(policy.is_lapsed)
         self.assertFalse(policy.is_active)
         # Loan over basis ($1,000 premiums) recorded as taxable ordinary income.

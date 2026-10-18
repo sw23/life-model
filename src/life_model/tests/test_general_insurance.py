@@ -300,7 +300,7 @@ class TestGeneralInsurance(unittest.TestCase):
 
         # Simulate one year passing - premium increase only applies after first year
         insurance.policy_start_year = self.model.year - 1  # Make it appear the policy is one year old
-        insurance.step()
+        insurance.on_year_end()  # Plan 32: the yearly update runs at year end
 
         # Premium should increase by 5%
         expected_premium = original_premium * 1.05
@@ -423,8 +423,8 @@ class TestGeneralInsuranceClaims(unittest.TestCase):
         )
         # Let the premium compound for two years.
         insurance.policy_start_year = self.model.year - 1
-        insurance.step()  # 2000 -> 2200
-        insurance.step()  # 2200 -> 2420
+        insurance.on_year_end()  # 2000 -> 2200 (Plan 32: the yearly update runs at year end)
+        insurance.on_year_end()  # 2200 -> 2420
         self.assertAlmostEqual(insurance.annual_premium, 2420, places=2)
         insurance.update_coverage(600000)  # 1.5x coverage
         # Current premium scales, preserving the accumulated increases: 2420 * 1.5 = 3630.

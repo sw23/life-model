@@ -111,11 +111,14 @@ class Loan(LifeModelAgent, ABC):
     The ABC owns amortization: :meth:`make_payment` applies a single **monthly** payment (loans
     compound and amortize monthly) with all the clamps — interest is charged on the current
     principal, principal never goes negative, and extra principal that exceeds the balance simply
-    pays the loan off. :meth:`make_yearly_payment` runs the twelve monthly periods that make up
-    one simulated year, so annual results match a real amortization schedule. Concrete subclasses
-    supply only rate/term/identification and register themselves; they do not re-implement payment
-    math.
+    pays the loan off. The tax unit services each loan once a month (:meth:`service_month`) with the
+    month's bills; ``interest_paid_this_year`` accumulates the year's interest (reset at each year
+    start) for the interest deductions and stats. :meth:`make_yearly_payment` (twelve payments at
+    once) remains for direct callers. Concrete subclasses supply only rate/term/identification and
+    register themselves; they do not re-implement payment math.
     """
+
+    MONTHLY = True
 
     def __init__(
         self,
@@ -240,15 +243,35 @@ class Loan(LifeModelAgent, ABC):
         return total_paid
 
     def service_year(self) -> float:
-        """Service this loan for one simulated year at its scheduled payment.
-
-        Called by the debt-servicing pipeline during tax-unit settlement. Returns the total cash
-        paid this year (which is collected through the unit's bills).
-        """
+        """Service this loan for one simulated year at its scheduled payment (twelve payments)."""
         return self.make_yearly_payment(self.monthly_payment)
 
-    def step(self):
-        """Track loan balance history"""
+    def service_month(self) -> float:
+        """Make this month's scheduled payment (none once the loan is paid off).
+
+        Called by the tax unit with the month's bills. Returns the cash paid; the interest charged is
+        added to ``interest_paid_this_year``.
+        """
+        if self.principal <= 0:
+            return 0.0
+        paid = self.make_payment(self.monthly_payment)
+        self._record_month(self.stat_principal_payment_history[-1], self.stat_interest_payment_history[-1])
+        return paid
+
+    def _record_month(self, principal: float, interest: float) -> None:
+        """Add a month's principal and interest to the year's running totals."""
+        self.interest_paid_this_year += interest
+        self._principal_paid_this_year = getattr(self, "_principal_paid_this_year", 0.0) + principal
+
+    def on_year_start(self):
+        # The year's interest accumulates from zero (the deduction and stats read it at year end).
+        self.interest_paid_this_year = 0.0
+        self._principal_paid_this_year = 0.0
+
+    def on_year_end(self):
+        """Track the year's payments and the year-end balance."""
+        self.stat_yearly_principal_payment_history.append(getattr(self, "_principal_paid_this_year", 0.0))
+        self.stat_yearly_interest_payment_history.append(self.interest_paid_this_year)
         self.stat_balance_history.append(self.principal)
 
 
@@ -476,6 +499,8 @@ class RetirementAccount(Investment, ABC):
 
 class Benefit(LifeModelAgent, ABC):
     """Abstract base class for benefits that provide periodic payments"""
+
+    MONTHLY = True
 
     def __init__(self, person: "Person", company: str):
         super().__init__(person.model)
