@@ -3,10 +3,14 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 import html
+from typing import TYPE_CHECKING
 
 from ..base_classes import Benefit
 from ..people.person import Person
 from ..tax.income import IncomeType
+
+if TYPE_CHECKING:
+    from ..work.job import Job
 
 
 class Pension(Benefit):
@@ -22,9 +26,13 @@ class Pension(Benefit):
     defined-benefit formula ``years_of_service x benefit_multiplier% x final_salary``. Benefits are
     paid only once the participant is vested (``years_of_service >= vesting_years``).
 
+    Service accrues while the participant works for the sponsor: every year the sponsoring job
+    (``job``, or else the person's job whose ``company`` equals the pension's) books payroll adds a
+    year of service, so an unvested participant vests by working, and a formula benefit grows with
+    service, its ``final_salary`` following that job's base salary.
+
     Simplifications (documented, backlog for later refinement):
-      * The accrual formula is evaluated once, at construction, from the supplied service years and
-        final (or final-average) salary; it does not track salary history or keep accruing.
+      * The formula uses the latest base salary as "final salary" (no final-average window).
       * Survivor benefits are a flat ``survivor_percent`` of the benefit continued to a surviving
         spouse at the retiree's death (see :meth:`Person.die`); no joint-life actuarial factor.
     """
@@ -44,6 +52,7 @@ class Pension(Benefit):
         years_of_service: int | None = None,
         benefit_multiplier: float | None = None,
         final_salary: float | None = None,
+        job: "Job | None" = None,
     ):
         """Models a pension plan for a person
 
@@ -62,6 +71,8 @@ class Pension(Benefit):
             years_of_service: Years of credited service. Defaults to ``vesting_years`` (vested).
             benefit_multiplier: Percent of final salary accrued per year of service (e.g. 1.5).
             final_salary: Final (or final-average) salary used by the accrual formula.
+            job: The sponsoring job whose service accrues to this pension. Defaults to None, which
+                uses the person's job at ``company`` (if any) each year.
 
         Raises:
             ValueError: If only one of ``benefit_multiplier`` / ``final_salary`` is given.
@@ -80,6 +91,9 @@ class Pension(Benefit):
         self.cola_percent = cola_percent
         self.survivor_percent = survivor_percent
         self.stat_pension_income = 0.0
+        self.job = job
+        # False for a survivor's continued benefit (no service of its own).
+        self.accrues_service = True
 
         # Register so the owner (and estate/death handling) can find this pension.
         self.model.registries.pensions.register(person, self)
@@ -101,6 +115,27 @@ class Pension(Benefit):
             return self.person.age >= self.start_age
         return self.person.is_retired
 
+    def sponsoring_job(self) -> "Job | None":
+        """The job whose service accrues to this pension (explicit ``job``, else matched by company)."""
+        if self.job is not None:
+            return self.job
+        for job in self.person.jobs:
+            if job.company == self.company:
+                return job
+        return None
+
+    def accrue_service(self) -> None:
+        """Credit this year's service if the sponsoring job paid the participant this year."""
+        if not self.accrues_service:
+            return
+        job = self.sponsoring_job()
+        if job is None or getattr(job, "_booked_year", None) != self.model.year:
+            return
+        self.years_of_service += 1
+        if self.benefit_multiplier is not None:
+            self.final_salary = job.salary.base
+            self.benefit_amount = self.years_of_service * (self.benefit_multiplier / 100) * self.final_salary
+
     def get_annual_benefit(self) -> float:
         """Calculate the annual benefit amount payable this year (0 if not yet eligible)."""
         if self.is_eligible():
@@ -110,12 +145,18 @@ class Pension(Benefit):
     def pre_step(self):
         # Deposit the benefit and record it as ordinary (non-FICA) income once eligible. This
         # mirrors the SocialSecurity agent: benefit -> income ledger + cash. Runs at the default
-        # pre_step priority (0), after the person ages (-20) and jobs deposit wages (-10).
+        # pre_step priority (0), after the person ages (-20); nothing here reads other income, so
+        # its order relative to wages and Social Security (also 0) does not matter.
         benefit = self.get_annual_benefit()
         self.stat_pension_income = benefit
         if benefit > 0:
             self.person.income.add(IncomeType.PENSION, benefit)
             self.person.receive_cash(benefit, source=f"pension from {self.company}")
+
+    def step(self):
+        # Service for a year worked at the sponsor (step stage: after this year's payroll was booked,
+        # before year-end salary escalators, so "final salary" is this year's).
+        self.accrue_service()
 
     def post_step(self):
         # Compound the cost-of-living adjustment while the benefit is in pay so it keeps pace with

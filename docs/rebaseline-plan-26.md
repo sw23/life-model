@@ -103,3 +103,13 @@ five seeded shuffles; frames must match to float round-off. `LifeInsurance` move
 priority 10 (its affordability check reads balances, so it now runs after income). Sensitivity
 check: re-introducing the old pre_step Social Security taxation makes the retired-couple
 household's taxes differ by up to $10.5k between shuffles, so the test does detect the defect.
+
+## Tasks 10–11 — pension service, one-time spending, end-of-life costs, comments
+
+No existing test's expected value changed. Pensions accrue a year of service for each year the
+sponsoring job (explicit `job=`, else the person's job at the pension's `company`) books payroll,
+so an unvested participant vests by working and a formula benefit grows (final salary follows the
+job); no existing pension test has a job at its sponsor. `Family.combined_spending` includes
+one-time expenses (`test_family.py` has none, so its 20,000 is unchanged). End-of-life costs the
+decedent's bank can't cover are now billed to the inheritor in the death year and deducted from
+the estate-tax base instead of being forgiven (the existing tests' decedents had enough cash).

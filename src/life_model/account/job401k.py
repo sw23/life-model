@@ -22,9 +22,10 @@ class Job401kAccount(RetirementAccount):
     Ordering within a simulated year:
 
     * ``pre_step`` (priority -10): take this year's required minimum distribution from the prior
-      year-end balance (the IRS rule). This runs before Social Security's ``pre_step`` so the RMD
-      is already in the income ledger when the taxable share of benefits is computed.
-    * The job deposits this year's contributions in its own ``pre_step``.
+      year-end balance (the IRS rule). The taxable share of Social Security is computed at
+      settlement from the whole ledger, so nothing depends on the RMD being booked first.
+    * The job deposits this year's contributions in its own ``pre_step`` (and trues them up at
+      step priority -30 after a mid-year change).
     * ``step`` (priority -10, before tax-unit settlement): apply growth, so contributions land
       before growth.
     """

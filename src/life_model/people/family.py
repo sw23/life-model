@@ -57,7 +57,8 @@ class Family(LifeModelAgent):
 
     @property
     def combined_spending(self) -> float:
-        return sum(x.spending.base for x in self.members)
+        """This year's spending across members, one-time expenses included (what settlement bills)."""
+        return sum(x.spending.get_yearly_spending() for x in self.members)
 
     @property
     def combined_taxable_income(self) -> float:

@@ -16,8 +16,11 @@ from pathlib import Path
 from ..account.bank import BankAccount
 from ..account.brokerage import BrokerageAccount, TaxLot
 from ..account.job401k import Job401kAccount
+from ..account.pension import Pension
 from ..account.roth_IRA import RothIRA
 from ..config.financial_config import FinancialConfig
+from ..dependents.child import Child
+from ..healthcare.medical_costs import MedicalCosts
 from ..housing.apartment import Apartment
 from ..housing.home import Home, HomeExpenses, Mortgage
 from ..insurance.annuity import Annuity, AnnuityType
@@ -28,6 +31,7 @@ from ..model import LifeModel
 from ..people.family import Family
 from ..people.person import Person, Spending
 from ..people.tax_unit import DEFAULT_WITHDRAWAL_ORDER, TaxUnit
+from ..people.types import MortalityMode
 from ..tax.federal import FilingStatus
 from ..tax.income import IncomeLedger, IncomeType
 from ..tax.state import state_income_tax_for_unit
@@ -740,6 +744,87 @@ class TestAnnuityDefaults(unittest.TestCase):
         model.run()
         self.assertAlmostEqual(market.balance, 109000, places=6)
         self.assertAlmostEqual(stated.balance, 103000, places=6)
+
+
+class TestPensionServiceAccrues(unittest.TestCase):
+    """Item 13 / task 10: pension service grows while the participant works for the sponsor."""
+
+    def test_unvested_participant_vests_by_working(self):
+        model = _model(end_year=2030)
+        person = _worker(model, age=60, salary=0, retirement_age=63)
+        Job(person, "MegaCorp", "Eng", Salary(model, base=80000))
+        pension = Pension(person, "MegaCorp", vesting_years=5, benefit_amount=20000, years_of_service=2)
+        model.run()
+        # Paid 2026-2029 (retires during 2029, the year they are 63): 2 + 4 = 6 years. Vested (5)
+        # at the start of 2029, so the benefit starts that year; nothing was paid before.
+        self.assertEqual(pension.years_of_service, 6)
+        self.assertTrue(pension.is_vested)
+        df = _frame(model)
+        self.assertEqual(df.loc[2028, "Pension Income"], 0)
+        self.assertEqual(df.loc[2029, "Pension Income"], 20000)
+
+    def test_formula_benefit_grows_with_service_and_final_salary(self):
+        model = _model(end_year=2027)
+        person = _worker(model, age=50, salary=0)
+        Job(person, "MegaCorp", "Eng", Salary(model, base=100000, yearly_increase=10))
+        pension = Pension(
+            person, "MegaCorp", vesting_years=5, years_of_service=10, benefit_multiplier=1.5, final_salary=90000
+        )
+        model.run()
+        # 12 years of service at the 2027 salary of $110,000.
+        self.assertAlmostEqual(pension.benefit_amount, 12 * 0.015 * 110000, places=6)
+
+    def test_no_service_without_the_sponsor(self):
+        model = _model(end_year=2027)
+        person = _worker(model, age=50)  # works at "Co", not the sponsor
+        pension = Pension(person, "MegaCorp", vesting_years=5, benefit_amount=20000, years_of_service=1)
+        model.run()
+        self.assertEqual(pension.years_of_service, 1)
+
+
+class TestSmallFixes(unittest.TestCase):
+    """Item 13 / task 10: one-time expenses in combined spending; unpaid end-of-life costs; one tax path."""
+
+    def test_combined_spending_includes_one_time_expenses(self):
+        model = _model()
+        family = Family(model)
+        a = _worker(model, family, name="A", spending=10000)
+        _worker(model, family, name="B", spending=5000)
+        a.spending.add_expense(2500)
+        self.assertEqual(family.combined_spending, 17500)
+
+    def test_end_of_life_costs_the_bank_cannot_cover_are_paid_by_the_estate(self):
+        model = _model(end_year=2026)
+        family = Family(model)
+        parent = Person(
+            family,
+            "Parent",
+            age=80,
+            retirement_age=65,
+            spending=Spending(model, base=0),
+            mortality_mode=MortalityMode.FIXED_AGE,
+            death_age=80,
+        )
+        BankAccount(parent, "Bank", balance=1000, interest_rate=0)
+        BrokerageAccount(parent, "Broker", balance=200000, growth_rate=0, dividend_yield=0)
+        MedicalCosts(parent)
+        child = _worker(model, family, name="Child", age=51, salary=0, spending=0, bank=0)
+        model.run()
+        healthcare = model.config.healthcare
+        self.assertGreater(child.stat_money_spent, 0)  # the unpaid remainder was billed to the heir
+        self.assertEqual(child.debt, 0)
+        cost = child.stat_money_spent + 1000
+        self.assertGreater(cost, healthcare.funeral_cost)
+        events = " | ".join(e.message for e in model.event_log.list)
+        self.assertIn("end-of-life costs from the estate", events)
+
+    def test_person_taxes_are_the_one_person_unit_taxes(self):
+        model = _model(end_year=2026)
+        person = _worker(model, salary=0, bank=0)
+        Child(person, "Kid", birth_year=2020)
+        person.income.add_wages(60000, 60000)
+        self.assertEqual(person.get_income_taxes_due().total, TaxUnit([person]).get_income_taxes_due().total)
+        self.assertGreater(TaxUnit([person]).get_income_taxes_due().credits, 0)  # the CTC is included
 
 
 if __name__ == "__main__":

@@ -99,6 +99,9 @@ class Person(LifeModelAgent):
         # Unified estate-tax exemption consumed during life by taxable gifts (e.g. irrevocable
         # trust funding above the annual gift exclusion). Reduces the exemption at death.
         self.estate_exemption_used = 0.0
+        # End-of-life costs the decedent's bank could not cover; the estate (via the inheritor)
+        # pays them in the death year. See _charge_end_of_life_costs.
+        self._unpaid_final_expenses = 0.0
         # Year this person was widowed (used to switch filing status to SINGLE the following year).
         self._widowed_year: int | None = None
         self.debt = 0
@@ -1006,6 +1009,7 @@ class Person(LifeModelAgent):
         # 4/5. Transfer the estate and adjust the survivor.
         if inheritor is not None:
             self._transfer_estate(inheritor, is_spouse=inheritor is spouse)
+            self._settle_unpaid_final_expenses(inheritor)
         else:
             self.model.event_log.add(Event(f"{self.name}'s estate had no beneficiary; assets dissolved"))
 
@@ -1043,10 +1047,12 @@ class Person(LifeModelAgent):
         The funeral cost is CPI-indexed from the start year; the final-year medical spike is the
         configured multiplier times the person's current-year medical cost, and keys off the
         ``MedicalCosts`` agent(s) only — a decedent with just Medicare/LongTermCare agents incurs
-        the funeral cost alone. Costs are paid from the deceased's **bank accounts only** before
-        the estate is valued/transferred; any unpayable remainder is forgiven (the estate cannot
-        go negative), so a bank-poor but 401k-rich decedent underpays these costs — retirement
-        accounts are not liquidated for them (documented v1 simplification).
+        the funeral cost alone. Costs are paid from the deceased's bank accounts before the estate
+        is valued/transferred; whatever the bank can't cover is a debt of the estate: it is excluded
+        from the estate-tax base and charged to the inheritor as a death-year bill, which settlement
+        pays from the inherited assets through the household waterfall (see
+        :meth:`_settle_unpaid_final_expenses`). With no inheritor the estate is dissolved and the
+        remainder goes unpaid.
 
         The deceased's healthcare agents are then retired so they are not reassigned to the
         inheritor (medical costs are personal, not inheritable).
@@ -1060,6 +1066,7 @@ class Person(LifeModelAgent):
         for medical in self.medical_costs:
             cost += healthcare.final_year_medical_multiplier * medical.annual_cost()
         unpaid = self.deduct_from_bank_accounts(cost)
+        self._unpaid_final_expenses = unpaid
         self.model.event_log.add(
             Event(f"{self.name}'s estate paid ${cost - unpaid:,.0f} in end-of-life costs (funeral + final medical)")
         )
@@ -1070,6 +1077,17 @@ class Person(LifeModelAgent):
         self.model.registries.medical_costs.clear(self)
         self.model.registries.medicare.clear(self)
         self.model.registries.long_term_care.clear(self)
+
+    def _settle_unpaid_final_expenses(self, inheritor: "Person") -> None:
+        """Charge end-of-life costs the decedent's bank couldn't cover to the inheritor this year."""
+        unpaid = self._unpaid_final_expenses
+        if unpaid <= 0:
+            return
+        self._unpaid_final_expenses = 0.0
+        inheritor.spending.add_expense(unpaid)
+        self.model.event_log.add(
+            Event(f"{inheritor.name} pays ${unpaid:,.0f} of {self.name}'s end-of-life costs from the estate")
+        )
 
     def _settle_pensions_on_death(self, spouse: Optional["Person"]):
         """Continue survivor pensions to a surviving spouse; terminate the rest.
@@ -1092,6 +1110,8 @@ class Person(LifeModelAgent):
                 # against the survivor's own retirement status (a working 50-year-old widow still
                 # receives the joint-and-survivor benefit from the year of death).
                 pension.start_age = spouse.age
+                # The survivor's stream is a fixed benefit: it no longer accrues service.
+                pension.accrues_service = False
                 pensions.unregister(self, pension)
                 pensions.register(spouse, pension)
                 pension.person = spouse
@@ -1142,7 +1162,8 @@ class Person(LifeModelAgent):
         per-beneficiary apportionment of who pays), even when a designation created the liability.
         """
         gross_estate = self._gross_estate_value()
-        taxable_base = max(0.0, gross_estate - self._marital_share(is_spouse))
+        # End-of-life costs still owed are a debt of the estate (deductible, IRC §2053).
+        taxable_base = max(0.0, gross_estate - self._marital_share(is_spouse) - self._unpaid_final_expenses)
 
         self._step_up_taxable_basis()
         self._transfer_designated_accounts()
