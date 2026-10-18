@@ -198,6 +198,22 @@ class TestSlotsSetEngineObjects(unittest.TestCase):
         _set(quarterly, spending_adjust="raise_10")
         self.assertAlmostEqual(quarterly.person.spending.base, base * 1.025)
 
+    def test_spending_adjust_spares_essential_categories(self):
+        from life_model.people.person import SpendingLine
+
+        env = _env()
+        spending = env.person.spending
+        spending.add_line("rent", SpendingLine(12_000, essential=True))
+        spending.add_line("travel", SpendingLine(4_000, essential=False))
+        base = spending.base
+        rate = env.spending_rate()
+        self.assertAlmostEqual(rate, base + 16_000)
+        _set(env, spending_adjust="cut_10")
+        self.assertAlmostEqual(spending.base, base * 0.9)
+        self.assertEqual(spending.categories["rent"].amount, 12_000)
+        self.assertAlmostEqual(spending.categories["travel"].amount, 3_600)
+        self.assertAlmostEqual(env.spending_rate(), base * 0.9 + 15_600)
+
     def test_withdrawal_order_reaches_the_tax_unit(self):
         env = _env()
         _set(env, withdrawal_order="roth_first")

@@ -125,9 +125,7 @@ class TestSubYearIntervals(unittest.TestCase):
             deflator = env.model.economy.cumulative_inflation(
                 env.model.year, env.model.month if env.model.month > 1 else None
             )
-            expected = 0.25 * consumption_utility(
-                env.person.spending.get_yearly_spending(), deflator, env.reward_config
-            )
+            expected = 0.25 * consumption_utility(env.spending_rate(), deflator, env.reward_config)
             self.assertAlmostEqual(reward, expected, places=12, msg=f"quarter {quarter}")
         # Four quarters at a constant real spending rate earn about one year's utility.
         yearly = FinancialLifeEnvGenerator.create_scenario_env(
@@ -138,6 +136,16 @@ class TestSubYearIntervals(unittest.TestCase):
         quarterly = self._quarterly()
         total = sum(quarterly.step(no_change_vector())[1] for _ in range(4))
         self.assertAlmostEqual(total, annual, delta=0.02 * abs(annual))
+
+    def test_mid_year_rate_ignores_one_time_expenses_paid_so_far(self):
+        """Medical costs are one-time expenses; the consumption rate a quarterly step is scored on is
+        the spending rate in force, not how much of the year's one-time spending has been paid."""
+        env = self._quarterly(models_healthcare=True)
+        env.step(no_change_vector())
+        spending = env.person.spending
+        spending.add_expense(5_000, category="medical")
+        self.assertGreater(spending.get_yearly_spending(), spending.base)
+        self.assertEqual(env.spending_rate(), spending.base)
 
     def test_period_fraction_scales_only_the_consumption_term(self):
         config = FinancialLifeEnv().reward_config

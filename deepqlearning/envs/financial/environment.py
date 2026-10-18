@@ -582,6 +582,19 @@ class FinancialLifeEnv(gym.Env):
             simulated += 1
         return simulated
 
+    def spending_rate(self) -> float:
+        """The yearly living-spending rate in force: the base plus every categorized line active this
+        year (Plan 27 D6), at their annual amounts. One-time expenses are not a rate and are left out.
+
+        At a year boundary this is what ``Spending.get_yearly_spending()`` read before categories
+        existed (the year-end reset clears the paid categories and one-time expenses), so yearly
+        rewards are unchanged; within a year it does not depend on how much of the year has been paid.
+        """
+        spending = self.person.spending
+        year = self.model.year
+        lines = getattr(spending, "categories", {}).values()
+        return spending.base + sum(line.annual_amount for line in lines if line.active(year))
+
     def _deflator(self) -> float:
         """Cumulative price level at the start of the model's current month (1.0 at reset)."""
         month = self.model.month
@@ -854,7 +867,7 @@ class FinancialLifeEnv(gym.Env):
     ) -> float:
         """Utility-based reward for the current step.
 
-        The agent earns the CRRA utility of its **real** consumption rate (the yearly spending in
+        The agent earns the CRRA utility of its **real** consumption rate (:meth:`spending_rate`, in
         force at the end of the interval, deflated to the start of the next month), weighted by the
         share of a year the step simulated (``months / 12``: 1 for yearly decisions, exactly the
         pre-Plan-32 reward), and on the terminal step earns either a bequest utility on the real net
@@ -866,7 +879,7 @@ class FinancialLifeEnv(gym.Env):
         model-derived quantities it needs.
         """
         deflator = self._deflator()
-        nominal_consumption = self.person.spending.get_yearly_spending()
+        nominal_consumption = self.spending_rate()
         period_fraction = months / 12.0
         self.total_lifetime_spending += nominal_consumption * period_fraction
 

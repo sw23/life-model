@@ -33,9 +33,11 @@ Semantics worth knowing:
   stops at Medicare), so their non-``none`` values are legal only while the person is working (and,
   for the HSA, under the Medicare age). When the person retires the env drops those plans and the
   slots read ``0`` / ``none``.
-* **``spending_adjust`` is an impulse,** not a level: it scales base spending once, by the slot's
-  percentage times the decision interval's share of a year (so a monthly agent cannot move spending
-  twelve times faster than a yearly one). Its standing value reads ``hold`` after the step.
+* **``spending_adjust`` is an impulse,** not a level: it scales the household's adjustable spending
+  once — the uncategorized base and the discretionary (``essential=False``) category lines, never the
+  essential ones — by the slot's percentage times the decision interval's share of a year (so a
+  monthly agent cannot move spending twelve times faster than a yearly one). Its standing value reads
+  ``hold`` after the step.
 * **Retirement and claiming only move earlier.** The household's retirement age stays the latest
   retirement (``retire=yes`` retires now). Social Security is claimed by the agent: ``now`` claims at
   the current exact age (62 at the earliest); a household that never claims starts benefits at the
@@ -159,6 +161,16 @@ for _order in WITHDRAWAL_ORDERS.values():
     validate_withdrawal_order(_order)
 
 _ROTH_BRACKETS = {"to_bracket_12": 12, "to_bracket_22": 22}
+
+
+def scale_discretionary_spending(spending, factor: float) -> None:
+    """Scale what a household can adjust: the uncategorized ``base`` and every discretionary
+    (``essential=False``) categorized line (Plan 27 D6). Essential lines — the needs a household
+    itemized — are left alone."""
+    spending.base *= factor
+    for line in getattr(spending, "categories", {}).values():
+        if not line.essential:
+            line.amount *= factor
 
 
 def joint_action_count() -> int:
@@ -417,7 +429,7 @@ class StandingPolicies:
 
     def _set_spending_adjust(self, value: str, interval_months: int) -> None:
         change = SPENDING_CHANGES[value] * interval_months / 12.0
-        self.person.spending.base *= max(0.0, 1.0 + change)
+        scale_discretionary_spending(self.person.spending, max(0.0, 1.0 + change))
         self.state["spending_adjust"] = value
 
     def _set_withdrawal_order(self, value: str, _interval: int) -> None:
