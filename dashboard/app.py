@@ -154,6 +154,8 @@ def _person_spec(prefix: str, kwargs: dict[str, Any]) -> dict[str, Any] | None:
         "id": prefix,
         "name": name,
         "age": g("age"),
+        # January of the year that makes them age at the start (the engine's default birth month).
+        "birth": f"{int(start_year) - int(g('age')):04d}-01",
         "retirement_age": g("retirement_age"),
         "state": _state_value(kwargs.get("state")),
         "spending": {
