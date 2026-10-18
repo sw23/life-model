@@ -37,7 +37,6 @@ class LifeInsurance(LifeModelAgent):
     of growth and interest, and an over-borrowed policy lapses."""
 
     STATS_OWNED = frozenset({"stat_premium_payments", "stat_cash_value", "stat_death_benefit_paid"})
-    MONTHLY = True
 
     # The premium's affordability check reads the household's balances, so it runs after the
     # month's income and benefits have been deposited (pre_step 0), whatever the construction order.

@@ -38,8 +38,6 @@ class RevolvingDebt(LifeModelAgent):
     of being frozen at construction.
     """
 
-    MONTHLY = True
-
     def __init__(
         self,
         person: Person,

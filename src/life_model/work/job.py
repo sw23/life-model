@@ -77,7 +77,6 @@ class Job(LifeModelAgent):
     """
 
     STATS_OWNED = frozenset({"stat_gross_income", "stat_retirement_contrib", "stat_retirement_match"})
-    MONTHLY = True
 
     # Payroll true-up runs early in the step stage: after the events stage (so this month's job and
     # salary changes are seen), before account growth (-10) and the month's bills (0).
@@ -318,7 +317,6 @@ class Job(LifeModelAgent):
 
 
 class Salary(LifeModelAgent):
-    MONTHLY = True
     # The raise runs at year end after the year's taxes are settled (0).
     STEP_PRIORITY: ClassVar[dict[str, int]] = {"on_year_end": 10}
 

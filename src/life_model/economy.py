@@ -85,7 +85,6 @@ class EconomyModel(LifeModelAgent):
     # Run before every other agent's pre_step so the year's rates are cached before anyone reads
     # them (Person ages at -20, accounts grow at -10; the economy must precede both).
     STEP_PRIORITY: ClassVar[dict[str, int]] = {"pre_step": -100}
-    MONTHLY = True
 
     def __init__(self, model: "LifeModel"):
         super().__init__(model)

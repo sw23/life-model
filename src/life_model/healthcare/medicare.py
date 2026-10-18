@@ -42,7 +42,6 @@ class Medicare(LifeModelAgent):
     from the month the person reaches the eligibility age."""
 
     STATS_OWNED = frozenset({"stat_medical_costs"})
-    MONTHLY = True
 
     def __init__(self, person: Person):
         """Model Medicare enrollment and premiums for a person.

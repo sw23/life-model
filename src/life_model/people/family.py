@@ -17,7 +17,6 @@ class Family(LifeModelAgent):
     """
 
     STATS_OWNED = frozenset({"stat_debt"})
-    MONTHLY = True
 
     def __init__(self, model: LifeModel, *args, withdrawal_order: "tuple[str, ...] | None" = None):
         """Family

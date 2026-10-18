@@ -23,7 +23,6 @@ class MedicalCosts(LifeModelAgent):
     """Age-banded out-of-pocket medical costs, charged a twelfth of the year's cost each month."""
 
     STATS_OWNED = frozenset({"stat_medical_costs"})
-    MONTHLY = True
 
     def __init__(self, person: Person):
         """Model age-related medical costs for a person.

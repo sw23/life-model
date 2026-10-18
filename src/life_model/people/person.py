@@ -54,7 +54,6 @@ class Person(LifeModelAgent):
         }
     )
 
-    MONTHLY = True
     # Mortality is drawn in pre_step after the month's income and benefits arrived (0), so a death in
     # month m stops wages and benefits from month m+1; before stock vests (5) and premiums (10). The
     # year-end resets run after the tax settlement (0) and the escalators (10).
@@ -1767,7 +1766,6 @@ class Spending(LifeModelAgent):
     paid with the bills of the month they are added in (an expense added after the month's bills
     were paid is paid the next month). The base escalates at year end."""
 
-    MONTHLY = True
     # The escalator runs at year end after the year's taxes are settled (0).
     STEP_PRIORITY: ClassVar[dict[str, int]] = {"on_year_end": 10}
 

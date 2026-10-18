@@ -48,7 +48,6 @@ class Trust(LifeModelAgent):
     """
 
     STATS_OWNED = frozenset({"stat_trust_balance"})
-    MONTHLY = True
 
     # Apply growth before the month's bills, matching Investment's step ordering.
     STEP_PRIORITY: ClassVar[dict[str, int]] = {"step": -10}

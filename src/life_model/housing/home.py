@@ -20,7 +20,6 @@ class Home(LifeModelAgent):
     (property tax is assessed on the value through the year)."""
 
     STATS_OWNED = frozenset({"stat_home_value", "stat_home_equity"})
-    MONTHLY = True
     # Appreciation at year end, after the year's taxes (0) read the year's property tax.
     STEP_PRIORITY: ClassVar[dict[str, int]] = {"on_year_end": 10}
 
@@ -329,7 +328,6 @@ class Home(LifeModelAgent):
 
 
 class HomeExpenses(LifeModelAgent):
-    MONTHLY = True
     # Escalators at year end, after the year's taxes (0).
     STEP_PRIORITY: ClassVar[dict[str, int]] = {"on_year_end": 10}
 

@@ -87,8 +87,6 @@ class TestPeriodPlumbing(unittest.TestCase):
         calls = []
 
         class Probe(LifeModelAgent):
-            MONTHLY = True
-
             def on_year_start(self):
                 calls.append(("start", self.model.year, self.model.month))
 

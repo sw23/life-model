@@ -49,8 +49,6 @@ class InsuranceClaim:
 
 
 class Insurance(LifeModelAgent):
-    MONTHLY = True
-
     def __init__(
         self,
         person: Person,

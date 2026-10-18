@@ -41,7 +41,6 @@ class Pension(Benefit):
     """
 
     STATS_OWNED = frozenset({"stat_pension_income"})
-    MONTHLY = True
     # Service accrues at year end before the salary escalator (10) so "final salary" is this year's;
     # the COLA follows it.
     STEP_PRIORITY: ClassVar[dict[str, int]] = {"on_year_end": 5}

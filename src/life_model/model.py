@@ -884,8 +884,7 @@ class LifeModel(mesa.Model):
 
         The agent list is snapshotted per stage: an agent created during a stage first runs in the
         next stage, and an agent removed during a stage (a decedent's pension, say) does not run the
-        rest of it. Agents whose class still keeps the annual engine's flows (``MONTHLY = False``)
-        run the monthly stages only in December, i.e. once a year as they always did.
+        rest of it.
         """
         for stage in stages:
             self.current_stage = stage
@@ -894,10 +893,7 @@ class LifeModel(mesa.Model):
                 # year's value (e.g. this year's salary, not next year's).
                 self._snapshot_pre_post()
             agents = self.agents
-            monthly_stage = stage in self.STAGES
             for agent in sorted(agents, key=lambda a: a.STEP_PRIORITY.get(stage, 0)):
-                if monthly_stage and not year_end and not agent.MONTHLY:
-                    continue
                 if agent in agents:
                     getattr(agent, stage)()
         self.current_stage = None
@@ -1191,20 +1187,16 @@ class LifeModel(mesa.Model):
 class LifeModelAgent(mesa.Agent):
     # Per-stage execution priority. Within a stage, agents run in ascending priority order
     # (lower runs first); ties preserve construction order. Priorities order the agents whose
-    # effects depend on each other, so the yearly sequence does not depend on construction order
+    # effects depend on each other, so the monthly sequence does not depend on construction order
     # (see LifeModel.step docstring and the shuffled-construction test):
-    #   pre_step:  economy (-100), Person ages/mortality (-20), pre_step life events (-15),
-    #              RMDs (-10), income and benefits (0), stock vests (5), cash consumers such as
-    #              premiums and donations (10)
-    #   events:    LifeEvents (0)
-    #   step:      payroll true-up (-30), account growth and bank interest (-10), settlement (0)
-    #   post_step: post_step life events (10)
-    #   on_year_end: tax settlement (0), escalators and resets (10)
+    #   pre_step:    economy (-100), pre_step life events (-15), RMDs (-10), wages and benefits (0),
+    #                mortality (1), stock vests (5), cash consumers such as premiums and donations (10)
+    #   events:      LifeEvents (0)
+    #   step:        payroll true-up (-30), account growth and bank interest (-10), the month's bills (0)
+    #   post_step:   post_step life events (10)
+    #   on_year_end: LTC claims and life-insurance updates (-5), tax settlement (0), pension service
+    #                and COLA (5), escalators (10), the person's yearly resets (20)
     STEP_PRIORITY: ClassVar[dict[str, int]] = {}
-
-    #: Whether this agent type runs its ``STAGES`` methods every month. ``False`` (transitional, the
-    #: annual engine's flows) runs them only in December, once a year as before.
-    MONTHLY: ClassVar[bool] = False
 
     #: Model-level stats (``LifeModel.STATS`` / ``EXTRA_STATS`` names) this agent type reports.
     #: Declared per class and merged down the inheritance chain by ``__init_subclass__``, so a
@@ -1245,12 +1237,11 @@ class LifeModelAgent(mesa.Agent):
     @property
     def created_during_this_year(self) -> bool:
         """True when this agent was built *during* the current simulated year (by a life event or
-        another agent mid-year), as opposed to at setup or between years.
+        another agent mid-year), as opposed to at setup or between months.
 
-        Agents built in the ``pre_step`` or ``events`` stage are consumed in their creation year
-        (settlement pays their bills, ``Job.step`` books a new job's payroll), so they escalate at
-        that year end like setup agents do; this flag is for code that does need to tell a
-        brand-new agent apart (e.g. a first partial period once the engine is monthly).
+        Agents built in the ``pre_step`` or ``events`` stage are consumed from their creation month
+        (the month's bills pay their costs, ``Job.step`` books a new job's paycheck), so they escalate
+        at that year end like setup agents do; ``created_period`` says which month that was.
         """
         return self.created_in_stage is not None and self.created_year == self.model.year
 

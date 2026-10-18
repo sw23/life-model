@@ -16,7 +16,6 @@ class Child(LifeModelAgent):
     drawn from the child's 529 plans first)."""
 
     STATS_OWNED = frozenset({"stat_dependent_costs"})
-    MONTHLY = True
 
     def __init__(self, person: "Person", name: str, birth_year: int):
         """Models a child dependent for a person

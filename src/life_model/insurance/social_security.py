@@ -345,8 +345,6 @@ class SocialSecurity(LifeModelAgent):
     """Social Security benefits: a monthly benefit from the month the person reaches
     ``withdrawal_start_age`` (exact age), at the year's primary insurance amount (with COLAs)."""
 
-    MONTHLY = True
-
     def __init__(
         self,
         person: Person,

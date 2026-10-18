@@ -13,7 +13,6 @@ from ..people.person import Person
 class Apartment(LifeModelAgent):
     """A rental: ``monthly_rent`` paid with each month's bills, raised at year end."""
 
-    MONTHLY = True
     # The rent escalator runs at year end, after the year's taxes (0).
     STEP_PRIORITY: ClassVar[dict[str, int]] = {"on_year_end": 10}
 

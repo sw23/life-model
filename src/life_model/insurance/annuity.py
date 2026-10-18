@@ -212,7 +212,6 @@ class Annuity(LifeModelAgent):
     reserve paying one monthly payout per month and credited interest monthly."""
 
     STATS_OWNED = frozenset({"stat_annuity_balance"})
-    MONTHLY = True
 
     def __init__(
         self,

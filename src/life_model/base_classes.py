@@ -39,7 +39,6 @@ class FinancialAccount(LifeModelAgent, ABC):
     that don't expose the keyword can have ``account.beneficiary`` assigned directly.
     """
 
-    MONTHLY = True
     #: Whether the balance is the household's (counted in net worth and the conservation check).
     #: False for a donor-advised fund, whose money has been given away.
     IN_NET_WORTH: ClassVar[bool] = True
@@ -117,8 +116,6 @@ class Loan(LifeModelAgent, ABC):
     once) remains for direct callers. Concrete subclasses supply only rate/term/identification and
     register themselves; they do not re-implement payment math.
     """
-
-    MONTHLY = True
 
     def __init__(
         self,
@@ -499,8 +496,6 @@ class RetirementAccount(Investment, ABC):
 
 class Benefit(LifeModelAgent, ABC):
     """Abstract base class for benefits that provide periodic payments"""
-
-    MONTHLY = True
 
     def __init__(self, person: "Person", company: str):
         super().__init__(person.model)

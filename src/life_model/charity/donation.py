@@ -27,7 +27,6 @@ class Donation(LifeModelAgent):
     from the donor's bank (deductible on that year's return)."""
 
     STATS_OWNED = frozenset({"stat_charitable_donations"})
-    MONTHLY = True
 
     # Donate in pre_step after the month's income is deposited (jobs run at the default priority 0).
     STEP_PRIORITY: ClassVar[dict[str, int]] = {"pre_step": 10}

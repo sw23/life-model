@@ -48,7 +48,6 @@ class LifeEvents(LifeModelAgent):
     # Fire pre_step events before RMDs (-10) and income (0); post_step events after the rest of the
     # month's post_step.
     STEP_PRIORITY: ClassVar[dict[str, int]] = {"pre_step": -15, "post_step": 10}
-    MONTHLY = True
 
     def __init__(self, model, life_events: list["LifeEvent"] | None = None, *, allow_past: bool = False):
         """List of life events

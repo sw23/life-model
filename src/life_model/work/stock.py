@@ -162,7 +162,6 @@ class StockPlan(LifeModelAgent):
     """
 
     STATS_OWNED = frozenset({"stat_gross_income", "stat_stock_vested", "stat_stock_unvested"})
-    MONTHLY = True
 
     # Runs after Job.pre_step (priority 0) so wages are already on the ledger. Vests happen once a
     # year, in the first month of the year (quarterly vesting is a later plan's).

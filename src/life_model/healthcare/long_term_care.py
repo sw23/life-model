@@ -35,7 +35,6 @@ class LongTermCare(LifeModelAgent):
     cost is claimed against LTC insurance and the episode's remaining years count down."""
 
     STATS_OWNED = frozenset({"stat_medical_costs"})
-    MONTHLY = True
     # The year's claim runs before the tax settlement (0), which deducts the net medical cost.
     STEP_PRIORITY: ClassVar[dict[str, int]] = {"on_year_end": -5}
 
