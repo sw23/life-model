@@ -94,3 +94,12 @@ age-band mechanics, so they now ask for it explicitly; one expected value change
 changed: every FIXED/VARIABLE test already passed an explicit `payout_start_age`. Probe 6: a $50/mo
 level term policy now costs $600 every year (was $600, $1,344, $1,428, $1,512); a $100k FIXED
 annuity at age 40 stays in accumulation (was fully annuitized in year 1).
+
+## Task 9 / D11 — construction-order property test
+
+No existing test changed. `test_construction_order.py` builds four households (single saver,
+married homeowners, retired couple with part-time wages, early retiree) in the declared order and
+five seeded shuffles; frames must match to float round-off. `LifeInsurance` moved to pre_step
+priority 10 (its affordability check reads balances, so it now runs after income). Sensitivity
+check: re-introducing the old pre_step Social Security taxation makes the retired-couple
+household's taxes differ by up to $10.5k between shuffles, so the test does detect the defect.

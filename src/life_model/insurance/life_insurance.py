@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 from enum import Enum
-from typing import cast
+from typing import ClassVar, cast
 
 from ..model import Event, LifeModel, LifeModelAgent, compound_interest
 from ..people.person import Person
@@ -32,6 +32,10 @@ class PremiumIncreaseType(Enum):
 
 class LifeInsurance(LifeModelAgent):
     STATS_OWNED = frozenset({"stat_premium_payments", "stat_cash_value", "stat_death_benefit_paid"})
+
+    # The premium's affordability check reads the household's balances, so it runs after the
+    # year's income and benefits have been deposited (pre_step 0), whatever the construction order.
+    STEP_PRIORITY: ClassVar[dict[str, int]] = {"pre_step": 10}
 
     def __init__(
         self,
