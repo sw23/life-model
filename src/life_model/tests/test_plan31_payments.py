@@ -268,9 +268,6 @@ class TestEstimatedPayments(unittest.TestCase):
     def test_quarterly_payments_post_on_the_due_months(self):
         model = LifeModel(start_year=2025, end_year=2026, checks="strict")
         person = _person(model, state="TX", estimated_payments=EstimatedPayments(quarterly=3000, prior_year_tax=10000))
-        BankAccount(person, company="Savings", balance=0, interest_pct=0)
-        brokerage = BrokerageAccount(person, company="Broker", balance=0, growth_pct=0)
-        brokerage.receive_cash = None
         _job(person, 100000, withholding=None)
         model.run()
         taxes = _tax_entries(model)
@@ -323,7 +320,7 @@ class TestContributionHoldBack(unittest.TestCase):
         self.assertEqual(check_model(model), [])
 
     def test_with_withholding_the_plan_keeps_only_the_unpaid_balance(self):
-        model, person, brokerage = self._run("w4_default")
+        model, person, _brokerage = self._run("w4_default")
         events = model.event_log.to_frame()
         self.assertFalse((events.kind == "forced_sale").any())
         # The year's balance due waits in the bank for April (a liability on the balance sheet until then).
