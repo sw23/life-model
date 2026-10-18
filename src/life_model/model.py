@@ -162,6 +162,20 @@ class LifeModel(mesa.Model):
         MoneyStat("stat_itemized_deductions", "Itemized Deductions"),  # Itemized deductions claimed (0 = standard)
     ]
 
+    #: The ordered stages one ``step()`` (one simulated year) runs over every agent:
+    #:
+    #: * ``pre_step``: the year starts — ages advance, mortality, wages and benefits arrive, RMDs.
+    #: * ``events``: scheduled life events fire (``LifeEvents`` is the only default participant),
+    #:   after income has arrived and before anything is settled, so an event's expense, purchase,
+    #:   marriage, state or salary change applies to *this* year.
+    #: * ``step``: account growth, then tax-unit settlement (taxes, bills, withdrawals).
+    #: * ``post_step``: year-end resets and escalators.
+    #:
+    #: Within a stage agents run by ``STEP_PRIORITY`` (ascending), then construction order. A later
+    #: plan can extend the tuple (e.g. a year-end stage); every ``LifeModelAgent`` has a no-op
+    #: method per stage, so a new stage only needs a default method on the base class.
+    STAGES: ClassVar[tuple[str, ...]] = ("pre_step", "events", "step", "post_step")
+
     def __init__(
         self,
         end_year: int | None = None,
@@ -213,7 +227,10 @@ class LifeModel(mesa.Model):
         self.year = start_year
         self.event_log = EventLog(self)
         self.simulated_years = []
-        self._stages = ["pre_step", "step", "post_step"]
+        self._stages = list(self.STAGES)
+        #: The stage currently executing (one of ``STAGES``), or None outside ``step()`` (model
+        #: setup, between years). Agents record it at construction (``created_in_stage``).
+        self.current_stage: str | None = None
 
         # The economy provides the year's rates (inflation, returns, wage growth) to every other
         # agent. It is created first and steps first so its rates are cached before any consumer
@@ -279,9 +296,11 @@ class LifeModel(mesa.Model):
     def step(self):
         """Execute one step of the model for a single simulated year.
 
-        Canonical yearly sequence (see LifeModelAgent.STEP_PRIORITY for ordering within a stage):
-          * pre_step:  age++, income deposited, account growth, RMDs
-          * step:      tax units settle taxes/spending/withdrawals
+        Canonical yearly sequence (see ``STAGES``, and LifeModelAgent.STEP_PRIORITY for ordering
+        within a stage):
+          * pre_step:  age++, mortality, RMDs, income and benefits deposited
+          * events:    scheduled life events fire (before settlement, so they apply this year)
+          * step:      payroll true-up, account growth, then tax units settle taxes/spending/withdrawals
           * post_step: stat resets, escalators (salary/spending/rent increases), taxable_income reset
 
         The DataCollector row for year Y is collected *after* the stages run (while ``self.year``
@@ -299,10 +318,13 @@ class LifeModel(mesa.Model):
 
         self.simulated_years.append(self.year)
 
-        # Execute each stage in a deterministic, priority-ordered sequence per stage
+        # Execute each stage in a deterministic, priority-ordered sequence per stage. The agent list
+        # is snapshotted per stage: an agent created during a stage first runs in the next stage.
         for stage in self._stages:
+            self.current_stage = stage
             for agent in sorted(self.agents, key=lambda a: a.STEP_PRIORITY.get(stage, 0)):
                 getattr(agent, stage)()
+        self.current_stage = None
 
         # Collect after the stages so row Year=Y holds year-Y flows and balances
         # (skipped entirely when the model was built with collect_data=False).
@@ -494,11 +516,15 @@ class LifeModel(mesa.Model):
 
 class LifeModelAgent(mesa.Agent):
     # Per-stage execution priority. Within a stage, agents run in ascending priority order
-    # (lower runs first); ties preserve construction order. This makes the yearly sequence
-    # deterministic and independent of object construction order (see LifeModel.step docstring).
-    #   pre_step:  Person ages first (-20), then account growth/RMDs (-10), then job income (0)
-    #   step:      account growth (-10) before tax-unit settlement (0)
-    #   post_step: stat resets/escalators run at the default priority (0)
+    # (lower runs first); ties preserve construction order. Priorities order the agents whose
+    # effects depend on each other, so the yearly sequence does not depend on construction order
+    # (see LifeModel.step docstring and the shuffled-construction test):
+    #   pre_step:  economy (-100), Person ages/mortality (-20), pre_step life events (-15),
+    #              RMDs (-10), income and benefits (0), stock vests (5), cash consumers such as
+    #              premiums and donations (10)
+    #   events:    LifeEvents (0)
+    #   step:      payroll true-up (-30), account growth and bank interest (-10), settlement (0)
+    #   post_step: stat resets/escalators (0), post_step life events (10)
     STEP_PRIORITY: ClassVar[dict[str, int]] = {}
 
     #: Model-level stats (``LifeModel.STATS`` / ``EXTRA_STATS`` names) this agent type reports.
@@ -524,15 +550,37 @@ class LifeModelAgent(mesa.Agent):
         """
         super().__init__(model)  # unique_id is now automatically assigned
 
+        #: The model year when this agent was constructed.
+        self.created_year: int = model.year
+        #: The stage running when this agent was constructed (e.g. ``"events"`` for an agent built
+        #: by a life event), or None when it was built outside ``LifeModel.step`` (model setup, or
+        #: between years). See :attr:`created_during_this_year`.
+        self.created_in_stage: str | None = getattr(model, "current_stage", None)
+
         # Initialize the stats this agent type owns.
         for name in self.STATS_OWNED:
             setattr(self, name, 0)
 
+    @property
+    def created_during_this_year(self) -> bool:
+        """True when this agent was built *during* the current simulated year (by a life event or
+        another agent mid-year), as opposed to at setup or between years.
+
+        Agents built in the ``pre_step`` or ``events`` stage are consumed in their creation year
+        (settlement pays their bills, ``Job.step`` books a new job's payroll), so they escalate at
+        that year end like setup agents do; this flag is for code that does need to tell a
+        brand-new agent apart (e.g. a first partial period once the engine is monthly).
+        """
+        return self.created_in_stage is not None and self.created_year == self.model.year
+
     def pre_step(self):
-        """Pre-step phase. Called for all agents before step phase."""
+        """Pre-step phase. Called for all agents before the events phase."""
+
+    def events(self):
+        """Events phase. Called for all agents after pre-step and before step (see ``LifeModel.STAGES``)."""
 
     def step(self):
-        """Step phase. Called for all agents after pre-step phase."""
+        """Step phase. Called for all agents after the events phase."""
 
     def post_step(self):
         """Post-step phase. Called for all agents after the step phase."""

@@ -107,8 +107,8 @@ class TestTrustEstateIntegration(unittest.TestCase):
     def _dying_grantor_with_trust(self, trust_type, *, exemption=100000, trust_balance=200000, residual=100000):
         model = _model(estate_tax_exemption=exemption)
         family = Family(model)
-        grantor = _person(model, family, age=75, death_age=76)
-        child = _person(model, family, name="Kid", age=40)
+        grantor = _person(model, family, age=76, death_age=76)
+        child = _person(model, family, name="Kid", age=41)
         BankAccount(grantor, "GB", balance=residual, interest_rate=0)
         BankAccount(child, "KB", balance=0, interest_rate=0)
         # Endow the corpus via the constructor (not fund()) so the tiny test exemption isn't
@@ -146,10 +146,10 @@ class TestTrustEstateIntegration(unittest.TestCase):
         # Residual estate goes to the spouse, but the revocable trust pays its own beneficiary.
         model = _model(estate_tax_exemption=10000000)
         family = Family(model)
-        grantor = _person(model, family, age=75, death_age=76)
-        spouse = _person(model, family, name="Spouse", age=74)
+        grantor = _person(model, family, age=76, death_age=76)
+        spouse = _person(model, family, name="Spouse", age=75)
         grantor.get_married(spouse)
-        child = _person(model, family, name="Kid", age=40)
+        child = _person(model, family, name="Kid", age=41)
         BankAccount(grantor, "GB", balance=300000, interest_rate=0)
         BankAccount(spouse, "SB", balance=0, interest_rate=0)
         BankAccount(child, "KB", balance=0, interest_rate=0)
@@ -169,9 +169,9 @@ class TestTrustEstateIntegration(unittest.TestCase):
         # the corpus escheats to the residual inheritor instead of dissolving to nowhere.
         model = _model(estate_tax_exemption=10000000)
         family = Family(model)
-        grantor = _person(model, family, age=75, death_age=76)
-        heir = _person(model, family, name="Heir", age=45)
-        dead_kid = _person(model, family, name="Gone", age=50)
+        grantor = _person(model, family, age=76, death_age=76)
+        heir = _person(model, family, name="Heir", age=46)
+        dead_kid = _person(model, family, name="Gone", age=51)
         dead_kid.is_deceased = True
         BankAccount(grantor, "GB", balance=50000, interest_rate=0)
         BankAccount(heir, "HB", balance=0, interest_rate=0)

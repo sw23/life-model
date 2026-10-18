@@ -59,7 +59,7 @@ class TestMortalityModes(unittest.TestCase):
         person = Person(
             family,
             "Mort",
-            age=60,
+            age=61,
             retirement_age=100,
             spending=Spending(model, 0),
             mortality_mode=MortalityMode.FIXED_AGE,
@@ -110,13 +110,13 @@ class TestEstateTransferToSpouse(unittest.TestCase):
         breadwinner = Person(
             family,
             "Bread",
-            age=74,
+            age=75,
             retirement_age=100,
             spending=Spending(model, 0),
             mortality_mode=MortalityMode.FIXED_AGE,
             death_age=75,
         )
-        spouse = Person(family, "Spouse", age=74, retirement_age=100, spending=Spending(model, 0))
+        spouse = Person(family, "Spouse", age=75, retirement_age=100, spending=Spending(model, 0))
         breadwinner.get_married(spouse)
         BankAccount(breadwinner, "B1", balance=20000, interest_rate=0)
         BankAccount(spouse, "B2", balance=5000, interest_rate=0)
@@ -230,13 +230,13 @@ class TestEstateTransferNonSpouse(unittest.TestCase):
         parent = Person(
             family,
             "Parent",
-            age=79,
+            age=80,
             retirement_age=50,
             spending=Spending(model, 0),
             mortality_mode=MortalityMode.FIXED_AGE,
             death_age=80,
         )
-        child = Person(family, "Kid", age=40, retirement_age=100, spending=Spending(model, 0))
+        child = Person(family, "Kid", age=41, retirement_age=100, spending=Spending(model, 0))
         BankAccount(child, "C", balance=1000, interest_rate=0)
         TraditionalIRA(person=parent, balance=100000, growth_rate=0)
         model.run()
@@ -266,15 +266,15 @@ class TestPerAccountBeneficiary(unittest.TestCase):
         breadwinner = Person(
             family,
             "Bread",
-            age=69,
+            age=70,
             retirement_age=50,
             spending=Spending(model, 0),
             mortality_mode=MortalityMode.FIXED_AGE,
             death_age=70,
         )
-        spouse = Person(family, "Spouse", age=68, retirement_age=50, spending=Spending(model, 0))
+        spouse = Person(family, "Spouse", age=69, retirement_age=50, spending=Spending(model, 0))
         breadwinner.get_married(spouse)
-        child = Person(family, "Kid", age=40, retirement_age=100, spending=Spending(model, 0))
+        child = Person(family, "Kid", age=41, retirement_age=100, spending=Spending(model, 0))
         BankAccount(breadwinner, "B1", balance=50000, interest_rate=0)
         BankAccount(spouse, "B2", balance=0, interest_rate=0)
         BankAccount(child, "C", balance=0, interest_rate=0)
@@ -333,15 +333,15 @@ class TestPerAccountBeneficiary(unittest.TestCase):
         breadwinner = Person(
             family,
             "Bread",
-            age=75,
+            age=76,
             retirement_age=50,
             spending=Spending(model, 0),
             mortality_mode=MortalityMode.FIXED_AGE,
             death_age=76,
         )
-        spouse = Person(family, "Spouse", age=74, retirement_age=50, spending=Spending(model, 0))
+        spouse = Person(family, "Spouse", age=75, retirement_age=50, spending=Spending(model, 0))
         breadwinner.get_married(spouse)
-        child = Person(family, "Kid", age=40, retirement_age=100, spending=Spending(model, 0))
+        child = Person(family, "Kid", age=41, retirement_age=100, spending=Spending(model, 0))
         BankAccount(breadwinner, "B1", balance=1000000, interest_rate=0)
         BankAccount(spouse, "B2", balance=0, interest_rate=0)
         BankAccount(child, "C", balance=0, interest_rate=0)
@@ -365,13 +365,13 @@ class TestPerAccountBeneficiary(unittest.TestCase):
         breadwinner = Person(
             family,
             "Bread",
-            age=75,
+            age=76,
             retirement_age=50,
             spending=Spending(model, 0),
             mortality_mode=MortalityMode.FIXED_AGE,
             death_age=76,
         )
-        spouse = Person(family, "Spouse", age=74, retirement_age=50, spending=Spending(model, 0))
+        spouse = Person(family, "Spouse", age=75, retirement_age=50, spending=Spending(model, 0))
         breadwinner.get_married(spouse)
         BankAccount(breadwinner, "B1", balance=3000000, interest_rate=0)
         BankAccount(spouse, "B2", balance=0, interest_rate=0)
@@ -420,13 +420,13 @@ class TestPensionSurvivorAtDeath(unittest.TestCase):
         breadwinner = Person(
             family,
             "Bread",
-            age=74,
+            age=75,
             retirement_age=50,
             spending=Spending(model, 0),
             mortality_mode=MortalityMode.FIXED_AGE,
             death_age=death_age,
         )
-        spouse = Person(family, "Spouse", age=74, retirement_age=50, spending=Spending(model, 0))
+        spouse = Person(family, "Spouse", age=75, retirement_age=50, spending=Spending(model, 0))
         breadwinner.get_married(spouse)
         BankAccount(spouse, "B2", balance=0, interest_rate=0)
         Pension(breadwinner, "MegaCorp", vesting_years=5, benefit_amount=40000, survivor_percent=survivor_percent)
@@ -482,13 +482,13 @@ class TestPensionSurvivorAtDeath(unittest.TestCase):
         retiree = Person(
             family,
             "Retiree",
-            age=70,
+            age=71,
             retirement_age=65,
             spending=Spending(model, 0),
             mortality_mode=MortalityMode.FIXED_AGE,
             death_age=72,
         )
-        widow = Person(family, "Widow", age=49, retirement_age=65, spending=Spending(model, 0))
+        widow = Person(family, "Widow", age=50, retirement_age=65, spending=Spending(model, 0))
         retiree.get_married(widow)
         BankAccount(widow, "WB", balance=0, interest_rate=0)
         Pension(retiree, "MegaCorp", vesting_years=5, benefit_amount=40000, survivor_percent=50)

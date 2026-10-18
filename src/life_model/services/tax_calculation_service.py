@@ -17,6 +17,11 @@ class TaxCalculationService:
     Sizing is side-effect free and exact: the gross withdrawal is the fixed point of
     ``gross = expenses + taxes(gross) - bank``, the same solve the tax unit uses at settlement, so
     no max-marginal-rate safety buffer is needed (Plan 05 item 9). Execution is a separate step.
+
+    Taxes come from ``Person.get_income_taxes_due``, which is the settlement tax path
+    (``TaxUnit([person])``), so this planner and settlement cannot disagree. The engine itself
+    sizes withdrawals at the tax-unit level (``TaxUnit.settle_year``); this service is a
+    single-person planning helper.
     """
 
     def __init__(self, person: "Person"):

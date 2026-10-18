@@ -228,9 +228,14 @@ class Annuity(LifeModelAgent):
             person: The person to which this annuity belongs
             annuity_type: The type of annuity
             initial_balance: Starting balance in the annuity
-            interest_rate: Annual interest rate percentage. Uses configured default if None.
+            interest_rate: Annual interest rate percentage (the credited rate in accumulation, and
+                the pricing rate at annuitization). If None: the configured default, except that a
+                VARIABLE annuity's accumulation balance then tracks the economy's equity return.
             payout_type: How the annuity pays out
-            payout_start_age: Age when payouts begin (None for immediate)
+            payout_start_age: Age at which the contract annuitizes automatically. If None: an
+                IMMEDIATE annuity annuitizes at once, a DEFERRED one at the configured
+                ``insurance.annuity.default_payout_start_age``, and a FIXED or VARIABLE one stays in
+                accumulation (it can still be annuitized explicitly with :meth:`annuitize`).
             monthly_payout: Fixed monthly payout amount (calculated if None)
             period_certain_years: Years of guaranteed payments for period certain. Configured default if None.
             surrender_charge_years: Years during which surrender charges apply. Configured default if None.
@@ -248,6 +253,9 @@ class Annuity(LifeModelAgent):
         super().__init__(cast(LifeModel, person.model))
         self.model: LifeModel = cast("LifeModel", self.model)
         annuity_config = self.model.config.insurance.annuity
+        # A VARIABLE contract with no stated rate is invested in the market: its accumulation
+        # balance follows the economy's equity return (the configured rate still prices payouts).
+        self.tracks_equity = annuity_type == AnnuityType.VARIABLE and interest_rate is None
         if interest_rate is None:
             interest_rate = annuity_config.default_interest_rate
         if period_certain_years is None:
@@ -261,10 +269,13 @@ class Annuity(LifeModelAgent):
         self.balance = initial_balance
         self.interest_rate = interest_rate
         self.payout_type = payout_type
-        default_payout_age = annuity_config.default_payout_start_age
-        self.payout_start_age = payout_start_age or (
-            default_payout_age if annuity_type == AnnuityType.DEFERRED else person.age
-        )
+        if payout_start_age is None:
+            if annuity_type == AnnuityType.IMMEDIATE:
+                payout_start_age = person.age
+            elif annuity_type == AnnuityType.DEFERRED:
+                payout_start_age = annuity_config.default_payout_start_age
+            # FIXED / VARIABLE: None = stay in accumulation (no automatic annuitization).
+        self.payout_start_age: float | None = payout_start_age
         self.monthly_payout = monthly_payout
         self.period_certain_years = period_certain_years
         self.surrender_charge_years = surrender_charge_years
@@ -315,8 +326,15 @@ class Annuity(LifeModelAgent):
 
     @property
     def is_payout_eligible(self) -> bool:
-        """Whether the person is eligible to start receiving payouts"""
-        return self.person.age >= self.payout_start_age
+        """Whether the contract has reached its automatic annuitization age (never, when it has none)."""
+        return self.payout_start_age is not None and self.person.age >= self.payout_start_age
+
+    @property
+    def accumulation_rate(self) -> float:
+        """This year's credited rate (percent) on the accumulation balance."""
+        if self.tracks_equity:
+            return self.model.economy.equity_return(self.model.year)
+        return self.interest_rate
 
     @property
     def surrender_charge_amount(self) -> float:
@@ -404,7 +422,10 @@ class Annuity(LifeModelAgent):
         if self.is_annuitized or not self.is_active or self.balance <= 0:
             return False
 
-        if not self.is_payout_eligible:
+        if self.payout_start_age is None:
+            # An accumulation-only contract annuitizes when the owner elects to, at today's age.
+            self.payout_start_age = self.person.age
+        elif not self.is_payout_eligible:
             return False
 
         self.is_annuitized = True
@@ -568,7 +589,7 @@ class Annuity(LifeModelAgent):
                 self.annuitized_reserve += interest_earned
                 self.stat_interest_earned += interest_earned
         elif self.balance > 0:
-            interest_earned = self.balance * (self.interest_rate / 100)
+            interest_earned = self.balance * (self.accumulation_rate / 100)
             self.balance += interest_earned
             self.stat_interest_earned += interest_earned
 
@@ -581,7 +602,7 @@ class Annuity(LifeModelAgent):
         Payouts are recorded here (in pre_step) so their taxable portion is in the income ledger
         before the tax unit settles taxes in the step stage.
         """
-        # Auto-annuitize immediate annuities or any annuity whose payout age has been reached.
+        # Auto-annuitize once the contract's payout age is reached (immediately for IMMEDIATE).
         if not self.is_annuitized and self.is_active and self.is_payout_eligible:
             self.annuitize()
 

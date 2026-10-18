@@ -27,9 +27,18 @@ class IncomeType(Enum):
 
     WAGES = "wages"  # Earned income: subject to both income tax and FICA.
     PRETAX_DISTRIBUTION = "pretax_distribution"  # 401k/IRA withdrawals & RMDs: ordinary income, no FICA.
-    SS_BENEFIT = "ss_benefit"  # Social Security benefits: taxed under provisional-income rules (future).
+    # Social Security benefits. An entry's ``gross`` is the benefit received and its ``amount`` the
+    # taxable portion, which the tax unit sets at settlement from the unit's provisional income.
+    SS_BENEFIT = "ss_benefit"
     PENSION = "pension"  # Defined-benefit pension income: ordinary, no FICA (retirees pay no payroll tax).
-    INTEREST = "interest"  # Interest income: ordinary, no FICA.
+    INTEREST = "interest"  # Interest income (bank accounts, corporate bonds): ordinary, no FICA.
+    # US Treasury interest: federally taxable ordinary income, but exempt from state income tax
+    # (31 U.S.C. §3124), so every state pack excludes it.
+    TREASURY_INTEREST = "treasury_interest"
+    # Tax-exempt (municipal bond) interest: excluded from federal ordinary income and the §1411
+    # base, but counted in Social Security provisional income (IRC §86(b)(2)(B)). Treated as exempt
+    # from state tax too (in-state bonds).
+    TAX_EXEMPT_INTEREST = "tax_exempt_interest"
     ORDINARY = "ordinary"  # Generic ordinary income: no FICA.
     # Gains on assets held one year or less are taxed at ordinary rates; the separate member exists
     # so reporting and loss-character tracking can tell them apart from other ordinary income.
@@ -44,6 +53,10 @@ class IncomeType(Enum):
 #: Short-term gains are deliberately absent — they are taxed at ordinary rates.
 PREFERENTIAL_TYPES = frozenset({IncomeType.LONG_TERM_CAPITAL_GAIN, IncomeType.QUALIFIED_DIVIDEND})
 
+#: Income types that are not part of either income-tax base (ordinary or preferential). They are
+#: still recorded, because some rules look at them (Social Security provisional income).
+NON_TAXABLE_TYPES = frozenset({IncomeType.TAX_EXEMPT_INTEREST})
+
 #: Income types that make up net investment income for the §1411 surtax: interest, dividends, and
 #: capital gains. Defined by inclusion rather than by subtracting excluded categories, so a new
 #: income type is outside the NIIT base until it is deliberately added here. Wages, Social Security,
@@ -51,6 +64,7 @@ PREFERENTIAL_TYPES = frozenset({IncomeType.LONG_TERM_CAPITAL_GAIN, IncomeType.QU
 NET_INVESTMENT_TYPES = frozenset(
     {
         IncomeType.INTEREST,
+        IncomeType.TREASURY_INTEREST,
         IncomeType.QUALIFIED_DIVIDEND,
         IncomeType.SHORT_TERM_CAPITAL_GAIN,
         IncomeType.LONG_TERM_CAPITAL_GAIN,
@@ -70,6 +84,9 @@ class IncomeEntry:
     #: :attr:`IncomeType.WAGES`; it can differ from ``amount`` because pre-tax 401k deferrals
     #: reduce ordinary income but are still FICA wages.
     fica_wages: float = 0.0
+    #: The gross amount received, for entries whose taxable ``amount`` is a derived share of it
+    #: (Social Security benefits). 0.0 for every other entry.
+    gross: float = 0.0
 
 
 class IncomeLedger:
@@ -85,6 +102,32 @@ class IncomeLedger:
     def add(self, income_type: IncomeType, amount: float, fica_wages: float = 0.0) -> None:
         """Append an income entry."""
         self.entries.append(IncomeEntry(income_type, amount, fica_wages))
+
+    def add_social_security(self, gross: float) -> None:
+        """Record Social Security benefits received (gross). The taxable portion depends on the
+        whole return's provisional income, so it starts at 0 and the tax unit sets it at settlement
+        (:meth:`set_taxable_social_security`)."""
+        if gross > 0:
+            self.entries.append(IncomeEntry(IncomeType.SS_BENEFIT, 0.0, gross=gross))
+
+    @property
+    def social_security_benefits(self) -> float:
+        """Gross Social Security benefits received this year."""
+        return sum(e.gross for e in self.entries if e.income_type == IncomeType.SS_BENEFIT)
+
+    @property
+    def taxable_social_security(self) -> float:
+        """The currently recorded taxable portion of this year's Social Security benefits."""
+        return sum(e.amount for e in self.entries if e.income_type == IncomeType.SS_BENEFIT)
+
+    def set_taxable_social_security(self, taxable: float) -> None:
+        """Set the taxable portion of this year's benefits, spread over the benefit entries in
+        proportion to their gross (entries without a gross, e.g. ones added directly with an
+        amount, are left alone)."""
+        benefit_entries = [e for e in self.entries if e.income_type == IncomeType.SS_BENEFIT and e.gross > 0]
+        gross = sum(e.gross for e in benefit_entries)
+        for entry in benefit_entries:
+            entry.amount = taxable * entry.gross / gross if gross > 0 else 0.0
 
     def add_wages(self, ordinary_amount: float, fica_wages: float) -> None:
         """Append earned income.
@@ -122,7 +165,11 @@ class IncomeLedger:
         own rate schedule and is reported by :attr:`preferential_income`. Callers that want the full
         income tax base must add the two together.
         """
-        return sum(e.amount for e in self.entries if e.income_type not in PREFERENTIAL_TYPES)
+        return sum(
+            e.amount
+            for e in self.entries
+            if e.income_type not in PREFERENTIAL_TYPES and e.income_type not in NON_TAXABLE_TYPES
+        )
 
     @property
     def preferential_income(self) -> float:
@@ -137,6 +184,11 @@ class IncomeLedger:
     def net_investment_income(self) -> float:
         """Net investment income for the §1411 surtax base (never negative)."""
         return max(0.0, sum(e.amount for e in self.entries if e.income_type in NET_INVESTMENT_TYPES))
+
+    @property
+    def tax_exempt_interest(self) -> float:
+        """Tax-exempt (municipal) interest received this year (outside both tax bases)."""
+        return sum(e.amount for e in self.entries if e.income_type == IncomeType.TAX_EXEMPT_INTEREST)
 
     @property
     def fica_wages(self) -> float:

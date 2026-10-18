@@ -5,21 +5,25 @@
 
 from ..model import LifeModel, LifeModelAgent
 from ..tax.federal import FilingStatus, get_federal_standard_deduction
-from .tax_unit import TaxUnit
+from .tax_unit import TaxUnit, validate_withdrawal_order
 
 
 class Family(LifeModelAgent):
     STATS_OWNED = frozenset({"stat_debt"})
 
-    def __init__(self, model: LifeModel, *args):
+    def __init__(self, model: LifeModel, *args, withdrawal_order: "tuple[str, ...] | None" = None):
         """Family
 
         Args:
             model (LifeModel): LifeModel.
             args (Person): Family members.
+            withdrawal_order (tuple[str, ...], optional): The household payment waterfall its tax
+                units use (see :data:`~life_model.people.tax_unit.DEFAULT_WITHDRAWAL_ORDER`, the
+                default: bank, brokerage, roth_basis, pretax, roth_earnings). Keyword-only.
         """
         super().__init__(model)
         self.members = list(args)
+        self.withdrawal_order = validate_withdrawal_order(withdrawal_order)
 
     @property
     def federal_deductions(self) -> float:
@@ -53,7 +57,8 @@ class Family(LifeModelAgent):
 
     @property
     def combined_spending(self) -> float:
-        return sum(x.spending.base for x in self.members)
+        """This year's spending across members, one-time expenses included (what settlement bills)."""
+        return sum(x.spending.get_yearly_spending() for x in self.members)
 
     @property
     def combined_taxable_income(self) -> float:
@@ -74,7 +79,7 @@ class Family(LifeModelAgent):
         return amount
 
     def pay_bills(self, spending_balance: float) -> float:
-        """Pay bills for the year.
+        """Pay ``spending_balance`` now, through each tax unit's household waterfall in turn.
 
         Args:
             spending_balance (float): Amount of spending left to pay.
@@ -82,10 +87,10 @@ class Family(LifeModelAgent):
         Returns:
             float: Balance remaining after paying bills.
         """
-        for member in self.members:
+        for unit in TaxUnit.build_units(self):
             if spending_balance <= 0:
                 return 0
-            spending_balance = member.pay_bills(spending_balance)
+            spending_balance = unit.pay_bills(spending_balance)
         return spending_balance
 
     # NOTE: Family deliberately has no get_income_taxes_due. Tax math happens exclusively in

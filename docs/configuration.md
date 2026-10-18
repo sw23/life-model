@@ -146,7 +146,8 @@ retirement exclusion) are not modeled.
 A multi-decade simulation should not apply a single frozen year's brackets to
 incomes decades later. The `tax_years` table in the YAML holds published values
 for 2022–2026 (standard deduction, brackets, Social Security wage base, 401k/IRA/
-HSA limits, gift exclusion, RMD start age). Access them with:
+HSA limits including the §415(c) annual-additions limit `limit_415c`, gift
+exclusion, RMD start age). Access them with:
 
 ```python
 params = model.config.tax_year(2025)

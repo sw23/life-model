@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 from enum import Enum
-from typing import cast
+from typing import ClassVar, cast
 
 from ..model import Event, LifeModel, LifeModelAgent, compound_interest
 from ..people.person import Person
@@ -18,14 +18,24 @@ class LifeInsuranceType(Enum):
 
 
 class PremiumIncreaseType(Enum):
-    """Enum for premium increase calculation types"""
+    """How a policy's premium changes over time."""
 
-    AGE_BASED = "age_based"
+    #: The premium never changes (the default: a level-premium term policy; whole life).
+    LEVEL = "level"
+    #: Re-priced every year from age-band multipliers on the base premium (annually renewable term).
+    AGE_BANDED = "age_banded"
+    #: Deprecated name for :attr:`AGE_BANDED` (an alias of the same member).
+    AGE_BASED = "age_banded"  # noqa: PIE796 - deliberate alias of AGE_BANDED
+    #: Grows by a fixed percentage each year.
     YEARLY = "yearly"
 
 
 class LifeInsurance(LifeModelAgent):
     STATS_OWNED = frozenset({"stat_premium_payments", "stat_cash_value", "stat_death_benefit_paid"})
+
+    # The premium's affordability check reads the household's balances, so it runs after the
+    # year's income and benefits have been deposited (pre_step 0), whatever the construction order.
+    STEP_PRIORITY: ClassVar[dict[str, int]] = {"pre_step": 10}
 
     def __init__(
         self,
@@ -34,7 +44,7 @@ class LifeInsurance(LifeModelAgent):
         death_benefit: float,
         monthly_premium: float,
         term_years: int | None = None,
-        premium_increase_rate: float | dict | None = None,
+        premium_increase_rate: "float | dict | PremiumIncreaseType | None" = None,
         cash_value_growth_rate: float | None = None,
         loan_interest_rate: float | None = None,
         max_missed_payments: int | None = None,
@@ -49,8 +59,12 @@ class LifeInsurance(LifeModelAgent):
             death_benefit: Amount paid out on death
             monthly_premium: Monthly premium cost
             term_years: Number of years for term life (None for whole life)
-            premium_increase_rate: Either a yearly percentage increase (float) or
-                                 age-based multipliers dict (dict), or None for default age-based
+            premium_increase_rate: How the premium changes: ``None`` / ``0`` /
+                ``PremiumIncreaseType.LEVEL`` keep it level (the default: a level-premium term policy,
+                and an inflation-free whole-life premium); a positive number grows it that many
+                percent a year; ``PremiumIncreaseType.AGE_BANDED`` re-prices a term policy every year
+                from the configured age-band multipliers (``insurance.life.term_age_multipliers``);
+                a dict ``{age: multiplier}`` does the same with custom bands.
             cash_value_growth_rate: Yearly growth rate for whole life cash value. Uses configured default if None.
             loan_interest_rate: Interest rate for loans against cash value. Uses configured default if None.
             max_missed_payments: Maximum consecutive missed payments before lapse. Uses configured default if None.
@@ -84,22 +98,31 @@ class LifeInsurance(LifeModelAgent):
         self.loan_interest_rate = loan_interest_rate
         self.max_missed_payments = max_missed_payments
 
-        # Handle premium_increase_rate parameter - can be float, dict, or None
+        # premium_increase_rate: a dict of age bands, an explicit type, a yearly percent, or None.
+        self.yearly_increase_rate = 0.0
+        self.age_multipliers: dict = {}
         if isinstance(premium_increase_rate, dict):
-            # Age-based multipliers provided
-            self.premium_increase_type = PremiumIncreaseType.AGE_BASED
-            self.yearly_increase_rate = 0.0
+            # Custom age-band multipliers
+            self.premium_increase_type = PremiumIncreaseType.AGE_BANDED
             self.age_multipliers = premium_increase_rate
-        elif isinstance(premium_increase_rate, (int, float)) and premium_increase_rate > 0:
-            # Yearly percentage increase provided
-            self.premium_increase_type = PremiumIncreaseType.YEARLY
-            self.yearly_increase_rate = float(premium_increase_rate)
-            self.age_multipliers = {}
-        else:
-            # Default age-based multipliers for term life
-            self.premium_increase_type = PremiumIncreaseType.AGE_BASED
-            self.yearly_increase_rate = 0.0
+        elif premium_increase_rate is PremiumIncreaseType.AGE_BANDED:
+            # Configured age-band multipliers (annually renewable term pricing)
+            self.premium_increase_type = PremiumIncreaseType.AGE_BANDED
             self.age_multipliers = dict(self.model.config.insurance.life.term_age_multipliers)
+        elif premium_increase_rate is PremiumIncreaseType.YEARLY:
+            raise ValueError("PremiumIncreaseType.YEARLY needs a rate: pass the yearly percentage instead")
+        elif premium_increase_rate is None or premium_increase_rate is PremiumIncreaseType.LEVEL:
+            self.premium_increase_type = PremiumIncreaseType.LEVEL
+        elif isinstance(premium_increase_rate, (int, float)):
+            if premium_increase_rate < 0:
+                raise ValueError("premium_increase_rate must be >= 0")
+            if premium_increase_rate > 0:
+                self.premium_increase_type = PremiumIncreaseType.YEARLY
+                self.yearly_increase_rate = float(premium_increase_rate)
+            else:
+                self.premium_increase_type = PremiumIncreaseType.LEVEL
+        else:
+            raise TypeError(f"Unsupported premium_increase_rate {premium_increase_rate!r}")
 
         # Policy state
         self.is_active = True
@@ -325,17 +348,15 @@ class LifeInsurance(LifeModelAgent):
             self.stat_policy_active = 0
             return
 
-        # Update premiums based on the premium increase type
-        if self.policy_type == LifeInsuranceType.TERM:
-            if self.premium_increase_type == PremiumIncreaseType.YEARLY and self.yearly_increase_rate > 0:
-                # Use yearly percentage increase
-                self.monthly_premium += self.monthly_premium * (self.yearly_increase_rate / 100)
-            else:
-                # Use age-based increases (default or custom multipliers)
-                self.update_term_life_premiums()
-        elif self.premium_increase_type == PremiumIncreaseType.YEARLY and self.yearly_increase_rate > 0:
-            # Whole life policies with yearly percentage increases
+        # Update premiums based on the premium increase type (LEVEL: unchanged)
+        if self.premium_increase_type == PremiumIncreaseType.YEARLY and self.yearly_increase_rate > 0:
+            # Yearly percentage increase (term or whole life)
             self.monthly_premium += self.monthly_premium * (self.yearly_increase_rate / 100)
+        elif (
+            self.policy_type == LifeInsuranceType.TERM and self.premium_increase_type == PremiumIncreaseType.AGE_BANDED
+        ):
+            # Age-band re-pricing (configured or custom multipliers)
+            self.update_term_life_premiums()
 
         # Grow cash value for whole life policies
         if self.policy_type == LifeInsuranceType.WHOLE and self.cash_value > 0:

@@ -45,7 +45,6 @@ from ..config.financial_config import resolve_financial_config as _fin
 from ..model import LifeModelAgent
 from ..people.person import Person
 from ..tax.federal import FilingStatus
-from ..tax.income import IncomeType
 
 if TYPE_CHECKING:
     from ..config.financial_config import FinancialConfig
@@ -62,6 +61,51 @@ def _realized_rate(economy: "EconomyModel | None", name: str, year: int, fallbac
     if economy is not None and economy.model.start_year <= year <= economy.model.year:
         return economy.rate(name, year)
     return fallback
+
+
+def taxable_social_security(
+    benefits: float, other_income: float, filing_status: FilingStatus, config: "FinancialConfig | None" = None
+) -> float:
+    """Taxable portion of a return's Social Security ``benefits`` (IRC §86, IRS Pub. 915 worksheet).
+
+    Args:
+        benefits: Gross benefits on the return (both spouses on a joint return).
+        other_income: Modified AGI excluding Social Security: ordinary and preferential income plus
+            tax-exempt interest.
+        filing_status: The return's filing status (head of household uses the single thresholds).
+        config: Per-model config. Defaults to the packaged defaults.
+
+    Returns:
+        The taxable amount, rounded to the cent: 0 below the lower base amount, 50% of the excess
+        between the bases, 85% above the upper base, never more than 85% of the benefits.
+    """
+    if benefits <= 0:
+        return 0.0
+
+    bt = _fin(config).social_security.benefit_taxation
+    if filing_status == FilingStatus.MARRIED_FILING_JOINTLY:
+        lower = bt.lower_threshold_married_filing_jointly
+        upper = bt.upper_threshold_married_filing_jointly
+    elif filing_status == FilingStatus.MARRIED_FILING_SEPARATELY:
+        lower = bt.lower_threshold_married_filing_separately
+        upper = bt.upper_threshold_married_filing_separately
+    else:
+        lower = bt.lower_threshold_single
+        upper = bt.upper_threshold_single
+
+    provisional = other_income + bt.lower_inclusion_rate * benefits
+    if provisional <= lower:
+        return 0.0
+
+    lower_band_taxable = bt.lower_inclusion_rate * min(benefits, provisional - lower)
+    if provisional <= upper:
+        return round(lower_band_taxable, 2)
+
+    # Above the upper threshold: the lower band is capped at half the (upper-lower) spread.
+    capped_lower_band = bt.lower_inclusion_rate * min(benefits, upper - lower)
+    taxable = bt.upper_inclusion_rate * (provisional - upper) + capped_lower_band
+    taxable = min(taxable, bt.upper_inclusion_rate * benefits)
+    return round(taxable, 2)
 
 
 def get_avg_wage_index(
@@ -465,56 +509,34 @@ class SocialSecurity(LifeModelAgent):
         return round(pia, 2)
 
     def pre_step(self):
-        # Add social security income to the person's income once benefits have started. Benefits
-        # route through the income ledger as SS_BENEFIT: the taxable portion (per the
-        # provisional-income rules) enters ordinary taxable income, while the full benefit is
-        # deposited as cash. SocialSecurity runs after jobs in pre_step (default priority 0 >
-        # job priority -10), so wages are already in the ledger.
+        # Pay the year's benefit once benefits have started: the gross benefit is deposited as cash
+        # and recorded on the income ledger. How much of it is taxable depends on the whole return's
+        # provisional income (spouse's income, gains, RSU vests, the year-end withdrawal), so the
+        # tax unit computes the taxable portion at settlement (TaxUnit.taxable_social_security);
+        # nothing here depends on which other income has already been booked.
         if self.model.year >= self.withdrawal_start_year:
             # Apply any survivor-benefit floor (max of own vs. deceased spouse's benefit).
             yearly_pia = max(self.get_pia(), self.survivor_pia_floor) * 12
-            taxable_portion = self._taxable_benefit_portion(yearly_pia)
-            self.person.income.add(IncomeType.SS_BENEFIT, taxable_portion)
+            self.person.income.add_social_security(yearly_pia)
             self.person.receive_cash(yearly_pia, source="social security")
             self.person.stat_ss_income = yearly_pia
 
     def _taxable_benefit_portion(self, annual_benefit: float) -> float:
-        """Compute the taxable portion of Social Security benefits (IRS Pub. 915).
+        """Taxable portion of ``annual_benefit`` on this person's own ledger (IRS Pub. 915).
 
-        Uses provisional income = other ordinary taxable income already recorded this year plus
-        half of the benefit. This is a simplification: it ignores tax-exempt interest and, for
-        joint filers, does not pool the spouse's income.
+        A single-person view for inspection: provisional income is this person's own non-Social
+        Security income (ordinary + preferential + tax-exempt interest) plus half the benefit, at
+        the person's filing status. The engine taxes benefits at settlement from the whole tax
+        unit's income instead (see :meth:`TaxUnit.taxable_social_security`).
         """
-        if annual_benefit <= 0:
-            return 0.0
-
-        bt = self.model.config.social_security.benefit_taxation
-        if self.person.filing_status == FilingStatus.MARRIED_FILING_JOINTLY:
-            lower = bt.lower_threshold_married_filing_jointly
-            upper = bt.upper_threshold_married_filing_jointly
-        elif self.person.filing_status == FilingStatus.MARRIED_FILING_SEPARATELY:
-            lower = bt.lower_threshold_married_filing_separately
-            upper = bt.upper_threshold_married_filing_separately
-        else:
-            lower = bt.lower_threshold_single
-            upper = bt.upper_threshold_single
-
-        # Other ordinary income already in the ledger (wages, pre-tax distributions, etc.).
-        other_income = self.person.income.ordinary_taxable
-        provisional = other_income + bt.lower_inclusion_rate * annual_benefit
-
-        if provisional <= lower:
-            return 0.0
-
-        lower_band_taxable = bt.lower_inclusion_rate * min(annual_benefit, provisional - lower)
-        if provisional <= upper:
-            return round(lower_band_taxable, 2)
-
-        # Above the upper threshold: the lower band is capped at half the (upper-lower) spread.
-        capped_lower_band = bt.lower_inclusion_rate * min(annual_benefit, upper - lower)
-        taxable = bt.upper_inclusion_rate * (provisional - upper) + capped_lower_band
-        taxable = min(taxable, bt.upper_inclusion_rate * annual_benefit)
-        return round(taxable, 2)
+        ledger = self.person.income
+        other_income = (
+            ledger.ordinary_taxable
+            - ledger.taxable_social_security
+            + ledger.preferential_income
+            + ledger.tax_exempt_interest
+        )
+        return taxable_social_security(annual_benefit, other_income, self.person.filing_status, self.model.config)
 
     @property
     def html_report(self) -> str:
