@@ -19,7 +19,7 @@ from ..work.job import Job, Salary
 
 
 def _person(model, age=40, spending=0, name="Pat"):
-    return Person(Family(model), name, age, 65, Spending(model, base=spending))
+    return Person(Family(model), name, age, 65, Spending(model, base_annual=spending))
 
 
 class TestEventConstruction(unittest.TestCase):
@@ -36,7 +36,7 @@ class TestEventConstruction(unittest.TestCase):
     def test_typed_event_generates_its_message(self):
         model = LifeModel(start_year=2026, end_year=2026)
         person = _person(model)
-        account = BrokerageAccount(person, "Broker", balance=1000)
+        account = BrokerageAccount(person, company="Broker", balance=1000)
         event = Event(EventKind.FORCED_SALE, person=person, amount=1234.5, account=account, cause="pay the bills")
         self.assertEqual(event.message, "Pat sold $1,234 of Pat's BrokerageAccount (Broker) to pay the bills")
         self.assertEqual(event.person_name, "Pat")
@@ -79,9 +79,9 @@ class TestEngineEvents(unittest.TestCase):
     def test_settlement_logs_forced_sales_and_pretax_withdrawals_with_cause(self):
         model = LifeModel(start_year=2026, end_year=2026)
         person = _person(model, age=50, spending=120000)
-        BankAccount(person, "Bank", balance=1000)
-        BrokerageAccount(person, "Broker", balance=40000)
-        job = Job(person, "Old job", "Retired", Salary(model, base=0))
+        BankAccount(person, company="Bank", balance=1000)
+        BrokerageAccount(person, company="Broker", balance=40000)
+        job = Job(person, company="Old job", role="Retired", salary=Salary(model, base_annual=0))
         job.retired = True
         Job401kAccount(job, pretax_balance=500000)
         model.run()
@@ -106,7 +106,7 @@ class TestEngineEvents(unittest.TestCase):
     def test_rmds_shortfalls_and_life_events_are_logged(self):
         model = LifeModel(start_year=2026, end_year=2027)
         retiree = _person(model, age=80, spending=90000)
-        BankAccount(retiree, "Bank", balance=1000)
+        BankAccount(retiree, company="Bank", balance=1000)
         TraditionalIRA(retiree, balance=20000)
         LifeEvents(model, [LifeEvent(2027, "Trip", retiree.spending.add_expense, 5000)])
         model.run()
@@ -122,10 +122,10 @@ class TestEngineEvents(unittest.TestCase):
     def test_legacy_messages_keep_their_text(self):
         model = LifeModel(start_year=2026, end_year=2027)
         family = Family(model)
-        a = Person(family, "A", 64, 65, Spending(model, base=0))
-        b = Person(family, "B", 60, 65, Spending(model, base=0))
-        BankAccount(a, "Bank", balance=1000)
-        Job(a, "Co", "Dev", Salary(model, base=50000))
+        a = Person(family, "A", 64, 65, Spending(model, base_annual=0))
+        b = Person(family, "B", 60, 65, Spending(model, base_annual=0))
+        BankAccount(a, company="Bank", balance=1000)
+        Job(a, company="Co", role="Dev", salary=Salary(model, base_annual=50000))
         a.get_married(b)
         model.run()
         messages = {e.kind: e.message for e in model.event_log.list}

@@ -293,3 +293,4 @@ notebook table (`_repr_html_`) shows the life story; detail kinds are kept but n
 | `rmd` | yes | Detail: a required minimum distribution (amount, account). |
 | `penalty` | yes | Detail: an additional tax settled with the year's return (amount; cause: its source). |
 | `shortfall_debt` | yes | Detail: bills the household could not pay, carried as debt (amount, cause). |
+| `refinanced` |  | A loan was refinanced (amount: the new principal; cause: the refinance). |

@@ -53,10 +53,12 @@ def _model(start_year=2026, end_year=2030) -> LifeModel:
 
 def _worker(model, family=None, *, name="A", age=40, salary=100000, spending=50000, bank=100000, retirement_age=65):
     family = family or Family(model)
-    person = Person(family, name, age=age, retirement_age=retirement_age, spending=Spending(model, base=spending))
-    BankAccount(person, "Bank", balance=bank, interest_rate=0)
+    person = Person(
+        family, name, age=age, retirement_age=retirement_age, spending=Spending(model, base_annual=spending)
+    )
+    BankAccount(person, company="Bank", balance=bank, interest_pct=0)
     if salary:
-        Job(person, "Co", "Eng", Salary(model, base=salary))
+        Job(person, company="Co", role="Eng", salary=Salary(model, base_annual=salary))
     return person
 
 
@@ -123,23 +125,23 @@ def _frame(model):
 def _buy_home(person, price=300000, down=60000):
     """Life-event callable: buy a home now (down payment + closing costs leave the household)."""
     model = person.model
-    mortgage = Mortgage(loan_amount=price - down, start_date=model.year, length_years=30, yearly_interest_rate=6.0)
+    mortgage = Mortgage(original_amount=price - down, start_year=model.year, term_years=30, rate_pct=6.0)
     expenses = HomeExpenses(
         model=model,
-        property_tax_percent=1.0,
-        home_insurance_percent=0.0,
-        maintenance_amount=2000,
-        maintenance_increase=10.0,
-        improvement_amount=0,
-        improvement_increase=0.0,
-        hoa_amount=0,
-        hoa_increase=0.0,
+        property_tax_pct=1.0,
+        insurance_pct=0.0,
+        maintenance_annual=2000,
+        maintenance_growth_pct=10.0,
+        improvement_annual=0,
+        improvement_growth_pct=0.0,
+        hoa_annual=0,
+        hoa_growth_pct=0.0,
     )
     return Home(
-        person=person,
+        owner=person,
         name="New House",
         purchase_price=price,
-        value_yearly_increase=5.0,
+        value_growth_pct=5.0,
         down_payment=down,
         mortgage=mortgage,
         expenses=expenses,
@@ -170,7 +172,7 @@ class TestEventsStage(unittest.TestCase):
     def test_home_bought_mid_year_has_its_gains_taxed_and_pays_first_year_costs(self):
         model = _model(end_year=2028)
         person = _worker(model, bank=0, salary=0, spending=0)
-        brokerage = BrokerageAccount(person, "Broker", balance=200000, growth_rate=0, dividend_yield=0)
+        brokerage = BrokerageAccount(person, company="Broker", balance=200000, growth_pct=0, dividend_yield_pct=0)
         brokerage.lots = [TaxLot(value=200000, cost_basis=100000, acquired_year=2020)]
         homes = []
         LifeEvents(model, [LifeEvent(2027, "buy", lambda: homes.append(_buy_home(person)))])
@@ -193,8 +195,8 @@ class TestEventsStage(unittest.TestCase):
     def test_salary_change_applies_same_year(self):
         model = _model(end_year=2028)
         person = _worker(model, salary=0)
-        salary = Salary(model, base=100000)
-        job = Job(person, "Co", "Eng", salary)
+        salary = Salary(model, base_annual=100000)
+        job = Job(person, company="Co", role="Eng", salary=salary)
         LifeEvents(model, [LifeEvent(2027, "raise", setattr, salary, "base", 150000)])
         model.run()
         df = _frame(model)
@@ -208,7 +210,7 @@ class TestEventsStage(unittest.TestCase):
         jobs = []
 
         def start_job():
-            jobs.append(Job(person, "NewCo", "Eng", Salary(model, base=80000, yearly_increase=10)))
+            jobs.append(Job(person, company="NewCo", role="Eng", salary=Salary(model, base_annual=80000, raise_pct=10)))
 
         LifeEvents(model, [LifeEvent(2027, "new job", start_job)])
         model.run()
@@ -241,8 +243,8 @@ class TestEventsStage(unittest.TestCase):
     def test_pre_step_event_applies_before_income(self):
         model = _model(end_year=2027)
         person = _worker(model, salary=0)
-        salary = Salary(model, base=100000)
-        Job(person, "Co", "Eng", salary)
+        salary = Salary(model, base_annual=100000)
+        Job(person, company="Co", role="Eng", salary=salary)
         seen = []
         LifeEvents(model, [LifeEvent(2027, "peek", lambda: seen.append(person.income.fica_wages), stage="pre_step")])
         model.run()
@@ -274,9 +276,9 @@ class TestCreatedYear(unittest.TestCase):
     def test_setup_agents_escalate_in_the_first_year(self):
         model = _model(end_year=2027)
         person = _worker(model, salary=0)
-        salary = Salary(model, base=100000, yearly_increase=10)
-        Job(person, "Co", "Eng", salary)
-        rent = Apartment(person, "Flat", monthly_rent=1000, yearly_increase=10)
+        salary = Salary(model, base_annual=100000, raise_pct=10)
+        Job(person, company="Co", role="Eng", salary=salary)
+        rent = Apartment(person, "Flat", rent_monthly=1000, rent_growth_pct=10)
         self.assertEqual((salary.created_year, salary.created_in_stage), (2026, None))
         model.step_year()
         self.assertAlmostEqual(salary.base, 110000, places=6)
@@ -288,8 +290,8 @@ class TestCreatedYear(unittest.TestCase):
         built = {}
 
         def sign_lease():
-            built["rent"] = Apartment(person, "Flat", monthly_rent=1000, yearly_increase=10)
-            built["spending"] = Spending(model, base=1000, yearly_increase=10)
+            built["rent"] = Apartment(person, "Flat", rent_monthly=1000, rent_growth_pct=10)
+            built["spending"] = Spending(model, base_annual=1000, growth_pct=10)
 
         LifeEvents(model, [LifeEvent(2027, "lease", sign_lease)])
         model.run()
@@ -340,17 +342,17 @@ def _probe4_household(*, spouse_first=False, years=3):
     family = Family(model)
 
     def build_a():
-        a = Person(family, "A", age=40, retirement_age=65, spending=Spending(model, base=60000))
-        BankAccount(a, "Bank", balance=30000, interest_rate=0)
-        BrokerageAccount(a, "Fid", balance=300000, growth_rate=6, dividend_yield=0)
-        job = Job(a, "Co", "Eng", Salary(model, base=180000, yearly_bonus=10))
-        Job401kAccount(job=job, pretax_balance=200000, pretax_contrib_percent=10, average_growth=6)
+        a = Person(family, "A", age=40, retirement_age=65, spending=Spending(model, base_annual=60000))
+        BankAccount(a, company="Bank", balance=30000, interest_pct=0)
+        BrokerageAccount(a, company="Fid", balance=300000, growth_pct=6, dividend_yield_pct=0)
+        job = Job(a, company="Co", role="Eng", salary=Salary(model, base_annual=180000, bonus_pct=10))
+        Job401kAccount(job=job, pretax_balance=200000, pretax_contrib_pct=10, growth_pct=6)
         return a
 
     def build_b():
-        b = Person(family, "B", age=38, retirement_age=65, spending=Spending(model, base=20000))
-        BankAccount(b, "Bank", balance=20000, interest_rate=0)
-        Job(b, "Co2", "Mgr", Salary(model, base=120000))
+        b = Person(family, "B", age=38, retirement_age=65, spending=Spending(model, base_annual=20000))
+        BankAccount(b, company="Bank", balance=20000, interest_pct=0)
+        Job(b, company="Co2", role="Mgr", salary=Salary(model, base_annual=120000))
         return b
 
     if spouse_first:
@@ -360,17 +362,17 @@ def _probe4_household(*, spouse_first=False, years=3):
         a = build_a()
         b = build_b()
     a.get_married(b)
-    mortgage = Mortgage(loan_amount=480000, start_date=2024, length_years=30, yearly_interest_rate=6.5)
+    mortgage = Mortgage(original_amount=480000, start_year=2024, term_years=30, rate_pct=6.5)
     expenses = HomeExpenses(
         model=model,
-        property_tax_percent=1.2,
-        home_insurance_percent=0.5,
-        maintenance_amount=3000,
-        maintenance_increase=2,
-        improvement_amount=0,
-        improvement_increase=0,
-        hoa_amount=0,
-        hoa_increase=0,
+        property_tax_pct=1.2,
+        insurance_pct=0.5,
+        maintenance_annual=3000,
+        maintenance_growth_pct=2,
+        improvement_annual=0,
+        improvement_growth_pct=0,
+        hoa_annual=0,
+        hoa_growth_pct=0,
     )
     Home(a, "Home", 600000, 3.0, 120000, mortgage, expenses)
     return model
@@ -412,7 +414,7 @@ class TestHouseholdWaterfall(unittest.TestCase):
         a = _worker(model, family, name="A", salary=0, bank=1000)
         b = _worker(model, family, name="B", salary=0, bank=5000)
         a.get_married(b)
-        brokerage = BrokerageAccount(a, "Fid", balance=10000, growth_rate=0, dividend_yield=0)
+        brokerage = BrokerageAccount(a, company="Fid", balance=10000, growth_pct=0, dividend_yield_pct=0)
         unit = TaxUnit.for_member(a)
         self.assertEqual(len(unit.members), 2)
         self.assertEqual(unit.pay_bills(4000), 0)
@@ -427,9 +429,9 @@ class TestRothBasisBeforePretax(unittest.TestCase):
         model = _model(end_year=2026)
         family = Family(model, withdrawal_order=withdrawal_order)
         person = _worker(model, family, age=45, salary=0, spending=30000, bank=0)
-        job = Job(person, "Old", "Eng", Salary(model, base=0))
-        account = Job401kAccount(job=job, pretax_balance=200000, average_growth=0)
-        roth = RothIRA(person, balance=50000, growth_rate=0)
+        job = Job(person, company="Old", role="Eng", salary=Salary(model, base_annual=0))
+        account = Job401kAccount(job=job, pretax_balance=200000, growth_pct=0)
+        roth = RothIRA(person, balance=50000, growth_pct=0)
         return model, person, account, roth
 
     def test_roth_basis_pays_before_the_401k(self):
@@ -455,8 +457,8 @@ class TestMidYearPurchaseUsesHouseholdWaterfall(unittest.TestCase):
     def test_home_purchase_draws_the_401k_instead_of_creating_debt(self):
         model = _model(end_year=2026)
         person = _worker(model, age=62, salary=0, spending=0, bank=10000)
-        job = Job(person, "Old", "Eng", Salary(model, base=0))
-        account = Job401kAccount(job=job, pretax_balance=500000, average_growth=0)
+        job = Job(person, company="Old", role="Eng", salary=Salary(model, base_annual=0))
+        account = Job401kAccount(job=job, pretax_balance=500000, growth_pct=0)
         home = _buy_home(person)  # at setup: purchase=True pays down + closing now
         closing = 300000 * model.config.housing.closing_cost_percent / 100
         self.assertEqual(person.debt, 0)
@@ -474,7 +476,7 @@ class TestBankInterestIsIncome(unittest.TestCase):
     def _taxes(self, rate):
         model = _model(end_year=2027)
         person = _worker(model, spending=10000, bank=0)
-        BankAccount(person, "Savings", balance=1_000_000, interest_rate=rate)
+        BankAccount(person, company="Savings", balance=1_000_000, interest_pct=rate)
         model.run()
         return _frame(model)["Taxes"].tolist()
 
@@ -487,7 +489,7 @@ class TestBankInterestIsIncome(unittest.TestCase):
     def test_interest_is_posted_to_the_ledger_as_interest(self):
         model = _model()
         person = _worker(model, salary=0, bank=0)
-        account = BankAccount(person, "Savings", balance=10000, interest_rate=5, compounding="annual")
+        account = BankAccount(person, company="Savings", balance=10000, interest_pct=5, compounding="annual")
         run_months(model, account.step)  # a year of monthly interest (Plan 32)
         totals = person.income.totals_by_type()
         self.assertAlmostEqual(totals[IncomeType.INTEREST], 500, places=6)
@@ -497,9 +499,9 @@ class TestBankInterestIsIncome(unittest.TestCase):
     def test_compounding_convention(self):
         model = _model()
         person = _worker(model, salary=0, bank=0)
-        annual = BankAccount(person, "A", balance=1000, interest_rate=5, compounding="annual")
-        monthly = BankAccount(person, "M", balance=1000, interest_rate=5, compounding="monthly")
-        default = BankAccount(person, "D", balance=1000, interest_rate=5)
+        annual = BankAccount(person, company="A", balance=1000, interest_pct=5, compounding="annual")
+        monthly = BankAccount(person, company="M", balance=1000, interest_pct=5, compounding="monthly")
+        default = BankAccount(person, company="D", balance=1000, interest_pct=5)
         for account in (annual, monthly, default):
             run_months(model, account.step)  # a year of monthly interest (Plan 32)
         self.assertAlmostEqual(annual.balance, 1050, places=6)
@@ -507,12 +509,12 @@ class TestBankInterestIsIncome(unittest.TestCase):
         self.assertAlmostEqual(monthly.balance, 1000 * (1 + 0.05 / 12) ** 12, places=6)
         self.assertEqual(default.balance, monthly.balance)  # config default: monthly
         with self.assertRaises(ValueError):
-            BankAccount(person, "X", compounding="daily")
+            BankAccount(person, company="X", compounding="daily")
 
     def test_interest_accrues_before_settlement_and_is_reported_at_year_end(self):
         model = _model(end_year=2026)
         person = _worker(model, salary=0, spending=10000, bank=0)
-        account = BankAccount(person, "Savings", balance=100000, interest_rate=5, compounding="annual")
+        account = BankAccount(person, company="Savings", balance=100000, interest_pct=5, compounding="annual")
         model.run()
         taxes = person.stat_taxes_paid
         # Plan 32: each month's interest (before the month's bills) on the balance left after the
@@ -568,7 +570,7 @@ def _retiree(model, family=None, *, name="R", age=70, bank=0, spending=0, retire
         model, family, name=name, age=age, salary=0, spending=spending, bank=bank, retirement_age=retirement_age
     )
     history = [(year, 60000) for year in range(1980, 2020)]
-    SocialSecurity(person=person, withdrawal_start_age=67, income_history=history)
+    SocialSecurity(owner=person, claim_age=67, earnings_history=history)
     return person
 
 
@@ -596,8 +598,8 @@ class TestSocialSecurityTaxedAtSettlement(unittest.TestCase):
     def test_solver_draw_raises_the_taxable_share(self):
         model = LifeModel(start_year=2026, end_year=2026)
         retiree = _retiree(model, spending=60000)
-        job = Job(retiree, "Old", "Eng", Salary(model, base=0))
-        account = Job401kAccount(job=job, pretax_balance=1_000_000, average_growth=0)
+        job = Job(retiree, company="Old", role="Eng", salary=Salary(model, base_annual=0))
+        account = Job401kAccount(job=job, pretax_balance=1_000_000, growth_pct=0)
         model.run()
         rmd = account.stat_required_min_distrib
         draw = 1_000_000 - account.pretax_balance - rmd
@@ -612,8 +614,8 @@ class TestSocialSecurityTaxedAtSettlement(unittest.TestCase):
     def test_rsu_vest_counts_toward_provisional_income(self):
         model = LifeModel(start_year=2026, end_year=2027)
         retiree = _retiree(model, age=68, retirement_age=80)  # still on payroll (RSUs only)
-        job = Job(retiree, "Co", "Advisor", Salary(model, base=0))
-        StockPlan(job, signon_value=80000, schedule=VestingSchedule([1.0]), growth_rate=0)
+        job = Job(retiree, company="Co", role="Advisor", salary=Salary(model, base_annual=0))
+        StockPlan(job, signon_value=80000, schedule=VestingSchedule([1.0]), growth_pct=0)
         model.run()
         benefit = retiree.stat_ss_income
         expected = taxable_social_security(benefit, 80000, FilingStatus.SINGLE, model.config)
@@ -626,8 +628,8 @@ class TestMatchTiers(unittest.TestCase):
     def _match(self, *, deferral=6, salary=100000, bonus=0, model=None, **account_kwargs):
         model = model or _model(end_year=2026)
         person = _worker(model, salary=0, bank=0, spending=0)
-        job = Job(person, "Co", "Eng", Salary(model, base=salary, yearly_bonus=bonus))
-        Job401kAccount(job=job, pretax_contrib_percent=deferral, average_growth=0, **account_kwargs)
+        job = Job(person, company="Co", role="Eng", salary=Salary(model, base_annual=salary, bonus_pct=bonus))
+        Job401kAccount(job=job, pretax_contrib_pct=deferral, growth_pct=0, **account_kwargs)
         model.run()
         return job.stat_retirement_match
 
@@ -667,9 +669,9 @@ class TestMatchTiers(unittest.TestCase):
     def test_unvested_match_forfeited_on_leaving_early(self):
         model = _model(end_year=2028)
         person = _worker(model, salary=0, bank=0, spending=0)
-        job = Job(person, "Co", "Eng", Salary(model, base=100000))
+        job = Job(person, company="Co", role="Eng", salary=Salary(model, base_annual=100000))
         account = Job401kAccount(
-            job=job, pretax_contrib_percent=6, average_growth=0, match_tiers=[(100, 6)], match_vesting_years=3
+            job=job, pretax_contrib_pct=6, growth_pct=0, match_tiers=[(100, 6)], match_vesting_years=3
         )
         # Quits after December 2027's paycheck (Plan 32: an event in a year fires in its month).
         LifeEvents(model, [LifeEvent(2027, "quit", job.retire, month=12)])
@@ -680,9 +682,9 @@ class TestMatchTiers(unittest.TestCase):
     def test_match_vests_after_the_service_requirement(self):
         model = _model(end_year=2028)
         person = _worker(model, salary=0, bank=0, spending=0)
-        job = Job(person, "Co", "Eng", Salary(model, base=100000))
+        job = Job(person, company="Co", role="Eng", salary=Salary(model, base_annual=100000))
         account = Job401kAccount(
-            job=job, pretax_contrib_percent=6, average_growth=0, match_tiers=[(100, 6)], match_vesting_years=3
+            job=job, pretax_contrib_pct=6, growth_pct=0, match_tiers=[(100, 6)], match_vesting_years=3
         )
         model.run()  # 2026-2028: three years of service
         self.assertEqual(account.unvested_match, 0)
@@ -725,7 +727,7 @@ class TestAnnuityDefaults(unittest.TestCase):
     def test_fixed_annuity_accumulates(self):
         model = _model(end_year=2028)
         person = _worker(model)
-        annuity = Annuity(person, AnnuityType.FIXED, initial_balance=100000, interest_rate=4)
+        annuity = Annuity(person, annuity_type=AnnuityType.FIXED, balance=100000, rate_pct=4)
         model.run()
         self.assertFalse(annuity.is_annuitized)
         self.assertIsNone(annuity.payout_start_age)
@@ -734,15 +736,15 @@ class TestAnnuityDefaults(unittest.TestCase):
     def test_accumulation_contract_can_still_be_annuitized_on_election(self):
         model = _model(end_year=2026)
         person = _worker(model, age=66)
-        annuity = Annuity(person, AnnuityType.FIXED, initial_balance=100000, interest_rate=4)
+        annuity = Annuity(person, annuity_type=AnnuityType.FIXED, balance=100000, rate_pct=4)
         self.assertTrue(annuity.annuitize())
         self.assertEqual(annuity.payout_start_age, 66)
 
     def test_immediate_and_deferred_keep_their_payout_ages(self):
         model = _model(end_year=2026)
         person = _worker(model, age=50)
-        immediate = Annuity(person, AnnuityType.IMMEDIATE, initial_balance=100000)
-        deferred = Annuity(person, AnnuityType.DEFERRED, initial_balance=100000)
+        immediate = Annuity(person, annuity_type=AnnuityType.IMMEDIATE, balance=100000)
+        deferred = Annuity(person, annuity_type=AnnuityType.DEFERRED, balance=100000)
         self.assertEqual(immediate.payout_start_age, 50)
         self.assertEqual(deferred.payout_start_age, model.config.insurance.annuity.default_payout_start_age)
         model.run()
@@ -754,8 +756,8 @@ class TestAnnuityDefaults(unittest.TestCase):
         config.model.economy.equity_return = 9.0
         model = LifeModel(start_year=2026, end_year=2026, config=config)
         person = _worker(model)
-        market = Annuity(person, AnnuityType.VARIABLE, initial_balance=100000)
-        stated = Annuity(person, AnnuityType.VARIABLE, initial_balance=100000, interest_rate=3)
+        market = Annuity(person, annuity_type=AnnuityType.VARIABLE, balance=100000)
+        stated = Annuity(person, annuity_type=AnnuityType.VARIABLE, balance=100000, rate_pct=3)
         model.run()
         self.assertAlmostEqual(market.balance, 109000, places=6)
         self.assertAlmostEqual(stated.balance, 103000, places=6)
@@ -767,8 +769,8 @@ class TestPensionServiceAccrues(unittest.TestCase):
     def test_unvested_participant_vests_by_working(self):
         model = _model(end_year=2030)
         person = _worker(model, age=60, salary=0, retirement_age=63)
-        Job(person, "MegaCorp", "Eng", Salary(model, base=80000))
-        pension = Pension(person, "MegaCorp", vesting_years=5, benefit_amount=20000, years_of_service=2)
+        Job(person, company="MegaCorp", role="Eng", salary=Salary(model, base_annual=80000))
+        pension = Pension(person, company="MegaCorp", vesting_years=5, benefit_annual=20000, years_of_service=2)
         model.run()
         # Paid 2026-2029 (retires during 2029, the year they are 63): 2 + 4 = 6 years. Vested (5)
         # at the start of 2029, so the benefit starts that year; nothing was paid before.
@@ -781,9 +783,14 @@ class TestPensionServiceAccrues(unittest.TestCase):
     def test_formula_benefit_grows_with_service_and_final_salary(self):
         model = _model(end_year=2027)
         person = _worker(model, age=50, salary=0)
-        Job(person, "MegaCorp", "Eng", Salary(model, base=100000, yearly_increase=10))
+        Job(person, company="MegaCorp", role="Eng", salary=Salary(model, base_annual=100000, raise_pct=10))
         pension = Pension(
-            person, "MegaCorp", vesting_years=5, years_of_service=10, benefit_multiplier=1.5, final_salary=90000
+            person,
+            company="MegaCorp",
+            vesting_years=5,
+            years_of_service=10,
+            benefit_multiplier_pct=1.5,
+            final_salary_annual=90000,
         )
         model.run()
         # 12 years of service at the 2027 salary of $110,000.
@@ -792,7 +799,7 @@ class TestPensionServiceAccrues(unittest.TestCase):
     def test_no_service_without_the_sponsor(self):
         model = _model(end_year=2027)
         person = _worker(model, age=50)  # works at "Co", not the sponsor
-        pension = Pension(person, "MegaCorp", vesting_years=5, benefit_amount=20000, years_of_service=1)
+        pension = Pension(person, company="MegaCorp", vesting_years=5, benefit_annual=20000, years_of_service=1)
         model.run()
         self.assertEqual(pension.years_of_service, 1)
 
@@ -816,12 +823,12 @@ class TestSmallFixes(unittest.TestCase):
             "Parent",
             age=80,
             retirement_age=65,
-            spending=Spending(model, base=0),
+            spending=Spending(model, base_annual=0),
             mortality_mode=MortalityMode.FIXED_AGE,
             death_age=80,
         )
-        BankAccount(parent, "Bank", balance=1000, interest_rate=0)
-        BrokerageAccount(parent, "Broker", balance=200000, growth_rate=0, dividend_yield=0)
+        BankAccount(parent, company="Bank", balance=1000, interest_pct=0)
+        BrokerageAccount(parent, company="Broker", balance=200000, growth_pct=0, dividend_yield_pct=0)
         MedicalCosts(parent)
         child = _worker(model, family, name="Child", age=51, salary=0, spending=0, bank=0)
         model.run()

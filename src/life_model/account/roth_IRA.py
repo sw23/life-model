@@ -5,8 +5,8 @@
 
 from dataclasses import dataclass
 
-from .._compat import legacy_signature
 from ..base_classes import TaxAdvantagedAccount, TaxTreatment
+from ..deprecated_names import deprecated_arguments
 from ..limits import federal_retirement_age
 from ..people.person import Person
 from ..tax.income import IncomeType
@@ -36,9 +36,9 @@ class RothIRA(TaxAdvantagedAccount):
     is_rmd_eligible = False
     limit_group = "ira"  # one IRA limit shared across Roth and Traditional
 
-    @legacy_signature(
-        ("person", "balance", "growth_rate", "contribution_limit"),
+    @deprecated_arguments(
         {"person": "owner", "growth_rate": "growth_pct", "contribution_limit": "contribution_limit_annual"},
+        positional=("balance", "growth_pct", "contribution_limit_annual"),
     )
     def __init__(
         self,

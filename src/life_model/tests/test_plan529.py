@@ -35,7 +35,7 @@ class TestPlan529(unittest.TestCase):
 
         # Create a 529 plan for testing
         self.plan = Plan529(
-            owner=self.mock_person, beneficiary=self.mock_child, balance=10000.0, state="NY", growth_rate=7.0
+            owner=self.mock_person, beneficiary=self.mock_child, balance=10000.0, state="NY", growth_pct=7.0
         )
 
     def test_init_default_values(self):
@@ -72,7 +72,7 @@ class TestPlan529(unittest.TestCase):
 
     def test_contribute_exceeds_annual_limit(self):
         """Test contribution limited by annual limit."""
-        plan = Plan529(self.mock_person, annual_contribution_limit=10000.0)
+        plan = Plan529(self.mock_person, contribution_limit_annual=10000.0)
 
         # First contribution uses up most of annual limit
         plan.contribute(9000.0)
@@ -280,7 +280,7 @@ class TestPlan529(unittest.TestCase):
 
     def test_full_year_cycle(self):
         """Test a complete year cycle with contributions, growth, and withdrawals."""
-        plan = Plan529(self.mock_person, beneficiary=self.mock_child, balance=0, growth_rate=7.0)
+        plan = Plan529(self.mock_person, beneficiary=self.mock_child, balance=0, growth_pct=7.0)
 
         # Year start: Make contributions
         plan.contribute(10000.0)
@@ -349,7 +349,7 @@ class TestPlan529BasisAndWithdrawals(unittest.TestCase):
             name="Owner",
             age=45,
             retirement_age=65,
-            spending=Spending(self.model, base=1000),
+            spending=Spending(self.model, base_annual=1000),
         )
         self.bank = BankAccount(owner=self.owner, company="Bank", balance=0)
 

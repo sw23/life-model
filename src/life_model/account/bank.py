@@ -6,8 +6,8 @@
 import html
 from typing import ClassVar
 
-from .._compat import legacy_signature
 from ..base_classes import FinancialAccount
+from ..deprecated_names import deprecated_arguments
 from ..economy import annual_to_monthly
 from ..ledger import FlowKind
 from ..model import compound_interest
@@ -38,7 +38,7 @@ class BankAccount(FinancialAccount):
     # Accrue interest before tax-unit settlement (0) so the interest is on this year's return.
     STEP_PRIORITY: ClassVar[dict[str, int]] = {"step": -10}
 
-    @legacy_signature(("owner", "company", "type", "balance", "interest_rate"), {"interest_rate": "interest_pct"})
+    @deprecated_arguments({"interest_rate": "interest_pct"}, positional=("company", "type", "balance", "interest_pct"))
     def __init__(
         self,
         owner: Person,

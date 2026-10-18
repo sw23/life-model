@@ -226,8 +226,8 @@ class TestSALTIntegration(unittest.TestCase):
         def run(config, state):
             model = LifeModel(config=config, start_year=2020, end_year=2020)
             person = Person(Family(model), "Rich", age=40, retirement_age=70, spending=Spending(model, 0), state=state)
-            BankAccount(person, "Bank", balance=0, interest_rate=0)
-            Job(person, "Co", "Dev", Salary(model=model, base=300000))
+            BankAccount(person, company="Bank", balance=0, interest_pct=0)
+            Job(person, company="Co", role="Dev", salary=Salary(model=model, base_annual=300000))
             model.step_year()
             return person
 
@@ -245,7 +245,7 @@ class TestScenarioComparisons(unittest.TestCase):
     def _run(self, state, config, *, wages=0.0, pretax_income=0.0):
         model = LifeModel(config=config, start_year=2020, end_year=2020)
         person = Person(Family(model), "P", age=68, retirement_age=60, spending=Spending(model, 0), state=state)
-        BankAccount(person, "Bank", balance=0, interest_rate=0)
+        BankAccount(person, company="Bank", balance=0, interest_pct=0)
         if wages:
             person.income.add_wages(wages, wages)
         if pretax_income:

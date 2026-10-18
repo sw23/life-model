@@ -39,11 +39,12 @@
 # https://www.ssa.gov/OACT/COLA/awiseries.html
 
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from ..config.financial_config import resolve_financial_config as _fin
+from ..deprecated_names import deprecated_arguments
 from ..ledger import FlowKind
-from ..model import LifeModelAgent, snap_money
+from ..model import Event, LifeModelAgent, snap_money
 from ..people.person import Person
 from ..tax.federal import FilingStatus
 
@@ -341,29 +342,114 @@ class Income:
             return self.amount * awi_at_60 / get_avg_wage_index(self.year, config, economy=economy)
 
 
+def full_retirement_age(birth_year: int, config: "FinancialConfig | None" = None) -> float:
+    """Full (normal) retirement age in years for a birth year (SSA's table: 65 through 1937, rising two
+    months a year to 66 for 1943-54, then to 67 for 1960 and later)."""
+    table = _fin(config).social_security.full_retirement_age_by_birth_year
+    years, months = 65, 0
+    for first_year, row_years, row_months in table:
+        if birth_year >= first_year:
+            years, months = row_years, row_months
+    return years + months / 12
+
+
+def spousal_reduction_factor(months_early: int) -> float:
+    """The factor on a spousal benefit started ``months_early`` months before full retirement age:
+    25/36 of 1% a month for the first 36 months, 5/12 of 1% beyond (42 U.S.C. 402(q)(1))."""
+    months_early = max(0, months_early)
+    reduction = min(months_early, 36) * (25 / 36) + max(0, months_early - 36) * (5 / 12)
+    return 1 - reduction / 100
+
+
+def earnings_test_exempt_amounts(
+    year: int, config: "FinancialConfig | None" = None, *, economy: "EconomyModel | None" = None
+) -> tuple[float, float]:
+    """The retirement earnings test's annual ``(lower, higher)`` exempt amounts for ``year``: the
+    published table, then the statutory formula (base monthly amount x AWI(year - 2) / AWI(base year),
+    rounded to $10, never below the prior year's, x 12)."""
+    cfg = _fin(config).social_security.earnings_test
+    table = cfg.exempt_amounts
+    if year in table:
+        lower, higher = table[year]
+        return float(lower), float(higher)
+    last = max(table)
+    if year < min(table):
+        lower, higher = table[min(table)]
+        return float(lower), float(higher)
+    prior_lower, prior_higher = (amount / 12 for amount in table[last])
+    for projected in range(last + 1, year + 1):
+        awi = get_avg_wage_index(projected - 2, config, economy=economy)
+        lower = cfg.lower_base_monthly * awi / get_avg_wage_index(cfg.lower_base_awi_year, config)
+        higher = cfg.higher_base_monthly * awi / get_avg_wage_index(cfg.higher_base_awi_year, config)
+        prior_lower = max(prior_lower, round(lower / 10) * 10)
+        prior_higher = max(prior_higher, round(higher / 10) * 10)
+    return prior_lower * 12, prior_higher * 12
+
+
 class SocialSecurity(LifeModelAgent):
     """Social Security benefits: a monthly benefit from the month the person reaches
-    ``withdrawal_start_age`` (exact age), at the year's primary insurance amount (with COLAs)."""
+    ``withdrawal_start_age`` (exact age), at the year's primary insurance amount (with COLAs).
 
+    Plan 27 D10 adds the PIA from the SSA statement (``pia_override``), full retirement age by birth year
+    (``fra_from_birth_year``), the spousal benefit (``spousal_benefit``) and the retirement earnings test
+    (``earnings_test``)."""
+
+    # The earnings test reads the year's earnings before the income ledger is cleared (20).
+    STEP_PRIORITY: ClassVar[dict[str, int]] = {"on_year_end": 15}
+
+    @deprecated_arguments(
+        {"person": "owner", "withdrawal_start_age": "claim_age", "income_history": "earnings_history"}
+    )
     def __init__(
         self,
-        person: Person,
-        withdrawal_start_age: float | None = None,
-        income_history: list[Income] | list[tuple[int, float]] | None = None,
+        owner: Person,
+        claim_age: float | None = None,
+        earnings_history: list[Income] | list[tuple[int, float]] | None = None,
+        *,
+        pia_override_monthly: float | None = None,
+        fra_from_birth_year: bool = False,
+        spousal_benefit: bool = False,
+        earnings_test: bool = False,
     ):
         """Models Social Security benefits for a person
 
         Args:
-            person: The person for whom to model Social Security benefits
-            withdrawal_start_age: The age at which the person starts withdrawing Social Security benefits
-            income_history: The person's income history
+            owner: The person for whom to model Social Security benefits (``person=`` is deprecated)
+            claim_age: The age at which the person starts claiming benefits (the
+                ``withdrawal_start_age`` attribute; ``withdrawal_start_age=`` is deprecated)
+            earnings_history: The person's covered earnings by year (``income_history=`` is deprecated)
+            pia_override_monthly: The monthly benefit at full retirement age from the SSA statement, in today's
+                (the model start's) dollars, instead of computing the PIA from ``income_history``
+                (keyword-only; Plan 27 D10). It is wage-indexed to the year the person turns 62 (the
+                statement's "today's dollars" are wage-indexed), then gets the COLAs.
+            fra_from_birth_year: Use the full retirement age of the person's birth year (66 and 6
+                months for 1957, ...) instead of the configured ``normal_retirement_age``.
+            spousal_benefit: Pay the spousal benefit: once both spouses have claimed, half the
+                spouse's PIA less this person's own PIA (when positive), reduced for each month it
+                starts before full retirement age (no delayed credits).
+            earnings_test: Withhold benefits before full retirement age when earnings exceed the year's
+                exempt amount ($1 for $2; $1 for $3 in the year of FRA, counting earnings before
+                that month). The excess is withheld from the following months' checks, whole checks
+                first; at full retirement age the reduction is recomputed without the withheld months.
 
         Raises:
             ValueError: If the withdrawal start age is before the earliest age for early withdrawal
         """
+        person, withdrawal_start_age, income_history = owner, claim_age, earnings_history
         super().__init__(person.model)
         self.person = person
         self.withdrawal_start_age = withdrawal_start_age or person.retirement_age
+        self.pia_override = pia_override_monthly
+        self.fra_from_birth_year = fra_from_birth_year
+        self.spousal_benefit = spousal_benefit
+        self.earnings_test = earnings_test
+        #: The year the PIA override's dollars are (the model's first year).
+        self._override_year = self.model.start_year
+        #: Benefits still to withhold under the earnings test, and the months fully withheld before FRA.
+        self.withholding_due = 0.0
+        self.months_withheld = 0
+        self._earnings_by_month: dict[int, float] = {}
+        self.stat_benefits_withheld = 0.0
 
         self.income_history = []
         if income_history is not None and len(income_history):
@@ -451,6 +537,17 @@ class SocialSecurity(LifeModelAgent):
 
         return round(sum(highest_earnings) / (max_years * 12))
 
+    @property
+    def normal_retirement_age(self) -> float:
+        """Full retirement age: the birth year's (``fra_from_birth_year``) or the configured one."""
+        if self.fra_from_birth_year:
+            return full_retirement_age(self.person.birth_year, self.model.config)
+        return get_normal_retirement_age(self.model.config)
+
+    def _fra_period(self) -> tuple[int, int]:
+        """``(year, month)`` the person reaches full retirement age."""
+        return self.person.get_period_at_age(self.normal_retirement_age)
+
     def get_early_delayed_pia(self, pia: float) -> float:
         """Computes the early or delayed PIA for a person
 
@@ -463,10 +560,14 @@ class SocialSecurity(LifeModelAgent):
         # Apply early/delayed retirement credits
         # https://www.ssa.gov/oact/quickcalc/early_late.html
         config = self.model.config
-        normal_ret_age = get_normal_retirement_age(config)
+        normal_ret_age = self.normal_retirement_age
         if self.withdrawal_start_age < normal_ret_age:
             # Reduce for early withdrawal
             months_early = (normal_ret_age - self.withdrawal_start_age) * 12
+            if self.months_withheld and (self.model.year, self.model.month) >= self._fra_period():
+                # Adjustment of the reduction factor at FRA: months whose benefits the earnings test
+                # withheld in full no longer count as early (42 U.S.C. 402(q)(7)).
+                months_early = max(0.0, months_early - self.months_withheld)
             reduction_pct = min(months_early, 36) * 0.01 * (5 / 9)
             reduction_pct += max(0, months_early - 36) * 0.01 * (5 / 12)
             pia *= 1 - reduction_pct
@@ -481,6 +582,39 @@ class SocialSecurity(LifeModelAgent):
             pia *= 1 + increase_pct
         return pia
 
+    def primary_insurance_amount(self, current_year: int | None = None) -> float:
+        """The unreduced PIA (the benefit at full retirement age) in ``current_year``, with COLAs: from
+        the earnings record's AIME and the bend points of the year the person turns 62, or the
+        statement's ``pia_override``."""
+        current_year = current_year or self.model.year
+        year_of_age_62 = self.person.get_year_at_age(62)
+        config, economy = self.model.config, self.model.economy
+        if self.pia_override is not None:
+            pia = float(self.pia_override)
+            first_cola_year = self._override_year
+            if self._override_year < year_of_age_62:
+                # The statement's "today's dollars" are wage-indexed: grow them with the wage index to the
+                # eligibility year, then COLAs.
+                pia *= get_avg_wage_index(year_of_age_62 - 2, config, economy=economy) / get_avg_wage_index(
+                    self._override_year - 2, config, economy=economy
+                )
+                pia = int(pia * 10) / 10.0
+                first_cola_year = year_of_age_62
+        else:
+            aime = self.get_aime()
+            pia = 0.0
+            bend_points = get_bend_points(year_of_age_62, config, economy=economy)
+            pia += min(aime, bend_points[0]) * 0.9
+            pia += min(max(0, aime - bend_points[0]), bend_points[1] - bend_points[0]) * 0.32
+            pia += max(0, aime - bend_points[1]) * 0.15
+            # Round to the nearest lowest dime
+            pia = int(pia * 10) / 10.0
+            first_cola_year = year_of_age_62
+        for cola_year in range(first_cola_year, current_year):
+            # This rounding seems to match the SSA's rounding (truncating to nearest lower dime)
+            pia = int(pia * (1 + get_cost_of_living_adj(cola_year, config, economy=economy) / 100.0) * 10) / 10.0
+        return pia
+
     def get_pia(self, current_year: int | None = None) -> float:
         """Computes Primary Insurance Amount (PIA) for a person
             Note: PIA is a monthly amount, so should be multiplied by 12 to get annual amount
@@ -489,50 +623,41 @@ class SocialSecurity(LifeModelAgent):
             current_year: The current year
 
         Returns:
-            The person's PIA
+            The person's PIA, adjusted for the claiming age (early reduction or delayed credits)
         """
-        current_year = current_year or self.model.year
-
-        # Get AIME
-        aime = self.get_aime()
-        pia = 0.0
-
-        # Apply bend points
-        year_of_age_62 = self.person.get_year_at_age(62)
-        bend_points = get_bend_points(year_of_age_62, self.model.config, economy=self.model.economy)
-        pia += min(aime, bend_points[0]) * 0.9
-        pia += min(max(0, aime - bend_points[0]), bend_points[1] - bend_points[0]) * 0.32
-        pia += max(0, aime - bend_points[1]) * 0.15
-
-        # Round to the nearest lowest dime
-        pia = int(pia * 10) / 10.0
-
-        # Apply cost of living adjustment
-        for cola_year in range(year_of_age_62, current_year):
-            # This rounding seems to match the SSA's rounding (truncating to nearest lower dime)
-            pia = (
-                int(
-                    pia
-                    * (1 + get_cost_of_living_adj(cola_year, self.model.config, economy=self.model.economy) / 100.0)
-                    * 10
-                )
-                / 10.0
-            )
-
+        pia = self.primary_insurance_amount(current_year)
         # Apply early/delayed retirement credits
         pia = self.get_early_delayed_pia(pia)
 
         # Round to the nearest cent
         return round(pia, 2)
 
+    def spousal_amount(self) -> float:
+        """This month's spousal benefit (0 unless ``spousal_benefit`` and both spouses are claiming)."""
+        spouse = self.person.spouse
+        if not self.spousal_benefit or spouse is None or spouse.is_deceased:
+            return 0.0
+        worker = spouse.social_security
+        if worker is None or not worker.is_claiming or not self.is_claiming:
+            return 0.0
+        year = self.model.year
+        percent = self.model.config.social_security.spousal_benefit_percent
+        excess = percent / 100 * worker.primary_insurance_amount(year) - self.primary_insurance_amount(year)
+        if excess <= 0:
+            return 0.0
+        start = max(self.claim_period, worker.claim_period)
+        fra = self._fra_period()
+        months_early = max(0, (fra[0] * 12 + fra[1]) - (start[0] * 12 + start[1]))
+        return round(excess * spousal_reduction_factor(months_early), 2)
+
     def monthly_benefit(self) -> float:
         """This month's benefit: the year's PIA (computed once a year), floored at any survivor
-        benefit."""
+        benefit, plus any spousal benefit."""
         year = self.model.year
         pia = self._pia_by_year.get(year)
         if pia is None:
             pia = self._pia_by_year[year] = self.get_pia()
-        return max(pia, self.survivor_pia_floor)
+        return max(pia, self.survivor_pia_floor) + self.spousal_amount()
 
     def pre_step(self):
         # Pay the month's benefit once benefits have started: the gross benefit is deposited as cash
@@ -546,10 +671,70 @@ class SocialSecurity(LifeModelAgent):
             # record in Person._apply_survivor_adjustments).
             return
         if self.is_claiming:
+            if self.months_withheld and (self.model.year, self.model.month) == self._fra_period():
+                self._pia_by_year.pop(self.model.year, None)  # the reduction is recomputed at FRA
             benefit = self.monthly_benefit()
+            if self.withholding_due > 0:
+                withheld = min(benefit, self.withholding_due)
+                self.withholding_due -= withheld
+                self.stat_benefits_withheld = snap_money(self.stat_benefits_withheld + withheld)
+                if withheld >= benefit and (self.model.year, self.model.month) < self._fra_period():
+                    self.months_withheld += 1
+                benefit -= withheld
+            if benefit <= 0:
+                return
             self.person.income.add_social_security(benefit)
             self.person.receive_cash(benefit, source="Social Security", kind=FlowKind.BENEFIT)
             self.person.stat_ss_income = snap_money(self.person.stat_ss_income + benefit)
+
+    def step(self):
+        """Record the year's earnings so far (wages and self-employment) for the earnings test."""
+        if self.earnings_test:
+            ledger = self.person.income
+            self._earnings_by_month[self.model.month] = ledger.fica_wages + ledger.self_employment_income
+
+    def on_year_start(self):
+        self._earnings_by_month = {}
+
+    def earnings_test_withholding(self) -> float:
+        """The benefits this year's earnings require withholding (0 at or after full retirement age, and
+        in years without benefits)."""
+        if not self.earnings_test or not self._earnings_by_month or self.person.is_deceased:
+            return 0.0
+        year = self.model.year
+        fra_year, fra_month = self._fra_period()
+        claim_year, claim_month = self.claim_period
+        if year > fra_year or year < claim_year:
+            return 0.0
+        lower, higher = earnings_test_exempt_amounts(year, self.model.config, economy=self.model.economy)
+        cfg = self.model.config.social_security.earnings_test
+        months = sorted(self._earnings_by_month)
+        if year == fra_year:
+            before = [m for m in months if m < fra_month]
+            earnings = self._earnings_by_month[before[-1]] if before else 0.0
+            excess, ratio = earnings - higher, cfg.higher_withholding_ratio
+        else:
+            earnings = self._earnings_by_month[months[-1]]
+            excess, ratio = earnings - lower, cfg.lower_withholding_ratio
+        if excess <= 0:
+            return 0.0
+        # No more than the benefits of the year's months before FRA (from the claim month).
+        first = claim_month if year == claim_year else 1
+        last = fra_month - 1 if year == fra_year else 12
+        months_due = max(0, last - first + 1)
+        cap = months_due * self.monthly_benefit()
+        return min(excess / ratio, cap)
+
+    def on_year_end(self):
+        withholding = self.earnings_test_withholding()
+        if withholding > 0:
+            self.withholding_due += withholding
+            self.model.event_log.add(
+                Event(
+                    f"{self.person.name}'s {self.model.year} earnings exceed the Social Security earnings test: "
+                    f"${withholding:,.0f} of benefits withheld from the next checks"
+                )
+            )
 
     def _taxable_benefit_portion(self, annual_benefit: float) -> float:
         """Taxable portion of ``annual_benefit`` on this person's own ledger (IRS Pub. 915).

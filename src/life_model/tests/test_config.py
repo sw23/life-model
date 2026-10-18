@@ -346,8 +346,8 @@ class TestYearConfig(unittest.TestCase):
 
         model = LifeModel(start_year=2030, end_year=2031)
         person = Person(Family(model), "W", 40, 65, Spending(model, 0))
-        BankAccount(person, "Bank", balance=0)
-        ss = SocialSecurity(person=person, withdrawal_start_age=67)
+        BankAccount(person, company="Bank", balance=0)
+        ss = SocialSecurity(owner=person, claim_age=67)
         ss.add_income_for_year(10_000_000, 2030)
         self.assertEqual(ss.income_history[-1].amount, model.config_for_year(2030).tax.fica.social_security_max_income)
 

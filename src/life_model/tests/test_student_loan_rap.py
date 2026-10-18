@@ -19,14 +19,22 @@ RAP = StudentLoanRepaymentPlan.REPAYMENT_ASSISTANCE_PLAN
 def _borrower(prior_agi: float | None = 40000):
     model = LifeModel(start_year=2027, end_year=2027)
     person = Person(Family(model), "Grad", age=28, retirement_age=67, spending=Spending(model, 0))
-    BankAccount(person, "Bank", balance=100000, interest_rate=0)
+    BankAccount(person, company="Bank", balance=100000, interest_pct=0)
     if prior_agi is not None:
         person.agi_history[2026] = prior_agi
     return model, person
 
 
 def _loan(person, amount=50000.0, rate=6.0, loan_type=StudentLoanType.FEDERAL_UNSUBSIDIZED):
-    return StudentLoan(person, loan_type, amount, rate, 10, "State U", repayment_plan=RAP)
+    return StudentLoan(
+        person,
+        loan_type=loan_type,
+        original_amount=amount,
+        rate_pct=rate,
+        term_years=10,
+        school_name="State U",
+        repayment_plan=RAP,
+    )
 
 
 class TestRapPaymentFormula(unittest.TestCase):

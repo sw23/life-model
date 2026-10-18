@@ -142,6 +142,7 @@ class EventKind(str, Enum):
     RMD = "rmd"
     PENALTY = "penalty"
     SHORTFALL_DEBT = "shortfall_debt"
+    REFINANCED = "refinanced"
 
     @property
     def is_detail(self) -> bool:
@@ -167,6 +168,7 @@ EVENT_KIND_DOCS: dict[str, str] = {
     "rmd": "Detail: a required minimum distribution (amount, account).",
     "penalty": "Detail: an additional tax settled with the year's return (amount; cause: its source).",
     "shortfall_debt": "Detail: bills the household could not pay, carried as debt (amount, cause).",
+    "refinanced": "A loan was refinanced (amount: the new principal; cause: the refinance).",
 }
 
 _DETAIL_KINDS = frozenset(

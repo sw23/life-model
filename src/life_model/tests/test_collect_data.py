@@ -28,16 +28,16 @@ def _build_household(model: LifeModel) -> Person:
         name="Collector",
         age=40,
         retirement_age=65,
-        spending=Spending(model=model, base=30000, yearly_increase=2),
+        spending=Spending(model=model, base_annual=30000, growth_pct=2),
     )
-    BankAccount(owner=person, company="Bank", type="Checking", balance=20000, interest_rate=0.5)
+    BankAccount(owner=person, company="Bank", type="Checking", balance=20000, interest_pct=0.5)
     job = Job(
         owner=person,
         company="Company",
         role="Employee",
-        salary=Salary(model=model, base=80000, yearly_increase=3, yearly_bonus=1),
+        salary=Salary(model=model, base_annual=80000, raise_pct=3, bonus_pct=1),
     )
-    Job401kAccount(job=job, pretax_balance=50000, pretax_contrib_percent=5, average_growth=6)
+    Job401kAccount(job=job, pretax_balance=50000, pretax_contrib_pct=5, growth_pct=6)
     return person
 
 

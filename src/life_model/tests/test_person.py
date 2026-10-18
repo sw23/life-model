@@ -35,7 +35,9 @@ class TestPerson(unittest.TestCase):
             family=Family(model), name="Cas Harjabertaz", age=36, retirement_age=56, spending=Spending(model, 0)
         )
         BankAccount(owner=person, company="Bank of Mojave", type="Checking")
-        job = Job(owner=person, company="Fiber Fashion", role="Personal Shopper", salary=Salary(model=model, base=0))
+        job = Job(
+            owner=person, company="Fiber Fashion", role="Personal Shopper", salary=Salary(model=model, base_annual=0)
+        )
         # Fixture: $10k standard deduction, brackets 10% to $40k then 25%.
         # DEFAULT (5%) state income tax enters the SALT itemized deduction. It only
         # changes the outcome for the top earner, whose state tax ($28,295 = 5% of the $565,900
@@ -64,7 +66,9 @@ class TestPerson(unittest.TestCase):
             family=Family(model), name="Julie Antipater", age=24, retirement_age=65, spending=Spending(model, 0)
         )
         BankAccount(owner=person, company="Acrobatable", type="Checking")
-        job = Job(owner=person, company="Acrobatable", role="Software Developer", salary=Salary(model=model, base=0))
+        job = Job(
+            owner=person, company="Acrobatable", role="Software Developer", salary=Salary(model=model, base_annual=0)
+        )
         # Fixture Social Security wage base is $110,000.
         tax_data = (
             (5900, 5900 * 0.062),
@@ -86,7 +90,7 @@ class TestPerson(unittest.TestCase):
             family=Family(model), name="Gunnel Ingi", age=33, retirement_age=50, spending=Spending(model, 0)
         )
         BankAccount(owner=person, company="Bits and Bytes", type="Checking")
-        job = Job(owner=person, company="Bits and Bytes", role="Researcher", salary=Salary(model=model, base=0))
+        job = Job(owner=person, company="Bits and Bytes", role="Researcher", salary=Salary(model=model, base_annual=0))
         # Fixture medicare rate 1.45%, additional 0.9% over $200,000 (single).
         tax_data = (
             (5900, 5900 * 0.0145),
@@ -117,7 +121,7 @@ class TestPersonWithdrawalHelpers(unittest.TestCase):
         from ..account.traditional_IRA import TraditionalIRA
 
         _model, person = self._make_person()
-        TraditionalIRA(person=person, balance=50000)
+        TraditionalIRA(owner=person, balance=50000)
         withdrawn = person.withdraw_from_traditional_iras(20000)
         self.assertEqual(withdrawn, 20000)
         self.assertEqual(person.bank_account_balance, 21000)
@@ -128,7 +132,7 @@ class TestPersonWithdrawalHelpers(unittest.TestCase):
         from ..account.roth_IRA import RothIRA
 
         _model, person = self._make_person()
-        RothIRA(person=person, balance=50000)
+        RothIRA(owner=person, balance=50000)
         withdrawn = person.withdraw_from_roth_iras(20000)
         self.assertEqual(withdrawn, 20000)
         self.assertEqual(person.bank_account_balance, 21000)
@@ -138,7 +142,7 @@ class TestPersonWithdrawalHelpers(unittest.TestCase):
         from ..account.job401k import Job401kAccount
 
         model, person = self._make_person()
-        job = Job(owner=person, company="Co", role="Dev", salary=Salary(model=model, base=0))
+        job = Job(owner=person, company="Co", role="Dev", salary=Salary(model=model, base_annual=0))
         Job401kAccount(job=job, roth_balance=30000)
         withdrawn = person.withdraw_from_roth_401ks(10000)
         self.assertEqual(withdrawn, 10000)
@@ -149,7 +153,7 @@ class TestPersonWithdrawalHelpers(unittest.TestCase):
         from ..account.brokerage import BrokerageAccount
 
         _model, person = self._make_person()
-        BrokerageAccount(person=person, company="Broker", balance=8000)
+        BrokerageAccount(owner=person, company="Broker", balance=8000)
         self.assertEqual(person.withdraw_from_brokerage_accounts(3000), 3000)
         self.assertEqual(person.bank_account_balance, 4000)
         self.assertEqual(person.taxable_income, 0)
@@ -159,7 +163,7 @@ class TestPersonWithdrawalHelpers(unittest.TestCase):
         from ..account.hsa import HealthSavingsAccount, HSAType
 
         _model, person = self._make_person()
-        HealthSavingsAccount(person=person, hsa_type=HSAType.INDIVIDUAL, balance=5000)
+        HealthSavingsAccount(owner=person, hsa_type=HSAType.INDIVIDUAL, balance=5000)
         self.assertEqual(person.withdraw_from_hsas(2000), 2000)
         self.assertEqual(person.bank_account_balance, 3000)
         self.assertEqual(person.taxable_income, 2000)
@@ -169,7 +173,7 @@ class TestPersonWithdrawalHelpers(unittest.TestCase):
         from ..account.traditional_IRA import TraditionalIRA
 
         _model, person = self._make_person()
-        TraditionalIRA(person=person, balance=1500)
+        TraditionalIRA(owner=person, balance=1500)
         withdrawn = person.withdraw_from_traditional_iras(10000)
         self.assertEqual(withdrawn, 1500)
         self.assertEqual(person.taxable_income, 1500)
@@ -185,7 +189,7 @@ class TestPersonWithdrawalHelpers(unittest.TestCase):
                 family=Family(model), name="Settler", age=45, retirement_age=65, spending=Spending(model, 0)
             )
             BankAccount(owner=person, company="Bank", type="Checking", balance=100000)
-            ira = TraditionalIRA(person=person, balance=100000, growth_rate=0)
+            ira = TraditionalIRA(owner=person, balance=100000, growth_pct=0)
             if withdraw:
                 person.withdraw_from_traditional_iras(50000)
             else:

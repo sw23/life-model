@@ -8,7 +8,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar
 
-from .._compat import legacy_signature
+from ..deprecated_names import deprecated_arguments
 from ..ledger import FlowKind
 from ..limits import job_401k_annual_additions_limit
 from ..model import Event, EventKind, LifeModel, LifeModelAgent, snap_money
@@ -98,7 +98,7 @@ class Job(LifeModelAgent):
     #: Job kinds: a W-2 employee, or a sole proprietorship (Schedule C).
     KINDS = ("w2", "self_employed")
 
-    @legacy_signature(("owner", "company", "role", "salary"))
+    @deprecated_arguments(None, positional=("company", "role", "salary"))
     def __init__(
         self,
         owner: Person,
@@ -716,9 +716,9 @@ class Salary(LifeModelAgent):
     # The raise runs at year end after the year's taxes are settled (0).
     STEP_PRIORITY: ClassVar[dict[str, int]] = {"on_year_end": 10}
 
-    @legacy_signature(
-        ("model", "base", "yearly_increase", "yearly_bonus"),
+    @deprecated_arguments(
         {"base": "base_annual", "yearly_increase": "raise_pct", "yearly_bonus": "bonus_pct"},
+        positional=("base_annual", "raise_pct", "bonus_pct"),
     )
     def __init__(
         self,

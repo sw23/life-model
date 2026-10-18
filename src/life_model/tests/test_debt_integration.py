@@ -25,7 +25,7 @@ from ..work.job import Job, Salary
 def _make_person(model, bank_balance=500000):
     family = Family(model)
     person = Person(family, "Deb", age=40, retirement_age=70, spending=Spending(model, 0))
-    BankAccount(person, "Bank", balance=bank_balance, interest_rate=0)
+    BankAccount(person, company="Bank", balance=bank_balance, interest_pct=0)
     return person
 
 
@@ -34,9 +34,16 @@ class TestDebtServicing(unittest.TestCase):
         """A car loan, credit card, and student loan are all paid down by the yearly loop."""
         model = LifeModel(start_year=2020, end_year=2020)
         person = _make_person(model)
-        car = CarLoan(person, loan_amount=30000, length_years=5, yearly_interest_rate=6.0, name="Civic")
-        card = CreditCard(person, "Visa", credit_limit=10000, current_balance=2000)
-        loan = StudentLoan(person, StudentLoanType.FEDERAL_UNSUBSIDIZED, 20000, 5.0, 10, "State U")
+        car = CarLoan(person, original_amount=30000, term_years=5, rate_pct=6.0, name="Civic")
+        card = CreditCard(person, name="Visa", credit_limit=10000, balance=2000)
+        loan = StudentLoan(
+            person,
+            loan_type=StudentLoanType.FEDERAL_UNSUBSIDIZED,
+            original_amount=20000,
+            rate_pct=5.0,
+            term_years=10,
+            school_name="State U",
+        )
 
         car_start, card_start, loan_start = car.principal, card.balance, loan.principal
         model.run()
@@ -54,7 +61,7 @@ class TestDebtServicing(unittest.TestCase):
         """A 5-year car loan is fully paid off within the loan term (6 yearly steps)."""
         model = LifeModel(start_year=2020, end_year=2025)
         person = _make_person(model)
-        car = CarLoan(person, loan_amount=30000, length_years=5, yearly_interest_rate=6.0, name="Civic")
+        car = CarLoan(person, original_amount=30000, term_years=5, rate_pct=6.0, name="Civic")
         model.run()
         self.assertAlmostEqual(car.principal, 0.0, places=2)
 
@@ -62,7 +69,7 @@ class TestDebtServicing(unittest.TestCase):
         """Registered debt balances show up in the family's debt statistic."""
         model = LifeModel(start_year=2020, end_year=2020)
         person = _make_person(model, bank_balance=0)
-        CarLoan(person, loan_amount=30000, length_years=5, yearly_interest_rate=6.0, name="Civic")
+        CarLoan(person, original_amount=30000, term_years=5, rate_pct=6.0, name="Civic")
         model.run()
         df = model.datacollector.get_model_vars_dataframe()
         self.assertGreater(df.iloc[-1]["Debt"], 0)
@@ -73,10 +80,10 @@ class TestDebtServicing(unittest.TestCase):
         person = _make_person(model)
         card = CreditCard(
             person,
-            "Visa",
+            name="Visa",
             credit_limit=50000,
-            current_balance=10000,
-            yearly_interest_rate=20.0,
+            balance=10000,
+            rate_pct=20.0,
             payment_strategy=PaymentStrategy.MINIMUM,
         )
         model.run()
@@ -88,10 +95,10 @@ class TestDebtServicing(unittest.TestCase):
         person = _make_person(model)
         card = CreditCard(
             person,
-            "Visa",
+            name="Visa",
             credit_limit=50000,
-            current_balance=5000,
-            yearly_interest_rate=20.0,
+            balance=5000,
+            rate_pct=20.0,
             payment_strategy=PaymentStrategy.FULL_BALANCE,
         )
         model.run()
@@ -103,12 +110,12 @@ class TestDebtServicing(unittest.TestCase):
         person = _make_person(model)
         card = CreditCard(
             person,
-            "Visa",
+            name="Visa",
             credit_limit=50000,
-            current_balance=5000,
-            yearly_interest_rate=20.0,
+            balance=5000,
+            rate_pct=20.0,
             payment_strategy=PaymentStrategy.FIXED,
-            fixed_payment=0.0,
+            payment_monthly=0.0,
         )
         start = card.balance
         model.run()
@@ -120,7 +127,15 @@ class TestStudentLoanFeatures(unittest.TestCase):
         """A subsidized loan in deferment accrues no borrower interest and its balance is unchanged."""
         model = LifeModel(start_year=2020, end_year=2020)
         person = _make_person(model)
-        loan = StudentLoan(person, StudentLoanType.FEDERAL_SUBSIDIZED, 20000, 6.0, 10, "State U", in_deferment=True)
+        loan = StudentLoan(
+            person,
+            loan_type=StudentLoanType.FEDERAL_SUBSIDIZED,
+            original_amount=20000,
+            rate_pct=6.0,
+            term_years=10,
+            school_name="State U",
+            in_deferment=True,
+        )
         start = loan.principal
         paid = loan.service_year()
         self.assertEqual(paid, 0.0)
@@ -131,7 +146,15 @@ class TestStudentLoanFeatures(unittest.TestCase):
         """An unsubsidized loan in deferment capitalizes the year's interest onto its balance."""
         model = LifeModel(start_year=2020, end_year=2020)
         person = _make_person(model)
-        loan = StudentLoan(person, StudentLoanType.FEDERAL_UNSUBSIDIZED, 20000, 6.0, 10, "State U", in_deferment=True)
+        loan = StudentLoan(
+            person,
+            loan_type=StudentLoanType.FEDERAL_UNSUBSIDIZED,
+            original_amount=20000,
+            rate_pct=6.0,
+            term_years=10,
+            school_name="State U",
+            in_deferment=True,
+        )
         loan.service_year()
         self.assertAlmostEqual(loan.principal, 20000 + 20000 * 0.06, places=2)
 
@@ -141,10 +164,17 @@ class TestStudentLoanFeatures(unittest.TestCase):
         def taxes_with_loan(add_loan):
             model = LifeModel(start_year=2020, end_year=2020)
             person = _make_person(model)
-            Job(person, "Co", "Dev", Salary(model=model, base=120000))
+            Job(person, company="Co", role="Dev", salary=Salary(model=model, base_annual=120000))
             if add_loan:
                 # High-rate, large balance so interest paid exceeds the $2,500 cap.
-                StudentLoan(person, StudentLoanType.FEDERAL_UNSUBSIDIZED, 80000, 8.0, 20, "State U")
+                StudentLoan(
+                    person,
+                    loan_type=StudentLoanType.FEDERAL_UNSUBSIDIZED,
+                    original_amount=80000,
+                    rate_pct=8.0,
+                    term_years=20,
+                    school_name="State U",
+                )
             model.run()
             return person.stat_taxes_paid
 

@@ -34,8 +34,8 @@ class TestTrustBasics(unittest.TestCase):
         self.family = Family(self.model)
         self.grantor = _person(self.model, self.family)
         self.child = _person(self.model, self.family, name="Kid", age=30)
-        BankAccount(self.grantor, "GB", balance=500000, interest_rate=0)
-        BankAccount(self.child, "KB", balance=0, interest_rate=0)
+        BankAccount(self.grantor, company="GB", balance=500000, interest_pct=0)
+        BankAccount(self.child, company="KB", balance=0, interest_pct=0)
 
     def test_fund_moves_cash_from_grantor(self):
         trust = Trust(self.grantor, TrustType.REVOCABLE, [self.child])
@@ -78,7 +78,7 @@ class TestGiftExclusionAndExemption(unittest.TestCase):
         self.family = Family(self.model)
         self.grantor = _person(self.model, self.family)
         self.child = _person(self.model, self.family, name="Kid", age=30)
-        BankAccount(self.grantor, "GB", balance=1000000, interest_rate=0)
+        BankAccount(self.grantor, company="GB", balance=1000000, interest_pct=0)
         self.exclusion = self.model.tax_params_for_year(self.model.year).gift_exclusion
 
     def test_funding_within_exclusion_leaves_exemption_intact(self):
@@ -109,8 +109,8 @@ class TestTrustEstateIntegration(unittest.TestCase):
         family = Family(model)
         grantor = _person(model, family, age=76, death_age=76)
         child = _person(model, family, name="Kid", age=41)
-        BankAccount(grantor, "GB", balance=residual, interest_rate=0)
-        BankAccount(child, "KB", balance=0, interest_rate=0)
+        BankAccount(grantor, company="GB", balance=residual, interest_pct=0)
+        BankAccount(child, company="KB", balance=0, interest_pct=0)
         # Endow the corpus via the constructor (not fund()) so the tiny test exemption isn't
         # consumed by gift accounting; gift accounting has its own test class above.
         trust = Trust(grantor, trust_type, [child], balance=trust_balance)
@@ -150,9 +150,9 @@ class TestTrustEstateIntegration(unittest.TestCase):
         spouse = _person(model, family, name="Spouse", age=75)
         grantor.get_married(spouse)
         child = _person(model, family, name="Kid", age=41)
-        BankAccount(grantor, "GB", balance=300000, interest_rate=0)
-        BankAccount(spouse, "SB", balance=0, interest_rate=0)
-        BankAccount(child, "KB", balance=0, interest_rate=0)
+        BankAccount(grantor, company="GB", balance=300000, interest_pct=0)
+        BankAccount(spouse, company="SB", balance=0, interest_pct=0)
+        BankAccount(child, company="KB", balance=0, interest_pct=0)
         trust = Trust(grantor, TrustType.REVOCABLE, [child])
         trust.fund(200000)
         model.run()
@@ -173,8 +173,8 @@ class TestTrustEstateIntegration(unittest.TestCase):
         heir = _person(model, family, name="Heir", age=46)
         dead_kid = _person(model, family, name="Gone", age=51)
         dead_kid.is_deceased = True
-        BankAccount(grantor, "GB", balance=50000, interest_rate=0)
-        BankAccount(heir, "HB", balance=0, interest_rate=0)
+        BankAccount(grantor, company="GB", balance=50000, interest_pct=0)
+        BankAccount(heir, company="HB", balance=0, interest_pct=0)
         trust = Trust(grantor, TrustType.REVOCABLE, [dead_kid], balance=200000)
         model.run()
 

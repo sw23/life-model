@@ -3,9 +3,11 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar, Optional
 
 from ..account.job401k import Job401kAccount
+from ..deprecated_names import deprecated_arguments
 from ..ledger import FlowKind, cash_label, debt_label
 from ..limits import federal_retirement_age
 from ..model import Event, EventKind, LifeModel, LifeModelAgent
@@ -125,6 +127,7 @@ class Person(LifeModelAgent):
         self.spending = spending
         if getattr(spending, "person", None) is None:
             spending.person = self  # whose spending it is (reporting: the agent frame's Owner column)
+            spending._start_schedule()
         self.state = state
         self.gender = gender
         self.mortality_mode = mortality_mode
@@ -340,6 +343,11 @@ class Person(LifeModelAgent):
         return self.model.registries.student_loans.get_items(self)
 
     @property
+    def home_equity_lines(self):
+        """Get all home equity lines of credit for this person from the registry (Plan 27 D7)."""
+        return self.model.registries.home_equity_lines.get_items(self)
+
+    @property
     def medical_costs(self):
         """Get the MedicalCosts agent(s) for this person from the registry."""
         return self.model.registries.medical_costs.get_items(self)
@@ -356,11 +364,12 @@ class Person(LifeModelAgent):
 
     @property
     def all_debts(self):
-        """All personal debts serviced by the simulation (car loans, credit cards, student loans).
+        """All personal debts serviced by the simulation (car loans, credit cards, student loans, home
+        equity lines).
 
         Mortgages are serviced through the owning ``Home`` and are not included here.
         """
-        return [*self.car_loans, *self.credit_cards, *self.student_loans]
+        return [*self.car_loans, *self.credit_cards, *self.student_loans, *self.home_equity_lines]
 
     @property
     def outstanding_debt_balance(self) -> float:
@@ -482,21 +491,13 @@ class Person(LifeModelAgent):
         itemized = self.charitable_deductions if include_charitable else 0.0
         itemized += self.medical_expense_deduction_with(additional_income)
 
-        federal = self.model.year_config.tax.federal
-        # A separate return gets half of the joint mortgage-debt and SALT limits.
-        limit_share = 0.5 if self.filing_status == FilingStatus.MARRIED_FILING_SEPARATELY else 1.0
+        # Mortgage (and home-improvement HELOC) interest actually paid this year, within the
+        # acquisition-debt limits (IRC §163(h)(3); a separate return gets half of the limits).
+        from ..housing.home import qualified_residence_interest
+
+        itemized += qualified_residence_interest(self)
         salt_paid = state_income_tax_paid
         for home in self.homes:
-            mortgage = getattr(home, "mortgage", None)
-            if mortgage:
-                # Deduct the interest actually paid this year (pre-payment principal), limited to
-                # the share attributable to the first $750k of acquisition debt.
-                interest = mortgage.interest_paid_this_year
-                acquisition_debt = mortgage.loan_amount
-                debt_limit = federal.mortgage_interest_debt_limit * limit_share
-                if acquisition_debt > debt_limit:
-                    interest *= debt_limit / acquisition_debt
-                itemized += interest
             salt_paid += home.property_tax_for_year
 
         if include_salt:
@@ -512,18 +513,11 @@ class Person(LifeModelAgent):
         """The non-charity parts of :meth:`itemized_deductions` by line, for the tax return record:
         ``mortgage_interest`` (limited to the acquisition-debt cap), ``salt`` (after the cap) and
         ``medical`` (above the floor). Charity is added per return (it is capped at the return's AGI)."""
-        federal = self.model.year_config.tax.federal
-        limit_share = 0.5 if self.filing_status == FilingStatus.MARRIED_FILING_SEPARATELY else 1.0
-        mortgage_interest = 0.0
+        from ..housing.home import qualified_residence_interest
+
+        mortgage_interest = qualified_residence_interest(self)
         salt_paid = state_income_tax_paid
         for home in self.homes:
-            mortgage = getattr(home, "mortgage", None)
-            if mortgage:
-                interest = mortgage.interest_paid_this_year
-                debt_limit = federal.mortgage_interest_debt_limit * limit_share
-                if mortgage.loan_amount > debt_limit:
-                    interest *= debt_limit / mortgage.loan_amount
-                mortgage_interest += interest
             salt_paid += home.property_tax_for_year
         cap = salt_cap(self.filing_status, self.agi(additional_income), self.model.year_config)
         return {
@@ -1560,7 +1554,8 @@ class Person(LifeModelAgent):
         """
         pensions = self.model.registries.pensions
         for pension in list(self.pensions):
-            if spouse is not None and getattr(pension, "survivor_percent", 0) > 0:
+            paid_out = getattr(pension, "paid_out", False)  # a lump sum leaves nothing to continue
+            if spouse is not None and getattr(pension, "survivor_percent", 0) > 0 and not paid_out:
                 pension.benefit_amount *= pension.survivor_percent / 100.0
                 # The continued stream is single-life on the survivor (no further survivor split).
                 pension.survivor_percent = 0.0
@@ -1570,6 +1565,7 @@ class Person(LifeModelAgent):
                 pension.start_age = spouse.age
                 # The survivor's stream is a fixed benefit: it no longer accrues service.
                 pension.accrues_service = False
+                pension.is_survivor_stream = True
                 pensions.unregister(self, pension)
                 pensions.register(spouse, pension)
                 pension.person = spouse
@@ -1961,6 +1957,56 @@ class Person(LifeModelAgent):
         self.roth_conversions_ytd = 0.0
 
 
+@dataclass
+class SpendingLine:
+    """A categorized line of living spending (Plan 27 D6).
+
+    ``amount`` is per ``period`` (``"annual"``: a twelfth is paid each month; ``"monthly"``: paid every
+    month) in the run's first-year dollars, grown every year by ``growth_pct`` (None: the economy's
+    inflation). The line is paid in the years ``start_year`` through ``end_year`` (inclusive; open when
+    None). ``essential`` separates needs from wants in the reports (it does not change what is paid).
+    """
+
+    amount: float
+    period: str = "annual"
+    growth_pct: float | None = 0.0
+    start_year: int | None = None
+    end_year: int | None = None
+    essential: bool = True
+
+    def __post_init__(self):
+        if self.period not in ("annual", "monthly"):
+            raise ValueError(f"period must be 'annual' or 'monthly', got {self.period!r}")
+        if self.amount < 0:
+            raise ValueError("a spending line's amount must not be negative")
+        if self.start_year is not None and self.end_year is not None and self.end_year < self.start_year:
+            raise ValueError("end_year is before start_year")
+
+    @property
+    def annual_amount(self) -> float:
+        return self.amount * (12 if self.period == "monthly" else 1)
+
+    def active(self, year: int) -> bool:
+        return (self.start_year is None or year >= self.start_year) and (self.end_year is None or year <= self.end_year)
+
+
+class RecurringExpense(SpendingLine):
+    """A multi-year expense (Plan 27 D6): a :class:`SpendingLine` from ``start_year`` through ``end_year``,
+    added to a person's spending with ``Spending.add_line`` (at construction, or from a ``LifeEvent``)."""
+
+    def __init__(
+        self,
+        amount: float,
+        start_year: int,
+        end_year: int | None = None,
+        *,
+        period: str = "annual",
+        growth_pct: float | None = 0.0,
+        essential: bool = True,
+    ):
+        super().__init__(amount, period, growth_pct, start_year, end_year, essential)
+
+
 class Spending(LifeModelAgent):
     """A person's living spending: an annual ``base`` paid a twelfth a month, plus one-time expenses
     paid with the bills of the month they are added in (an expense added after the month's bills
@@ -1969,18 +2015,44 @@ class Spending(LifeModelAgent):
     # The escalator runs at year end after the year's taxes are settled (0).
     STEP_PRIORITY: ClassVar[dict[str, int]] = {"on_year_end": 10}
 
-    def __init__(self, model: LifeModel, base: float = 0, yearly_increase: float | None = 0):
+    @deprecated_arguments({"base": "base_annual", "yearly_increase": "growth_pct"})
+    def __init__(
+        self,
+        model: LifeModel,
+        base_annual: float = 0,
+        growth_pct: float | None = 0,
+        *,
+        categories: "dict[str, SpendingLine] | None" = None,
+        schedule: "list[tuple[float, float]] | None" = None,
+    ):
         """Spending
 
         Args:
             model (LifeModel): LifeModel instance.
-            base (float): Base spending amount (a year's; paid monthly).
-            yearly_increase (float, optional): Yearly percentage increase in spending. 10 = 10%.
-                Pass None to grow with the economy's inflation each year. Defaults to 0 (no increase).
+            base_annual (float): Base spending amount (a year's; paid monthly): the uncategorized remainder
+                when ``categories`` are given (``base=`` is a deprecated alias).
+            growth_pct (float, optional): Yearly percentage increase in spending. 10 = 10%.
+                Pass None to grow with the economy's inflation each year. Defaults to 0 (no increase;
+                ``yearly_increase=`` is a deprecated alias).
+            categories (dict, optional): Categorized lines ``{name: SpendingLine(...)}`` on top of
+                ``base`` (keyword-only; Plan 27 D6). Each is paid with the month's bills under its name.
+            schedule (list, optional): ``[(age, percent), ...]``: in the month the person reaches each
+                age, every line (base and categories) becomes ``percent`` of what it was (e.g. a
+                retirement spending smile ``[(75, 80), (85, 87.5)]``). Ages already reached when the
+                person is created count as applied (the entered amounts are today's).
         """
         super().__init__(model)
-        self.base = base
-        self._yearly_increase_override = yearly_increase
+        self.base = base_annual
+        self._yearly_increase_override = growth_pct
+        self.categories: dict[str, SpendingLine] = dict(categories or {})
+        self.schedule: list[tuple[float, float]] = sorted((float(a), float(p)) for a, p in (schedule or []))
+        for _, pct in self.schedule:
+            if pct < 0:
+                raise ValueError("a spending schedule percent must not be negative")
+        #: Schedule steps already applied (indexes into ``schedule``); set once the person is known.
+        self._schedule_applied: set[int] | None = None
+        # This year's categorized spending paid so far, by name.
+        self._category_paid: dict[str, float] = {}
         #: The person whose spending this is (set by ``Person``).
         self.person = None
         #: This year's one-time expenses (added so far this year).
@@ -2023,21 +2095,71 @@ class Spending(LifeModelAgent):
         """This month's share of the base spending (a twelfth)."""
         return self.base / 12
 
+    def add_line(self, name: str, line: SpendingLine) -> None:
+        """Add (or replace) a categorized spending line, e.g. a :class:`RecurringExpense` from an event."""
+        self.categories[name] = line
+
+    def _start_schedule(self) -> None:
+        """Mark the schedule steps the person has already passed (the entered amounts are today's)."""
+        if self.schedule and self.person is not None and self._schedule_applied is None:
+            age = self.person.age_years_fractional
+            self._schedule_applied = {k for k, (step_age, _) in enumerate(self.schedule) if age >= step_age}
+
+    def _apply_schedule(self) -> None:
+        """Apply the schedule steps the person has reached (each once)."""
+        if not self.schedule or self.person is None:
+            return
+        if self._schedule_applied is None:
+            self._start_schedule()
+        age = self.person.age_years_fractional
+        assert self._schedule_applied is not None
+        for k, (step_age, pct) in enumerate(self.schedule):
+            if k not in self._schedule_applied and age >= step_age:
+                self._schedule_applied.add(k)
+                self.base *= pct / 100
+                for line in self.categories.values():
+                    line.amount *= pct / 100
+
+    def category_month_lines(self) -> dict[str, float]:
+        """This month's categorized spending by name (the lines active this year)."""
+        year = self.model.year
+        return {
+            name: line.annual_amount / 12 for name, line in self.categories.items() if line.active(year) and line.amount
+        }
+
     def take_month_lines(self) -> dict[str, float]:
-        """This month's bills by category: ``base`` (a twelfth of the base) plus every unpaid one-time
-        category. Marks the one-time expenses as paid (the tax unit pays the lines)."""
+        """This month's bills by category: ``base`` (a twelfth of the base), every active categorized
+        line, plus every unpaid one-time category. Marks the one-time expenses as paid (the tax unit pays
+        the lines)."""
+        self._apply_schedule()
         lines = {"base": self.month_base()} if self.base else {}
+        for name, amount in self.category_month_lines().items():
+            lines[name] = lines.get(name, 0.0) + amount
+            self._category_paid[name] = self._category_paid.get(name, 0.0) + amount
         for category, amount in self._unpaid_by_category.items():
             if amount:
                 lines[category] = lines.get(category, 0.0) + amount
         self._unpaid_by_category = {}
         return lines
 
+    def essential_spending_this_year(self) -> float:
+        """This year's categorized spending paid so far on essential lines."""
+        return sum(v for k, v in self._category_paid.items() if k in self.categories and self.categories[k].essential)
+
+    def discretionary_spending_this_year(self) -> float:
+        """This year's categorized spending paid so far on discretionary lines."""
+        return sum(
+            v for k, v in self._category_paid.items() if k in self.categories and not self.categories[k].essential
+        )
+
     def year_spending_lines(self) -> dict[str, float]:
-        """This year's spending by category: ``base`` plus each one-time category (any amount added
-        to ``one_time_expenses`` directly is reported as ``one_time``). Sums to
-        :meth:`get_yearly_spending`."""
+        """This year's spending by category: ``base``, each categorized line paid so far and each
+        one-time category (any amount added to ``one_time_expenses`` directly is reported as
+        ``one_time``). Sums to :meth:`get_yearly_spending`."""
         lines = {"base": self.base} if self.base else {}
+        for name, amount in self._category_paid.items():
+            if amount:
+                lines[name] = lines.get(name, 0.0) + amount
         for category, amount in self.one_time_by_category.items():
             lines[category] = lines.get(category, 0.0) + amount
         untracked = self.one_time_expenses - sum(self.one_time_by_category.values())
@@ -2046,8 +2168,9 @@ class Spending(LifeModelAgent):
         return lines
 
     def get_yearly_spending(self) -> float:
-        """This year's spending: the base plus the one-time expenses added so far this year."""
-        return self.base + self.one_time_expenses
+        """This year's spending: the base plus the categorized lines paid and the one-time expenses added
+        so far this year."""
+        return self.base + sum(self._category_paid.values()) + self.one_time_expenses
 
     @property
     def base_spending(self) -> float:
@@ -2056,10 +2179,11 @@ class Spending(LifeModelAgent):
         return self.base
 
     def adjust_base(self, base_percent: float):
-        """Adjusts base spending.
+        """Sets base spending to ``base_percent`` percent of what it is.
 
         Args:
-            base_percent (float): Percentage increase in spending. 50 = 50%.
+            base_percent (float): The new base as a percentage of the current one: 50 halves it, 110
+                raises it 10%.
         """
         self.base = self.base * (base_percent / 100)
 
@@ -2068,5 +2192,9 @@ class Spending(LifeModelAgent):
         # end do we start next year's one-time tally and apply the yearly increase. One-time
         # expenses added after December's bills stay unpaid and are paid in January.
         self.base += self.base * (self.yearly_increase / 100)
+        for line in self.categories.values():
+            growth = self.model.economy.inflation(self.model.year) if line.growth_pct is None else line.growth_pct
+            line.amount *= 1 + growth / 100
         self.one_time_expenses = 0
         self.one_time_by_category = {}
+        self._category_paid = {}
