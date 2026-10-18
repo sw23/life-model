@@ -20,6 +20,7 @@ from ..account.roth_IRA import RothIRA
 from ..config.financial_config import FinancialConfig
 from ..housing.apartment import Apartment
 from ..housing.home import Home, HomeExpenses, Mortgage
+from ..insurance.social_security import SocialSecurity, taxable_social_security
 from ..lifeevents import LifeEvent, LifeEventRecord, LifeEvents
 from ..model import LifeModel
 from ..people.family import Family
@@ -29,6 +30,7 @@ from ..tax.federal import FilingStatus
 from ..tax.income import IncomeLedger, IncomeType
 from ..tax.state import state_income_tax_for_unit
 from ..work.job import Job, Salary
+from ..work.stock import StockPlan, VestingSchedule
 
 TEST_CONFIG = str(Path(__file__).parent / "fixtures" / "test_config.yaml")
 
@@ -42,9 +44,9 @@ def _model(start_year=2026, end_year=2030) -> LifeModel:
     return LifeModel(start_year=start_year, end_year=end_year, config=_fixture_config())
 
 
-def _worker(model, family=None, *, name="A", age=40, salary=100000, spending=50000, bank=100000):
+def _worker(model, family=None, *, name="A", age=40, salary=100000, spending=50000, bank=100000, retirement_age=65):
     family = family or Family(model)
-    person = Person(family, name, age=age, retirement_age=65, spending=Spending(model, base=spending))
+    person = Person(family, name, age=age, retirement_age=retirement_age, spending=Spending(model, base=spending))
     BankAccount(person, "Bank", balance=bank, interest_rate=0)
     if salary:
         Job(person, "Co", "Eng", Salary(model, base=salary))
@@ -540,6 +542,64 @@ class TestTaxExemptInterestTypes(unittest.TestCase):
             )
             self.assertGreater(plain, 0)
             self.assertAlmostEqual(plain, treasury, places=6, msg=state)
+
+
+def _retiree(model, family=None, *, name="R", age=70, bank=0, spending=0, retirement_age=65):
+    """A retiree already collecting Social Security (40 years of $60k earnings, claimed at 67)."""
+    person = _worker(
+        model, family, name=name, age=age, salary=0, spending=spending, bank=bank, retirement_age=retirement_age
+    )
+    history = [(year, 60000) for year in range(1980, 2020)]
+    SocialSecurity(person=person, withdrawal_start_age=67, income_history=history)
+    return person
+
+
+class TestSocialSecurityTaxedAtSettlement(unittest.TestCase):
+    """Item 6 / D6: the taxable share of benefits comes from the unit's final ledger.
+
+    Benefits need the live config's wage-index and COLA history (the fixture is trimmed); every
+    assertion is relative to ``taxable_social_security`` under the same config, not a dollar pin.
+    """
+
+    def test_joint_return_pools_the_spouses_income(self):
+        model = LifeModel(start_year=2026, end_year=2026)
+        family = Family(model)
+        retiree = _retiree(model, family)
+        spouse = _worker(model, family, name="S", age=60, salary=60000, spending=0)
+        retiree.get_married(spouse)
+        model.run()
+        benefit = retiree.stat_ss_income
+        self.assertGreater(benefit, 20000)
+        expected = taxable_social_security(benefit, 60000, FilingStatus.MARRIED_FILING_JOINTLY, model.config)
+        self.assertGreater(expected, 0)
+        # AGI = the spouse's wages + the taxable benefits (the retiree alone would owe none).
+        self.assertAlmostEqual(retiree.agi_history[2026], 60000 + expected, places=2)
+
+    def test_solver_draw_raises_the_taxable_share(self):
+        model = LifeModel(start_year=2026, end_year=2026)
+        retiree = _retiree(model, spending=60000)
+        job = Job(retiree, "Old", "Eng", Salary(model, base=0))
+        account = Job401kAccount(job=job, pretax_balance=1_000_000, average_growth=0)
+        model.run()
+        rmd = account.stat_required_min_distrib
+        draw = 1_000_000 - account.pretax_balance - rmd
+        benefit = retiree.stat_ss_income
+        taxable = retiree.agi_history[2026] - draw - rmd
+        self.assertGreater(draw, 0)
+        expected = taxable_social_security(benefit, draw + rmd, FilingStatus.SINGLE, model.config)
+        self.assertGreater(expected, 0)
+        self.assertAlmostEqual(taxable, expected, places=2)
+        self.assertEqual(retiree.debt, 0)  # the draw was sized for the tax on the SS it made taxable
+
+    def test_rsu_vest_counts_toward_provisional_income(self):
+        model = LifeModel(start_year=2026, end_year=2027)
+        retiree = _retiree(model, age=68, retirement_age=80)  # still on payroll (RSUs only)
+        job = Job(retiree, "Co", "Advisor", Salary(model, base=0))
+        StockPlan(job, signon_value=80000, schedule=VestingSchedule([1.0]), growth_rate=0)
+        model.run()
+        benefit = retiree.stat_ss_income
+        expected = taxable_social_security(benefit, 80000, FilingStatus.SINGLE, model.config)
+        self.assertAlmostEqual(retiree.agi_history[2027], 80000 + expected, places=2)
 
 
 if __name__ == "__main__":

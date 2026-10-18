@@ -54,3 +54,14 @@ the usual-construction-order settlement, so an account with a non-zero rate earn
 balance before the year's bills are paid rather than after; the interest is posted to the ledger
 as `IncomeType.INTEREST` and taxed. Probe 5: $1M at 5% now pays $16.4k–$18.0k more tax a year
 than at 0% (before: identical taxes).
+
+## Task 5 / D6 — Social Security taxed at settlement (and Task 10: one tax path)
+
+No existing test's expected value changed. `SocialSecurity.pre_step` now records the gross
+benefit (`IncomeLedger.add_social_security`, an `SS_BENEFIT` entry whose `amount` starts at 0)
+and `TaxUnit` sets the taxable share from the unit's provisional income at the top of every tax
+computation. `SocialSecurity._taxable_benefit_portion` keeps its signature (a single-person view
+now also counting preferential income and tax-exempt interest); the tests that call it
+(`test_social_security.py`, `test_married_filing_separately.py`) pass unchanged.
+`Person.get_income_taxes_due` is now `TaxUnit([person]).get_income_taxes_due` (the
+`TaxCalculationService` and `test_state_tax.py` callers pass unchanged).

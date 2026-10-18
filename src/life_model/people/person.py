@@ -14,8 +14,7 @@ from ..services.tax_calculation_service import TaxCalculationService
 from ..tax.deductions import deductible_charity, senior_deduction
 from ..tax.federal import FilingStatus, get_federal_standard_deduction
 from ..tax.income import IncomeLedger, IncomeType
-from ..tax.state import state_income_tax_for_unit
-from ..tax.tax import TaxesDue, compute_taxes
+from ..tax.tax import TaxesDue
 from .family import Family
 from .mortality import get_blended_chance_of_mortality, get_chance_of_mortality
 from .types import GenderAtBirth, MortalityMode
@@ -829,10 +828,14 @@ class Person(LifeModelAgent):
         return self.payment_service.pay_bills_with_prioritization(spending_balance)
 
     def get_income_taxes_due(self, additional_income: float = 0) -> TaxesDue:
-        """Gets income taxes due for the year for this person as a single filer.
+        """Income taxes due this year on this person's own return, at their filing status.
 
-        FICA is computed on the person's own wages only; ``additional_income`` (e.g. a prospective
-        pre-tax 401k withdrawal) is ordinary income but not FICA wages.
+        A thin view over the one tax path: it is ``TaxUnit([self]).get_income_taxes_due`` (state
+        pack, SALT, Child Tax Credit, Social Security provisional income, early-withdrawal
+        penalties), so it can never disagree with settlement for a one-person unit. FICA is on the
+        person's own wages; ``additional_income`` (e.g. a prospective pre-tax 401k withdrawal) is
+        ordinary income but not FICA wages. A married person's joint liability comes from their
+        actual unit, ``TaxUnit.for_member(person)``.
 
         Args:
             additional_income (float, optional): Additional ordinary income not present in the ledger.
@@ -840,33 +843,9 @@ class Person(LifeModelAgent):
         Returns:
             TaxesDue: Taxes due, split by type.
         """
-        ordinary_income = self.taxable_income + additional_income
-        # State income tax from the state pack. Computed against the property-only AGI base so it
-        # does not depend on itself being in SALT; then folded into SALT for the federal base.
-        # ``additional_income`` raises the medical-expense floor in both the DEFAULT AGI
-        # base and the federal deductions so sizing and settlement stay consistent.
-        totals = self.income.totals_by_type()
-        totals[IncomeType.PRETAX_DISTRIBUTION] = totals.get(IncomeType.PRETAX_DISTRIBUTION, 0.0) + additional_income
-        total_income = ordinary_income + self.preferential_income
-        legacy_agi = max(total_income - self.federal_deductions_with_state_tax(0.0, additional_income), 0)
-        state_tax = state_income_tax_for_unit(
-            totals, self.filing_status, self.state, legacy_agi, self.model.year_config
-        )
-        deductions = self.federal_deductions_with_state_tax(state_tax, additional_income)
-        taxes = compute_taxes(
-            ordinary_income,
-            deductions,
-            self.filing_status,
-            [self.fica_wages],
-            self.model.year_config,
-            state_tax=state_tax,
-            preferential_income=self.preferential_income,
-            net_investment_income=self.income.net_investment_income,
-        )
-        # Early-withdrawal penalties are additional federal tax: those already on the ledger plus
-        # the one a prospective pre-tax withdrawal of ``additional_income`` would trigger.
-        taxes.federal += self.income.penalties + self.prospective_penalty(additional_income)
-        return taxes
+        from .tax_unit import TaxUnit
+
+        return TaxUnit([self]).get_income_taxes_due(additional_income)
 
     def get_married(self, spouse: "Person", link_spouse: bool = True):
         """Get married.

@@ -27,7 +27,9 @@ class IncomeType(Enum):
 
     WAGES = "wages"  # Earned income: subject to both income tax and FICA.
     PRETAX_DISTRIBUTION = "pretax_distribution"  # 401k/IRA withdrawals & RMDs: ordinary income, no FICA.
-    SS_BENEFIT = "ss_benefit"  # Social Security benefits: taxed under provisional-income rules (future).
+    # Social Security benefits. An entry's ``gross`` is the benefit received and its ``amount`` the
+    # taxable portion, which the tax unit sets at settlement from the unit's provisional income.
+    SS_BENEFIT = "ss_benefit"
     PENSION = "pension"  # Defined-benefit pension income: ordinary, no FICA (retirees pay no payroll tax).
     INTEREST = "interest"  # Interest income (bank accounts, corporate bonds): ordinary, no FICA.
     # US Treasury interest: federally taxable ordinary income, but exempt from state income tax
@@ -82,6 +84,9 @@ class IncomeEntry:
     #: :attr:`IncomeType.WAGES`; it can differ from ``amount`` because pre-tax 401k deferrals
     #: reduce ordinary income but are still FICA wages.
     fica_wages: float = 0.0
+    #: The gross amount received, for entries whose taxable ``amount`` is a derived share of it
+    #: (Social Security benefits). 0.0 for every other entry.
+    gross: float = 0.0
 
 
 class IncomeLedger:
@@ -97,6 +102,32 @@ class IncomeLedger:
     def add(self, income_type: IncomeType, amount: float, fica_wages: float = 0.0) -> None:
         """Append an income entry."""
         self.entries.append(IncomeEntry(income_type, amount, fica_wages))
+
+    def add_social_security(self, gross: float) -> None:
+        """Record Social Security benefits received (gross). The taxable portion depends on the
+        whole return's provisional income, so it starts at 0 and the tax unit sets it at settlement
+        (:meth:`set_taxable_social_security`)."""
+        if gross > 0:
+            self.entries.append(IncomeEntry(IncomeType.SS_BENEFIT, 0.0, gross=gross))
+
+    @property
+    def social_security_benefits(self) -> float:
+        """Gross Social Security benefits received this year."""
+        return sum(e.gross for e in self.entries if e.income_type == IncomeType.SS_BENEFIT)
+
+    @property
+    def taxable_social_security(self) -> float:
+        """The currently recorded taxable portion of this year's Social Security benefits."""
+        return sum(e.amount for e in self.entries if e.income_type == IncomeType.SS_BENEFIT)
+
+    def set_taxable_social_security(self, taxable: float) -> None:
+        """Set the taxable portion of this year's benefits, spread over the benefit entries in
+        proportion to their gross (entries without a gross, e.g. ones added directly with an
+        amount, are left alone)."""
+        benefit_entries = [e for e in self.entries if e.income_type == IncomeType.SS_BENEFIT and e.gross > 0]
+        gross = sum(e.gross for e in benefit_entries)
+        for entry in benefit_entries:
+            entry.amount = taxable * entry.gross / gross if gross > 0 else 0.0
 
     def add_wages(self, ordinary_amount: float, fica_wages: float) -> None:
         """Append earned income.

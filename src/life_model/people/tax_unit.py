@@ -299,6 +299,48 @@ class TaxUnit:
         totals[IncomeType.SHORT_TERM_CAPITAL_GAIN] += additional_short_term
         return state_income_tax_for_unit(totals, self.filing_status, self.state, legacy_agi, self.config)
 
+    def taxable_social_security(self, additional_income: float = 0.0, additional_preferential: float = 0.0) -> float:
+        """Taxable portion of the unit's Social Security benefits (IRC §86), side-effect free.
+
+        Provisional income is the whole return's: every member's ordinary income (excluding
+        Social Security itself) and preferential income, tax-exempt interest, half of every
+        member's benefits, plus any prospective ordinary (``additional_income``: a pre-tax draw or
+        short-term gain being sized) or preferential income. So a joint return pools the spouse's
+        wages, RSU vests and the year's gains count whenever they were booked, and a withdrawal the
+        solver sizes raises the taxable share it is sized against (the "tax torpedo").
+        """
+        from ..insurance.social_security import taxable_social_security
+
+        benefits = sum(m.income.social_security_benefits for m in self.members)
+        if benefits <= 0:
+            return 0.0
+        other_income = additional_income + additional_preferential
+        for member in self.members:
+            ledger = member.income
+            other_income += (
+                ledger.ordinary_taxable
+                - ledger.taxable_social_security
+                + ledger.preferential_income
+                + ledger.tax_exempt_interest
+            )
+        return taxable_social_security(benefits, other_income, self.filing_status, self.config)
+
+    def _post_taxable_social_security(self, additional_income: float = 0.0, additional_preferential: float = 0.0):
+        """Record :meth:`taxable_social_security` on the members' ledgers (split by gross benefit), so
+        every base that reads the ledger (federal, state, AGI, the medical floor) sees it.
+
+        Called at the top of every tax computation with that computation's prospective income, so
+        the recorded share always matches the income being taxed; the last computation of
+        settlement (no prospective income) leaves the settled value.
+        """
+        benefits = {m.unique_id: m.income.social_security_benefits for m in self.members}
+        total = sum(benefits.values())
+        if total <= 0:
+            return
+        taxable = self.taxable_social_security(additional_income, additional_preferential)
+        for member in self.members:
+            member.income.set_taxable_social_security(taxable * benefits[member.unique_id] / total)
+
     def get_income_taxes_due(
         self,
         additional_income: float = 0,
@@ -306,6 +348,9 @@ class TaxUnit:
         additional_preferential: float = 0.0,
         additional_short_term: float = 0.0,
     ) -> TaxesDue:
+        # The taxable share of Social Security depends on everything else on the return, including
+        # the prospective amounts being sized, so it is (re)computed first.
+        self._post_taxable_social_security(additional_income + additional_short_term, additional_preferential)
         # ``additional_income`` models a prospective pre-tax 401k withdrawal: it is ordinary
         # income but not FICA wages, so it is not added to the per-member wage bases. It does
         # enter the deduction computation — the medical floor is income-dependent
