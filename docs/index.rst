@@ -9,15 +9,30 @@ Mesa agent-based modeling. It models people, families, jobs, accounts, homes,
 insurance and taxes over time. See the project `README on GitHub
 <https://github.com/sw23/life-model#readme>`_ for a full feature overview.
 
+Agents and scripts drive the model from a household spec with the ``life-model`` command line,
+the ``life_model.run`` / ``validate`` / ``explain`` / ``compare`` functions, or the optional MCP
+server; start with :doc:`modeling-a-household` and :doc:`cli`. Contributors and coding agents:
+see `AGENTS.md <https://github.com/sw23/life-model/blob/main/AGENTS.md>`_.
+
 .. toctree::
    :maxdepth: 2
 
    Installation instructions <install.rst>
-   Configuration <configuration.md>
-   Outputs glossary <outputs.md>
+   Modeling a household <modeling-a-household.md>
+   Command line, Python functions and MCP <cli.md>
    Household spec <household-spec.md>
+   Units and conventions <units-and-conventions.md>
+   Constructor cheat sheet <constructor-cheatsheet.md>
+   Outputs glossary <outputs.md>
+   Configuration <configuration.md>
    API documentation <apidoc.rst>
    License <license.rst>
+
+.. toctree::
+   :maxdepth: 1
+   :caption: Agent skills
+
+   model-household (Claude Code skill) <agent-skills/model-household/SKILL.md>
 
 .. toctree::
    :maxdepth: 1

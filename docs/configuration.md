@@ -87,6 +87,11 @@ tax:
 LifeModel(scenario="high_tax")
 ```
 
+The packaged scenarios are `aggressive`, `boom`, `conservative`, `deflation`,
+`high_inflation`, `high_tax`, `low_tax`, `recession`, `stochastic` and
+`tax_reform`; `life_model.config.scenarios.list_scenarios()` (or
+`life-model examples`) lists them, user scenarios included.
+
 You can point life-model at your own scenario directory with
 `life_model.config.scenarios.set_scenario_directory(path)`; scenarios found there
 take precedence over the packaged ones.
@@ -272,6 +277,9 @@ economy:
 - **`stochastic`** — equity, bond, and inflation are drawn as correlated normals
   (the rest independently) from the model's seeded RNG, so runs are reproducible
   under a fixed `seed`. Distribution parameters live under `economy.stochastic`.
+  The packaged `stochastic` scenario (`LifeModel(scenario="stochastic")`,
+  `meta.scenario: stochastic` in a household spec, or `--scenario stochastic` on
+  the command line) switches the mode on with these default parameters.
 
 Each account/salary/spending/housing object still accepts an explicit rate that
 overrides the economy (constructor argument wins); pass `None` to defer to the
@@ -306,6 +314,11 @@ result.success_rate(lambda row: row["Bank Balance"] > 0)  # probability of not r
 result.percentiles("Bank Balance", [10, 50, 90])  # fan-chart frames
 result.fan_chart("Bank Balance")  # matplotlib fan chart
 ```
+
+For a household spec, the command line does this in one step:
+`life-model montecarlo SPEC --scenario stochastic --n 1000 --seed 42` (or
+`life_model.api.run_montecarlo(spec, n=1000, scenario="stochastic", seed=42)`);
+see [the command line reference](cli.md).
 
 Per-trial seeds are derived deterministically from the master `seed`, so a study
 is reproducible; `result.seeds[i]` rebuilds trial `i`. Pass `keep_agent_frames=True`

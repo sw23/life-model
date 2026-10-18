@@ -33,7 +33,7 @@ pipeline-validation dataset as a pipeline-validation artifact, not a publishable
 | Stage | Module | What it does |
 |---|---|---|
 | Schema | `schema.py` | Versioned dataset schema (`schema_version=2`, pydantic StrictModel). |
-| Serialize | `serializer.py` | Household ↔ faithful natural-language text (round-trip tested). |
+| Serialize | `serializer.py` | Household ↔ faithful natural-language text (round-trip tested), plus a lossless JSON channel (`household_to_json` / `household_from_json`, `household_json_line`) and the profile's `HouseholdSpec` as JSON (`household_spec_json`). |
 | Decisions | `strategies.py`, `candidates.py` | The compositional plan vocabulary → executable plans; the RL planner heuristics as reference policies. |
 | Score | `scoring.py` | Shared-seed paired Monte Carlo scoring, coordinate search over the plan grid, adaptive trials. |
 | Households | `households.py` | SLM household distributions: the RL scenarios plus older households, varied economies, children and medical costs budgeted inside spending. |
@@ -42,6 +42,22 @@ pipeline-validation dataset as a pipeline-validation artifact, not a publishable
 | Train | `train.py` | Size-agnostic HF SFT (LoRA/QLoRA or full+FSDP) from one YAML `TrainConfig`. |
 | Advise | `advise.py` | Draft → simulate → revise tool-loop; itself an `AdviserModel`. |
 | Backends | `backends.py`, `adviser.py` | `AdviserModel` protocol + stub / HF / MLX / Anthropic-API implementations. |
+
+### The adviser and the one-call functions
+
+The English profile rounds dollars and rates to what a reader needs; the JSON channel beside it
+round-trips a `HouseholdProfile` exactly. When a prompt carries a `Household JSON: {...}` line the
+tool-loop reads the household from it instead of regex-parsing the text; no committed dataset or
+report prompt carries one, so their results are unchanged.
+
+`ToolLoopConfig(simulator_context=True)` (off by default) gives the wrapped model the household's
+baseline projection from `life_model.run` on the profile's spec (final net worth, run totals,
+years with unpaid bills) before it drafts. Scoring stays on the RL environment rather than moving
+to `life_model.compare`: the decision levers (401k routing, savings rate, claiming age, drawdown)
+and the plan context (employer match, retirement spending ratio) are environment policies the
+household spec cannot express yet, so scoring through the spec would change every score, label and
+committed report. The trained adviser and the committed reports therefore do not call the one-call
+functions; an API tool-use loop can (see `docs/cli.md`).
 
 ## Plans, households and labels
 

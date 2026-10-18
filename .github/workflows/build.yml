@@ -49,7 +49,8 @@ jobs:
         /tmp/smoke/bin/python -c "import life_model; print('imported', life_model.__version__)"
         # New subpackages must ship in the wheel (healthcare/Medicare/LTC).
         /tmp/smoke/bin/python -c "import life_model.healthcare; from life_model.healthcare import MedicalCosts, Medicare, LongTermCare; print('healthcare ok')"
-        /tmp/smoke/bin/python -m life_model --years 5
+        /tmp/smoke/bin/life-model run --example single_renter --years 5
+        /tmp/smoke/bin/life-model explain --example married_homeowners --year 2035 > /dev/null
     - name: Store the distribution packages
       uses: actions/upload-artifact@v7
       with:

@@ -1,0 +1,11 @@
+# Stochastic economy - every year's equity, bond and inflation rates are drawn as correlated
+# normals (cash yield, home appreciation and wage growth independently) from the model's seeded
+# RNG, so runs are reproducible under a fixed seed and differ across seeds. This is the scenario
+# Monte Carlo studies use (LifeModel(seed=seed, scenario="stochastic"); `life-model montecarlo
+# --scenario stochastic`).
+#
+# Only the mode is set here: the distribution parameters are the packaged defaults under
+# economy.stochastic in financial_defaults.yaml (means equal to the fixed-mode constants), so they
+# have one source. Override them in your own scenario or in a household spec's economy.stochastic.
+economy:
+  mode: stochastic

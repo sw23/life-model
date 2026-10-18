@@ -28,9 +28,14 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
 ]
 
+[project.scripts]
+life-model = "life_model.cli:main"
+
 [project.optional-dependencies]
 # RunResult.to_parquet / MonteCarloResult.to_parquet (JSON and CSV exports need nothing extra).
 parquet = ["pyarrow"]
+# The stdio MCP server (`life-model mcp`, life_model.mcp) for Claude Code / Desktop and other MCP clients.
+mcp = ["mcp>=1.2"]
 docs = [
     "sphinx>=7",
     "furo",
