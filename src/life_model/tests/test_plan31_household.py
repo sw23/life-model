@@ -374,3 +374,49 @@ class TestSpecFields(unittest.TestCase):
 
         spec = spec_of(minimal(jobs=[{"company": "Co", "salary_annual": 1, "payroll": {"fsa_annual": 500}}]))
         self.assertIn("not_yet_supported", [f.code for f in validate_spec(spec)])
+
+
+class TestValidatorWarnings(unittest.TestCase):
+    def test_fsa_without_a_young_child_and_a_child_over_the_8814_limit(self):
+        from ..spec.validate import validate_spec
+        from .spec_helpers import minimal, spec_of
+
+        spec = spec_of(
+            minimal(
+                jobs=[{"company": "Co", "salary_annual": 80000, "payroll": {"dependent_care_fsa_annual": 5000}}],
+                children=[{"name": "Kit", "birth_year": 2010, "interest_annual": 20000}],
+            )
+        )
+        codes = [f.code for f in validate_spec(spec)]
+        self.assertIn("fsa_without_care", codes)
+        self.assertIn("child_files_own_return", codes)
+
+
+class TestSolo401k(unittest.TestCase):
+    def test_deferral_and_profit_sharing_within_the_limits(self):
+        from ..account.job401k import Job401kAccount
+        from ..insurance.social_security import SocialSecurity
+
+        model = _model(2024, checks="strict")
+        casey = _person(model, "Casey", 45, bank=50000, spending=40000)
+        job = Job(
+            casey,
+            "Example Consulting LLC",
+            "Owner",
+            Salary(model, base=200000),
+            kind="self_employed",
+            plan_contribution_percent=25,
+        )
+        account = Job401kAccount(job, pretax_contrib_percent=20, average_growth=0)
+        SocialSecurity(casey, withdrawal_start_age=67, income_history=[])
+        model.step()
+        # Net earnings 184,700; SE tax = 12.4% x 168,600 + 2.9% x 184,700 = 26,262.70; half 13,131.35.
+        # Compensation 186,868.65: deferral 20% capped at 402(g) $23,000; employer 20% = 37,373.73;
+        # together 60,373.73 under 415(c) $69,000.
+        compensation = 200000 - 13131.35
+        self.assertAlmostEqual(account.pretax_balance, 23000 + compensation * 0.2, places=2)
+        r = model.tax_returns[2024]
+        self.assertAlmostEqual(r.adjustments["self_employed_plan"], 23000 + compensation * 0.2, places=2)
+        # Social Security credit: net earnings, capped at the wage base.
+        self.assertEqual(casey.social_security.income_history[-1].amount, 168600)
+        self.assertEqual(check_model(model), [])

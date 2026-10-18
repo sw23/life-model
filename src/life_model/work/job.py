@@ -205,11 +205,12 @@ class Job(LifeModelAgent):
 
         profit = self.net_profit()
         config = self.owner.model.year_config
-        w2_wages = sum(
-            job._compute_payroll().gross - job._compute_payroll().fsa
+        w2_payrolls = [
+            job._compute_payroll()
             for job in self.owner.jobs
             if job is not self and not job.retired and job.kind == "w2"
-        )
+        ]
+        w2_wages = sum(payroll.gross - payroll.fsa for payroll in w2_payrolls)
         base = config.tax.fica.social_security_max_income
         se = self_employment_tax(profit, min(w2_wages, base), config)
         account = self.retirement_account
