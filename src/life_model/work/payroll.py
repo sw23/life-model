@@ -20,9 +20,15 @@ plan, ``Job401kAccount``). Each item's tax and cash treatment:
   job pays, so it stops with the job.
 * ``commuter_monthly``: excluded from both up to the year's §132(f) monthly limit (the excess is wages);
   cash unchanged (the benefit pays the commute the household's spending already carries).
+* ``withholding`` (Plan 31 D3): federal, FICA and state tax withheld from each paycheck (and from the job's
+  bonuses and RSU vests as supplemental wages): ``"w4_default"``, a :class:`~life_model.tax.payments.W4`,
+  a :class:`~life_model.tax.payments.FlatWithholding`, or a mapping (``{"w4": {...}}``, ``{"pct": 15}``,
+  ``{"amount_monthly": 900}``). None (the default) withholds nothing: the year's taxes are settled as a
+  December lump. With withholding the household's balance due or refund is settled in April of the next year.
 """
 
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -43,8 +49,13 @@ class PayrollDeductions:
     hsa_employer_annual: float = 0.0
     #: Qualified transportation (transit / parking) through payroll, per month.
     commuter_monthly: float = 0.0
+    #: Tax withholding policy (Plan 31 D3; see the module docstring). None: no withholding.
+    withholding: Any = None
 
     def __post_init__(self):
+        from ..tax.payments import resolve_withholding
+
+        object.__setattr__(self, "withholding", resolve_withholding(self.withholding))
         for name in (
             "dependent_care_fsa_annual",
             "health_premium_monthly",

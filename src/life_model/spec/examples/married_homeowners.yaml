@@ -8,6 +8,8 @@ meta:
   as_of: 2026-01
   start_year: 2026
   end_year: 2072
+  # The flat DEFAULT state rate, chosen explicitly (Plan 31 D4: no silent fallback).
+  default_state: DEFAULT
 people:
 - id: john
   name: John

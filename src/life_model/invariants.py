@@ -290,7 +290,7 @@ def _liability_labels(ctx: YearContext) -> set[str]:
     from .ledger import account_label
 
     labels = {account_label(a) for a in ctx.model.agents if isinstance(a, (Loan, RevolvingDebt))}
-    labels.update(label for label in ctx.balances.closing.lines if label.startswith("Debt:"))
+    labels.update(label for label in ctx.balances.closing.lines if label.startswith(("Debt:", "TaxDue:")))
     return labels
 
 
@@ -304,7 +304,7 @@ def no_negative_balances(ctx: YearContext) -> list[Violation]:
         for label, value in sheet.lines.items():
             if label in seen:
                 continue
-            is_liability = label in liabilities or label.startswith("Debt:")
+            is_liability = label in liabilities or label.startswith(("Debt:", "TaxDue:"))
             if (not is_liability and value < -MONEY_TOLERANCE) or (is_liability and value > MONEY_TOLERANCE):
                 seen.add(label)
                 what = "liability below zero" if is_liability else "negative balance"

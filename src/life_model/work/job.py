@@ -52,11 +52,23 @@ class Payroll:
     hsa_employer: float = 0.0
     #: Qualified transportation benefit excluded from wages (within the §132(f) limit).
     commuter: float = 0.0
+    #: Taxes withheld (Plan 31 D3): federal income tax, Social Security, Medicare (with the Additional
+    #: Medicare Tax, ``additional_medicare`` of it) and state income tax.
+    federal_withheld: float = 0.0
+    ss_withheld: float = 0.0
+    medicare_withheld: float = 0.0
+    additional_medicare_withheld: float = 0.0
+    state_withheld: float = 0.0
 
     @property
     def elective(self) -> float:
         """Employee elective deferrals (pre-tax + Roth)."""
         return self.pretax + self.roth
+
+    @property
+    def withheld(self) -> float:
+        """All taxes withheld from the paycheck (``additional_medicare_withheld`` is part of Medicare's)."""
+        return self.federal_withheld + self.ss_withheld + self.medicare_withheld + self.state_withheld
 
     @property
     def wage_exclusions(self) -> float:
@@ -296,7 +308,100 @@ class Job(LifeModelAgent):
         )
         if self.payroll is not None or self.owner.payroll_contribution_plans(self):
             payroll = self._with_benefits(payroll, booked)
+        if self.withholding is not None:
+            payroll = self._with_withholding(payroll, booked)
         return payroll
+
+    @property
+    def withholding(self):
+        """The job's withholding policy (Plan 31 D3), or None."""
+        return self.payroll.withholding if self.payroll is not None else None
+
+    def _withholding_year(self) -> dict:
+        """This year's withholding bookkeeping beyond the paychecks: supplemental wages and FICA wages paid
+        through other channels (RSU vests) by this employer."""
+        book = getattr(self, "_wh_book", None)
+        if book is None or book["year"] != self.model.year:
+            book = self._wh_book = {"year": self.model.year, "supplemental": 0.0, "fica_wages": 0.0}
+        return book
+
+    def withhold(self, regular: float, supplemental: float, fica_wages: float, prior_fica_wages: float) -> dict:
+        """Taxes withheld from a payment by this employer (Plan 31 D3; :mod:`life_model.tax.payments`):
+        ``regular`` and ``supplemental`` taxable wages, ``fica_wages`` of FICA wages with the year's FICA
+        wages paid before it ``prior_fica_wages``. Returns ``federal``, ``ss``, ``medicare``,
+        ``additional`` (the Additional Medicare Tax part of ``medicare``) and ``state``."""
+        from ..people.tax_unit import TaxUnit
+        from ..tax.payments import federal_withholding, state_withholding_monthly, supplemental_withholding, w4_status
+
+        policy = self.withholding
+        config = self.model.year_config
+        owner = self.owner
+        status = owner.filing_status
+        if status.name == "SINGLE":
+            status = TaxUnit._unmarried_status(owner) or status
+        book = self._withholding_year()
+        federal = federal_withholding(regular, policy, w4_status(status), config)
+        federal += supplemental_withholding(supplemental, book["supplemental"], config)
+        fica = config.tax.fica
+        base = fica.social_security_max_income
+        ss = (min(base, prior_fica_wages + fica_wages) - min(base, prior_fica_wages)) * fica.social_security_rate / 100
+        threshold = (
+            config.tax.federal.withholding.additional_medicare_threshold if config.tax.federal.withholding else 200000
+        )
+        over = max(0.0, prior_fica_wages + fica_wages - threshold) - max(0.0, prior_fica_wages - threshold)
+        additional = over * fica.medicare_additional_rate / 100
+        medicare = fica_wages * fica.medicare_rate / 100 + additional
+        state = state_withholding_monthly(regular, supplemental, status, owner.state, config)
+        return {"federal": federal, "ss": ss, "medicare": medicare, "additional": additional, "state": state}
+
+    def _with_withholding(self, payroll: "Payroll", booked: "Payroll") -> "Payroll":
+        """Add this paycheck's withholding: the bonus is supplemental wages, the rest regular."""
+        from dataclasses import replace
+
+        taxable = payroll.gross - payroll.pretax - payroll.wage_exclusions
+        supplemental = max(0.0, min(payroll.bonus, taxable))
+        regular = max(0.0, taxable - supplemental)
+        prior = self._ytd - booked
+        prior_fica = prior.gross - prior.wage_exclusions + self._withholding_year()["fica_wages"]
+        taxes = self.withhold(regular, supplemental, payroll.gross - payroll.wage_exclusions, prior_fica)
+        return replace(
+            payroll,
+            federal_withheld=taxes["federal"],
+            ss_withheld=taxes["ss"],
+            medicare_withheld=taxes["medicare"],
+            additional_medicare_withheld=taxes["additional"],
+            state_withheld=taxes["state"],
+        )
+
+    def post_withholding(
+        self, taxes: dict, pay_to, cause: str, *, supplemental: float = 0.0, fica_wages: float = 0.0
+    ) -> float:
+        """Post withheld ``taxes`` (from :meth:`withhold` or a paycheck delta) out of ``pay_to`` and record them
+        on the owner's payments for the year. Returns the total withheld."""
+        from ..tax.payments import payments_for
+
+        ledger = self.model.ledger
+        owner = self.owner
+        state = owner.state
+        for amount, sink, what in (
+            (taxes["federal"], "IRS: federal income tax", "federal income tax withheld"),
+            (taxes["ss"], "IRS: social security tax", "social security tax withheld"),
+            (taxes["medicare"], "IRS: medicare tax", "medicare tax withheld"),
+            (taxes["state"], f"state income tax ({state})", "state income tax withheld"),
+        ):
+            ledger.post(amount, FlowKind.TAX, from_account=pay_to, sink=sink, cause=f"{what} ({cause})", agent=owner)
+        payments_for(owner, self.model.year).add_withholding(
+            self.company,
+            federal=taxes["federal"],
+            ss=taxes["ss"],
+            medicare=taxes["medicare"] - taxes["additional"],
+            additional=taxes["additional"],
+            state=taxes["state"],
+        )
+        book = self._withholding_year()
+        book["supplemental"] += supplemental
+        book["fica_wages"] += fica_wages
+        return taxes["federal"] + taxes["ss"] + taxes["medicare"] + taxes["state"]
 
     def _with_benefits(self, payroll: "Payroll", booked: "Payroll") -> "Payroll":
         """Add this month's pre-tax benefits (premiums, health FSA, HSA, commuter) to ``payroll``."""
@@ -553,8 +658,21 @@ class Job(LifeModelAgent):
                 agent=owner,
             )
         self._apply_benefits(delta, pay_to)
+        if delta.withheld or delta.federal_withheld:
+            self.post_withholding(
+                {
+                    "federal": delta.federal_withheld,
+                    "ss": delta.ss_withheld,
+                    "medicare": delta.medicare_withheld,
+                    "additional": delta.additional_medicare_withheld,
+                    "state": delta.state_withheld,
+                },
+                pay_to,
+                cause,
+                supplemental=max(0.0, min(delta.bonus, delta.gross - delta.pretax - delta.wage_exclusions)),
+            )
 
-        take_home = delta.gross - delta.elective - delta.after_tax - delta.premiums - delta.hsa
+        take_home = delta.gross - delta.elective - delta.after_tax - delta.premiums - delta.hsa - delta.withheld
         if take_home >= 0:
             # Deposit take-home pay into bank account
             owner.deposit_into_bank_account(take_home, post=False)

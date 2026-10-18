@@ -170,6 +170,31 @@ class TaxReturn:
     self_employment_tax: float = 0.0
     self_employment_tax_deduction: float = 0.0
     additional_medicare_tax_self_employment: float = 0.0
+    # Plan 31 tasks 6-7: payments (Form 1040 lines 25-38) and the premium tax credit (Form 8962)
+    federal_income_tax_withheld: float = 0.0
+    additional_medicare_tax_withheld: float = 0.0
+    social_security_withheld: float = 0.0
+    medicare_withheld: float = 0.0
+    state_withheld: float = 0.0
+    excess_social_security_withheld: float = 0.0
+    estimated_tax_payments: float = 0.0
+    estimated_tax_penalty: float = 0.0
+    required_annual_payment: float = 0.0
+    tax_for_estimates: float = 0.0
+    total_payments: float = 0.0
+    amount_owed: float = 0.0
+    overpayment: float = 0.0
+    state_balance_due: float = 0.0
+    settled_in_april: bool = False
+    advance_premium_tax_credit: float = 0.0
+    excess_advance_ptc_repayment: float = 0.0
+    premium_tax_credit_allowed: float = 0.0
+    ptc_fpl_percent: float = 0.0
+    ptc_applicable_figure: float = 0.0
+    ptc_contribution: float = 0.0
+    ptc_household_income: float = 0.0
+    ptc_enrollment_premiums: float = 0.0
+    ptc_slcsp_premiums: float = 0.0
 
     # ------------------------------------------------------------------
     # Serialization helpers
@@ -345,6 +370,34 @@ FIELD_DOCS: dict[str, str] = {
     "self_employment_tax_deduction": "Deductible half of self-employment tax (Schedule 1 line 15).",
     "additional_medicare_tax_self_employment": "The part of ``additional_medicare_tax`` on self-employment income "
     "(Form 8959 Part II; in ``medicare_tax``, on no member's FICA line).",
+    "federal_income_tax_withheld": "Federal income tax withheld (W-2 box 2; 1040 line 25a).",
+    "additional_medicare_tax_withheld": "Additional Medicare Tax withheld (Form 8959 line 24; 1040 line 25c).",
+    "social_security_withheld": "Social Security tax withheld (all employers; W-2 box 4).",
+    "medicare_withheld": "Medicare tax withheld, with the Additional Medicare Tax (W-2 box 6).",
+    "state_withheld": "State income tax withheld (W-2 box 17).",
+    "excess_social_security_withheld": "Social Security withheld over the wage base by several employers (Schedule 3 "
+    "line 11).",
+    "estimated_tax_payments": "Federal estimated tax payments for the year (1040 line 26; January's included).",
+    "estimated_tax_penalty": "Underpayment of estimated tax penalty (Form 2210; 1040 line 38).",
+    "required_annual_payment": "Form 2210 line 9 (0 when no penalty test applied).",
+    "tax_for_estimates": "Form 2210 line 4: tax after credits plus self-employment tax, Additional Medicare Tax, NIIT "
+    "and additional taxes, less refundable credits.",
+    "total_payments": "1040 line 33: withholding, estimated payments, refundable credits and excess Social Security.",
+    "amount_owed": "1040 line 37: the balance due, with the estimated tax penalty.",
+    "overpayment": "1040 line 34: the overpayment (refund), net of the estimated tax penalty.",
+    "state_balance_due": "State income tax less state withholding (negative: a state refund).",
+    "settled_in_april": "Whether the balance due or refund was settled in April of the next year (the unit withholds "
+    "or pays estimates) rather than in December.",
+    "advance_premium_tax_credit": "Advance premium tax credit paid to the insurer (Form 8962 line 25).",
+    "excess_advance_ptc_repayment": "Excess advance premium tax credit repaid (Form 8962 line 29; Schedule 2 line 1a).",
+    "premium_tax_credit_allowed": "Premium tax credit allowed (Form 8962 line 24); the net credit is "
+    "``credits_refundable['premium_tax_credit']``.",
+    "ptc_fpl_percent": "Household income as a percent of the poverty line (Form 8962 line 5; 401 above 400%).",
+    "ptc_applicable_figure": "Applicable figure (Form 8962 line 7).",
+    "ptc_contribution": "Annual contribution amount (Form 8962 line 8a).",
+    "ptc_household_income": "Household income (Form 8962 line 3).",
+    "ptc_enrollment_premiums": "Enrollment premiums for the coverage months (Form 1095-A column A).",
+    "ptc_slcsp_premiums": "Second-lowest-cost silver plan premiums for the coverage months (Form 1095-A column B).",
 }
 
 
@@ -367,7 +420,17 @@ class TaxReturns(dict):
         return [tax_return for (y, _), tax_return in sorted(self.items()) if y == year]
 
 
-_NOT_MONEY = frozenset({"year", "unit_id", "marginal_rate", "effective_rate"})
+_NOT_MONEY = frozenset(
+    {
+        "year",
+        "unit_id",
+        "marginal_rate",
+        "effective_rate",
+        "settled_in_april",
+        "ptc_fpl_percent",
+        "ptc_applicable_figure",
+    }
+)
 
 
 def _sum_by_source(entries, predicate) -> dict[str, float]:
@@ -379,7 +442,7 @@ def _sum_by_source(entries, predicate) -> dict[str, float]:
     return totals
 
 
-def build_tax_return(unit: "TaxUnit", taxes: "TaxesDue") -> TaxReturn:
+def build_tax_return(unit: "TaxUnit", taxes: "TaxesDue", payments: "dict | None" = None) -> TaxReturn:
     """Build the record for ``unit``'s year from the final ``taxes`` its settlement paid.
 
     Must be called at the moment of settlement (after the waterfall, before any later ledger change),
@@ -500,6 +563,21 @@ def build_tax_return(unit: "TaxUnit", taxes: "TaxesDue") -> TaxReturn:
     federal_tax = taxes.federal + taxes.niit - taxes.credits
     effective_rate = federal_tax / agi * 100 if agi > 0 else 0.0
 
+    # Payments (Form 1040 lines 24-38): line 24 is the income tax after nonrefundable credits plus the other
+    # taxes; line 33 adds withholding, estimated payments, the refundable credits and excess Social Security.
+    pay = payments or {}
+    line_24 = taxes.federal + taxes.niit + taxes.se_tax + taxes.additional_medicare - taxes.nonrefundable_credits
+    total_payments = (
+        pay.get("federal_income_tax_withheld", 0.0)
+        + pay.get("additional_medicare_tax_withheld", 0.0)
+        + pay.get("estimated_tax_payments", 0.0)
+        + taxes.refundable_credits
+        + pay.get("excess_social_security_withheld", 0.0)
+    )
+    penalty = pay.get("estimated_tax_penalty", 0.0)
+    balance = line_24 - total_payments + penalty
+    ptc = taxes.ptc_detail or {}
+
     return TaxReturn(
         year=year,
         unit_id=members[0].unique_id,
@@ -577,4 +655,28 @@ def build_tax_return(unit: "TaxUnit", taxes: "TaxesDue") -> TaxReturn:
         self_employment_tax=taxes.se_tax,
         self_employment_tax_deduction=sum(se.deduction for se in taxes.se_by_worker),
         additional_medicare_tax_self_employment=taxes.additional_medicare_se,
+        federal_income_tax_withheld=pay.get("federal_income_tax_withheld", 0.0),
+        additional_medicare_tax_withheld=pay.get("additional_medicare_tax_withheld", 0.0),
+        social_security_withheld=pay.get("social_security_withheld", 0.0),
+        medicare_withheld=pay.get("medicare_withheld", 0.0),
+        state_withheld=pay.get("state_withheld", 0.0),
+        excess_social_security_withheld=pay.get("excess_social_security_withheld", 0.0),
+        estimated_tax_payments=pay.get("estimated_tax_payments", 0.0),
+        estimated_tax_penalty=penalty,
+        required_annual_payment=pay.get("required_annual_payment", 0.0),
+        tax_for_estimates=taxes.federal + taxes.niit + taxes.se_tax + taxes.additional_medicare - taxes.credits,
+        total_payments=total_payments,
+        amount_owed=max(0.0, balance),
+        overpayment=max(0.0, -balance),
+        state_balance_due=taxes.state - pay.get("state_withheld", 0.0),
+        settled_in_april=bool(pay.get("settled_in_april", False)),
+        advance_premium_tax_credit=ptc.get("advance", 0.0),
+        excess_advance_ptc_repayment=taxes.excess_advance_ptc,
+        premium_tax_credit_allowed=ptc.get("allowed", 0.0),
+        ptc_fpl_percent=ptc.get("fpl_percent", 0.0),
+        ptc_applicable_figure=ptc.get("applicable_figure", 0.0),
+        ptc_contribution=ptc.get("contribution", 0.0),
+        ptc_household_income=ptc.get("household_income", 0.0),
+        ptc_enrollment_premiums=ptc.get("enrollment_premiums", 0.0),
+        ptc_slcsp_premiums=ptc.get("slcsp_premiums", 0.0),
     )

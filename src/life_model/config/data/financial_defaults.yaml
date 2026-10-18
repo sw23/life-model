@@ -129,6 +129,21 @@ tax:
     # vintage: statutory, source: IRC §25A(b), (c), (d), (i); SECURE 2.0 §103 (saver's credit through 2026)
     credits:
       education: {}
+    # Estimated tax and the underpayment penalty (Plan 31 D3). vintage: statutory, source: IRC §6654(d)(1)
+    # (required annual payment: 90% of this year's tax or 100% of last year's, 110% when last year's AGI was
+    # over $150,000 / $75,000 separate), §6654(e)(1) ($1,000), Instructions for Form 2210 (2024, 2025).
+    estimated_tax:
+      required_current_pct: 90
+      required_prior_pct: 100
+      required_prior_high_income_pct: 110
+      high_income_agi: 150000
+      minimum_balance_due: 1000
+      # vintage: 2026, source: IRS individual underpayment rates (IRC §6621(a)(2)): IR-2023-219, IR-2024-47,
+      # IR-2024-138, IR-2024-220 (2024: 8%); IR-2024-290, IR-2025-29, IR-2025-59, IR-2025-87 (2025: 7%);
+      # IR-2025-112, Rev. Rul. 2026-5, Rev. Rul. 2026-10, IR-2026-98 (2026). Later quarters reuse the latest
+      # rate. TODO(verify): the 2027Q1 rate (it reaches a 2026 penalty) is not announced yet.
+      underpayment_rates: {"2024Q1": 8, "2024Q2": 8, "2024Q3": 8, "2024Q4": 8, "2025Q1": 7, "2025Q2": 7,
+                           "2025Q3": 7, "2025Q4": 7, "2026Q1": 7, "2026Q2": 6, "2026Q3": 7, "2026Q4": 7}
     # vintage: 2026, source: IRC §2010 unified credit (post-OBBBA ~$15M); §2001(c) top estate-tax rate 40%
     estate_tax_exemption: 15000000
     estate_tax_rate: 40.0  # percentage
@@ -1080,6 +1095,33 @@ tax_years:
                          {max_age: 70, limit: 4710}, {max_age: 200, limit: 5880}]
     # vintage: 2024, source: IRS Notice 2023-75 (§401(a)(17) compensation limit)
     compensation_limit: 345000
+    # vintage: 2024, source: IRS Pub. 15-T (2024) Worksheet 1A (Step 1g) and the annual percentage method tables
+    # (standard and Form W-4 Step 2 checkbox; rows [column A, column C, column D]); Pub. 15 (2024) section 7
+    # (supplemental wages 22%, 37% over $1,000,000); Additional Medicare Tax withheld over $200,000 per employer.
+    withholding:
+      step1g_joint: 12900
+      step1g_other: 8600
+      standard:
+        married_filing_jointly: [[0, 0, 0], [16300, 0, 10], [39500, 2320, 12], [110600, 10852, 22], [217350, 34337, 24], [400200, 78221, 32], [503750, 111357, 35], [747500, 196669.5, 37]]
+        single: [[0, 0, 0], [6000, 0, 10], [17600, 1160, 12], [53150, 5426, 22], [106525, 17168.5, 24], [197950, 39110.5, 32], [249725, 55678.5, 35], [615350, 183647.25, 37]]
+        head_of_household: [[0, 0, 0], [13300, 0, 10], [29850, 1655, 12], [76400, 7241, 22], [113800, 15469, 24], [205250, 37417, 32], [257000, 53977, 35], [622650, 181954.5, 37]]
+      checkbox:
+        married_filing_jointly: [[0, 0, 0], [14600, 0, 10], [26200, 1160, 12], [61750, 5426, 22], [115125, 17168.5, 24], [206550, 39110.5, 32], [258325, 55678.5, 35], [380200, 98334.75, 37]]
+        single: [[0, 0, 0], [7300, 0, 10], [13100, 580, 12], [30875, 2713, 22], [57563, 8584.25, 24], [103275, 19555.25, 32], [129163, 27839.25, 35], [311975, 91823.63, 37]]
+        head_of_household: [[0, 0, 0], [10950, 0, 10], [19225, 827.5, 12], [42500, 3620.5, 22], [61200, 7734.5, 24], [106925, 18708.5, 32], [132800, 26988.5, 35], [315625, 90977.25, 37]]
+      supplemental_rate: 22
+      supplemental_over_1m_rate: 37
+    # vintage: 2024, source: Rev. Proc. 2023-34 §3.24 (IRC §152(d)(1)(B) exemption amount; gross income must be less)
+    qualifying_relative_income_limit: 5050
+    # vintage: 2024, source: Instructions for Form 8962 (2024) Table 2 (applicable figure: linear interpolation
+    # rounded to 0.01%, 26 CFR 1.36B-3(g)), Table 1-1 (the 2023 HHS poverty guidelines), Table 5 = Rev. Proc. 2023-34 §3.07
+    # (repayment limits; 'single' = filing status single only); no 400% cap 2021-2025 (IRC §36B(c)(1)(E)).
+    premium_tax_credit:
+      applicable_percentage: [[0, 150, 0, 0], [150, 200, 0, 2], [200, 250, 2, 4], [250, 300, 4, 6], [300, 400, 6, 8.5], [400, .inf, 8.5, 8.5]]
+      max_fpl_pct: .inf
+      min_fpl_pct: 100
+      poverty_line: {base: 14580, per_person: 5140}
+      repayment_limit: [[0, 200, 375, 750], [200, 300, 950, 1900], [300, 400, 1575, 3150], [400, .inf, null, null]]
   2025:
     standard_deduction:
       single: 15750
@@ -1182,6 +1224,33 @@ tax_years:
                          {max_age: 70, limit: 4810}, {max_age: 200, limit: 6020}]
     # vintage: 2025, source: IRS Notice 2024-80 (§401(a)(17) compensation limit)
     compensation_limit: 350000
+    # vintage: 2025, source: IRS Pub. 15-T (2025) Worksheet 1A (Step 1g) and the annual percentage method tables
+    # (standard and Form W-4 Step 2 checkbox; rows [column A, column C, column D]); Pub. 15 (2025) section 7
+    # (supplemental wages 22%, 37% over $1,000,000); Additional Medicare Tax withheld over $200,000 per employer.
+    withholding:
+      step1g_joint: 12900
+      step1g_other: 8600
+      standard:
+        married_filing_jointly: [[0, 0, 0], [17100, 0, 10], [40950, 2385, 12], [114050, 11157, 22], [223800, 35302, 24], [411700, 80398, 32], [518150, 114462, 35], [768700, 202154.5, 37]]
+        single: [[0, 0, 0], [6400, 0, 10], [18325, 1192.5, 12], [54875, 5578.5, 22], [109750, 17651, 24], [203700, 40199, 32], [256925, 57231, 35], [632750, 188769.75, 37]]
+        head_of_household: [[0, 0, 0], [13900, 0, 10], [30900, 1700, 12], [78750, 7442, 22], [117250, 15912, 24], [211200, 38460, 32], [264400, 55484, 35], [640250, 187031.5, 37]]
+      checkbox:
+        married_filing_jointly: [[0, 0, 0], [15000, 0, 10], [26925, 1192.5, 12], [63475, 5578.5, 22], [118350, 17651, 24], [212300, 40199, 32], [265525, 57231, 35], [390800, 101077.25, 37]]
+        single: [[0, 0, 0], [7500, 0, 10], [13463, 596.25, 12], [31738, 2789.25, 22], [59175, 8825.5, 24], [106150, 20099.5, 32], [132763, 28615.5, 35], [320675, 94384.88, 37]]
+        head_of_household: [[0, 0, 0], [11250, 0, 10], [19750, 850, 12], [43675, 3721, 22], [62925, 7956, 24], [109900, 19230, 32], [136500, 27742, 35], [324425, 93515.75, 37]]
+      supplemental_rate: 22
+      supplemental_over_1m_rate: 37
+    # vintage: 2025, source: Rev. Proc. 2024-40 §3.24 (IRC §152(d)(1)(B) exemption amount; gross income must be less)
+    qualifying_relative_income_limit: 5200
+    # vintage: 2025, source: Instructions for Form 8962 (2025) Table 2 (applicable figure: linear interpolation
+    # rounded to 0.01%, 26 CFR 1.36B-3(g)), Table 1-1 (the 2024 HHS poverty guidelines), Table 5 = Rev. Proc. 2024-40 §3.07
+    # (repayment limits; 'single' = filing status single only); no 400% cap 2021-2025 (IRC §36B(c)(1)(E)).
+    premium_tax_credit:
+      applicable_percentage: [[0, 150, 0, 0], [150, 200, 0, 2], [200, 250, 2, 4], [250, 300, 4, 6], [300, 400, 6, 8.5], [400, .inf, 8.5, 8.5]]
+      max_fpl_pct: .inf
+      min_fpl_pct: 100
+      poverty_line: {base: 15060, per_person: 5380}
+      repayment_limit: [[0, 200, 375, 750], [200, 300, 975, 1950], [300, 400, 1625, 3250], [400, .inf, null, null]]
   2026:
     standard_deduction:
       single: 16100
@@ -1288,3 +1357,31 @@ tax_years:
                          {max_age: 70, limit: 4960}, {max_age: 200, limit: 6200}]
     # vintage: 2026, source: IRS Notice 2025-67 (§401(a)(17) compensation limit)
     compensation_limit: 360000
+    # vintage: 2026, source: IRS Pub. 15-T (2026) Worksheet 1A (Step 1g) and the annual percentage method tables
+    # (standard and Form W-4 Step 2 checkbox; rows [column A, column C, column D]); Pub. 15 (2026) section 7
+    # (supplemental wages 22%, 37% over $1,000,000); Additional Medicare Tax withheld over $200,000 per employer.
+    withholding:
+      step1g_joint: 12900
+      step1g_other: 8600
+      standard:
+        married_filing_jointly: [[0, 0, 0], [19300, 0, 10], [44100, 2480, 12], [120100, 11600, 22], [230700, 35932, 24], [422850, 82048, 32], [531750, 116896, 35], [788000, 206583.5, 37]]
+        single: [[0, 0, 0], [7500, 0, 10], [19900, 1240, 12], [57900, 5800, 22], [113200, 17966, 24], [209275, 41024, 32], [263725, 58448, 35], [648100, 192979.25, 37]]
+        head_of_household: [[0, 0, 0], [15550, 0, 10], [33250, 1770, 12], [83000, 7740, 22], [121250, 16155, 24], [217300, 39207, 32], [271750, 56631, 35], [656150, 191171, 37]]
+      checkbox:
+        married_filing_jointly: [[0, 0, 0], [16100, 0, 10], [28500, 1240, 12], [66500, 5800, 22], [121800, 17966, 24], [217875, 41024, 32], [272325, 58448, 35], [400450, 103291.75, 37]]
+        single: [[0, 0, 0], [8050, 0, 10], [14250, 620, 12], [33250, 2900, 22], [60900, 8983, 24], [108938, 20512, 32], [136163, 29224, 35], [328350, 96489.63, 37]]
+        head_of_household: [[0, 0, 0], [12075, 0, 10], [20925, 885, 12], [45800, 3870, 22], [64925, 8077.5, 24], [112950, 19603.5, 32], [140175, 28315.5, 35], [332375, 95585.5, 37]]
+      supplemental_rate: 22
+      supplemental_over_1m_rate: 37
+    # vintage: 2026, source: Rev. Proc. 2025-32 §3.23 (IRC §152(d)(1)(B) exemption amount; gross income must be less)
+    qualifying_relative_income_limit: 5300
+    # vintage: 2026, source: Rev. Proc. 2025-25 §3.01 (the enhanced credits expired after 2025: no extension
+    # enacted through P.L. 119-124, 2026-10-15); the 400% cap returns (IRC §36B(c)(1)(A); 2026 draft Form 8962
+    # line 6); OBBBA (P.L. 119-21) §71305 ended the repayment limit; poverty line: the 2025 HHS guidelines
+    # (90 FR 5917) per §36B(d)(3)(B). TODO(verify): the 2026 Form 8962 instructions are not published yet.
+    premium_tax_credit:
+      applicable_percentage: [[0, 133, 2.1, 2.1], [133, 150, 3.14, 4.19], [150, 200, 4.19, 6.6], [200, 250, 6.6, 8.44], [250, 300, 8.44, 9.96], [300, 400, 9.96, 9.96]]
+      max_fpl_pct: 400
+      min_fpl_pct: 100
+      poverty_line: {base: 15650, per_person: 5500}
+      repayment_limit: [[0, .inf, null, null]]

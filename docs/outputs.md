@@ -47,7 +47,7 @@ at the year end.
 | Life Ins Cash Value | `stat_cash_value` | EXTRA_STATS | LifeInsurance | sum | yes |  | Whole-life cash value. |
 | Death Benefits | `stat_death_benefit_paid` | EXTRA_STATS | LifeInsurance | sum | yes | yes | Life insurance death benefits paid out. |
 | Medical Costs | `stat_medical_costs` | EXTRA_STATS | LongTermCare, MedicalCosts, Medicare | sum | yes | yes | Healthcare, Medicare and long-term-care costs. |
-| Dependent Costs | `stat_dependent_costs` | EXTRA_STATS | Child | sum | yes | yes | Child and dependent costs charged in the year. |
+| Dependent Costs | `stat_dependent_costs` | EXTRA_STATS | Child, Dependent | sum | yes | yes | Child and dependent costs charged in the year. |
 | Pension Income | `stat_pension_income` | EXTRA_STATS | Pension | sum | yes | yes | Defined-benefit pension income received. |
 | NIIT | `stat_taxes_paid_niit` | EXTRA_STATS | Person | sum | yes | yes | Net investment income tax. |
 | Capital Gains | `stat_capital_gains` | EXTRA_STATS | Person | sum | yes | yes | Net capital gains realized (after loss netting). |
@@ -185,6 +185,30 @@ year was settled with. `total_income - total_adjustments = agi`; `agi - deductio
 | `self_employment_tax` | `float` | Self-employment tax (Schedule SE line 12, all members). |
 | `self_employment_tax_deduction` | `float` | Deductible half of self-employment tax (Schedule 1 line 15). |
 | `additional_medicare_tax_self_employment` | `float` | The part of ``additional_medicare_tax`` on self-employment income (Form 8959 Part II; in ``medicare_tax``, on no member's FICA line). |
+| `federal_income_tax_withheld` | `float` | Federal income tax withheld (W-2 box 2; 1040 line 25a). |
+| `additional_medicare_tax_withheld` | `float` | Additional Medicare Tax withheld (Form 8959 line 24; 1040 line 25c). |
+| `social_security_withheld` | `float` | Social Security tax withheld (all employers; W-2 box 4). |
+| `medicare_withheld` | `float` | Medicare tax withheld, with the Additional Medicare Tax (W-2 box 6). |
+| `state_withheld` | `float` | State income tax withheld (W-2 box 17). |
+| `excess_social_security_withheld` | `float` | Social Security withheld over the wage base by several employers (Schedule 3 line 11). |
+| `estimated_tax_payments` | `float` | Federal estimated tax payments for the year (1040 line 26; January's included). |
+| `estimated_tax_penalty` | `float` | Underpayment of estimated tax penalty (Form 2210; 1040 line 38). |
+| `required_annual_payment` | `float` | Form 2210 line 9 (0 when no penalty test applied). |
+| `tax_for_estimates` | `float` | Form 2210 line 4: tax after credits plus self-employment tax, Additional Medicare Tax, NIIT and additional taxes, less refundable credits. |
+| `total_payments` | `float` | 1040 line 33: withholding, estimated payments, refundable credits and excess Social Security. |
+| `amount_owed` | `float` | 1040 line 37: the balance due, with the estimated tax penalty. |
+| `overpayment` | `float` | 1040 line 34: the overpayment (refund), net of the estimated tax penalty. |
+| `state_balance_due` | `float` | State income tax less state withholding (negative: a state refund). |
+| `settled_in_april` | `bool` | Whether the balance due or refund was settled in April of the next year (the unit withholds or pays estimates) rather than in December. |
+| `advance_premium_tax_credit` | `float` | Advance premium tax credit paid to the insurer (Form 8962 line 25). |
+| `excess_advance_ptc_repayment` | `float` | Excess advance premium tax credit repaid (Form 8962 line 29; Schedule 2 line 1a). |
+| `premium_tax_credit_allowed` | `float` | Premium tax credit allowed (Form 8962 line 24); the net credit is ``credits_refundable['premium_tax_credit']``. |
+| `ptc_fpl_percent` | `float` | Household income as a percent of the poverty line (Form 8962 line 5; 401 above 400%). |
+| `ptc_applicable_figure` | `float` | Applicable figure (Form 8962 line 7). |
+| `ptc_contribution` | `float` | Annual contribution amount (Form 8962 line 8a). |
+| `ptc_household_income` | `float` | Household income (Form 8962 line 3). |
+| `ptc_enrollment_premiums` | `float` | Enrollment premiums for the coverage months (Form 1095-A column A). |
+| `ptc_slcsp_premiums` | `float` | Second-lowest-cost silver plan premiums for the coverage months (Form 1095-A column B). |
 
 ## Cash-flow ledger
 

@@ -49,6 +49,9 @@ YEAR_ONLY_FEDERAL_FIELDS = (
     "qcd_limit",
     "ltc_premium_limits",
     "compensation_limit",
+    "withholding",
+    "premium_tax_credit",
+    "qualifying_relative_income_limit",
 )
 
 
@@ -137,6 +140,19 @@ def _project_plan31_params(data: dict, factor: float, round_to) -> None:
             row["limit"] = near(row["limit"], 10)  # §213(d)(10)(B): nearest $10
     if data.get("compensation_limit") is not None:
         data["compensation_limit"] = down(data["compensation_limit"], 5000)  # §401(a)(17)(B): down to $5,000
+    # Plan 31 tasks 6-7. Withholding tables are derived from the projected brackets and standard deduction
+    # (``tax.payments.withholding_table``); the Step 1g amounts and supplemental rates are fixed.
+    if data.get("withholding") is not None:
+        data["withholding"]["standard"] = None
+        data["withholding"]["checkbox"] = None
+    if data.get("qualifying_relative_income_limit") is not None:
+        # §151(d)(4)(B): the exemption amount is rounded down to a multiple of $50.
+        data["qualifying_relative_income_limit"] = down(data["qualifying_relative_income_limit"], 50)
+    ptc = data.get("premium_tax_credit")
+    if ptc is not None:
+        # The poverty guideline grows with prices (HHS rounds to dollars); the applicable percentages (indexed
+        # by Rev. Proc. each year, §36B(b)(3)(A)(ii)) are kept at the last published table.
+        ptc["poverty_line"] = {k: near(v, 10) for k, v in ptc["poverty_line"].items()}
 
 
 class FinancialConfig:
@@ -349,10 +365,17 @@ class FinancialConfig:
         }
         if ctc:
             dependents = dependents.model_copy(update=ctc)
+        # State packs with a year table resolve to the year's entry (Plan 31 D4).
+        state = model.tax.state
+        if any(pack.years is not None for pack in state.packs.values()):
+            state = state.model_copy(
+                update={"packs": {code: pack.for_year(params.year) for code, pack in state.packs.items()}}
+            )
         tax = model.tax.model_copy(
             update={
                 "federal": federal.model_copy(update=federal_updates),
                 "fica": model.tax.fica.model_copy(update={"social_security_max_income": params.ss_wage_base}),
+                "state": state,
             }
         )
         retirement = model.retirement.model_copy(
@@ -475,7 +498,8 @@ class FinancialConfig:
         ``single`` when the config carries no head_of_household data (documented behavior).
         """
         deduction = self._model.tax.federal.standard_deduction
-        if filing_status.value == 2:
+        # A qualifying surviving spouse uses the joint amounts (IRC §1(a), §63(c)(2)(A)).
+        if filing_status.value in (2, 5):
             return deduction.married_filing_jointly
         if filing_status.value == 3 and deduction.head_of_household is not None:
             return deduction.head_of_household
@@ -488,7 +512,7 @@ class FinancialConfig:
     def get_federal_tax_brackets(self, filing_status: "FilingStatus") -> list:
         """Get federal tax brackets for filing status (HEAD_OF_HOUSEHOLD falls back to single)."""
         brackets = self._model.tax.federal.tax_brackets
-        if filing_status.value == 2:
+        if filing_status.value in (2, 5):
             return brackets.married_filing_jointly
         if filing_status.value == 3 and brackets.head_of_household is not None:
             return brackets.head_of_household
@@ -500,7 +524,7 @@ class FinancialConfig:
         """Get preferential capital-gains brackets for filing status (HEAD_OF_HOUSEHOLD falls back
         to single)."""
         brackets = self._model.tax.federal.capital_gains
-        if filing_status.value == 2:
+        if filing_status.value in (2, 5):
             return brackets.married_filing_jointly
         if filing_status.value == 3 and brackets.head_of_household is not None:
             return brackets.head_of_household

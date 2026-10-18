@@ -5,6 +5,7 @@
 
 import math
 import warnings
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from ..ledger import FlowKind, debt_label
@@ -12,7 +13,9 @@ from ..model import Event, EventKind, round_money, snap_money
 from ..tax.deductions import additional_standard_deduction, charitable_deduction, salt_cap, senior_deduction
 from ..tax.federal import FilingStatus, get_federal_standard_deduction
 from ..tax.household import (
+    dependent_counts,
     finish_federal,
+    has_dependent_child,
     plan_deductions,
     post_year_end_adjustments,
     record_year_end,
@@ -21,7 +24,7 @@ from ..tax.household import (
 )
 from ..tax.income import IncomeType
 from ..tax.return_record import TaxReturn, build_tax_return
-from ..tax.state import StateTaxDetail, state_income_tax_detail
+from ..tax.state import StateTaxDetail, part_year_state_tax_detail, state_income_tax_detail
 from ..tax.tax import TaxesDue, compute_taxes
 
 if TYPE_CHECKING:
@@ -137,10 +140,15 @@ class TaxUnit:
         """Group a family's members into filing units.
 
         A married-filing-jointly member and their spouse (when both are in the family) form one
-        joint unit; every other member is its own single unit. An unmarried member with at least
-        one dependent child files HEAD_OF_HOUSEHOLD (the unit's status only — the person's own
-        ``filing_status`` is untouched); when the config carries no head_of_household data the
-        deduction/brackets fall back to single.
+        joint unit; every other member is its own unit. An unmarried member files (the unit's status
+        only — the person's own ``filing_status`` is untouched; Plan 31 D5):
+
+        * QUALIFYING_SURVIVING_SPOUSE in the two years after the year their spouse died, while a dependent
+          child (a qualifying child: under 19, or a student under 24) lives with them (IRC §2(a));
+        * HEAD_OF_HOUSEHOLD with a dependent child or a qualifying relative who qualifies (a supported
+          parent wherever they live, another relative living with them; IRC §2(b));
+        * SINGLE otherwise. When the config carries no head_of_household data the deduction/brackets fall
+          back to single.
         """
         units: list[TaxUnit] = []
         seen = set()
@@ -159,8 +167,10 @@ class TaxUnit:
                 seen.add(spouse.unique_id)
             else:
                 unit = cls([member], withdrawal_order=order)
-                if member.filing_status == FilingStatus.SINGLE and cls._has_dependent_child(member):
-                    unit.filing_status = FilingStatus.HEAD_OF_HOUSEHOLD
+                if member.filing_status == FilingStatus.SINGLE:
+                    status = cls._unmarried_status(member)
+                    if status is not None:
+                        unit.filing_status = status
                 decedent = getattr(member, "deceased_spouse_this_year", None)
                 if (
                     decedent is not None
@@ -173,6 +183,19 @@ class TaxUnit:
                 units.append(unit)
                 seen.add(member.unique_id)
         return units
+
+    @staticmethod
+    def _unmarried_status(member: "Person") -> "FilingStatus | None":
+        """Qualifying surviving spouse or head of household for an unmarried member, else None (single)."""
+        year = member.model.year
+        child = has_dependent_child(member)
+        death_year = getattr(member, "spouse_death_year", None)
+        if child and death_year is not None and death_year < year <= death_year + 2:
+            return FilingStatus.QUALIFYING_SURVIVING_SPOUSE
+        relative = any(d.qualifies_for_head_of_household for d in getattr(member, "qualifying_relatives", ()))
+        if child or relative:
+            return FilingStatus.HEAD_OF_HOUSEHOLD
+        return None
 
     @classmethod
     def for_member(cls, person: "Person") -> "TaxUnit":
@@ -187,12 +210,6 @@ class TaxUnit:
                 if person in unit.members:
                     return unit
         return cls([person], withdrawal_order=getattr(family, "withdrawal_order", None))
-
-    @staticmethod
-    def _has_dependent_child(member: "Person") -> bool:
-        """Whether ``member`` has a dependent child this year (born, and under ``adult_age``)."""
-        adult_age = member.model.config.dependents.adult_age
-        return any(0 <= child.age < adult_age for child in member.children)
 
     @property
     def living_members(self) -> "list[Person]":
@@ -380,7 +397,14 @@ class TaxUnit:
         additional_preferential: float = 0.0,
         additional_short_term: float = 0.0,
     ) -> StateTaxDetail:
-        """:meth:`state_income_tax_due` with the state computation's lines (the one computation)."""
+        """:meth:`state_income_tax_due` with the state computation's lines (the one computation).
+
+        A year in which the head lived in more than one state (the residency timeline, Plan 31 D4) files
+        part-year returns: each income entry belongs to the head's state in the month it was booked (wages
+        by the months worked there, investment income by residence at receipt), and each state taxes its
+        share by the income-ratio method (:func:`~life_model.tax.state.part_year_state_tax_detail`).
+        Prospective amounts being sized (a December draw) belong to the December state.
+        """
         ordinary_bump = additional_income + additional_short_term
         total_income = (
             self.taxable_income
@@ -393,7 +417,46 @@ class TaxUnit:
         totals = self._state_income_totals(additional_income)
         totals[IncomeType.LONG_TERM_CAPITAL_GAIN] += additional_preferential
         totals[IncomeType.SHORT_TERM_CAPITAL_GAIN] += additional_short_term
-        return state_income_tax_detail(totals, self.filing_status, self.state, legacy_agi, self.config)
+        counts = dependent_counts(self)
+        dependents = counts["ctc"] + counts["other"] + counts["relatives"]
+        year = self.members[0].model.year
+        retirees = [(m.age_in(year), m.income.retirement_income) for m in self.members]
+        head = self.members[0]
+        states = head.states_in_year(year) if hasattr(head, "states_in_year") else [self.state]
+        if len(set(states)) > 1:
+            allocations = self._state_allocations(year, states, additional_income)
+            allocations[self.state][IncomeType.LONG_TERM_CAPITAL_GAIN] += additional_preferential
+            allocations[self.state][IncomeType.SHORT_TERM_CAPITAL_GAIN] += additional_short_term
+            return part_year_state_tax_detail(
+                allocations,
+                self.filing_status,
+                legacy_agi,
+                self.config,
+                dependents=dependents,
+                retirees=retirees,
+                final_state=self.config.tax.state.resolve_state_code(self.state),
+            )
+        return state_income_tax_detail(
+            totals, self.filing_status, self.state, legacy_agi, self.config, dependents=dependents, retirees=retirees
+        )
+
+    def _state_allocations(
+        self, year: int, states: "list[str | None]", additional_income: float
+    ) -> "dict[str | None, dict[IncomeType, float]]":
+        """The members' income by the head's state of residence in the month it was booked."""
+        head = self.members[0]
+        allocations: dict[str | None, dict[IncomeType, float]] = {}
+        for code in states:
+            allocations.setdefault(code, {income_type: 0.0 for income_type in IncomeType})
+        allocations.setdefault(self.state, {income_type: 0.0 for income_type in IncomeType})
+        for member in self.members:
+            for month, totals in member.income.totals_by_type_and_month().items():
+                code = head.state_at(year, month) if month is not None else self.state
+                bucket = allocations.setdefault(code, {income_type: 0.0 for income_type in IncomeType})
+                for income_type, amount in totals.items():
+                    bucket[income_type] += amount
+        allocations[self.state][IncomeType.PRETAX_DISTRIBUTION] += additional_income
+        return allocations
 
     def taxable_social_security(self, additional_income: float = 0.0, additional_preferential: float = 0.0) -> float:
         """Taxable portion of the unit's Social Security benefits (IRC §86), side-effect free.
@@ -1078,11 +1141,13 @@ class TaxUnit:
         spending_by_member: dict[int, float] = {}
         housing_by_member: dict[int, float] = {}
         interest_by_member: dict[int, float] = {}
+        self._receive_refunds()
+        tax_lines, tax_payments = self._tax_payment_lines()
         debt_lines, carried = self._carried_debt_lines(interest_by_member)
         spending_lines, spending = self._spending_lines(spending_by_member)
         housing_lines, housing = self._housing_and_debt_lines(housing_by_member, interest_by_member)
-        bill_lines = debt_lines + spending_lines + housing_lines
-        bills = carried + spending + housing
+        bill_lines = tax_lines + debt_lines + spending_lines + housing_lines
+        bills = tax_payments + carried + spending + housing
         when = f"{model.year}-{model.month:02d}"
         if bills > 0:
             self._draw_hsa_for_medical(bills)
@@ -1103,6 +1168,209 @@ class TaxUnit:
             member.stat_money_spent = snap_money(member.stat_money_spent + spending_by_member.get(uid, 0.0))
             member.stat_housing_costs = snap_money(member.stat_housing_costs + housing_by_member.get(uid, 0.0))
             member.stat_interest_paid = snap_money(member.stat_interest_paid + interest_by_member.get(uid, 0.0))
+
+    # ------------------------------------------------------------------
+    # Tax payments during the year (Plan 31 D3)
+    # ------------------------------------------------------------------
+
+    @property
+    def pays_during_year(self) -> bool:
+        """Whether the unit pays taxes as it goes (withholding or estimated payments): its balance due or
+        refund is then settled in April of the next year instead of in December."""
+        return any(_pays_during_year(m) for m in self.members)
+
+    def _receive_refunds(self) -> None:
+        """April: last year's refunds arrive in the highest-yield bank (Plan 31 D3)."""
+        from ..tax.payments import SETTLEMENT_MONTH
+
+        model = self.members[0].model
+        if model.month != SETTLEMENT_MONTH:
+            return
+        for member in self.living_members:
+            refund = member.tax_refund_due
+            if refund <= 0:
+                continue
+            accounts = self._bank_accounts_in_draw_order()
+            target = accounts[-1] if accounts else member.cash_destination
+            if isinstance(target, str):
+                member.cash += refund
+            else:
+                target.balance += refund
+            model.ledger.post(
+                refund,
+                FlowKind.TAX,
+                from_account=tax_refund_label(member),
+                to_account=target,
+                cause=f"{model.year - 1} tax refund",
+                agent=member,
+            )
+            member.tax_refund_due = 0.0
+
+    def _tax_payment_lines(self) -> "tuple[list[_BillLine], float]":
+        """This month's tax payments, paid with the month's bills: April's balance due on last year's
+        return, and the estimated tax installments due this month (April, June, September; January's pays
+        the previous year)."""
+        from ..tax.payments import SETTLEMENT_MONTH, installment_index, payments_for
+
+        model = self.members[0].model
+        year, month = model.year, model.month
+        lines: list[_BillLine] = []
+        total = 0.0
+        if month == SETTLEMENT_MONTH:
+            for member in self.living_members:
+                owed = member.taxes_owed
+                if owed > 0:
+                    lines.append(
+                        _BillLine(
+                            owed,
+                            FlowKind.TAX,
+                            member,
+                            f"{year - 1} balance due",
+                            to_account=tax_due_label(member),
+                            on_post=_clear_owed(member, owed),
+                        )
+                    )
+                    total += owed
+        index = installment_index(month)
+        if index is None:
+            return lines, total
+        head = self.members[0]
+        for member in self.living_members:
+            policy = getattr(member, "estimated_payments", None)
+            if policy is None:
+                continue
+            tax_year = year - 1 if index == 3 else year
+            if index == 3:
+                amount = member.__dict__.pop("_estimated_q4", (None, 0.0))
+                amount = amount[1] if amount[0] == tax_year else 0.0
+            else:
+                amount = self._installment(member, policy, index)
+            if amount < 0.005:
+                continue
+            payments_for(member, tax_year).estimated.append((index, amount))
+            cause = f"{tax_year} Q{index + 1} estimated tax"
+            if index == 3:
+                # The year's return is already accrued: the payment reduces the balance due on it (any excess
+                # is refunded in April).
+                owed_part = min(amount, max(0.0, head.taxes_owed))
+                if owed_part > 0:
+                    lines.append(
+                        _BillLine(
+                            owed_part,
+                            FlowKind.TAX,
+                            member,
+                            cause,
+                            to_account=tax_due_label(head),
+                            on_post=_clear_owed(head, owed_part),
+                        )
+                    )
+                if amount - owed_part > 0:
+                    lines.append(
+                        _BillLine(
+                            amount - owed_part,
+                            FlowKind.TAX,
+                            member,
+                            cause,
+                            to_account=tax_refund_label(head),
+                            on_post=_add_refund(head, amount - owed_part),
+                        )
+                    )
+            else:
+                lines.append(_BillLine(amount, FlowKind.TAX, member, cause, sink="IRS: federal income tax"))
+            total += amount
+        return lines, total
+
+    def _installment(self, member: "Person", policy, index: int) -> float:
+        """The estimated tax installment ``index`` (0-2) ``member``'s policy pays now."""
+        from ..tax.payments import payments_of
+
+        if policy.quarterly is not None:
+            return float(policy.quarterly[index])
+        year = member.model.year
+        required = self._required_annual_payment(member, policy, projected=True)
+        months = max(1, member.model.months_in_year(year) - (12 - member.model.month))
+        withheld = self._withholding_for_estimates(year) * 12 / months
+        paid = sum(payments_of(m, year).estimated_total for m in self.members)
+        return max(0.0, (index + 1) / 4 * (required - withheld) - paid)
+
+    def _required_annual_payment(self, member: "Person", policy, *, projected: bool, taxes=None) -> float:
+        """What ``policy`` aims to pay for the year (withholding included): last year's tax (100%, 110% over
+        the AGI threshold) or 90% of this year's tax (projected from the year so far, or ``taxes``)."""
+        rules = self.config.tax.federal.estimated_tax
+        if policy.policy == "safe_harbor":
+            prior_tax, prior_agi = self._prior_year(member)
+            if prior_tax is None:
+                return 0.0
+            threshold = rules.high_income_agi / (2 if self.filing_status.name == "MARRIED_FILING_SEPARATELY" else 1)
+            pct = rules.required_prior_high_income_pct if (prior_agi or 0.0) > threshold else rules.required_prior_pct
+            return prior_tax * pct / 100
+        current = tax_for_estimates(taxes) if taxes is not None else self.projected_tax_for_estimates()
+        return current * rules.required_current_pct / 100
+
+    def _prior_year(self, member: "Person") -> "tuple[float | None, float | None]":
+        """Last year's Form 2210 tax and AGI: from last year's return, else the policy's inputs."""
+        year = member.model.year
+        prior = member.tax_returns.get(year - 1)
+        if prior is not None:
+            return prior.tax_for_estimates, prior.agi
+        for m in self.members:
+            policy = getattr(m, "estimated_payments", None)
+            if policy is not None and policy.prior_year_tax is not None:
+                return policy.prior_year_tax, policy.prior_year_agi
+        return None, None
+
+    def _withholding_for_estimates(self, year: int) -> float:
+        """Withholding that counts as estimated tax so far this year: federal income tax and the Additional
+        Medicare Tax withheld (Form 2210 line 6, before any excess Social Security)."""
+        from ..tax.payments import payments_of
+
+        return sum(
+            payments_of(m, year).federal_withheld + payments_of(m, year).additional_medicare_withheld
+            for m in self.members
+        )
+
+    def projected_taxes(self) -> TaxesDue:
+        """The year's taxes projected from the year so far: every income entry scaled to a full year (12 over
+        the months simulated through this one), taxed, and rolled back. A projection for the estimated tax
+        policy and the contribution hold-back; settlement always taxes the real ledger."""
+        model = self.members[0].model
+        elapsed = max(1, model.months_in_year(model.year) - (12 - model.month))
+        factor = model.months_in_year(model.year) / elapsed
+        if factor <= 1.0:
+            return self.get_income_taxes_due()
+        saved = [(m, len(m.income.entries)) for m in self.members]
+        try:
+            for member in self.members:
+                extra = []
+                for entry in member.income.entries:
+                    copy = replace(entry)
+                    copy.amount = entry.amount * (factor - 1)
+                    copy.fica_wages = entry.fica_wages * (factor - 1)
+                    copy.gross = entry.gross * (factor - 1)
+                    extra.append(copy)
+                member.income.entries.extend(extra)
+            return self.get_income_taxes_due()
+        finally:
+            for member, length in saved:
+                del member.income.entries[length:]
+            self.get_income_taxes_due()
+
+    def projected_tax_for_estimates(self) -> float:
+        return tax_for_estimates(self.projected_taxes())
+
+    def expected_unpaid_tax(self) -> float:
+        """The tax this year's income so far still owes beyond what has been paid toward it: the projected
+        year's tax (income tax, payroll and state taxes) times the share of the year elapsed, less the year's
+        withholding and estimated payments so far. The bank-sourced contributions hold it back (Plan 31)."""
+        from ..tax.payments import payments_of
+
+        model = self.members[0].model
+        year = model.year
+        elapsed = max(1, model.months_in_year(year) - (12 - model.month))
+        share = elapsed / model.months_in_year(year)
+        accrued = max(0.0, self.projected_taxes().total) * share
+        paid = sum(payments_of(m, year).withheld_total + payments_of(m, year).estimated_total for m in self.members)
+        return max(0.0, accrued - paid)
 
     # ------------------------------------------------------------------
     # Year-end settlement
@@ -1127,12 +1395,16 @@ class TaxUnit:
         # capped per return and phased out by MAGI; tax/household.py).
         post_year_end_adjustments(self)
 
+        if self.pays_during_year:
+            self._settle_year_paid_as_you_go()
+            return
+
         bills = 0.0
         with model.ledger.caused_by(f"fund {year} taxes"):
             taxes = self._fund_bills(bills)
 
         # The year's return, from exactly the taxes about to be paid and the ledger they came from.
-        tax_return = build_tax_return(self, taxes)
+        tax_return = build_tax_return(self, taxes, self._payments_summary(taxes, None))
         model.tax_returns[(tax_return.year, tax_return.unit_id)] = tax_return
         for member in self.members:
             member.tax_returns[tax_return.year] = tax_return
@@ -1180,6 +1452,155 @@ class TaxUnit:
         for member in self.members:
             member.stat_itemized_deductions = itemized_claimed * shares[member.unique_id]
         self._fold_decedent_stats()
+
+    def _payments_summary(self, taxes: TaxesDue, form2210, estimated_q4: float = 0.0) -> dict:
+        """The year's payments toward the return (Form 1040 lines 25-38) for the record."""
+        from ..tax.payments import payments_of
+
+        year = self.members[0].model.year
+        records = [payments_of(m, year) for m in self.members]
+        ss_withheld = [r.social_security_withheld for r in records]
+        excess_ss = sum(
+            max(0.0, withheld - (taxes.ss_by_worker[i] if i < len(taxes.ss_by_worker) else 0.0))
+            for i, withheld in enumerate(ss_withheld)
+        )
+        return {
+            "federal_income_tax_withheld": sum(r.federal_withheld for r in records),
+            "additional_medicare_tax_withheld": sum(r.additional_medicare_withheld for r in records),
+            "social_security_withheld": sum(ss_withheld),
+            "medicare_withheld": sum(r.medicare_withheld for r in records),
+            "state_withheld": sum(r.state_withheld for r in records),
+            "excess_social_security_withheld": excess_ss,
+            "estimated_tax_payments": sum(r.estimated_total for r in records) + estimated_q4,
+            "estimated_tax_penalty": form2210.penalty if form2210 is not None else 0.0,
+            "required_annual_payment": form2210.required_annual_payment if form2210 is not None else 0.0,
+            "settled_in_april": form2210 is not None,
+        }
+
+    def _settle_year_paid_as_you_go(self) -> None:
+        """December settlement of a unit that withholds or pays estimates (Plan 31 D3): the return is computed
+        as always (no waterfall draw: nothing is paid now), the January installment and the Form 2210 penalty
+        are figured, and the balance due (or refund) is accrued to the head's tax balance, paid (received) in
+        April of the next year. The ledger's tax lines for the year are the return's liabilities: the
+        withholding and estimated payments already posted, and here each line's remainder."""
+        from ..tax.payments import payments_of, underpayment_penalty
+
+        model = self.members[0].model
+        year = model.year
+        head = self.members[0]
+        with model.ledger.caused_by(f"{year} return"):
+            self._apply_capital_loss_netting()
+            taxes = self.get_income_taxes_due()
+        # January's installment (decided now, on the year's actual tax) and the underpayment penalty.
+        estimated_q4 = 0.0
+        for member in self.living_members:
+            policy = getattr(member, "estimated_payments", None)
+            if policy is None:
+                continue
+            if policy.quarterly is not None:
+                q4 = float(policy.quarterly[3])
+            else:
+                required = self._required_annual_payment(member, policy, projected=False, taxes=taxes)
+                paid = sum(payments_of(m, year).estimated_total for m in self.members) + estimated_q4
+                q4 = max(0.0, required - self._withholding_for_estimates(year) - paid)
+            if q4 > 0.005:
+                member._estimated_q4 = (year, q4)
+                estimated_q4 += q4
+        records = [payments_of(m, year) for m in self.members]
+        summary = self._payments_summary(taxes, None, estimated_q4)
+        estimated = [item for r in records for item in r.estimated]
+        if estimated_q4:
+            estimated.append((3, estimated_q4))
+        prior_tax, prior_agi = self._prior_year(head)
+        form2210 = underpayment_penalty(
+            year,
+            tax_for_estimates(taxes),
+            summary["federal_income_tax_withheld"]
+            + summary["additional_medicare_tax_withheld"]
+            + summary["excess_social_security_withheld"],
+            estimated,
+            prior_year_tax=prior_tax,
+            prior_year_agi=prior_agi,
+            separate=self.filing_status.name == "MARRIED_FILING_SEPARATELY",
+            config=self.config,
+        )
+        taxes.estimated_tax_penalty = form2210.penalty
+        tax_return = build_tax_return(self, taxes, self._payments_summary(taxes, form2210, estimated_q4))
+        model.tax_returns[(tax_return.year, tax_return.unit_id)] = tax_return
+        for member in self.members:
+            member.tax_returns[tax_return.year] = tax_return
+        agi = self.agi()
+        for member in self.members:
+            member.agi_history[year] = agi
+        record_year_end(self, taxes, agi)
+        itemized_claimed = taxes.itemized_deduction if taxes.itemize else 0.0
+
+        lines = self._tax_lines(taxes)
+        if form2210.penalty > 0:
+            lines.append(
+                _BillLine(
+                    form2210.penalty,
+                    FlowKind.PENALTY,
+                    head,
+                    "estimated tax penalty (Form 2210)",
+                    sink="IRS: estimated tax penalty",
+                )
+            )
+        self._net_payments(lines, records, head)
+        # Remainders to the cent (withholding was computed exactly; float residue is not a balance).
+        for line in lines:
+            line.amount = round(line.amount, 2)
+        lines = [line for line in lines if line.amount != 0.0]
+        net = round(sum(line.amount for line in lines), 2)
+        label = tax_due_label(head) if net >= 0 else tax_refund_label(head)
+        model.ledger.name_label(tax_due_label(head), f"{head.name}'s taxes owed")
+        model.ledger.name_label(tax_refund_label(head), f"{head.name}'s tax refund due")
+        for line in lines:
+            line.from_account = label
+            line.post(model.ledger, None)
+        if net >= 0:
+            head.taxes_owed += net
+        else:
+            head.tax_refund_due += -net
+        self._record_stats(taxes, tax_return)
+        shares = self._member_shares() if len(self.members) > 1 else {self.members[0].unique_id: 1.0}
+        for member in self.members:
+            member.stat_itemized_deductions = itemized_claimed * shares[member.unique_id]
+        self._fold_decedent_stats()
+
+    def _net_payments(self, lines: "list[_BillLine]", records, head) -> None:
+        """Take the year's withholding and in-year estimated payments off the matching tax lines (federal
+        income tax, state income tax, each member's Social Security and Medicare)."""
+        federal = sum(r.federal_withheld + r.estimated_total for r in records)
+        state = sum(r.state_withheld for r in records)
+        by_cause = {}
+        for line in lines:
+            by_cause.setdefault((line.cause, line.member.unique_id), line)
+        for line in lines:
+            if line.cause == "federal income tax":
+                line.amount -= federal
+                federal = 0.0
+            elif line.cause == "state income tax":
+                line.amount -= state
+                state = 0.0
+        for member, record in zip(self.members, records, strict=True):
+            for cause, paid, sink in (
+                ("social security tax", record.social_security_withheld, "IRS: social security tax"),
+                ("medicare tax", record.medicare_withheld, "IRS: medicare tax"),
+            ):
+                if not paid:
+                    continue
+                line = by_cause.get((cause, member.unique_id))
+                if line is None:
+                    lines.append(_BillLine(-paid, FlowKind.TAX, member, cause, sink=sink))
+                else:
+                    line.amount -= paid
+        if federal:
+            lines.append(_BillLine(-federal, FlowKind.TAX, head, "federal income tax", sink="IRS: federal income tax"))
+        if state:
+            lines.append(
+                _BillLine(-state, FlowKind.TAX, head, "state income tax", sink=f"state income tax ({self.state})")
+            )
 
     def _housing_lines(self, member: "Person", home) -> "list[_BillLine]":
         """The ledger lines of a home's last payment (``home.year_payment``: a month's)."""
@@ -1407,9 +1828,11 @@ class _BillLine:
     ``source`` is an inflow (a loan reduced by someone else).
     """
 
-    __slots__ = ("amount", "cause", "from_account", "kind", "member", "sink", "source", "to_account")
+    __slots__ = ("amount", "cause", "from_account", "kind", "member", "on_post", "sink", "source", "to_account")
 
-    def __init__(self, amount, kind, member, cause, *, sink=None, to_account=None, from_account=None, source=None):
+    def __init__(
+        self, amount, kind, member, cause, *, sink=None, to_account=None, from_account=None, source=None, on_post=None
+    ):
         self.amount = amount
         self.kind = kind
         self.member = member
@@ -1418,8 +1841,12 @@ class _BillLine:
         self.to_account = to_account
         self.from_account = from_account
         self.source = source
+        #: Called after posting (a tax balance the payment settles).
+        self.on_post = on_post
 
     def post(self, ledger, payer) -> None:
+        if self.on_post is not None:
+            self.on_post()
         if self.source is not None:
             ledger.post(
                 self.amount,
@@ -1477,3 +1904,41 @@ def _loan_lines(
             )
         )
     return lines
+
+
+def tax_due_label(person) -> str:
+    """Label of a person's balance due on a filed return, payable in April (a liability; Plan 31 D3)."""
+    return f"TaxDue:{person.unique_id}"
+
+
+def tax_refund_label(person) -> str:
+    """Label of a person's tax refund receivable in April (an asset; Plan 31 D3)."""
+    return f"TaxRefund:{person.unique_id}"
+
+
+def _clear_owed(person, amount: float):
+    def apply() -> None:
+        person.taxes_owed = snap_money(person.taxes_owed - amount)
+
+    return apply
+
+
+def _add_refund(person, amount: float):
+    def apply() -> None:
+        person.tax_refund_due = snap_money(person.tax_refund_due + amount)
+
+    return apply
+
+
+def _pays_during_year(member: "Person") -> bool:
+    """A member who withholds (a job with a withholding policy), pays estimates or has paid any tax for a year."""
+    if getattr(member, "estimated_payments", None) is not None or getattr(member, "tax_payments", None):
+        return True
+    return any(getattr(job, "withholding", None) is not None for job in member.jobs)
+
+
+def tax_for_estimates(taxes: TaxesDue) -> float:
+    """Form 2210 line 4 ("current year tax"): tax after nonrefundable credits, plus self-employment tax, the
+    Additional Medicare Tax, NIIT, additional taxes on distributions and excess advance premium tax credit,
+    less refundable credits."""
+    return taxes.federal + taxes.niit + taxes.se_tax + taxes.additional_medicare - taxes.credits
