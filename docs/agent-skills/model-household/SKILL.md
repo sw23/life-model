@@ -28,10 +28,15 @@ the results with explicit assumptions. You do not need to read `src/`. Reference
    %, employer match tiers, brokerage value and cost basis, IRAs, HSA, 529); debts (current balance,
    original amount, APR, term); home (value, purchase price, mortgage statement: original amount,
    balance, rate, term, start year; property tax, insurance, HOA); rent; insurance policies; the SSA
-   statement's earnings record and planned claiming age; children's birth years; planned events
-   (a move, a purchase, a job change, college). Record `meta.as_of` (the statement date).
+   statement's earnings record and planned claiming age; children's birth years and months; planned
+   events (a move, a purchase, a job change, college). Record `meta.as_of` (the statement date).
 2. **Never invent a balance, rate or date.** If a value is missing, ask for it. If you must proceed,
-   use a clearly labeled assumption (and list it in step 8), never a made-up "realistic" number.
+   use a clearly labeled assumption (and list it in step 9), never a made-up "realistic" number.
+   *Behavioral* inputs statements never show (raises, spending growth, retiree health costs) are
+   different: don't leave them at a 0% core default because nothing was stated. Use the
+   economy-linked documented choice (`raise_pct: economy`, `growth_pct: economy`) and list it as an
+   assumption; "use the documented default" means the documented, economy-linked choice, not the
+   silent 0% core default the validator warns about.
 3. **Start from an example.** `life-model examples` lists them; `life-model examples --copy
    married_homeowners my-models/<name>.yaml` (or `single_renter`, `retiree_couple`) gives the shape.
    `life-model schema` prints the JSON Schema.
@@ -40,18 +45,38 @@ the results with explicit assumptions. You do not need to read `src/`. Reference
    otherwise default silently: `mortality` (default immortal), spending `growth_pct` (default 0%),
    `raise_pct` (default 0%), rent growth (default 5%), `state` (must be a supported code), filing
    status via `relationships.marriages`. Things that already happened go in the starting state, not
-   in events.
+   in events. Watch these, each of which silently changes a long-run answer:
+   - **Spending is per person and adds up** across the household: put the whole budget on one
+     spouse (leave the other's `spending` out) or split it, never the full budget on each.
+   - **Children cost the configured bands on top of spending** (childcare, school age and college:
+     the table in docs/household-spec.md). If the budget already includes the child, set
+     `cost_override_annual: 0`; set `college_cost_annual` to the plan (0 for none); give `birth_month`.
+   - **Health coverage before 65 and Medicare after**: payroll premiums stop with the job. For an
+     early retiree add a `kind: health` policy (`coverage_start_age` to 64) and
+     `healthcare: {medicare: true}`, or state the gap as an assumption.
+   - **Surplus cash** stays in the bank at its yield unless a `savings_policy` sweeps it.
+   - **Joint accounts**: list a joint checking or brokerage account once with `joint: true` (the
+     other spouse then needs no bank account of their own).
+   - **SSA estimates assume work until full retirement age**: give `pia_override_monthly` together
+     with the statement's `earnings_history`, so an earlier retirement lowers the benefit.
+   - **A loan behind its own schedule** (balance above what its terms leave) needs
+     `schedule: statement`; contribution plans end with `end` / `until_age` (a 529 stops at college
+     by default).
 5. **Validate until clean.** `life-model validate my-models/<name>.yaml`. Fix every error; for each
-   warning either fix it or keep it deliberately and note why. Exit code 2 means errors remain.
+   warning either fix it or keep it deliberately: list its code in `meta.accepted_warnings` and
+   report it as an assumption. Exit code 2 means errors remain.
 6. **Run.** `life-model run my-models/<name>.yaml --out my-models/out` (add `--seed N` for
    reproducibility, `--real-dollars` to compare years in today's money). Check the summary:
-   `shortfall_years` (bills the household could not pay) and `conservation_failures` (must be
-   empty; if not, report it as a model bug rather than explaining it away).
+   `shortfall_years` (bills the household could not pay) and `conservation_failures` (always
+   checked in nominal dollars, so the same with `--real-dollars`; it must be empty, and if not,
+   report it as a model bug rather than explaining it away). The summary also gives the net-worth
+   peak and the lowest cash (overall and after everyone retires), in nominal and start-year dollars.
 7. **Explain and compare.** `life-model explain <spec> --year Y` for the years that matter
    (retirement, a purchase, the first RMD year). For a decision, `life-model compare <spec> --set
    'people[<id>].retirement_age=62'` or `--change my-models/change.yaml` (a merge patch; `events+:`
-   appends events). For risk, `life-model montecarlo <spec> --scenario stochastic --n 1000 --seed 1`
-   or `compare ... --montecarlo 500 --scenario stochastic`.
+   appends events; `compare --json` has both runs' yearly rows, peaks and lowest cash). For risk,
+   `life-model montecarlo <spec> --scenario stochastic --n 1000 --seed 1 [--real-dollars]` or
+   `compare ... --montecarlo 500 --scenario stochastic`.
 8. **Reconcile against actuals when you have them.** Put the filed return's lines (by that year's
    Form 1040 line numbers), W-2/1099 boxes and December 31 balances under `actuals: {<year>: ...}`
    in the spec (or a separate file in `my-models/`), start the spec on January 1 of that year, and

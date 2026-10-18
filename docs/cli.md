@@ -34,8 +34,8 @@ or `.json`) or `--example NAME` (a shipped synthetic example), plus:
 | `--years N` | Number of simulated calendar years: `end_year = start_year + N - 1` (a spec whose `meta.start` is mid-year counts its part first year as one). |
 | `--end-year Y` | Last simulated year (inclusive); overrides `meta.end_year`. Exclusive with `--years`. |
 | `--scenario NAME` | A named scenario (`life-model examples` lists them), replacing `meta.scenario`. `stochastic` draws random returns and inflation each year. |
-| `--checks strict\|warn\|off` | `warn` (default): validator errors fail; validator warnings, invariant violations (the checker in `life_model.invariants`, run at each year end: yearly and monthly conservation, no negative month-end balances, contribution limits, RMDs, FICA, ...; see [reconciliation.md](reconciliation.md)) and a failed money-conservation check are reported. `strict`: those fail too. `off`: skip the validator (fields the engine does not support are still rejected) and every check. |
-| `--real-dollars` | Report money in start-year dollars (`RunResult.real_dollars()`). Not on `montecarlo`. |
+| `--checks strict\|warn\|off` | `warn` (default): validator errors fail; validator warnings, invariant violations (the checker in `life_model.invariants`, run at each year end: yearly and monthly conservation, no negative month-end balances, contribution limits, RMDs, FICA, ...; see [reconciliation.md](reconciliation.md)) and a failed money-conservation check are reported. `strict`: those fail too, with exit code 2 for validator warnings and 1 for an invariant or conservation failure, with or without `--real-dollars` (on `montecarlo` every trial runs the invariant checker). Warnings whose code is in `meta.accepted_warnings` are kept on purpose and do not fail. `off`: skip the validator (fields the engine does not support are still rejected) and every check. |
+| `--real-dollars` | Report money in start-year dollars (`RunResult.real_dollars()`; on `montecarlo` each trial by its own inflation). The conservation check always runs on nominal money, so it gives the same answer either way. |
 | `--json` | Print exactly one JSON object to stdout (every command, see below). |
 
 ### `run`
@@ -44,8 +44,11 @@ or `.json`) or `--example NAME` (a shipped synthetic example), plus:
 
 Builds and runs the household and prints the key columns per year (Year, Income, Taxes, Spending,
 Housing, Bank Balance, Debt, Net Worth) and a summary: the span (`2026-05 to 2030-12` when
-`meta.start` is mid-year; `start` in the JSON summary), final net worth, run totals, years with unpaid
-bills (`shortfall_years`) and any year whose money-conservation check failed. `--collect month` also
+`meta.start` is mid-year; `start` in the JSON summary), final net worth, run totals, the net-worth
+peak and the lowest year-end cash (each in nominal and start-year dollars, and the lowest cash after
+the last worker reaches `retirement_age`: `net_worth_peak`, `lowest_cash`, `lowest_cash_retired`),
+the years with unpaid bills (`shortfall years ...: none` when there are none) and the conservation
+line (`conservation check: passed in every year`, or the years that failed, a model bug to report). `--collect month` also
 collects a row per month end (`RunResult.monthly_frame`: `Year`, `Month` and the model columns, flows
 for the year to date; `months` in the JSON summary), written as `monthly_frame` in `result.json` or
 `monthly.csv` / `monthly.parquet`. `--out DIR` writes
@@ -63,7 +66,8 @@ installed package: outputs describe a household and belong in a git-ignored plac
 `life-model validate SPEC [--scenario NAME]`
 
 Prints every finding as `[level] path: message Fix: ...` (or `no findings`) and exits 2 when any
-finding is an error. Schema errors (unknown keys, wrong types), validator errors (an unknown state,
+finding is an error. Warnings the spec keeps on purpose (`meta.accepted_warnings: [code, ...]`) are
+left out and noted on a last line (`accepted` in the JSON payload); errors cannot be accepted. Schema errors (unknown keys, wrong types), validator errors (an unknown state,
 an event before the start year, a field the engine cannot simulate yet) and warnings (0% spending
 growth, a rate that looks like a fraction) all come back with a stable `code`.
 
@@ -72,8 +76,9 @@ growth, a rate that looks like a fraction) all come back with a stable `code`.
 `life-model explain SPEC --year Y`
 
 Runs the household and prints the markdown account of year `Y`: income by source, growth, bills by
-category, how they were paid (every forced sale and pre-tax withdrawal and its cause), savings
-moves, each tax return line by line, the change in net worth, and the year's events
+category, how they were paid (every forced sale and pre-tax withdrawal and its cause, and the 529
+and HSA withdrawals that paid college and medical costs), savings moves (each with its target
+account), each tax return line by line, the change in net worth, and the year's events
 (`RunResult.explain`). A year outside the run exits 2.
 
 ### `reconcile`
@@ -99,8 +104,9 @@ inside `Y` reconciles a part year: only the simulated months, as the report note
 
 Runs the household as written and with a change, on the same seed, and prints the deltas
 (changed minus base): final-year net worth, total taxes over the run, each final-year balance, the
-number of shortfall years, and with `--montecarlo N` both success rates over `N` paired trials and
-their difference (use `--scenario stochastic` so trials differ; `--workers N` sets the Monte Carlo
+number of shortfall years (always printed, `0 -> 0 (+0)` included), each run's net-worth peak and
+lowest cash with their years (nominal and start-year dollars), and with `--montecarlo N` both success
+rates over `N` paired trials and their difference (use `--scenario stochastic` so trials differ; `--workers N` sets the Monte Carlo
 worker processes).
 
 A change is a **JSON merge patch** ([RFC 7386](https://www.rfc-editor.org/rfc/rfc7386)) on the spec,
@@ -130,7 +136,7 @@ the path is dotted keys with list selectors (`people[0].age`, `people[jane].age`
 
 ### `montecarlo`
 
-`life-model montecarlo SPEC [--n 1000] [--seed N] [--workers N] [--out DIR] [--format auto|parquet|csv]`
+`life-model montecarlo SPEC [--n 1000] [--seed N] [--workers N] [--real-dollars] [--out DIR] [--format auto|parquet|csv]`
 
 Runs `--n` trials (default 1000; `--workers N` worker processes, automatic by default, `1` runs
 them in this process) that differ only in their seeds (per-trial seeds derive from `--seed`, so a study is
@@ -181,9 +187,10 @@ Failure:
 
 Payloads: `run` has `summary` (`household`, `seed`, `dollars`, `years`, `final_year`,
 `final_net_worth`, `final_balances`, `totals`, `shortfall_years`, `conservation_failures`,
-`yearly`) and `files`; `validate` has `valid`, `error_count`, `warning_count` and `findings`;
+`net_worth_peak`, `lowest_cash`, `lowest_cash_retired`, `yearly`) and `files`; `validate` has
+`valid`, `error_count`, `warning_count`, `findings` and `accepted`;
 `explain` has `year` and `markdown`; `compare` has `seed`, `changes`, `base` and `changed`
-summaries, `deltas` and `montecarlo`; `montecarlo` has `summary` (`trials`, `years`,
+summaries (each with its `yearly` rows), `deltas` and `montecarlo`; `montecarlo` has `summary` (`trials`, `dollars`, `years`,
 `success_rate`, `success_definition`, `final_net_worth` percentiles, `trials_differ`) and `files`;
 `schema` has `schema`; `examples` has `examples` and `scenarios`. Every success also lists the
 validator and engine `warnings` raised while running.
@@ -210,7 +217,7 @@ print(report.to_markdown())
 
 A spec argument may be a `HouseholdSpec`, a dict, YAML/JSON text or a path. `run`, `explain`,
 `compare` and `api.run_montecarlo` take `seed`, `years` or `end_year`, `scenario` and `checks` like
-the command line (`run` and `compare` also `real_dollars`). Errors: `SpecValidationError`
+the command line (`run`, `compare` and `api.run_montecarlo` also `real_dollars`). Errors: `SpecValidationError`
 (`.findings`) for an invalid spec, `api.InputError` for other bad input; both are `ValueError`s.
 `api.summarize(result)`, `api.apply_change(spec, patch, sets=[...])`, `api.merge_patch` and
 `api.set_path` are the building blocks the command line uses.

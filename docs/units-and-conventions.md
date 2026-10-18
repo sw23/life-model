@@ -60,6 +60,22 @@ economy's cumulative inflation since the start year (`RunResult.deflators`, 1.0 
 Rates, years and identifiers are unchanged. A few config tables are stated in real start-year
 dollars and inflated by the engine (the medical cost curve, long-term-care costs, child costs).
 
+The money-conservation check is a statement about nominal money (a year's change in net worth
+equals its ledger flows), so it is always checked in nominal dollars, also for a real-dollar result:
+in start-year dollars inflation erodes the opening balance without any ledger flow.
+`RunResult.conservation()` returns nominal records either way, and `conservation_failures` is the
+same list with and without `--real-dollars`.
+
+## Spending is per person and adds up
+
+`people[].spending.amount_annual` is that person's living spending; the household spends the sum
+over everyone. Put the whole household budget on one spouse (and leave the other spouse's
+`spending` out) or split it, never the full budget on each. Spending excludes what the model adds
+itself: housing, debt payments, taxes, payroll deductions, insurance premiums, healthcare agents,
+events and **children's cost bands** (see the Child cost bands table in
+[household-spec.md](household-spec.md)): when the budget already includes a child, set the child's
+`cost_override_annual: 0`.
+
 ## Growth: a number, `"economy"` or `None`
 
 | Value | Spec | Core |
@@ -91,7 +107,11 @@ Defaults differ between the spec and the core: the spec's spending `growth_pct` 
   these, `current_balance=None` means a brand-new loan and `payment_monthly=None` the computed
   amortizing payment. Terms are in months (`term_months`; `term_years` is sugar). A mortgage's
   `escrow_monthly` is subtracted from a statement payment that includes it (the home's expenses pay the
-  tax and insurance).
+  tax and insurance). A balance **above** the original schedule (late payments, a deferral) is an error
+  under the default `schedule: contract`; when the statement is right, `schedule: statement` trusts
+  the balance and amortizes it at `payment_monthly`, else over `remaining_months`, else at the
+  contract payment of the original amount and term (paying off after the original maturity). The
+  error's Fix names the field combinations that validate.
 - **`seed=None`**: draw a fresh seed (reported as `RunResult.seed`); deterministic households give
   the same numbers either way.
 
