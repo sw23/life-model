@@ -21,6 +21,7 @@ from life_model.account.job401k import Job401kAccount
 from life_model.account.roth_IRA import RothIRA
 from life_model.account.traditional_IRA import TraditionalIRA
 from life_model.base_classes import FinancialAccount, TaxAdvantagedAccount
+from life_model.ledger import FlowKind
 from life_model.limits import job_401k_annual_additions_limit
 from life_model.model import LifeModel
 from life_model.people.person import Person
@@ -323,7 +324,15 @@ class TransferAction(FinancialAction):
             return ActionResult(success=False, message="Transfer cannot be executed")
 
         target = self._target()
-        self.person.deduct_from_bank_accounts(amount)
+        # Every dollar moved is posted to the ledger (a transfer from the bank into the target), so
+        # the model's conservation and between-year continuity checks hold under RL actions.
+        if isinstance(target, TaxAdvantagedAccount):
+            source_bank = self.person.bank_accounts[0] if self.person.bank_accounts else None
+            self.person.deduct_from_bank_accounts(amount)  # contribute() below posts the transfer
+        else:
+            self.person.deduct_from_bank_accounts(
+                amount, kind=FlowKind.CONTRIBUTION, to_account=target, cause=f"RL action: {self.action_type.value}"
+            )
         # Employer match earned by this deferral (computed before the deferral is recorded).
         employer_match = self.match.match_for(self.person, amount) if self.action_type in _401K_DEFERRALS else 0.0
 
@@ -340,12 +349,21 @@ class TransferAction(FinancialAction):
         elif isinstance(target, TaxAdvantagedAccount):
             # A contribution (counts against the annual limit and carries its tax treatment),
             # not a plain deposit.
-            target.contribute(amount)
+            target.contribute(amount, from_account=source_bank)
         else:
             target.deposit(amount)
 
         if employer_match > 0:
             target.pretax_balance += employer_match
+            employer = target.job.company if getattr(target, "job", None) is not None else "employer"
+            self.person.model.ledger.post(
+                employer_match,
+                FlowKind.MATCH,
+                to_account=target,
+                source=employer,
+                cause="employer match (RL deferral)",
+                agent=self.person,
+            )
         return ActionResult(success=True, amount_transferred=amount, employer_match=employer_match)
 
 
@@ -379,7 +397,12 @@ class WithdrawalAction(FinancialAction):
         penalty = withdrawn * EARLY_WITHDRAWAL_PENALTY if penalized else 0.0
         if penalty > 0:
             # The helper deposited the gross amount; pull the penalty back out of the bank.
-            self.person.deduct_from_bank_accounts(penalty)
+            self.person.deduct_from_bank_accounts(
+                penalty,
+                kind=FlowKind.PENALTY,
+                sink="IRS: additional tax: Roth 401k early withdrawal",
+                cause="RL action: early Roth 401k withdrawal",
+            )
 
         return ActionResult(success=True, amount_transferred=withdrawn, fees_paid=penalty)
 
