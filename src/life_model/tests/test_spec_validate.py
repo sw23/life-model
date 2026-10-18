@@ -18,7 +18,7 @@ from ..spec import ERROR, WARNING, Finding, build_model, load_example, validate_
 from ..spec.schema import NYS_KEY
 from ..spec.validate import not_yet_supported_findings
 from ..work.job import Job, Salary
-from .spec_helpers import minimal, spec_of
+from .spec_helpers import minimal, not_yet_supported, spec_of
 
 
 def codes(findings: list[Finding], level: str | None = None) -> list[str]:
@@ -91,14 +91,17 @@ class TestSpecErrors(unittest.TestCase):
         data = minimal()
         data["people"][0]["birth"] = "1986-04"
         data["people"][0]["accounts"].append({"kind": "fixed_income", "instrument": "cd", "face": 10000, "rate_pct": 4})
-        data["events"] = [{"at": 2027, "person": "alex", "action": "convert_to_roth", "amount": 1000}]
+        data["people"][0]["accounts"].append({"kind": "roth_ira", "id": "roth"})
+        data["events"] = [
+            {"at": 2027, "person": "alex", "action": "convert_to_roth", "amount": 1000},
+            {"at": 2028, "person": "alex", "action": "divorce", "spouse": "alex"},
+        ]
         data["meta"]["start"] = "2026-10"
-        findings = validate_spec(data)
-        # Plan 32 supports birth and meta.start; the other two are still rejected.
-        self.assertEqual(codes(findings), ["not_yet_supported"] * 2)
-        messages = " ".join(f.message for f in findings)
-        for plan in ("Plan 27 D2", "Plan 27 item 3"):
-            self.assertIn(plan, messages)
+        findings = [f for f in validate_spec(data) if f.code == "not_yet_supported"]
+        # Plan 32 supports birth and meta.start, Plan 27 fixed income and Roth conversions; divorce is still
+        # rejected.
+        self.assertEqual(codes(findings), ["not_yet_supported"])
+        self.assertIn("backlog (divorce)", findings[0].message)
 
     def test_every_not_yet_supported_field_is_rejected(self):
         """A later plan flips a field on by deleting its marker; until then setting it is an error."""
@@ -111,16 +114,14 @@ class TestSpecErrors(unittest.TestCase):
             if isinstance(info.json_schema_extra, dict) and NYS_KEY in info.json_schema_extra
         ]
         self.assertTrue(marked)  # shrinks as later plans flip fields on
-        bank = spec_of(minimal()).people[0].accounts[0]
-        flagged = bank.model_copy(update={"reserve": True})
-        spec = spec_of(minimal())
-        spec.people[0].accounts = [flagged]
+        spec = spec_of(not_yet_supported())
         self.assertEqual(codes(not_yet_supported_findings(spec)), ["not_yet_supported"])
 
     def test_standalone_401k(self):
+        """Plan 27 D3: a 401k without a job (an old employer's plan) is supported."""
         data = minimal()
         data["people"][0]["accounts"].append({"kind": "401k", "pretax_balance": 1000})
-        self.assertEqual(codes(validate_spec(data)), ["not_yet_supported"])
+        self.assertNotIn("not_yet_supported", codes(validate_spec(data)))
 
     def test_duplicate_ids_and_dangling_references(self):
         data = minimal()
@@ -150,9 +151,8 @@ class TestSpecErrors(unittest.TestCase):
             {"at": 2027, "person": "alex", "action": "add_account", "account": {"kind": "401k", "job": "nope"}},
             {"at": 2027, "person": "alex", "action": "add_account", "account": {"kind": "529", "beneficiary": "kid"}},
         ]
-        self.assertEqual(
-            sorted(codes(validate_spec(data))), ["not_yet_supported", "unknown_reference", "unknown_reference"]
-        )
+        # A standalone 401k (the first event) is supported since Plan 27 D3.
+        self.assertEqual(sorted(codes(validate_spec(data))), ["unknown_reference", "unknown_reference"])
 
     def test_claim_age_relative_to_another_person(self):
         data = _couple()

@@ -66,8 +66,9 @@ fixtures use only synthetic names (a test enforces an allowlist).
   `STEP_PRIORITY` (ascending; e.g. the economy at -100 in `pre_step`), then construction order.
 - **Settlement.** `Family.step` groups members into `TaxUnit`s (`people/tax_unit.py`): single filers
   and married couples (joint or separate). Each unit computes its return and pays bills plus taxes
-  through one **household waterfall** (`Family(withdrawal_order=)`, default bank -> brokerage ->
-  Roth basis -> pre-tax (sized for its own tax and penalty) -> Roth earnings) across every member;
+  through one **household waterfall** (`Family(withdrawal_order=)`, default bank -> fixed income ->
+  brokerage -> Roth basis -> pre-tax (sized for its own tax and penalty) -> Roth earnings -> emergency
+  reserves) across every member;
   an unpaid gap becomes debt (`shortfall_debt` events). Settlement is order-independent:
   `tests/test_construction_order.py` builds households in shuffled construction orders and requires
   identical frames.
@@ -84,6 +85,16 @@ fixtures use only synthetic names (a test enforces an allowlist).
   ISO/NSO exercises are `StockPlan(options=[StockOption(...)])`. Every parameter is the year's
   (`tax_years`); a config without one leaves that feature off. Age tests use the age at the end of the
   tax year (`Person.age_in(year)`), not the current month's age.
+- **Statement-faithful inputs and standing policies** (Plan 27). Accounts take the existing position a
+  statement shows (`BrokerageAccount(lots=[Lot(...)])`, IRA / Roth / HSA / 529 basis, a standalone
+  `Job401kAccount(owner=)`, after-tax and Roth 401(k) basis, `FixedIncomeHolding` for CDs / Treasuries /
+  I bonds / bond funds, `allocation=` / `expense_ratio_pct=` on investments); jobs take the pay stub
+  (`PayrollDeductions`, `start_year` / `end_year`, `Bonus`, `raises`, existing RSU grants, `ESPP`).
+  Recurring contributions, the yearly surplus sweep and Roth conversions are standing policies on the
+  person (`life_model/policies.py`: `ContributionPlan`, `SavingsPolicy`, `RothConversionPolicy`,
+  `convert_to_roth`), changeable between months. Constructors take canonical keyword names (`owner=`,
+  `*_pct`, `*_annual`) and are keyword-only past the owner; the old names still work with a
+  `DeprecationWarning` (`life_model/_compat.py`). Library code must use the canonical names.
 - **Construction.** The recommended path is the household spec (`life_model.spec`, Plan 25):
   `build_model(load(path))` validates, canonicalizes list order and constructs agents in a fixed
   order (`spec/builder.py` docstring). Direct constructors remain the low-level API; keep their

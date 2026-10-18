@@ -36,7 +36,11 @@ CORE_CLASSES = (
     ("life_model.work.job", "Job"),
     ("life_model.work.job", "Salary"),
     ("life_model.work.stock", "StockPlan"),
+    ("life_model.work.job", "Bonus"),
+    ("life_model.work.payroll", "PayrollDeductions"),
+    ("life_model.work.stock", "ESPP"),
     ("life_model.account.bank", "BankAccount"),
+    ("life_model.account.fixed_income", "FixedIncomeHolding"),
     ("life_model.account.job401k", "Job401kAccount"),
     ("life_model.account.brokerage", "BrokerageAccount"),
     ("life_model.account.traditional_IRA", "TraditionalIRA"),
@@ -59,6 +63,9 @@ CORE_CLASSES = (
     ("life_model.insurance.general_insurance", "Insurance"),
     ("life_model.insurance.social_security", "SocialSecurity"),
     ("life_model.charity.donation", "Donation"),
+    ("life_model.policies", "ContributionPlan"),
+    ("life_model.policies", "SavingsPolicy"),
+    ("life_model.policies", "RothConversionPolicy"),
     ("life_model.dependents.child", "Child"),
 )
 
@@ -158,8 +165,8 @@ def silent_defaults() -> list[tuple[str, str, str]]:
             ),
         ),
         (
-            "`Salary(yearly_increase=, yearly_bonus=)`",
-            f"{_fmt(_param(salary, 'yearly_increase').default)}, {_fmt(_param(salary, 'yearly_bonus').default)}",
+            "`Salary(raise_pct=, bonus_pct=)`",
+            f"{_fmt(_param(salary, 'raise_pct').default)}, {_fmt(_param(salary, 'bonus_pct').default)}",
             (
                 "No raises and no bonus. `None` (spec: `raise_pct: economy`) follows wage growth "
                 f"({economy.wage_growth:g}%)."
@@ -174,16 +181,16 @@ def silent_defaults() -> list[tuple[str, str, str]]:
             ),
         ),
         (
-            "`BankAccount(interest_rate=None)`",
+            "`BankAccount(interest_pct=None)`",
             f"economy `cash_yield` = {economy.cash_yield:g}%",
             "Cash earns the economy's cash yield, which is 0% in the fixed economy.",
         ),
         (
-            "investment `growth_rate=None` (brokerage, IRAs, HSA, 529, 401k `average_growth`, trust, DAF)",
+            "investment `growth_pct=None` (brokerage, IRAs, HSA, 529, 401k, trust; DAF `growth_rate`)",
             f"economy `equity_return` = {economy.equity_return:g}%",
             (
-                "Every investment account grows at the equity return unless given a rate (bonds: "
-                f"{economy.bond_return:g}%)."
+                "Every investment account grows at the equity return unless given a rate or an `allocation` "
+                f"(bonds: {economy.bond_return:g}%, cash {economy.cash_yield:g}%)."
             ),
         ),
         (
@@ -213,9 +220,10 @@ def silent_defaults() -> list[tuple[str, str, str]]:
             "`Family(withdrawal_order=None)`",
             ", ".join(DEFAULT_WITHDRAWAL_ORDER),
             (
-                "The household payment waterfall: bills and taxes are paid from banks, then brokerage sales, Roth "
-                "basis, pre-tax withdrawals (sized for their own tax and penalty), then Roth earnings; any gap is "
-                "carried as debt (`shortfall_debt` events)."
+                "The household payment waterfall: bills and taxes are paid from banks, then non-reserve fixed income, "
+                "brokerage sales, Roth basis, pre-tax withdrawals (sized for their own tax and penalty), Roth "
+                "earnings, then emergency reserves (reserve banks and fixed income); any gap is carried as debt "
+                "(`shortfall_debt` events)."
             ),
         ),
         (

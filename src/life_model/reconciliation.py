@@ -23,8 +23,8 @@ green, the likely cause:
   entered as a percent);
 * ``timing``: withholding, estimated payments and the refund/balance due (the engine settles taxes
   as one year-end lump; Plan 31 D3);
-* ``missing_input``: a line that needs a spec input the engine does not take yet (Plan 27: payroll
-  deductions, IRA basis, lot-level basis);
+* ``missing_input``: a line that needs a spec input the engine does not take yet (a 1099-B's per-sale
+  cost basis, a 1098's escrow lines);
 * ``unmodeled_line``: a line the engine has no equivalent for (household-employee wages, ...);
 * ``propagated``: a total that is off only because a line it adds up is off (the report names it);
 * ``unexplained``: none of the above: investigate.
@@ -634,9 +634,27 @@ def _information_return_simulated(sim: _Year, item, r: "TaxReturn | None") -> di
     agent = sim.built.items.get(item.account) if item.account is not None else None
     form = item.form
     if form == "1099-INT":
-        labels = labels or _owned_labels(sim, person, BankAccount)
+        from .account.fixed_income import FixedIncomeHolding
+
+        holdings = [
+            h for h in sim.model.agents if isinstance(h, FixedIncomeHolding) and (person is None or h.person is person)
+        ]
+        # Treasury coupons are box 3 (U.S. Treasury interest), wherever they were paid.
+        treasury_names = {h.name for h in holdings if h.kind == "treasury"}
+        labels = labels or _owned_labels(sim, person, (BankAccount, FixedIncomeHolding))
+        interest = [e for e in sim.entries() if e.kind == FlowKind.INTEREST.value and e.to_account in set(labels)]
+        treasury = sum(e.amount for e in interest if e.source in treasury_names)
+        if item.account is None:
+            treasury = sum(
+                e.amount
+                for e in sim.entries()
+                if e.kind == FlowKind.INTEREST.value
+                and e.source in treasury_names
+                and (person is None or e.agent_id == person.unique_id)
+            )
         return {
-            "1": (_account_flows(sim, labels, [FlowKind.INTEREST.value], inbound=True), ""),
+            "1": (sum(e.amount for e in interest if e.source not in treasury_names), ""),
+            "3": (treasury, ""),
             "8": (r.tax_exempt_interest if r is not None and item.account is None else 0.0, ""),
             "4": (None, "timing"),
         }
@@ -656,7 +674,21 @@ def _information_return_simulated(sim: _Year, item, r: "TaxReturn | None") -> di
         # A qualified charitable distribution (a gift straight from the IRA) is a distribution too.
         kinds = [FlowKind.RMD.value, FlowKind.WITHDRAWAL.value, FlowKind.GIFT.value]
         paid = _account_flows(sim, labels, kinds, inbound=False)
-        return {"1": (paid, ""), "2a": (paid, ""), "4": (None, "timing")}
+        # A Roth conversion is a distribution too; the Form 8606 basis it recovers is not taxable.
+        label_set = set(labels)
+        paid += sum(
+            e.amount
+            for e in sim.entries()
+            if e.kind == FlowKind.TRANSFER.value
+            and e.from_account in label_set
+            and "Roth conversion" in (e.cause or "")
+        )
+        recovered = sum(
+            a.basis_recovered.get(sim.year, 0.0)
+            for a in sim.model.agents
+            if isinstance(a, TraditionalIRA) and account_label(a) in label_set
+        )
+        return {"1": (paid, ""), "2a": (paid - recovered, ""), "4": (None, "timing")}
     if form == "SSA-1099":
         benefits = sum(
             e.amount
@@ -679,7 +711,13 @@ def _information_return_simulated(sim: _Year, item, r: "TaxReturn | None") -> di
         contributions = _account_flows(sim, labels or [], [FlowKind.CONTRIBUTION.value], inbound=True)
         closing = sim.model.balance_sheets[sim.year].closing.lines.get(labels[0]) if labels else None
         return {"1": (contributions if labels else None, "missing_input"), "5": (closing, "missing_input")}
-    return {box: (None, "missing_input") for box in item.boxes}  # Form 8606 basis: Plan 27 D1
+    if form == "8606":
+        iras = [a for a in sim.model.agents if isinstance(a, TraditionalIRA) and (person is None or a.person is person)]
+        return {
+            "2": (sum(a.basis_at_year_start.get(sim.year, a.nondeductible_basis) for a in iras), ""),
+            "14": (sum(a.nondeductible_basis for a in iras), ""),
+        }
+    return {box: (None, "missing_input") for box in item.boxes}
 
 
 def _owner_of(sim: _Year, label: str | None):

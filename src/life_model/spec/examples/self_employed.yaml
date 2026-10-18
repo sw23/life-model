@@ -28,7 +28,10 @@ people:
     balance: 38000
     interest_pct: 0.25
   - kind: brokerage
-    balance: 95000
+    lots:
+    - value: 95000
+      cost_basis: 70000
+      acquired_year: 2019
   - kind: hsa
     coverage: family
     balance: 9000

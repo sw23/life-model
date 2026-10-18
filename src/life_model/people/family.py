@@ -5,7 +5,7 @@
 
 from ..model import LifeModel, LifeModelAgent
 from ..tax.federal import FilingStatus, get_federal_standard_deduction
-from .tax_unit import TaxUnit, validate_withdrawal_order
+from .tax_unit import DEFAULT_WITHDRAWAL_ORDER, TaxUnit, validate_withdrawal_order
 
 
 class Family(LifeModelAgent):
@@ -30,7 +30,10 @@ class Family(LifeModelAgent):
         """
         super().__init__(model)
         self.members = list(args)
-        self.withdrawal_order = validate_withdrawal_order(withdrawal_order)
+        # Kept as given (an order written before Plan 27's fixed_income / reserve sources stays as written);
+        # each tax unit normalizes it.
+        validate_withdrawal_order(withdrawal_order)
+        self.withdrawal_order = DEFAULT_WITHDRAWAL_ORDER if withdrawal_order is None else tuple(withdrawal_order)
 
     @property
     def federal_deductions(self) -> float:

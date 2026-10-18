@@ -52,14 +52,14 @@ def _build_model(collect_data: bool, seed: int = 0) -> LifeModel:
         retirement_age=65,
         spending=Spending(model=model, base_annual=30000, growth_pct=2),
     )
-    BankAccount(owner=person, company="Bank", type="Checking", balance=10000, interest_rate=0.5)
+    BankAccount(person, company="Bank", type="Checking", balance=10000, interest_pct=0.5)
     job = Job(
         owner=person,
         company="Company",
         role="Employee",
-        salary=Salary(model=model, base=50000, yearly_increase=3, yearly_bonus=1),
+        salary=Salary(model, base_annual=50000, raise_pct=3, bonus_pct=1),
     )
-    Job401kAccount(job=job, average_growth=6.0)
+    Job401kAccount(job, growth_pct=6.0)
     return model
 
 

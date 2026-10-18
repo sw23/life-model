@@ -61,6 +61,15 @@ class FinancialAccount(LifeModelAgent, ABC):
             self.model.ledger.post_opening(self, self._balance)
 
     @property
+    def owner(self) -> "Person":
+        """The account's owner (the same person as ``person``)."""
+        return self.person
+
+    @owner.setter
+    def owner(self, value: "Person") -> None:
+        self.person = value
+
+    @property
     def balance(self) -> float:
         """Current account balance."""
         return self._balance
@@ -482,6 +491,8 @@ class Investment(FinancialAccount, ABC):
         asset_class: str = "equity",
         *,
         beneficiary: Optional["Person"] = None,
+        allocation: "dict[str, float] | None" = None,
+        expense_ratio_pct: float = 0.0,
     ):
         super().__init__(person, balance, beneficiary=beneficiary)
         # An explicit growth_rate overrides the economy; None defers to the economy's
@@ -491,15 +502,56 @@ class Investment(FinancialAccount, ABC):
         if asset_class not in self._ASSET_CLASS_RATES:
             raise ValueError(f"Unknown asset_class {asset_class!r}; expected one of {list(self._ASSET_CLASS_RATES)}")
         self.asset_class = asset_class
+        #: Target allocation as fractions by asset class (Plan 27 D5), or None (one ``asset_class``).
+        self.allocation: dict[str, float] | None = None
+        # The allocation's current (drifted) weights; reset to the target at each year end.
+        self._weights: dict[str, float] = {}
+        self.set_allocation(allocation)
+        if expense_ratio_pct < 0:
+            raise ValueError("expense_ratio_pct must be non-negative")
+        #: Annual fund expense ratio (percent), netted out of the return a twelfth a month.
+        self.expense_ratio_pct = float(expense_ratio_pct)
         self.stat_growth_history = []
+
+    def set_allocation(self, allocation: "dict[str, float] | None") -> None:
+        """Set the target asset allocation (percent by asset class, e.g. ``{"equity": 70, "bond": 30}``;
+        must sum to 100). The account then grows at the blend of the economy's returns for those classes,
+        drifting with them during the year and rebalanced to the target at each year end. None reverts to
+        the single ``asset_class``."""
+        if allocation is None:
+            self.allocation = None
+            self._weights = {}
+            return
+        unknown = set(allocation) - set(self._ASSET_CLASS_RATES)
+        if unknown:
+            raise ValueError(f"Unknown asset classes {sorted(unknown)}; expected {list(self._ASSET_CLASS_RATES)}")
+        if any(value < 0 for value in allocation.values()):
+            raise ValueError("allocation percentages must be non-negative")
+        total = sum(allocation.values())
+        if abs(total - 100.0) > 1e-6:
+            raise ValueError(f"allocation must sum to 100 percent, got {total:g}")
+        self.allocation = {name: value / 100 for name, value in allocation.items() if value > 0}
+        self._weights = dict(self.allocation)
+
+    @property
+    def allocation_pct(self) -> "dict[str, float] | None":
+        """The target allocation in percent (None without one)."""
+        return None if self.allocation is None else {k: v * 100 for k, v in self.allocation.items()}
 
     @property
     def growth_rate(self) -> float:
-        """Annual growth rate (percent): the explicit override if set, else the economy's return."""
+        """Annual growth rate (percent): the explicit override if set, else the economy's return (the
+        target allocation's blend), net of the expense ratio."""
         if self._growth_rate_override is not None:
-            return self._growth_rate_override
-        rate_name = self._ASSET_CLASS_RATES[self.asset_class]
-        return self.model.economy.rate(rate_name, self.model.year)
+            return self._growth_rate_override - self.expense_ratio_pct
+        economy = self.model.economy
+        if self.allocation is not None:
+            gross = sum(
+                w * economy.rate(self._ASSET_CLASS_RATES[c], self.model.year) for c, w in self.allocation.items()
+            )
+        else:
+            gross = economy.rate(self._ASSET_CLASS_RATES[self.asset_class], self.model.year)
+        return gross - self.expense_ratio_pct
 
     @growth_rate.setter
     def growth_rate(self, value: float | None) -> None:
@@ -508,10 +560,31 @@ class Investment(FinancialAccount, ABC):
     @property
     def monthly_growth_rate(self) -> float:
         """This month's growth rate (percent): the monthly equivalent of the explicit annual override,
-        else the economy's monthly return for the asset class."""
+        else the economy's monthly return for the asset class (or the allocation's current blend), less a
+        twelfth of the expense ratio."""
+        fee = self.expense_ratio_pct / 12
         if self._growth_rate_override is not None:
-            return annual_to_monthly(self._growth_rate_override)
-        return self.model.economy.monthly_rate(self._ASSET_CLASS_RATES[self.asset_class])
+            return annual_to_monthly(self._growth_rate_override) - fee
+        economy = self.model.economy
+        if self._weights:
+            return sum(w * economy.monthly_rate(self._ASSET_CLASS_RATES[c]) for c, w in self._weights.items()) - fee
+        return economy.monthly_rate(self._ASSET_CLASS_RATES[self.asset_class]) - fee
+
+    def _drift_allocation(self) -> None:
+        """Let the allocation's weights drift with this month's class returns (call once a month, after
+        the growth is applied). A no-op without an allocation or with an explicit growth rate."""
+        if not self._weights or self._growth_rate_override is not None:
+            return
+        economy = self.model.economy
+        grown = {c: w * (1 + economy.monthly_rate(self._ASSET_CLASS_RATES[c]) / 100) for c, w in self._weights.items()}
+        total = sum(grown.values())
+        if total > 0:
+            self._weights = {c: v / total for c, v in grown.items()}
+
+    def rebalance(self) -> None:
+        """Rebalance to the target allocation (done at each year end)."""
+        if self.allocation is not None:
+            self._weights = dict(self.allocation)
 
     def calculate_growth(self) -> float:
         """A year of growth on the current balance at the annual rate (``balance * rate``): an
@@ -528,6 +601,7 @@ class Investment(FinancialAccount, ABC):
         self.balance += growth
         self.stat_growth_history.append(growth)
         self._post_growth(growth)
+        self._drift_allocation()
         return growth
 
     def _post_growth(self, growth: float) -> None:
@@ -538,6 +612,11 @@ class Investment(FinancialAccount, ABC):
     def step(self):
         """Apply the month's growth."""
         self.apply_growth()
+
+    def on_year_end(self):
+        """Track the year-end balance and rebalance to the target allocation."""
+        super().on_year_end()
+        self.rebalance()
 
 
 class TaxAdvantagedAccount(Investment, ABC):
@@ -565,13 +644,27 @@ class TaxAdvantagedAccount(Investment, ABC):
         asset_class: str = "equity",
         *,
         beneficiary: Optional["Person"] = None,
+        basis: float | None = None,
+        allocation: "dict[str, float] | None" = None,
+        expense_ratio_pct: float = 0.0,
     ):
-        super().__init__(person, balance, growth_rate, asset_class, beneficiary=beneficiary)
+        super().__init__(
+            person,
+            balance,
+            growth_rate,
+            asset_class,
+            beneficiary=beneficiary,
+            allocation=allocation,
+            expense_ratio_pct=expense_ratio_pct,
+        )
         # Contributions made this year (reset at year end).
         self.contributions_ytd = 0.0
-        # Cumulative contribution basis still in the account. Any opening balance is treated as
-        # basis (contributions) rather than earnings; growth accrues to earnings, not basis.
-        self.contribution_basis = float(balance)
+        # Cumulative contribution basis still in the account. Without ``basis`` (Plan 27 D1: the
+        # statement's contribution total) the opening balance is treated as basis rather than earnings;
+        # growth accrues to earnings, not basis.
+        if basis is not None and not 0 <= basis <= balance + 1e-9:
+            raise ValueError(f"basis {basis:,.2f} must be between 0 and the balance {balance:,.2f}")
+        self.contribution_basis = float(balance) if basis is None else float(basis)
 
     @abstractmethod
     def annual_contribution_limit(self) -> float:
@@ -660,8 +753,18 @@ class RetirementAccount(Investment, ABC):
         asset_class: str = "equity",
         *,
         beneficiary: Optional["Person"] = None,
+        allocation: "dict[str, float] | None" = None,
+        expense_ratio_pct: float = 0.0,
     ):
-        super().__init__(person, balance, growth_rate, asset_class, beneficiary=beneficiary)
+        super().__init__(
+            person,
+            balance,
+            growth_rate,
+            asset_class,
+            beneficiary=beneficiary,
+            allocation=allocation,
+            expense_ratio_pct=expense_ratio_pct,
+        )
         self.stat_useable_balance = 0
 
     @property

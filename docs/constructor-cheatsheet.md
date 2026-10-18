@@ -18,14 +18,14 @@ copy, because agents step in `STEP_PRIORITY`, then construction, order.
 | filing status | FilingStatus.SINGLE | Every person files single until married (`Person.marry` or a spec `relationships.marriages` entry, which defaults to `joint`). Head of household needs a qualifying child. |
 | `Person(state=None)` | `tax.state.default_state` = 'DEFAULT' | The DEFAULT pack: a flat 6% on the federal AGI base. An unknown state code is **not** an error in core: it silently falls back to the default pack. The spec validator rejects unknown codes (`meta.default_state`, `people[].state`). |
 | `Spending(growth_pct=)` | 0 | Spending never rises (the spec validator warns). `None` (spec: `growth_pct: economy`) follows inflation (3% in the fixed economy). |
-| `Salary(yearly_increase=, yearly_bonus=)` | 0, 0 | No raises and no bonus. `None` (spec: `raise_pct: economy`) follows wage growth (3%). |
+| `Salary(raise_pct=, bonus_pct=)` | 0, 0 | No raises and no bonus. `None` (spec: `raise_pct: economy`) follows wage growth (3%). |
 | `Apartment(rent_growth_pct=)` | 5 | Rent rises 5% a year unless told otherwise (the spec validator warns when `rent_growth_pct` is unset); `None` follows inflation. |
-| `BankAccount(interest_rate=None)` | economy `cash_yield` = 0% | Cash earns the economy's cash yield, which is 0% in the fixed economy. |
-| investment `growth_rate=None` (brokerage, IRAs, HSA, 529, 401k `average_growth`, trust, DAF) | economy `equity_return` = 7% | Every investment account grows at the equity return unless given a rate (bonds: 3%). |
+| `BankAccount(interest_pct=None)` | economy `cash_yield` = 0% | Cash earns the economy's cash yield, which is 0% in the fixed economy. |
+| investment `growth_pct=None` (brokerage, IRAs, HSA, 529, 401k, trust; DAF `growth_rate`) | economy `equity_return` = 7% | Every investment account grows at the equity return unless given a rate or an `allocation` (bonds: 3%, cash 0%). |
 | `Home(value_growth_pct=None)` | economy `home_appreciation` = 4% | Homes appreciate at the economy's rate when given `None`. |
 | economy | mode `fixed` | The same rates every year: inflation 3%, wage growth 3%, equity 7%, bonds 3%, cash 0%, homes 4%. Use `scenario="stochastic"` (or `economy.mode: stochastic`) for random draws, `path` for scripted years. |
 | `LifeModel(start_year=None, end_year=None, seed=None)` | this year; start + 50; unseeded | Years are inclusive (`end_year - start_year + 1` steps). An unseeded model draws a fresh seed, so stochastic parts differ run to run; `RunResult.seed` records it. |
-| `Family(withdrawal_order=None)` | bank, brokerage, roth_basis, pretax, roth_earnings | The household payment waterfall: bills and taxes are paid from banks, then brokerage sales, Roth basis, pre-tax withdrawals (sized for their own tax and penalty), then Roth earnings; any gap is carried as debt (`shortfall_debt` events). |
+| `Family(withdrawal_order=None)` | bank, fixed_income, brokerage, roth_basis, pretax, roth_earnings, reserve | The household payment waterfall: bills and taxes are paid from banks, then non-reserve fixed income, brokerage sales, Roth basis, pre-tax withdrawals (sized for their own tax and penalty), Roth earnings, then emergency reserves (reserve banks and fixed income); any gap is carried as debt (`shortfall_debt` events). |
 | `CreditCard(rate_pct=None, payment_strategy=)` | 18% APR, PaymentStrategy.MINIMUM | Minimum payments (2% of the balance, at least $25) unless a strategy is given. |
 | `SocialSecurity(claim_age=None, earnings_history=None)` | the retirement age; no earnings | Benefits are claimed at the retirement age (an error below 62). With no earnings history the benefit is computed from the simulated wages only; the spec's `earnings_history` or `assumed_career_start_age` supplies the past. No `SocialSecurity` agent means no benefit at all. |
 | healthcare | off | No medical costs, Medicare premiums or long-term care unless `MedicalCosts` / `Medicare` / `LongTermCare` agents (spec: `healthcare`) are built. |
@@ -42,14 +42,15 @@ Each spec entry, the core class the builder constructs, the fields you must give
 | StochasticEconomy | `config.economy.stochastic` | — | — |
 | Person | `Person` | `id`, `name`, `age`, `retirement_age`, `spending` | `gender='other'`, `mortality='immortal'` |
 | Spending | `Spending` | `amount_annual` | `growth_pct=0.0` |
-| Job | `Job + Salary` | `company`, `salary_annual` | `role='Employee'`, `raise_pct=0.0`, `bonus_pct=0.0` |
-| StockPlan | `StockPlan` | — | `signon_value=0.0`, `refresher_value=0.0`, `refresher_start_year=1`, `refresher_growth_pct=0.0`, `disposition='sell'`, `growth_pct='economy'` |
+| Job | `Job + Salary` | `company`, `salary_annual` | `role='Employee'`, `raise_pct=0.0`, `bonus_pct=0.0`, `signon_bonus=0.0` |
+| StockPlan | `StockPlan` | — | `signon_value=0.0`, `refresher_value=0.0`, `refresher_start_year=1`, `refresher_growth_pct=0.0`, `disposition='sell'`, `growth_pct='economy'`, `espp_purchase_months=[6, 12]`, `espp_lookback=False`, `espp_disposition='sell'` |
+| StockGrant | `StockGrant` | `grant_year`, `value`, `vesting_schedule_pct` | — |
 | StockOption (`kind: iso`) | `StockOption` | `exercise_year`, `exercise_cost`, `value` | `sell_at_exercise=False` |
 | Payroll | `PayrollDeductions` | — | `health_premium_monthly=0.0`, `dental_vision_monthly=0.0`, `fsa_annual=0.0`, `dependent_care_fsa_annual=0.0`, `hsa_employee_annual=0.0`, `hsa_employer_annual=0.0`, `commuter_monthly=0.0` |
 | BankAccount (`kind: bank`) | `BankAccount` | — | `company='Bank'`, `type='Checking'`, `balance=0.0`, `interest_pct='economy'`, `primary=False`, `reserve=False` |
-| FixedIncomeAccount (`kind: fixed_income`) (not yet supported: Plan 27 D2) | `FixedIncomeHolding (Plan 27)` | `instrument`, `face`, `rate_pct` | `state_tax_exempt=False`, `early_withdrawal_penalty_months=0`, `reserve=True` |
+| FixedIncomeAccount (`kind: fixed_income`) | `FixedIncomeHolding` | `instrument`, `face`, `rate_pct` | `tax_exempt=False`, `early_withdrawal_penalty_months=0`, `reserve=True`, `accrued_interest=0.0` |
 | BrokerageAccount (`kind: brokerage`) | `BrokerageAccount` | — | `company='Brokerage'`, `growth_pct='economy'`, `reinvest_dividends=True` |
-| Job401k (`kind: 401k`) | `Job401kAccount` | — | `pretax_balance=0.0`, `roth_balance=0.0`, `pretax_contrib_pct=0.0`, `roth_contrib_pct=0.0`, `growth_pct='economy'`, `match_on_bonus=False`, `match_vesting_years=0`, `company_match_pct=0.0` |
+| Job401k (`kind: 401k`) | `Job401kAccount` | — | `pretax_balance=0.0`, `roth_balance=0.0`, `pretax_contrib_pct=0.0`, `roth_contrib_pct=0.0`, `growth_pct='economy'`, `match_on_bonus=False`, `match_vesting_years=0`, `company_match_pct=0.0`, `after_tax_contrib_pct=0.0`, `in_plan_roth_conversion=False` |
 | TraditionalIRA (`kind: traditional_ira`) | `TraditionalIRA` | — | `balance=0.0`, `growth_pct='economy'` |
 | RothIRA (`kind: roth_ira`) | `RothIRA` | — | `balance=0.0`, `growth_pct='economy'` |
 | HealthSavingsAccount (`kind: hsa`) | `HealthSavingsAccount` | — | `coverage='individual'`, `balance=0.0`, `growth_pct='economy'` |
@@ -73,6 +74,9 @@ Each spec entry, the core class the builder constructs, the fields you must give
 | Donation (`kind: donation`) | `Donation` | `charity`, `amount_annual` | `donation_type='cash'`, `tax_deductible=True`, `frequency_years=1` |
 | Child | `Child` | `name`, `birth_year` | `care_expenses_annual=0.0`, `interest_annual=0.0`, `dividends_annual=0.0` |
 | SelfEmployment | `Job (kind='self_employed')` | `business` | `expenses_annual=0.0`, `growth_pct=0.0`, `sep_ira_contrib_pct=0.0`, `sstb=False` |
+| ContributionPlan | `ContributionPlan` | `account` | `max_out=False`, `source='bank'`, `months=12` |
+| SavingsPolicy | `SavingsPolicy` | `cash_floor`, `sweep_to` | — |
+| RothConversion | `RothConversionPolicy` | — | — |
 
 ## Core constructors
 
@@ -84,16 +88,20 @@ The owner argument links the object to its owner (a `Person`, a `Job`, or the `m
 | `Family` (life_model.people.family) | `model` | `model` | `*withdrawal_order=None` |
 | `Person` (life_model.people.person) | `family` | `family`, `name`, `age`, `retirement_age`, `spending` | `*gender=GenderAtBirth.OTHER`, `*mortality_mode=MortalityMode.IMMORTAL`, `*death_age=None`, `*state=None`, `*birth=None` |
 | `Spending` (life_model.people.person) | `model` | `model` | `base_annual=0`, `growth_pct=0`, `*categories=None`, `*schedule=None` |
-| `Job` (life_model.work.job) | `owner` | `owner`, `company`, `role`, `salary` | `*kind='w2'`, `*expenses_annual=0.0`, `*payroll=None`, `*sep_account=None`, `*plan_contribution_percent=0.0`, `*sstb=False` |
-| `Salary` (life_model.work.job) | `model` | `model`, `base` | `yearly_increase=0`, `yearly_bonus=0`, `*bonus_month=None` |
-| `StockPlan` (life_model.work.stock) | `job` | `job` | `*signon_value=0.0`, `*refresher_value=0.0`, `*refresher_start_year=1`, `*refresher_growth_percent=0.0`, `*schedule=None`, `*signon_schedule=None`, `*disposition='sell'`, `*growth_rate=None`, `*brokerage_account=None`, `*options=None` |
-| `BankAccount` (life_model.account.bank) | `owner` | `owner`, `company` | `type='Bank'`, `balance=0`, `interest_rate=None`, `*compounding=None` |
-| `Job401kAccount` (life_model.account.job401k) | `job` | `job` | `pretax_balance=0`, `pretax_contrib_percent=0`, `roth_balance=0`, `roth_contrib_percent=0`, `average_growth=None`, `company_match_percent=0`, `*match_tiers=None`, `*match_on_bonus=False`, `*match_vesting_years=0`, `*match_true_up=True` |
-| `BrokerageAccount` (life_model.account.brokerage) | `person` | `person`, `company` | `balance=0`, `growth_rate=None`, `*dividend_yield=None` |
-| `TraditionalIRA` (life_model.account.traditional_IRA) | `person` | `person` | `balance=0`, `growth_rate=None`, `contribution_limit=None`, `*nondeductible_basis=0.0` |
-| `RothIRA` (life_model.account.roth_IRA) | `person` | `person` | `balance=0`, `growth_rate=None`, `contribution_limit=None` |
-| `HealthSavingsAccount` (life_model.account.hsa) | `person` | `person`, `hsa_type` | `balance=0`, `contribution_limit=None`, `employer_contribution=None`, `*growth_rate=None` |
-| `Plan529` (life_model.dependents.plan529) | `owner` | `owner` | `beneficiary=None`, `balance=0`, `state='NY'`, `growth_rate=None`, `annual_contribution_limit=None`, `lifetime_contribution_limit=None` |
+| `Job` (life_model.work.job) | `owner` | `owner`, `*company`, `*salary` | `*role='Employee'`, `*start_year=None`, `*end_year=None`, `*bonus=None`, `*raises=None`, `*kind='w2'`, `*expenses_annual=0.0`, `*payroll=None`, `*sep_account=None`, `*plan_contribution_percent=0.0`, `*sstb=False` |
+| `Salary` (life_model.work.job) | `model` | `model`, `*base_annual` | `*raise_pct=0`, `*bonus_pct=0`, `*bonus_month=None`, `*bonus=None`, `*raises=None` |
+| `StockPlan` (life_model.work.stock) | `job` | `job` | `*signon_value=0.0`, `*refresher_value=0.0`, `*refresher_start_year=1`, `*refresher_growth_pct=0.0`, `*schedule=None`, `*signon_schedule=None`, `*disposition='sell'`, `*growth_pct=None`, `*brokerage_account=None`, `*options=None`, `*existing_grants=None`, `*espp=None` |
+| `Bonus` (life_model.work.job) |  | — | `target_pct=0.0`, `fixed_annual=0.0`, `range_pct=None`, `signon=0.0` |
+| `PayrollDeductions` (life_model.work.payroll) |  | — | `dependent_care_fsa_annual=0.0`, `health_premium_monthly=0.0`, `dental_vision_monthly=0.0`, `fsa_annual=0.0`, `hsa_employee_annual=0.0`, `hsa_employer_annual=0.0`, `commuter_monthly=0.0` |
+| `ESPP` (life_model.work.stock) |  | `contribution_pct` | `discount_pct=15.0`, `purchase_months=(6, 12)`, `lookback=False`, `disposition='sell'` |
+| `BankAccount` (life_model.account.bank) | `owner` | `owner` | `*company='Bank'`, `*type='Bank'`, `*balance=0`, `*interest_pct=None`, `*compounding=None`, `*reserve=False` |
+| `FixedIncomeHolding` (life_model.account.fixed_income) | `owner` | `owner`, `*kind`, `*face`, `*rate_pct` | `*maturity=None`, `*purchased=None`, `*state_tax_exempt=None`, `*tax_exempt=False`, `*early_withdrawal_penalty_months=0`, `*reserve=True`, `*name=None`, `*reinvest=None`, `*accrued_interest=0.0`, `*cost_basis=None`, `*growth_pct=None` |
+| `Job401kAccount` (life_model.account.job401k) | `job` | — | `job=None`, `*owner=None`, `*pretax_balance=0`, `*roth_balance=0`, `*after_tax_balance=0`, `*pretax_contrib_pct=0`, `*roth_contrib_pct=0`, `*after_tax_contrib_pct=0`, `*growth_pct=None`, `*company_match_percent=0`, `*match_tiers=None`, `*match_on_bonus=False`, `*match_vesting_years=0`, `*match_true_up=True`, `*roth_basis=None`, `*after_tax_basis=None`, `*in_plan_roth_conversion=False`, `*allocation=None`, `*expense_ratio_pct=0.0` |
+| `BrokerageAccount` (life_model.account.brokerage) | `owner` | `owner` | `*company='Brokerage'`, `*balance=0`, `*lots=None`, `*growth_pct=None`, `*dividend_yield_pct=None`, `*reinvest_dividends=True`, `*allocation=None`, `*expense_ratio_pct=0.0` |
+| `TraditionalIRA` (life_model.account.traditional_IRA) | `owner` | `owner` | `*balance=0`, `*growth_pct=None`, `*contribution_limit_annual=None`, `*nondeductible_basis=0.0`, `*allocation=None`, `*expense_ratio_pct=0.0` |
+| `RothIRA` (life_model.account.roth_IRA) | `owner` | `owner` | `*balance=0`, `*growth_pct=None`, `*contribution_limit_annual=None`, `*contribution_basis=None`, `*conversion_basis=0.0`, `*allocation=None`, `*expense_ratio_pct=0.0` |
+| `HealthSavingsAccount` (life_model.account.hsa) | `owner` | `owner` | `*hsa_type=HSAType.INDIVIDUAL`, `*balance=0`, `*contribution_limit_annual=None`, `*employer_contribution_annual=None`, `*growth_pct=None`, `*basis=None`, `*allocation=None`, `*expense_ratio_pct=0.0` |
+| `Plan529` (life_model.dependents.plan529) | `owner` | `owner` | `*beneficiary=None`, `*balance=0`, `*state='NY'`, `*growth_pct=None`, `*contribution_limit_annual=None`, `*lifetime_contribution_limit=None`, `*basis=None`, `*allocation=None`, `*expense_ratio_pct=0.0` |
 | `InheritedPretaxAccount` (life_model.account.inherited) | `beneficiary` | `beneficiary`, `balance`, `decedent_name` | `years=10` |
 | `Pension` (life_model.account.pension) | `owner` | `owner`, `*company`, `*vesting_years` | `*benefit_annual=0.0`, `*start_age=None`, `*cola_pct=0.0`, `*survivor_pct=0.0`, `*years_of_service=None`, `*benefit_multiplier_pct=None`, `*final_salary_annual=None`, `*job=None`, `*salary_history=None`, `*final_average_years=None`, `*normal_retirement_age=None`, `*early_reduction_pct_per_year=0.0`, `*survivor_reduction=None`, `*employee_basis=0.0`, `*lump_sum=False`, `*lump_sum_amount=None`, `*lump_sum_rate_pct=None`, `*rollover_account=None` |
 | `Annuity` (life_model.insurance.annuity) | `owner` | `owner`, `*annuity_type` | `*balance=0.0`, `*rate_pct=None`, `*payout_type=AnnuityPayoutType.LIFE_ONLY`, `*payout_start_age=None`, `*payout_monthly=None`, `*period_certain_years=None`, `*surrender_charge_years=None`, `*surrender_charge_pct=None`, `*joint_annuitant=None`, `*survivor_pct=100.0`, `*basis=None`, `*purchase_year=None`, `*qualified=False`, `*in_payout=False`, `*cola_pct=0.0` |
@@ -110,4 +118,7 @@ The owner argument links the object to its owner (a `Person`, a `Job`, or the `m
 | `Insurance` (life_model.insurance.general_insurance) | `owner` | `owner`, `insurance_type`, `company`, `premium_annual`, `coverage_amount` | `deductible=0`, `coverage_start_age=None`, `coverage_end_age=None`, `premium_increase_pct=None`, `max_claims_per_year=None`, `*oop_max_annual=None`, `*coinsurance_pct=None`, `*benefit_pct=None`, `*benefit_max_monthly=None`, `*elimination_months=3`, `*benefit_end_age=None`, `*benefits_taxable=False` |
 | `SocialSecurity` (life_model.insurance.social_security) | `owner` | `owner` | `claim_age=None`, `earnings_history=None`, `*pia_override_monthly=None`, `*fra_from_birth_year=False`, `*spousal_benefit=False`, `*earnings_test=False` |
 | `Donation` (life_model.charity.donation) | `person` | `person`, `charity_name`, `annual_amount` | `donation_type=DonationType.CASH`, `tax_deductible=True`, `frequency_years=1`, `start_year=None`, `end_year=None` |
+| `ContributionPlan` (life_model.policies) |  | `account` | `*amount_annual=None`, `*pct_of_pay=None`, `*source='bank'`, `*months=12`, `*bucket=None` |
+| `SavingsPolicy` (life_model.policies) |  | `*cash_floor` | `*sweep_to=None` |
+| `RothConversionPolicy` (life_model.policies) |  | — | `*fill_bracket_pct=None`, `*amount_annual=None`, `*source=None`, `*target=None`, `*until_age=None` |
 | `Child` (life_model.dependents.child) | `person` | `person`, `name`, `birth_year` | `*care_expenses_annual=0.0`, `*interest_annual=0.0`, `*dividends_annual=0.0`, `*cost_annual=None`, `*college_cost_annual=None` |

@@ -332,7 +332,8 @@ def _bank_labels(ctx: YearContext, member_ids: "set[int]", sheet: "BalanceSheet 
         owner = closing.owners.get(label)
         if owner not in member_ids:
             continue
-        if label.startswith("Cash:") or isinstance(agents.get(label), BankAccount):
+        account = agents.get(label)
+        if label.startswith("Cash:") or (isinstance(account, BankAccount) and not account.reserve):
             labels.append(label)
     return labels
 
@@ -416,14 +417,14 @@ def no_draw_above_cash_floor(ctx: YearContext) -> list[Violation]:
 
 def _contributions_by(ctx: YearContext) -> dict[str, dict[int, float]]:
     """``{account label: {person_id: dollars}}`` of contributions (employee and employer) this year."""
-    from .work.job import SELF_EMPLOYED_EMPLOYER_CAUSE
+    from .work.job import AFTER_TAX_401K_CAUSE, SELF_EMPLOYED_EMPLOYER_CAUSE
 
     out: dict[str, dict[int, float]] = {}
     for entry in ctx.entries:
         if entry.kind != FlowKind.CONTRIBUTION.value or entry.to_account is None:
             continue
-        if entry.cause == SELF_EMPLOYED_EMPLOYER_CAUSE:
-            continue  # employer money (SEP / profit sharing): 415(c) only, checked separately
+        if entry.cause in (SELF_EMPLOYED_EMPLOYER_CAUSE, AFTER_TAX_401K_CAUSE):
+            continue  # employer money (SEP / profit sharing) or after-tax 401k money: 415(c) only, below
         by_person = out.setdefault(entry.to_account, {})
         by_person[entry.agent_id] = by_person.get(entry.agent_id, 0.0) + entry.amount
     return out
@@ -439,7 +440,7 @@ def contribution_limits(ctx: YearContext) -> list[Violation]:
     from .account.traditional_IRA import TraditionalIRA
 
     config = ctx.config
-    params = ctx.model.config.tax_year(ctx.year)
+    params = ctx.model.tax_params_for_year(ctx.year)
     agents = ctx.agents_by_label()
     people = ctx.people()
     deferrals: dict[int, float] = {}
@@ -463,11 +464,12 @@ def contribution_limits(ctx: YearContext) -> list[Violation]:
                 base = config.accounts.hsa.contribution_limit
             paid, limit = hsa.get(owner, (0.0, 0.0))
             hsa[owner] = (paid + total, max(limit, base))
-    from .work.job import SELF_EMPLOYED_EMPLOYER_CAUSE
+    from .work.job import AFTER_TAX_401K_CAUSE, SELF_EMPLOYED_EMPLOYER_CAUSE
 
     for entry in ctx.entries:
         employer = entry.kind == FlowKind.MATCH.value or (
-            entry.kind == FlowKind.CONTRIBUTION.value and entry.cause == SELF_EMPLOYED_EMPLOYER_CAUSE
+            entry.kind == FlowKind.CONTRIBUTION.value
+            and entry.cause in (SELF_EMPLOYED_EMPLOYER_CAUSE, AFTER_TAX_401K_CAUSE)
         )
         if employer and entry.to_account is not None:
             additions[entry.to_account] = additions.get(entry.to_account, 0.0) + entry.amount
@@ -491,12 +493,9 @@ def contribution_limits(ctx: YearContext) -> list[Violation]:
                 )
             )
 
-    limit_401k = config.retirement.job_401k_contrib_limit
     for person_id, paid in deferrals.items():
         age = age_of(person_id)
-        limit = limit_401k.base + (
-            limit_401k.catch_up_amount if age is not None and age >= limit_401k.catch_up_age else 0
-        )
+        limit = config.get_job_401k_contrib_limit(age if age is not None else 0)
         over(person_id, paid, limit, "401(k) elective deferrals (402(g))")
     annual_additions = config.get_job_401k_annual_additions_limit()
     for label, paid in additions.items():

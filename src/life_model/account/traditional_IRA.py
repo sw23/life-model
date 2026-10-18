@@ -5,6 +5,7 @@
 
 from typing import ClassVar
 
+from .._compat import legacy_signature
 from ..base_classes import TaxAdvantagedAccount, TaxTreatment
 from ..ledger import FlowKind
 from ..limits import required_rmd_for_year
@@ -24,37 +25,57 @@ class TraditionalIRA(TaxAdvantagedAccount):
     # month's pre_step (same ordering as Job401kAccount); growth stays in step.
     STEP_PRIORITY: ClassVar[dict[str, int]] = {"pre_step": -10, "step": -10}
 
+    @legacy_signature(
+        ("person", "balance", "growth_rate", "contribution_limit"),
+        {"person": "owner", "growth_rate": "growth_pct", "contribution_limit": "contribution_limit_annual"},
+    )
     def __init__(
         self,
-        person: Person,
-        balance: float = 0,
-        growth_rate: float | None = None,
-        contribution_limit: float | None = None,
+        owner: Person,
         *,
+        balance: float = 0,
+        growth_pct: float | None = None,
+        contribution_limit_annual: float | None = None,
         nondeductible_basis: float = 0.0,
+        allocation: "dict[str, float] | None" = None,
+        expense_ratio_pct: float = 0.0,
     ):
         """Models a Traditional IRA account for a person.
 
-        Unlike a Roth IRA, contributions are pre-tax (deductible) and *all* withdrawals are ordinary
-        income; the account is subject to required minimum distributions. Contribution/withdraw/
-        growth and the annual-limit reset are inherited from :class:`TaxAdvantagedAccount`; the
-        pre-tax deduction, distribution taxation, and RMDs are applied by the account tax semantics.
+        Contributions are pre-tax (deductible, phased out at settlement for a covered worker); the
+        account is subject to required minimum distributions. Distributions are ordinary income except
+        the share that returns Form 8606 basis: the pro-rata rule (IRC §72, §408(d)(2)) applies the
+        ratio of the owner's basis to the value of all their traditional IRAs to each distribution and
+        Roth conversion. Contribution/withdraw/growth and the annual-limit reset are inherited from
+        :class:`TaxAdvantagedAccount`.
 
         Args:
-            person: The person to which this IRA belongs
+            owner: The person to which this IRA belongs (deprecated alias ``person``).
             balance: Current balance in the IRA
-            growth_rate: Expected annual growth rate percentage. Defers to the economy's equity
-                return when None.
-            contribution_limit: Override for the annual contribution limit. Uses the configured
-                IRA limit when None. Note the IRA limit is shared across all of a person's IRAs.
-            nondeductible_basis: Form 8606 basis (nondeductible contributions) at the start. Plan 31 adds
-                the year's nondeductible contributions (the deduction phase-out) to it; distributions are
-                still fully taxable (the pro-rata rule lands with Plan 27 D1).
+            growth_pct: Expected annual growth rate percentage (deprecated alias ``growth_rate``).
+                Defers to the economy's equity return when None.
+            contribution_limit_annual: Override for the annual contribution limit (deprecated alias
+                ``contribution_limit``). Uses the year's IRA limit plus the age-50 catch-up when None.
+                The limit is shared across all of a person's IRAs.
+            nondeductible_basis: Form 8606 basis (nondeductible contributions not yet recovered, line
+                14 of the last filed 8606). The year's nondeductible contributions (the deduction
+                phase-out) are added at settlement; distributions recover it pro rata.
+            allocation: Target allocation in percent by asset class (Plan 27 D5).
+            expense_ratio_pct: Fund expense ratio (percent a year).
         """
-        super().__init__(person, balance, growth_rate)
+        person = owner
+        growth_rate = growth_pct
+        contribution_limit = contribution_limit_annual
+        if nondeductible_basis < 0 or nondeductible_basis > balance + 1e-9:
+            raise ValueError("nondeductible_basis must be between 0 and the balance")
+        super().__init__(person, balance, growth_rate, allocation=allocation, expense_ratio_pct=expense_ratio_pct)
         self._contribution_limit_override = contribution_limit
         #: Form 8606 line 14: nondeductible contributions not yet recovered.
         self.nondeductible_basis = nondeductible_basis
+        #: Basis at the start of each year and basis recovered by distributions and conversions, by year
+        #: (Form 8606 lines 2 and 13; the reconciliation reads them).
+        self.basis_at_year_start: dict[int, float] = {}
+        self.basis_recovered: dict[int, float] = {}
         self.stat_required_min_distrib = 0
         # This year's required minimum distribution (set at the year start; paid in twelfths).
         self.rmd_for_year = 0.0
@@ -73,6 +94,7 @@ class TraditionalIRA(TaxAdvantagedAccount):
         return actual
 
     def on_year_start(self):
+        self.basis_at_year_start[self.model.year] = self.nondeductible_basis
         # The year's RMD from the balance at the start of the year (the prior year-end balance).
         required = required_rmd_for_year(self.person, self.balance)
         # Qualified charitable distributions are made now, with the year's donations, and count toward
@@ -85,12 +107,11 @@ class TraditionalIRA(TaxAdvantagedAccount):
         FICA, never penalized)."""
         if self.rmd_for_year <= 0:
             return
-        rmd = self.withdraw(self.rmd_for_year / 12)
+        rmd = self.distribute(self.rmd_for_year / 12, source="rmd", penalize=False)
         if rmd > 0:
             self.person.deposit_into_bank_account(
                 rmd, kind=FlowKind.RMD, from_account=self, cause=f"{self.model.year} required minimum distribution"
             )
-            self.person.income.add(IncomeType.PRETAX_DISTRIBUTION, rmd, source="rmd")
             self.stat_required_min_distrib = snap_money(self.stat_required_min_distrib + rmd)
             self._rmd_by_person[self.person] = self._rmd_by_person.get(self.person, 0.0) + rmd
 
@@ -125,7 +146,32 @@ class TraditionalIRA(TaxAdvantagedAccount):
     def annual_contribution_limit(self) -> float:
         if self._contribution_limit_override is not None:
             return self._contribution_limit_override
-        return self.model.year_config.retirement.ira.contribution_limit
+        return ira_contribution_limit(self.person, self.model.year)
+
+    def basis_ratio(self) -> float:
+        """The pro-rata share of a distribution that returns basis now: the owner's basis over the value
+        of all their traditional IRAs (Form 8606 lines 6-10, read at the distribution rather than at the
+        year end, a simplification)."""
+        return ira_basis_ratio(self.person)
+
+    def distribute(self, amount: float, *, source: str = "ira", penalize: bool = True) -> float:
+        """Withdraw up to ``amount`` as a distribution: the pro-rata basis share is tax-free (it reduces
+        the owner's basis across their IRAs); the rest is ordinary income on the owner's ledger, plus the
+        10% additional tax before 59.5 when ``penalize``. Returns the amount withdrawn (the caller moves
+        and posts the cash)."""
+        ratio = self.basis_ratio()
+        withdrawn = self.withdraw(amount)
+        if withdrawn <= 0:
+            return 0.0
+        nontaxable = withdrawn * ratio
+        if nontaxable > 0:
+            _reduce_ira_basis(self.person, nontaxable)
+        taxable = withdrawn - nontaxable
+        if taxable > 0:
+            self.person.income.add(IncomeType.PRETAX_DISTRIBUTION, taxable, source=source)
+            if penalize:
+                self.person.income.add_penalty(self.person.early_withdrawal_penalty(taxable))
+        return withdrawn
 
     def _repr_html_(self):
         desc = "<ul>"
@@ -135,3 +181,45 @@ class TraditionalIRA(TaxAdvantagedAccount):
         desc += f"<li>Contributions This Year: ${self.contributions_ytd:,.2f}</li>"
         desc += "</ul>"
         return desc
+
+
+def ira_contribution_limit(person: Person, year: int) -> float:
+    """The year's IRA contribution limit for ``person``: the base limit plus the age-50 catch-up
+    (IRC §219(b)(5)(B), by the age reached by the end of the year; ``tax_years.limit_ira_catch_up``)."""
+    model = person.model
+    limit = model.year_config.retirement.ira.contribution_limit
+    if person.age_in(year) >= IRA_CATCH_UP_AGE:
+        limit += model.tax_params_for_year(year).limit_ira_catch_up
+    return limit
+
+
+#: Age (by the end of the year) from which the IRA catch-up applies (IRC §219(b)(5)(B)).
+IRA_CATCH_UP_AGE = 50
+
+
+def ira_basis_ratio(person: Person) -> float:
+    """The owner's Form 8606 basis over the value of all their traditional IRAs (0 without basis)."""
+    iras = person.traditional_iras
+    basis = sum(getattr(ira, "nondeductible_basis", 0.0) for ira in iras)
+    if basis <= 0:
+        return 0.0
+    value = sum(ira.balance for ira in iras)
+    return min(1.0, basis / value) if value > 0 else 1.0
+
+
+def _reduce_ira_basis(person: Person, amount: float) -> None:
+    """Recover ``amount`` of basis across the owner's IRAs, in proportion to each one's basis."""
+    iras = [ira for ira in person.traditional_iras if ira.nondeductible_basis > 0]
+    total = sum(ira.nondeductible_basis for ira in iras)
+    if total <= 0:
+        return
+    year = person.model.year
+    for ira in iras:
+        recovered = min(ira.nondeductible_basis, amount * ira.nondeductible_basis / total)
+        ira.nondeductible_basis -= recovered
+        ira.basis_recovered[year] = ira.basis_recovered.get(year, 0.0) + recovered
+
+
+def ira_taxable_capacity(person: Person) -> float:
+    """How much taxable income draining the owner's traditional IRAs would produce (value less basis)."""
+    return max(0.0, sum(ira.balance for ira in person.traditional_iras) * (1 - ira_basis_ratio(person)))

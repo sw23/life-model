@@ -9,7 +9,7 @@ a spec, and say so when you present the assumptions.
 | Where | Convention | Example |
 |---|---|---|
 | Spec fields ending `_pct` | Percent | `rate_pct: 6.5` is 6.5% |
-| Core constructor rates (`interest_rate`, `growth_rate`, `yearly_increase`, `yearly_interest_rate`, `*_percent`) | Percent | `BankAccount(..., interest_rate=0.5)` is 0.5% |
+| Core constructor rates (`interest_pct`, `growth_pct`, `raise_pct`, `rate_pct`, `*_pct`; the deprecated `interest_rate`, `growth_rate`, `yearly_increase`, `*_percent`) | Percent | `BankAccount(owner, interest_pct=0.5)` is 0.5% |
 | Config YAML rates (`economy.equity_return`, `tax.state.tax_rate`, ...) | Percent | `equity_return: 7.0` |
 | Output rate columns (`Marginal Rate`) and `TaxReturn.marginal_rate` / `effective_rate` | Percent | `22.0` |
 | Stock vesting schedules in the spec (`vesting_schedule_pct`) | Percent per year (the builder divides by 100 for the core `VestingSchedule`, which takes fractions) | `[25, 25, 25, 25]` |
@@ -32,7 +32,7 @@ use the spec's names too: `Apartment(rent_monthly=)`, `LifeInsurance(premium_mon
 `HomeExpenses(hoa_annual=, maintenance_annual=)` are annual (the spec's `hoa_monthly` is multiplied by
 12). The old names (`monthly_rent`, `monthly_premium`, `base`, `annual_premium`, `hoa_amount`, ...) and
 positional arguments after the owner of a loan, annuity or pension still work for one release with a
-`DeprecationWarning` naming the replacement. `Salary(base=)` is annual.
+`DeprecationWarning` naming the replacement. `Salary(base_annual=)` is annual.
 
 The engine steps one **month** at a time (see [Time](#time) below): annual amounts are paid a
 twelfth a month, monthly ones (rent, loan payments) once a month, and loans amortize one period per
@@ -188,10 +188,17 @@ children's ages for the credits. The qualified charitable distribution's 70½ is
 | Jobs | A twelfth of base salary (the bonus in `Salary(bonus_month=)`, default March); 401k deferral per paycheck against the year's 402(g) room; the match per paycheck, capped by 415(c) | December match true-up (`Job401kAccount(match_true_up=True)`); the raise at year end |
 | Self-employment (`Job(kind="self_employed")`) | A twelfth of the net profit (receipts less expenses; the bonus month adds its bonus), no withholding | The owner's SEP / solo 401(k) contribution with December's payment, on the year's profit; self-employment tax and QBI with the year's return |
 | Dependent-care FSA (`payroll.dependent_care_fsa_annual`) | A twelfth of the election out of each paycheck (wages and FICA wages) | The Form 2441 exclusion and any taxable excess at settlement |
+| Other payroll deductions (`PayrollDeductions`, Plan 27) | Health / dental-vision premiums and commuter benefits (monthly amounts), a twelfth of the health FSA and of employee / employer HSA money: out of wages and FICA wages; premiums and HSA money out of take-home pay | |
+| Jobs with `start_year` / `end_year` | Paid only from the start month through the end month; the job retires the month after | |
+| ESPP (`StockPlan(espp=)`) | Pay set aside each month | The purchase (and its discount income) in each purchase month (June, December) |
+| Contribution plans (`person.add_contribution_plan`) | Bank-sourced: after the month's bills, never more than the bank holds (December: less the year's estimated tax); payroll-sourced: with the paycheck | A 401(k) "max" / dollar plan's percent re-derived at the year start |
+| Savings sweep (`person.savings_policy`) | | Cash above the floor invested after the year's taxes |
+| Roth conversions (`person.roth_conversion_policy`, `convert_to_roth` events) | A dollar event in its month | A standing or `fill_bracket_pct` conversion in December, before the year's taxes |
+| Fixed income (`FixedIncomeHolding`) | CD interest credited, Treasury coupons and bond-fund distributions paid, I bond interest accrued (tax deferred); maturity in its month | An I bond's rate resets every six months from its issue month |
 | Spending | A twelfth of base and of each annual category (monthly categories in full); one-time expenses in the month they are added; a schedule step in the month the age is reached; part of it charged to a card with `spending_charge_pct` | The base and categories escalate at year end |
 | Housing | A twelfth of property tax (a percent of the market or assessed value, or a dollar bill), insurance, upkeep, HOA and PMI (until 80% of the original value by balance, 78% by the original schedule, or the term's midpoint); one mortgage payment; rent | Home appreciation, the assessed value (capped), and the expense and rent escalators at year end |
 | Loans and cards | One payment each (amortization one period per month) plus any `extra_principal_monthly`; a home equity line's interest-only payment | Deferment interest capitalizes at year end (and repayment starts after `deferment_until`); a RAP payment is set from the last return's AGI |
-| Investments | Growth at the month's rate (401k, IRAs, HSA, brokerage, 529, trusts, annuities) | A DAF's growth, fee and grant at year end; the HSA employer contribution at year start |
+| Investments | Growth at the month's rate (401k, IRAs, HSA, brokerage, 529, trusts, annuities), an allocation's blend drifting with the classes' returns, net of the expense ratio | Allocations rebalance at year end; a DAF's growth, fee and grant; the legacy yearly HSA employer contribution at year start (while employed) |
 | Brokerage dividends | Quarterly (March, June, September, December), or monthly (`accounts.brokerage.dividend_frequency`) | |
 | Bank interest | Monthly | |
 | Social Security, pensions, annuities | One payment a month (from the claim or eligibility month; a spousal benefit once both spouses claim; earnings-test withholding takes whole checks); a pension's lump sum in its start month | Pension COLA and service credit at year end; Social Security's PIA (with COLAs) is set once a year (and again at FRA after withheld months); the earnings test at year end |

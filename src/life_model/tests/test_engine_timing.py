@@ -651,7 +651,9 @@ class TestMatchTiers(unittest.TestCase):
         with self.assertWarns(DeprecationWarning) as caught:
             match = self._match(company_match_percent=6)
         self.assertAlmostEqual(match, 360, places=6)  # 6% of the $6,000 deferral
-        self.assertIn("match_tiers=[(100, 6)]", str(caught.warning))
+        # (Plan 27 D8 adds deprecation warnings for the helper's positional arguments; find this one.)
+        messages = [str(w.message) for w in caught.warnings]
+        self.assertTrue(any("match_tiers=[(100, 6)]" in m for m in messages), messages)
 
     def test_tiers_and_deprecated_percent_are_exclusive(self):
         with self.assertRaises(ValueError):

@@ -3,8 +3,10 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 import html
+from collections.abc import Sequence
 from dataclasses import dataclass
 
+from .._compat import legacy_signature
 from ..base_classes import Investment
 from ..ledger import FlowKind
 from ..people.person import Person
@@ -39,6 +41,34 @@ class TaxLot:
         return (year * 12 + month) - (self.acquired_year * 12 + self.acquired_month)
 
 
+@dataclass(frozen=True)
+class Lot:
+    """An opening tax lot from a brokerage statement (Plan 27 D1): its market value, its cost basis and
+    when it was acquired (``"YYYY-MM"``, a year meaning January of it, or None for the first simulated
+    month). Pass a list of these as ``BrokerageAccount(lots=)``."""
+
+    value: float
+    cost_basis: float
+    acquired: "int | str | None" = None
+
+    def __post_init__(self):
+        if self.value < 0 or self.cost_basis < 0:
+            raise ValueError("Lot value and cost_basis must be non-negative")
+
+
+def _acquired(acquired: "int | str | None") -> "tuple[int | None, int | None]":
+    """``(year, month)`` of a lot's ``acquired`` (None for either part means "the default")."""
+    if acquired is None:
+        return None, None
+    if isinstance(acquired, str):
+        from ..model import parse_year_month
+
+        if acquired.isdigit():
+            return int(acquired), None
+        return parse_year_month(acquired)
+    return int(acquired), None
+
+
 class BrokerageAccount(Investment):
     """A taxable brokerage account with FIFO cost-basis tracking.
 
@@ -51,42 +81,82 @@ class BrokerageAccount(Investment):
     wash-sale disallowance (§1091) is not modeled: any tax-loss-harvesting strategy evaluated on
     this model will overstate its benefit.
 
-    Growth is monthly. Dividends (``dividend_yield``, carved out of the month's total return) are
-    paid quarterly by default (``accounts.brokerage.dividend_frequency``) and reinvested as new lots;
-    a lot held 12 months or more sells at a long-term gain.
+    Growth is monthly. Dividends (``dividend_yield_pct``, carved out of the month's total return) are
+    paid quarterly by default (``accounts.brokerage.dividend_frequency``) and reinvested as new lots, or
+    paid to the owner's bank with ``reinvest_dividends=False``; a lot held 12 months or more sells at a
+    long-term gain.
     """
 
+    @legacy_signature(
+        ("person", "company", "balance", "growth_rate"),
+        {"person": "owner", "growth_rate": "growth_pct", "dividend_yield": "dividend_yield_pct"},
+    )
     def __init__(
         self,
-        person: Person,
-        company: str,
-        balance: float = 0,
-        growth_rate: float | None = None,
+        owner: Person,
         *,
-        dividend_yield: float | None = None,
+        company: str = "Brokerage",
+        balance: float = 0,
+        lots: "Sequence[Lot | TaxLot] | None" = None,
+        growth_pct: float | None = None,
+        dividend_yield_pct: float | None = None,
+        reinvest_dividends: bool = True,
+        allocation: "dict[str, float] | None" = None,
+        expense_ratio_pct: float = 0.0,
     ):
         """Models a brokerage/investment account
 
         Args:
-            person: The person who owns this account
-            company: Brokerage company name
+            owner: The person who owns this account (deprecated alias ``person``).
+            company: Brokerage company name.
             balance: Current account balance. Seeded as a single lot with basis equal to the
-                balance and acquired in the model's start year, i.e. an account opened with no
-                embedded gain.
-            growth_rate: Expected annual growth rate percentage. Defers to the economy's equity
-                return when None.
-            dividend_yield: Percentage of the balance paid out as qualified dividends each year,
-                carved *out of* ``growth_rate`` rather than added on top. Defers to the config
-                default when None.
+                balance and acquired in the first simulated month, i.e. an account opened with no
+                embedded gain. Mutually exclusive with ``lots``.
+            lots: The statement's tax lots (:class:`Lot`: value, cost basis, acquired), so embedded
+                gains and holding periods are what the statement says (Plan 27 D1).
+            growth_pct: Expected annual growth rate percentage (deprecated alias ``growth_rate``).
+                Defers to the economy's equity return (or the allocation's blend) when None.
+            dividend_yield_pct: Percentage of the balance paid out as qualified dividends each year,
+                carved *out of* the total return rather than added on top (deprecated alias
+                ``dividend_yield``). Defers to the config default when None.
+            reinvest_dividends: Reinvest dividends as new lots (default) or pay them to the owner's bank.
+            allocation: Target allocation in percent by asset class (``{"equity": 70, "bond": 30}``),
+                rebalanced yearly (Plan 27 D5).
+            expense_ratio_pct: Fund expense ratio (percent a year), netted out of the return.
         """
-        super().__init__(person, balance, growth_rate)
+        if lots is not None and balance:
+            raise ValueError("pass either balance or lots, not both")
+        opening = [self._opening_lot(lot) for lot in lots] if lots is not None else []
+        super().__init__(
+            owner,
+            sum(lot[0] for lot in opening) if lots is not None else balance,
+            growth_pct,
+            allocation=allocation,
+            expense_ratio_pct=expense_ratio_pct,
+        )
         self.company = company
-        self._dividend_yield_override = dividend_yield
+        self._dividend_yield_override = dividend_yield_pct
+        self.reinvest_dividends = reinvest_dividends
         # Basis is tracked per lot; an opening balance is treated as freshly purchased at cost.
         self.lots: list[TaxLot] = []
-        if balance > 0:
+        if lots is not None:
+            for value, basis, year, month in opening:
+                if value > 0:
+                    self.lots.append(self._lot(value, basis, year, month))
+        elif balance > 0:
             self.lots.append(self._lot(balance, balance))
-        self.model.registries.brokerage_accounts.register(person, self)
+        self.model.registries.brokerage_accounts.register(owner, self)
+
+    @staticmethod
+    def _opening_lot(lot) -> "tuple[float, float, int | None, int | None]":
+        if isinstance(lot, TaxLot):
+            return lot.value, lot.cost_basis, lot.acquired_year, lot.acquired_month
+        if isinstance(lot, dict):
+            lot = Lot(**lot)
+        elif isinstance(lot, tuple):
+            lot = Lot(*lot)
+        year, month = _acquired(lot.acquired)
+        return lot.value, lot.cost_basis, year, month
 
     def _lot(self, value: float, cost_basis: float, acquired_year: int | None = None, acquired_month=None) -> TaxLot:
         """A lot acquired now (or in ``acquired_year``: in ``acquired_month``, else January of an
@@ -149,13 +219,17 @@ class BrokerageAccount(Investment):
 
         if dividend > 0:
             self.person.income.add(IncomeType.QUALIFIED_DIVIDEND, dividend, source="dividend")
-            self.deposit(dividend)
-            self.model.ledger.post(
-                dividend, FlowKind.DIVIDEND, to_account=self, source="dividends (reinvested)", agent=self.person
-            )
+            if self.reinvest_dividends:
+                self.deposit(dividend)
+                self.model.ledger.post(
+                    dividend, FlowKind.DIVIDEND, to_account=self, source="dividends (reinvested)", agent=self.person
+                )
+            else:
+                self.person.receive_cash(dividend, source=f"{self.company} dividends", kind=FlowKind.DIVIDEND)
 
-        growth = appreciation + dividend
+        growth = appreciation + (dividend if self.reinvest_dividends else 0.0)
         self.stat_growth_history.append(growth)
+        self._drift_allocation()
         return growth
 
     def _accrue_to_lots(self, amount: float) -> None:

@@ -29,27 +29,46 @@ if TYPE_CHECKING:
     from .person import Person
 
 #: The household payment waterfall, in draw order (D4). ``bank`` is cash already in members' bank
-#: accounts; ``brokerage`` sells taxable holdings (gains taxed this year); ``roth_basis`` draws Roth
-#: IRA contribution basis of members under the federal retirement age (59.5), which is tax- and
-#: penalty-free; ``pretax`` draws 401k / Traditional IRA / HSA money (ordinary income, plus the
-#: early-withdrawal penalty when young); ``roth_earnings`` draws the remaining tax-free Roth money
-#: (Roth 401k balances, and whole Roth IRAs from 59.5).
-DEFAULT_WITHDRAWAL_ORDER: tuple[str, ...] = ("bank", "brokerage", "roth_basis", "pretax", "roth_earnings")
+#: accounts (emergency-reserve accounts excluded); ``fixed_income`` redeems non-reserve CDs, Treasuries, I
+#: bonds and bond funds (Plan 27 D2); ``brokerage`` sells taxable holdings (gains taxed this year);
+#: ``roth_basis`` draws Roth IRA contribution (and seasoned conversion) basis of members under the federal
+#: retirement age (59.5), which is tax- and penalty-free; ``pretax`` draws 401k / Traditional IRA / HSA
+#: money (ordinary income, plus the early-withdrawal penalty when young); ``roth_earnings`` draws the
+#: remaining Roth money (Roth 401k balances, and whole Roth IRAs from 59.5); ``reserve`` draws
+#: emergency-reserve bank accounts and reserve fixed-income holdings, only once everything else is spent.
+DEFAULT_WITHDRAWAL_ORDER: tuple[str, ...] = (
+    "bank",
+    "fixed_income",
+    "brokerage",
+    "roth_basis",
+    "pretax",
+    "roth_earnings",
+    "reserve",
+)
+
+#: Sources an order may leave out (Plan 27 added them): they go to their default place.
+_OPTIONAL_SOURCES = {"fixed_income": "bank", "reserve": None}
 
 
 def validate_withdrawal_order(order: "tuple[str, ...] | list[str] | None") -> tuple[str, ...]:
     """Return ``order`` as a tuple, or the default when None.
 
     A valid order names every source of :data:`DEFAULT_WITHDRAWAL_ORDER` exactly once, ``bank``
-    first (cash on hand is always spent before anything is sold or withdrawn).
+    first (cash on hand is always spent before anything is sold or withdrawn). ``fixed_income`` and
+    ``reserve`` (Plan 27) may be left out: ``fixed_income`` then follows ``bank`` and ``reserve`` comes
+    last, so an order written before they existed keeps its meaning.
     """
     if order is None:
         return DEFAULT_WITHDRAWAL_ORDER
     order = tuple(order)
+    if "fixed_income" not in order and order[:1] == ("bank",):
+        order = ("bank", "fixed_income", *order[1:])
+    if "reserve" not in order:
+        order = (*order, "reserve")
     if sorted(order) != sorted(DEFAULT_WITHDRAWAL_ORDER) or order[0] != "bank":
         raise ValueError(
-            f"withdrawal_order must list each of {DEFAULT_WITHDRAWAL_ORDER} exactly once, starting with 'bank'; "
-            f"got {order}"
+            f"withdrawal_order must list each of {DEFAULT_WITHDRAWAL_ORDER} exactly once (fixed_income and "
+            f"reserve may be left out), starting with 'bank'; got {order}"
         )
     return order
 
@@ -196,7 +215,9 @@ class TaxUnit:
 
     @property
     def bank_account_balance(self) -> float:
-        return sum(m.bank_account_balance for m in self.members)
+        """Cash the unit's bills and taxes are paid from: every member's bank accounts except
+        emergency reserves (which the waterfall's ``reserve`` step moves into a spending account)."""
+        return sum(m.spendable_bank_balance for m in self.members)
 
     @property
     def total_itemized_deductions(self) -> float:
@@ -218,7 +239,9 @@ class TaxUnit:
         allocation: dict[int, float] = {}
         remaining = amount
         for member in self._members_for("pretax"):
-            available = member.pretax_account_balance
+            # ``amount`` is taxable income: walk each member's taxable capacity (the balance less any
+            # basis), which is the balance itself unless a source holds basis.
+            available = member.pretax_taxable_capacity
             take = min(remaining, available)
             allocation[member.unique_id] = take
             remaining -= take
@@ -573,7 +596,7 @@ class TaxUnit:
             apy = (1 + account.interest_rate / 100 / periods) ** periods - 1
             return (apy, account.person.name, account.company, account.type, -account.balance)
 
-        return sorted((a for m in self.members for a in m.bank_accounts), key=key)
+        return sorted((a for m in self.members for a in m.bank_accounts if not getattr(a, "reserve", False)), key=key)
 
     def _members_for(self, source: str) -> "list[Person]":
         """The order members are drawn in by a non-bank waterfall step: canonical (by name), not by
@@ -634,6 +657,10 @@ class TaxUnit:
                 if want - got > 0:
                     got += member.withdraw_tax_free_from_roth_iras(want - got)
                 raised += got
+            elif source == "fixed_income":
+                raised += member.redeem_fixed_income(want, reserve=False)
+            elif source == "reserve":
+                raised += member.draw_reserves(want)
             else:  # pragma: no cover - validated in __init__
                 raise ValueError(f"Unknown withdrawal source {source!r}")
         self._log_draws(source, before)
@@ -646,6 +673,10 @@ class TaxUnit:
             return member.brokerage_balance
         if source == "pretax":
             return member.pretax_account_balance
+        if source == "fixed_income":
+            return member.fixed_income_balance(reserve=False)
+        if source == "reserve":
+            return member.reserve_bank_balance() + member.fixed_income_balance(reserve=True)
         roth_401k = sum(a.roth_balance for a in member.all_retirement_accounts)
         return roth_401k + sum(a.balance for a in member.roth_iras)
 
@@ -667,6 +698,8 @@ class TaxUnit:
             elif source == "pretax":
                 kind = EventKind.PRETAX_WITHDRAWAL
                 accounts = [*member.all_retirement_accounts, *member.traditional_iras, *member.hsas]
+            elif source in ("fixed_income", "reserve"):
+                kind, accounts = EventKind.WITHDRAWAL, list(member.fixed_income_holdings)
             else:
                 kind, accounts = EventKind.WITHDRAWAL, [*member.roth_iras, *member.all_retirement_accounts]
             account = accounts[0] if len(accounts) == 1 else None
@@ -713,10 +746,14 @@ class TaxUnit:
                     self.withdraw_from_pretax_accounts(gross)
                     self._log_draws("pretax", before, target=gross)
             else:
-                gap = bills + self.get_income_taxes_due().total - self.bank_account_balance
-                # Sub-cent gaps are fixed-point residue from the sized steps, not a real shortfall.
-                if gap >= 0.005:
-                    self._raise_cash(source, gap)
+                # Unsized steps move the remaining gap; a draw that is itself taxable (a fund sale, an I
+                # bond's deferred interest, non-qualified Roth 401(k) earnings) raises the tax, so repeat
+                # until the gap closes or the source is exhausted.
+                for _ in range(20):
+                    gap = bills + self.get_income_taxes_due().total - self.bank_account_balance
+                    # Sub-cent gaps are fixed-point residue from the sized steps, not a real shortfall.
+                    if gap < 0.005 or self._raise_cash(source, gap) < 0.005:
+                        break
         if not netted:
             self._apply_capital_loss_netting()
         return self.get_income_taxes_due()
@@ -1237,12 +1274,25 @@ class TaxUnit:
         bank = self.bank_account_balance
         gross = 0.0
         for _ in range(100):
-            taxes = self.get_income_taxes_due(gross).total
+            taxes = self.get_income_taxes_due(self._prospective_taxable(gross)).total
             needed = max(0.0, bills + taxes - bank)
             if abs(needed - gross) < 0.001:
                 return needed
             gross = needed
         return gross
+
+    def _prospective_taxable(self, gross: float) -> float:
+        """The taxable income a pre-tax draw of ``gross`` would produce across the members, in the order
+        :meth:`withdraw_from_pretax_accounts` takes it (``gross`` itself unless a source holds basis)."""
+        taxable = 0.0
+        remaining = gross
+        for member in self._members_for("pretax"):
+            if remaining <= 0:
+                break
+            take = min(remaining, member.pretax_account_balance)
+            taxable += member.prospective_taxable(take)
+            remaining -= take
+        return taxable + max(0.0, remaining)
 
     def _member_shares(self) -> dict[int, float]:
         """Each member's share of the unit's income taxes: their own ordinary plus preferential income

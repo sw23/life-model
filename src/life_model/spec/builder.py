@@ -28,12 +28,13 @@ the builder then constructs, for all people at each step:
 Within one step, items are ordered by ``(id, canonical JSON)``, so two items without ids still have
 a deterministic order. Shuffling any list in a spec therefore yields an identical model.
 
-Undocumented core workarounds the builder relies on (each documented on its schema field; Plan 27
-turns them into real constructor arguments, and this module switches over then):
+Plan 27 replaced the undocumented core workarounds the builder used to rely on (brokerage opening lots via
+``deposit_with_basis``; a loan in progress as ``loan_amount=original_amount, principal=balance``) with
+real constructor arguments: ``BrokerageAccount(lots=)`` and the loans' statement inputs (origination,
+current balance, months remaining).
 
-* brokerage opening lots: ``BrokerageAccount(balance=0)`` + one ``deposit_with_basis`` per lot;
-* (a loan in progress used ``loan_amount=original_amount, principal=balance``; since Plan 27 the loan
-  classes take the statement's origination / balance / months remaining directly).
+Standing savings policies (``contribution_plans``, ``savings_policy``, ``roth_conversion``) are attached
+after every account exists (they reference accounts by id).
 
 Past-dated events: the builder never creates a ``LifeEvent`` dated before ``start_year`` and never
 passes ``LifeEvents(allow_past=True)``. A spec event that resolves before the start year is a
@@ -387,7 +388,7 @@ class _Builder:
 
     def job_agent(self, person_spec: s.Person, job_id: str | None):
         if job_id is None:
-            raise ValueError(f"{person_spec.id}: a 401k needs a job id (standalone plans are Plan 27 D3)")
+            return None
         for index, job in enumerate(person_spec.jobs):
             if job.id == job_id:
                 return self.built.items[job.id or f"{person_spec.id}.jobs[{index}]"]
@@ -431,29 +432,47 @@ class _Builder:
     # --- jobs ---
 
     def build_job(self, person, job: s.Job):
-        from ..work.job import Job, Salary
+        from ..work.job import Bonus, Job, Salary
 
+        structured = job.bonus_fixed_annual is not None or job.bonus_range_pct is not None or job.signon_bonus > 0
         salary = Salary(
-            model=self.model,
-            base=job.salary_annual,
-            yearly_increase=_growth(job.raise_pct),
-            yearly_bonus=job.bonus_pct,
+            self.model,
+            base_annual=job.salary_annual,
+            raise_pct=_growth(job.raise_pct),
+            bonus_pct=0.0 if structured else job.bonus_pct,
+            bonus=Bonus(
+                target_pct=job.bonus_pct,
+                fixed_annual=job.bonus_fixed_annual or 0.0,
+                range_pct=job.bonus_range_pct,
+                signon=job.signon_bonus,
+            )
+            if structured
+            else None,
+            raises=job.raises,
         )
         payroll = None
-        if job.payroll is not None and job.payroll.dependent_care_fsa_annual:
+        if job.payroll is not None and any(job.payroll.model_dump().values()):
             from ..work.payroll import PayrollDeductions
 
-            payroll = PayrollDeductions(dependent_care_fsa_annual=job.payroll.dependent_care_fsa_annual)
-        return Job(owner=person, company=job.company, role=job.role, salary=salary, payroll=payroll)
+            payroll = PayrollDeductions(**job.payroll.model_dump())
+        return Job(
+            person,
+            company=job.company,
+            role=job.role,
+            salary=salary,
+            payroll=payroll,
+            start_year=job.start_year,
+            end_year=job.end_year,
+        )
 
     def build_self_employment(self, person, se: s.SelfEmployment):
         """A sole proprietorship: ``Job(kind="self_employed")`` whose salary is the gross receipts (the
         SEP account is attached once the traditional IRAs exist, :meth:`attach_sep_account`)."""
         from ..work.job import Job, Salary
 
-        salary = Salary(model=self.model, base=se.receipts, yearly_increase=_growth(se.growth_pct))
+        salary = Salary(self.model, base_annual=se.receipts, raise_pct=_growth(se.growth_pct))
         return Job(
-            owner=person,
+            person,
             company=se.business,
             role="Owner",
             salary=salary,
@@ -476,11 +495,20 @@ class _Builder:
         elif person.traditional_iras:
             job.sep_account = person.traditional_iras[0]
         else:
-            job.sep_account = TraditionalIRA(person=person, balance=0.0)
+            job.sep_account = TraditionalIRA(person, balance=0.0)
 
     def build_stock_plan(self, job_agent, plan: s.StockPlan):
-        from ..work.stock import StockOption, StockPlan
+        from ..work.stock import ESPP, StockGrant, StockOption, StockPlan
 
+        espp = None
+        if plan.espp_contribution_pct:
+            espp = ESPP(
+                contribution_pct=plan.espp_contribution_pct,
+                discount_pct=plan.espp_discount_pct if plan.espp_discount_pct is not None else 15.0,
+                purchase_months=tuple(plan.espp_purchase_months),
+                lookback=plan.espp_lookback,
+                disposition=plan.espp_disposition,
+            )
         return StockPlan(
             job_agent,
             options=[
@@ -496,108 +524,166 @@ class _Builder:
             signon_value=plan.signon_value,
             refresher_value=plan.refresher_value,
             refresher_start_year=plan.refresher_start_year,
-            refresher_growth_percent=plan.refresher_growth_pct,
+            refresher_growth_pct=plan.refresher_growth_pct,
             schedule=_fractions(plan.vesting_schedule_pct),
             signon_schedule=_fractions(plan.signon_vesting_schedule_pct),
             disposition=plan.disposition,
-            growth_rate=_growth(plan.growth_pct),
+            growth_pct=_growth(plan.growth_pct),
+            existing_grants=[
+                StockGrant(
+                    value_at_grant=g.value,
+                    grant_year=g.grant_year,
+                    schedule=_fractions(g.vesting_schedule_pct),
+                    unvested_value=g.unvested_value,
+                )
+                for g in plan.existing_grants or ()
+            ],
+            espp=espp,
         )
 
     # --- accounts ---
 
     def build_account(self, person, person_spec: s.Person, account: Any):
         kind = account.kind
+        invest = {}
+        if getattr(account, "allocation_pct", None) is not None:
+            invest["allocation"] = dict(account.allocation_pct)
+        if getattr(account, "expense_ratio_pct", None) is not None:
+            invest["expense_ratio_pct"] = account.expense_ratio_pct
         if kind == "bank":
             from ..account.bank import BankAccount
 
             return BankAccount(
-                owner=person,
+                person,
                 company=account.company,
                 type=account.type,
                 balance=account.balance,
-                interest_rate=_growth(account.interest_pct),
+                interest_pct=_growth(account.interest_pct),
                 compounding=account.compounding,
+                reserve=account.reserve,
+            )
+        if kind == "fixed_income":
+            from ..account.fixed_income import FixedIncomeHolding
+
+            return FixedIncomeHolding(
+                person,
+                kind=account.instrument,
+                face=account.face,
+                rate_pct=account.rate_pct,
+                maturity=account.maturity,
+                purchased=account.purchased,
+                state_tax_exempt=account.state_tax_exempt,
+                tax_exempt=account.tax_exempt,
+                early_withdrawal_penalty_months=account.early_withdrawal_penalty_months,
+                reserve=account.reserve,
+                name=account.name,
+                accrued_interest=account.accrued_interest,
+                cost_basis=account.cost_basis,
             )
         if kind == "401k":
             from ..account.job401k import Job401kAccount
 
+            job = self.job_agent(person_spec, account.job)
             return Job401kAccount(
-                job=self.job_agent(person_spec, account.job),
+                job,
+                owner=person,
                 pretax_balance=account.pretax_balance,
-                pretax_contrib_percent=account.pretax_contrib_pct,
+                pretax_contrib_pct=account.pretax_contrib_pct,
                 roth_balance=account.roth_balance,
-                roth_contrib_percent=account.roth_contrib_pct,
-                average_growth=_growth(account.growth_pct),
+                roth_contrib_pct=account.roth_contrib_pct,
+                after_tax_balance=account.after_tax_balance or 0.0,
+                after_tax_basis=account.after_tax_basis,
+                after_tax_contrib_pct=account.after_tax_contrib_pct,
+                in_plan_roth_conversion=account.in_plan_roth_conversion,
+                roth_basis=account.roth_basis,
+                growth_pct=_growth(account.growth_pct),
                 company_match_percent=account.company_match_pct,  # deprecated; the validator warns
                 match_tiers=None
                 if account.match_tiers is None
                 else [(tier.match_pct, tier.up_to_pay_pct) for tier in account.match_tiers],
                 match_on_bonus=account.match_on_bonus,
                 match_vesting_years=account.match_vesting_years,
+                **invest,
             )
         if kind == "brokerage":
-            from ..account.brokerage import BrokerageAccount
+            from ..account.brokerage import BrokerageAccount, Lot
 
-            if account.lots is None:
-                return BrokerageAccount(
-                    person=person,
-                    company=account.company,
-                    balance=account.balance or 0.0,
-                    growth_rate=_growth(account.growth_pct),
-                    dividend_yield=account.dividend_yield_pct,
-                )
-            # Workaround (Plan 27 D1 adds lots=): open empty, then one deposit_with_basis per lot.
-            brokerage = BrokerageAccount(
-                person=person,
+            lots = None
+            if account.lots is not None:
+                lots = [
+                    Lot(
+                        lot.value,
+                        lot.cost_basis,
+                        None
+                        if lot.acquired_year is None
+                        else (
+                            f"{lot.acquired_year:04d}-{lot.acquired_month:02d}"
+                            if lot.acquired_month is not None
+                            else lot.acquired_year
+                        ),
+                    )
+                    for lot in account.lots
+                ]
+            return BrokerageAccount(
+                person,
                 company=account.company,
-                balance=0.0,
-                growth_rate=_growth(account.growth_pct),
-                dividend_yield=account.dividend_yield_pct,
+                balance=account.balance or 0.0,
+                lots=lots,
+                growth_pct=_growth(account.growth_pct),
+                dividend_yield_pct=account.dividend_yield_pct,
+                reinvest_dividends=account.reinvest_dividends,
+                **invest,
             )
-            for lot in account.lots:
-                brokerage.deposit_with_basis(lot.value, lot.cost_basis, lot.acquired_year)
-            return brokerage
         if kind == "traditional_ira":
             from ..account.traditional_IRA import TraditionalIRA
 
             return TraditionalIRA(
-                person=person,
+                person,
                 balance=account.balance,
-                growth_rate=_growth(account.growth_pct),
-                contribution_limit=account.contribution_limit_annual,
+                growth_pct=_growth(account.growth_pct),
+                contribution_limit_annual=account.contribution_limit_annual,
+                nondeductible_basis=account.nondeductible_basis or 0.0,
+                **invest,
             )
         if kind == "roth_ira":
             from ..account.roth_IRA import RothIRA
 
             return RothIRA(
-                person=person,
+                person,
                 balance=account.balance,
-                growth_rate=_growth(account.growth_pct),
-                contribution_limit=account.contribution_limit_annual,
+                growth_pct=_growth(account.growth_pct),
+                contribution_limit_annual=account.contribution_limit_annual,
+                contribution_basis=account.contribution_basis,
+                conversion_basis=account.conversion_basis or 0.0,
+                **invest,
             )
         if kind == "hsa":
             from ..account.hsa import HealthSavingsAccount, HSAType
 
             return HealthSavingsAccount(
-                person=person,
+                person,
                 hsa_type=HSAType.FAMILY if account.coverage == "family" else HSAType.INDIVIDUAL,
                 balance=account.balance,
-                contribution_limit=account.contribution_limit_annual,
-                employer_contribution=account.employer_contribution_annual,
-                growth_rate=_growth(account.growth_pct),
+                contribution_limit_annual=account.contribution_limit_annual,
+                employer_contribution_annual=account.employer_contribution_annual,
+                growth_pct=_growth(account.growth_pct),
+                basis=account.basis,
+                **invest,
             )
         if kind == "529":
             from ..dependents.plan529 import Plan529
 
             beneficiary = self.built.items[account.beneficiary] if account.beneficiary is not None else None
             return Plan529(
-                owner=person,
+                person,
                 beneficiary=beneficiary,
                 balance=account.balance,
                 state=account.plan_state,
-                growth_rate=_growth(account.growth_pct),
-                annual_contribution_limit=account.contribution_limit_annual,
+                growth_pct=_growth(account.growth_pct),
+                contribution_limit_annual=account.contribution_limit_annual,
                 lifetime_contribution_limit=account.lifetime_contribution_limit,
+                basis=account.basis,
+                **invest,
             )
         if kind == "inherited_pretax":
             from ..account.inherited import InheritedPretaxAccount
@@ -929,6 +1015,37 @@ class _Builder:
             end_year=donation.end_year,
         )
 
+    # --- standing savings policies (Plan 27 D4) ---
+
+    def attach_policies(self, person, p: s.Person) -> None:
+        """Attach the person's contribution plans, savings sweep and standing Roth conversion."""
+        from ..policies import MAX, ContributionPlan, RothConversionPolicy, SavingsPolicy
+
+        for plan in p.contribution_plans or ():
+            person.add_contribution_plan(
+                ContributionPlan(
+                    self.built.items[plan.account],
+                    amount_annual=MAX if plan.max_out else plan.amount_annual,
+                    pct_of_pay=plan.pay_pct,
+                    source=plan.source,
+                    months=plan.months,
+                    bucket=plan.bucket,
+                )
+            )
+        if p.savings_policy is not None:
+            person.savings_policy = SavingsPolicy(
+                cash_floor=p.savings_policy.cash_floor, sweep_to=self.built.items[p.savings_policy.sweep_to]
+            )
+        if p.roth_conversion is not None:
+            rc = p.roth_conversion
+            person.roth_conversion_policy = RothConversionPolicy(
+                fill_bracket_pct=rc.fill_bracket_pct,
+                amount_annual=rc.amount_annual,
+                source=self.built.items[rc.source] if rc.source is not None else None,
+                target=self.built.items[rc.target] if rc.target is not None else None,
+                until_age=rc.until_age,
+            )
+
     # --- marriages ---
 
     def marry(self, head, spouse, filing_status: str) -> None:
@@ -1029,6 +1146,8 @@ class _Builder:
                 self._register(p, "social_security", 0, p.social_security, self.build_social_security(person, p, claim))
         for p, i, item in each("giving"):
             self._register(p, "giving", i, item, self.build_donation(self.person(p.id), item))
+        for p in people:
+            self.attach_policies(self.person(p.id), p)
 
         for marriage in spec.relationships.marriages:
             if marriage.year is None or marriage.year <= self.model.start_year:

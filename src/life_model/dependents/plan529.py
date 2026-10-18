@@ -5,6 +5,7 @@
 import html
 from typing import TYPE_CHECKING, Optional
 
+from .._compat import legacy_signature
 from ..base_classes import Investment
 from ..ledger import FlowKind
 from ..model import compound_interest
@@ -19,15 +20,31 @@ class Plan529(Investment):
     STATS_OWNED = frozenset({"stat_529_balance"})
     BALANCE_STAT = "stat_529_balance"
 
+    @legacy_signature(
+        (
+            "owner",
+            "beneficiary",
+            "balance",
+            "state",
+            "growth_rate",
+            "annual_contribution_limit",
+            "lifetime_contribution_limit",
+        ),
+        {"growth_rate": "growth_pct", "annual_contribution_limit": "contribution_limit_annual"},
+    )
     def __init__(
         self,
         owner: "Person",
+        *,
         beneficiary: Optional["Child"] = None,
         balance: float = 0,
         state: str = "NY",
-        growth_rate: float | None = None,
-        annual_contribution_limit: float | None = None,
+        growth_pct: float | None = None,
+        contribution_limit_annual: float | None = None,
         lifetime_contribution_limit: float | None = None,
+        basis: float | None = None,
+        allocation: "dict[str, float] | None" = None,
+        expense_ratio_pct: float = 0.0,
     ):
         """Models a 529 education savings plan for a person
 
@@ -36,15 +53,24 @@ class Plan529(Investment):
             beneficiary: The child beneficiary of this plan (optional)
             balance: Current balance in the plan
             state: The state sponsoring the plan
-            growth_rate: Expected annual growth rate percentage. Defers to the economy's equity
-                return when None.
-            annual_contribution_limit: Annual contribution limit. Uses configured default if None.
+            growth_pct: Expected annual growth rate percentage (deprecated alias ``growth_rate``).
+                Defers to the economy's equity return when None.
+            contribution_limit_annual: Annual contribution limit (deprecated alias
+                ``annual_contribution_limit``). Uses configured default if None.
             lifetime_contribution_limit: Lifetime contribution limit. Uses configured default if None.
+            basis: Contributions in the balance (Plan 27 D1); the rest is earnings, taxed and penalized
+                pro rata on a non-qualified withdrawal. The whole balance when None.
+            allocation: Target allocation in percent by asset class (Plan 27 D5).
+            expense_ratio_pct: Fund expense ratio (percent a year).
         """
+        growth_rate = growth_pct
+        annual_contribution_limit = contribution_limit_annual
+        if basis is not None and not 0 <= basis <= balance + 1e-9:
+            raise ValueError("basis must be between 0 and the balance")
         # Get defaults from config
         plan_529_config = owner.model.config.accounts.plan_529
 
-        super().__init__(owner, balance, growth_rate)
+        super().__init__(owner, balance, growth_rate, allocation=allocation, expense_ratio_pct=expense_ratio_pct)
         self.beneficiary = beneficiary
         self.state = state
 
@@ -61,8 +87,9 @@ class Plan529(Investment):
         )
 
         # Track contributions and earnings separately for tax purposes
-        self.total_contributions = balance  # Assume initial balance is all contributions
-        self.total_earnings = 0
+        # Without a basis the opening balance is assumed to be all contributions.
+        self.total_contributions = balance if basis is None else basis
+        self.total_earnings = 0 if basis is None else balance - basis
         self.contributions_this_year = 0
         self.total_withdrawals = 0
         self.qualified_withdrawals = 0
