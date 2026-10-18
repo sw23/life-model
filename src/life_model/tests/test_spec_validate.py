@@ -111,7 +111,7 @@ class TestSpecErrors(unittest.TestCase):
         ]
         self.assertTrue(marked)  # shrinks as later plans flip fields on
         bank = spec_of(minimal()).people[0].accounts[0]
-        flagged = bank.model_copy(update={"compounding": "monthly"})
+        flagged = bank.model_copy(update={"reserve": True})
         spec = spec_of(minimal())
         spec.people[0].accounts = [flagged]
         self.assertEqual(codes(not_yet_supported_findings(spec)), ["not_yet_supported"])
@@ -254,6 +254,8 @@ def _python_household():
 
     It reproduces the notebook's problems: a marriage LifeEvent dated before the start year (so it
     never fires), core's 0% spending/salary growth defaults, and a bank account standing in for bonds.
+    Since Plan 26, ``LifeEvents`` itself refuses a past-dated event, so the schedule here is mutated
+    directly (as code that bypasses the constructor could) to show the validator still catches it.
     """
     model = LifeModel(start_year=2026, end_year=2030)
     family = Family(model)
@@ -264,11 +266,19 @@ def _python_household():
     BankAccount(ray, "Big Bank", balance=8000)
     Job(kim, "Example Co", "Engineer", Salary(model, base=120000))
     Job(ray, "Example Org", "Teacher", Salary(model, base=60000, yearly_increase=2))
-    LifeEvents(model, [LifeEvent(2024, "Kim and Ray get married", kim.get_married, ray)])
+    LifeEvents(model).life_events.append(LifeEvent(2024, "Kim and Ray get married", kim.get_married, ray))
     return model
 
 
 class TestModelValidation(unittest.TestCase):
+    def test_core_refuses_past_dated_life_events(self):
+        model = LifeModel(start_year=2026, end_year=2030)
+        family = Family(model)
+        kim = Person(family, "Kim", age=41, retirement_age=60, spending=Spending(model, base=1))
+        ray = Person(family, "Ray", age=43, retirement_age=62, spending=Spending(model, base=1))
+        with self.assertRaises(ValueError):
+            LifeEvents(model, [LifeEvent(2024, "Kim and Ray get married", kim.get_married, ray)])
+
     def test_python_household_reports_the_notebook_problems(self):
         findings = _python_household().validate()
         by_code = {f.code: f for f in findings}
@@ -289,6 +299,22 @@ class TestModelValidation(unittest.TestCase):
         for code in ("unknown_state", "no_bank_account", "retirement_before_age", "default_rent_growth"):
             self.assertIn(code, found)
         self.assertIn("fraction_percent", found)
+
+    def test_deprecated_match_on_a_model(self):
+        import warnings
+
+        from ..account.job401k import Job401kAccount
+
+        model = LifeModel(start_year=2026)
+        person = Person(
+            Family(model), "M", age=30, retirement_age=65, spending=Spending(model, base=1, yearly_increase=2)
+        )
+        BankAccount(person, "Bank", balance=5)
+        job = Job(person, "Co", "Dev", Salary(model, base=1, yearly_increase=2))
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            Job401kAccount(job=job, company_match_percent=6)
+        self.assertIn("deprecated_match", codes(model.validate(), WARNING))
 
     def test_negative_balance(self):
         model = LifeModel(start_year=2026)

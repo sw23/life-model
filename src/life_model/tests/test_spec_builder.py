@@ -42,6 +42,7 @@ def build(data: dict, **kwargs):
 
 #: Lists whose order is part of the value (not a collection of entities).
 _ORDERED_VALUES = {
+    "match_tiers",
     "spouses",
     "vesting_schedule_pct",
     "signon_vesting_schedule_pct",
@@ -187,8 +188,8 @@ class TestFieldMapping(unittest.TestCase):
         built.model.step()
         built.model.step()
         self.assertEqual(built.items["level"].monthly_premium, 50)
-        self.assertEqual(built.items["level"].premium_increase_type, PremiumIncreaseType.AGE_BASED)
-        self.assertEqual(built.items["level"].age_multipliers, {})
+        self.assertEqual(built.items["level"].premium_increase_type, PremiumIncreaseType.LEVEL)
+        self.assertEqual(built.items["banded"].premium_increase_type, PremiumIncreaseType.AGE_BANDED)
         self.assertGreater(built.items["banded"].monthly_premium, 50)
 
     def test_home_mortgage_and_expenses(self):
@@ -279,7 +280,7 @@ class TestBuildChecks(unittest.TestCase):
 
     def test_not_yet_supported_is_rejected_even_without_checks(self):
         data = minimal()
-        data["people"][0]["accounts"][0]["compounding"] = "monthly"
+        data["people"][0]["accounts"][0]["reserve"] = True
         with self.assertRaises(SpecValidationError):
             build_model(spec_of(data), check=False)
         data = minimal(accounts=[])  # an ordinary error is skipped with check=False
@@ -474,6 +475,66 @@ class TestEventActions(unittest.TestCase):
         self.assertFalse(alex.is_deceased)
         model.step()
         self.assertTrue(alex.is_deceased)
+
+    def test_die_and_an_ordinary_event_at_the_same_age_land_in_the_same_year(self):
+        data = minimal(jobs=[], retirement_age=60)
+        data["people"][0]["age"] = 80
+        data["meta"]["end_year"] = 2040
+        data["events"] = [
+            {"at": {"age": 85}, "person": "alex", "action": "die"},
+            {"at": {"age": 85}, "person": "alex", "action": "one_time_expense", "amount": 1},
+        ]
+        built = build(data)
+        alex = built.people["alex"]
+        (expense,) = built.life_events.life_events
+        died_in = None
+        while built.model.year <= built.model.end_year and died_in is None:
+            year = built.model.year
+            built.model.step()
+            if alex.is_deceased:
+                died_in = year
+        self.assertEqual(died_in, expense.year)
+        self.assertEqual(died_in, alex.get_year_at_age(85))
+
+    def test_household_withdrawal_order(self):
+        data = minimal()
+        data["withdrawal_order"] = ["bank", "pretax", "brokerage", "roth_basis", "roth_earnings"]
+        family = build(data).family
+        self.assertEqual(family.withdrawal_order, ("bank", "pretax", "brokerage", "roth_basis", "roth_earnings"))
+        data["withdrawal_order"] = ["brokerage", "bank", "pretax", "roth_basis", "roth_earnings"]
+        with self.assertRaises(ValueError):
+            spec_of(data)
+
+    def test_match_tiers_and_compounding_reach_core(self):
+        data = minimal()
+        data["people"][0]["accounts"][0]["compounding"] = "annual"
+        data["people"][0]["accounts"].append(
+            {
+                "kind": "401k",
+                "id": "plan",
+                "job": "job",
+                "pretax_contrib_pct": 6,
+                "match_tiers": [{"match_pct": 100, "up_to_pay_pct": 3}, {"match_pct": 50, "up_to_pay_pct": 2}],
+                "match_vesting_years": 2,
+            }
+        )
+        built = build(data)
+        plan = built.items["plan"]
+        self.assertEqual(
+            (plan.match_tiers, plan.match_vesting_years, plan.company_match_percent), (((100, 3), (50, 2)), 2, 0)
+        )
+        self.assertEqual(built.people["alex"].bank_accounts[0].compound_rate, 1)
+        built.model.step()
+        self.assertAlmostEqual(built.items["job"].stat_retirement_match, 80000 * 0.04)  # 3% + 1% of pay
+
+    def test_past_dated_events_never_reach_life_events(self):
+        """Past-dated events are validator errors; without checks the core LifeEvents refuses them too."""
+        data = minimal()
+        data["events"] = [{"at": 2020, "person": "alex", "action": "one_time_expense", "amount": 1}]
+        with self.assertRaises(SpecValidationError):
+            build_model(spec_of(data))
+        with self.assertRaises(ValueError):
+            build_model(spec_of(data), check=False)
 
     def test_claim_by_year_starts_benefits_that_year(self):
         data = minimal(retirement_age=62, jobs=[])

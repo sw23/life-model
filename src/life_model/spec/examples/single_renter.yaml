@@ -35,7 +35,11 @@ people:
     job: sam_job
     pretax_balance: 21000
     pretax_contrib_pct: 8
-    company_match_pct: 50
+    match_tiers:
+    - match_pct: 100
+      up_to_pay_pct: 3
+    - match_pct: 50
+      up_to_pay_pct: 2
   - kind: brokerage
     company: Example Brokerage
     balance: 40000

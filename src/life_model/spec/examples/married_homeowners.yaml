@@ -36,7 +36,9 @@ people:
     pretax_contrib_pct: 15
     roth_contrib_pct: 5
     growth_pct: 5
-    company_match_pct: 50
+    match_tiers:
+    - match_pct: 50
+      up_to_pay_pct: 6
   - kind: 529
     beneficiary: junior
     balance: 18000

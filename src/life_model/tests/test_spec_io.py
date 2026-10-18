@@ -196,15 +196,17 @@ class TestExamples(unittest.TestCase):
         self.assertEqual(john.insurance[0].policy, "term")
         self.assertTrue(john.social_security.earnings_history and jane.social_security.earnings_history)
         self.assertEqual(len(spec.events), 5)
-        # A tiered 401k match is declared but rejected until Plan 26 D7 lands in core.
+        john_401k = next(a for a in john.accounts if a.kind == "401k")
+        self.assertEqual([(t.match_pct, t.up_to_pay_pct) for t in john_401k.match_tiers], [(50, 6)])  # tiered
+        model = build_model(spec)
+        self.assertEqual(model.household.people["john"].all_retirement_accounts[0].match_tiers, ((50, 6),))
+        # The deprecated legacy field still builds, with a validator warning naming the tiers equivalent.
         data = json.loads(dumps(spec, "json"))
-        data["people"][0]["accounts"][1]["match_tiers"] = [
-            {"match_pct": 100, "up_to_pay_pct": 3},
-            {"match_pct": 50, "up_to_pay_pct": 2},
-        ]
+        data["people"][0]["accounts"][1].pop("match_tiers")
+        data["people"][0]["accounts"][1]["company_match_pct"] = 6
         findings = validate_spec(data)
-        self.assertEqual([f.code for f in findings], ["not_yet_supported"])
-        self.assertIn("Plan 26 D7", findings[0].message)
+        self.assertEqual([f.code for f in findings], ["deprecated_match"])
+        self.assertIn("up_to_pay_pct: 6", findings[0].fix)
 
     def test_married_homeowners_builds_without_warnings(self):
         with warnings.catch_warnings():
@@ -270,8 +272,25 @@ def _kitchen_sink() -> dict:
     alex["jobs"][0].update({"bonus_pct": 10, "stock_plan": {"signon_value": 40000, "refresher_value": 20000}})
     alex["accounts"] = [
         {"kind": "bank", "id": "checking", "balance": 20000, "interest_pct": 0.5, "primary": True},
-        {"kind": "bank", "company": "Online Bank", "type": "Savings", "balance": 5000, "interest_pct": 4.0},
-        {"kind": "401k", "job": "job", "pretax_balance": 1000, "roth_balance": 2000, "pretax_contrib_pct": 6},
+        {
+            "kind": "bank",
+            "company": "Online Bank",
+            "type": "Savings",
+            "balance": 5000,
+            "interest_pct": 4.0,
+            "compounding": "annual",
+        },
+        {
+            "kind": "401k",
+            "job": "job",
+            "pretax_balance": 1000,
+            "roth_balance": 2000,
+            "pretax_contrib_pct": 6,
+            "match_tiers": [{"match_pct": 100, "up_to_pay_pct": 3}, {"match_pct": 50, "up_to_pay_pct": 2}],
+            "match_on_bonus": True,
+            "match_vesting_years": 3,
+        },
+        {"kind": "annuity", "annuity_type": "fixed", "balance": 20000, "interest_pct": 4},
         {"kind": "brokerage", "balance": 10000, "growth_pct": 6, "dividend_yield_pct": 1.5},
         {"kind": "traditional_ira", "balance": 3000, "contribution_limit_annual": 6000},
         {"kind": "roth_ira", "balance": 4000},
@@ -288,7 +307,8 @@ def _kitchen_sink() -> dict:
             "cola_pct": 1,
             "survivor_pct": 50,
         },
-        {"kind": "pension", "company": "Old Co", "vesting_years": 3, "benefit_annual": 6000},
+        {"kind": "pension", "company": "Old Co", "vesting_years": 3, "benefit_annual": 6000, "accrues_service": False},
+        {"kind": "pension", "company": "Union", "vesting_years": 5, "benefit_annual": 3000, "job": "job"},
         {
             "kind": "annuity",
             "annuity_type": "deferred",
@@ -385,6 +405,7 @@ def _kitchen_sink() -> dict:
     }
     data["people"].append(bo)
     data["relationships"] = {"marriages": [{"spouses": ["alex", "bo"], "filing_status": "separate"}]}
+    data["withdrawal_order"] = ["bank", "roth_basis", "brokerage", "pretax", "roth_earnings"]
     data["events"] = [
         {"id": "raise", "at": 2028, "person": "alex", "action": "change_job", "job": "job", "salary_annual": 90000},
         {"at": {"relative": {"after": "raise", "years": 2}}, "person": "alex", "action": "sell_home", "home": "house"},

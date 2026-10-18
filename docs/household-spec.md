@@ -23,12 +23,15 @@ be written down now; the validator rejects a spec that sets one, naming the plan
 (kind, `primary` bank first, then id and content) and builds model, family, people, bank
 accounts, jobs, 401ks, stock plans, other accounts, debts, housing, insurance, children, 529s,
 healthcare, Social Security, giving, marriages, then events. The head of a married tax unit is the
-first spouse listed in `relationships.marriages`.
+first spouse listed in `relationships.marriages`; that is a modeling choice, since the household
+payment waterfall draws the members' bank accounts in member order.
 
-**Event timing.** `at: {age: A}` resolves through the engine's own `Person.get_year_at_age`, so
-it follows the engine's age semantics (until Plan 26 item 1 lands, an event "at 42" fires when the
-simulated age is 43). Events currently fire after the year's settlement (Plan 26 item 2), so
-their cash effects land the following year.
+**Event timing.** `at: {age: A}` resolves through the engine's own `Person.get_year_at_age`
+(`start_year + (A - age)`: a person's `age` is their age during the first simulated year). Events
+fire in the engine's `events` stage, after the year's income and before the tax units settle the
+year, so their effects apply to the year they are dated. An event dated before `start_year` is an
+error: put what already happened into the starting state (for example a marriage in
+`relationships`).
 
 ## Event actions
 
@@ -45,6 +48,7 @@ A complete household: metadata, optional economy overrides, people, relationship
 | `economy` | [Economy](#economy) (optional) |  | — |  | Economy overrides. |
 | `people` | list[[Person](#person)] |  | **required** |  | The people in the household (one family). |
 | `relationships` | [Relationships](#relationships) |  | {} |  | Marriages. |
+| `withdrawal_order` | list[`"bank"` \\| `"brokerage"` \\| `"roth_basis"` \\| `"pretax"` \\| `"roth_earnings"`] (optional) |  | — | `Family.withdrawal_order` | Household payment waterfall: the order sources are drawn to pay bills and taxes, across every member. Each source exactly once, starting with 'bank'. Defaults to bank, brokerage, roth_basis, pretax, roth_earnings. |
 | `events` | list[one of: [MarryEvent](#marryevent), [DivorceEvent](#divorceevent), [RetireEvent](#retireevent), [ChangeJobEvent](#changejobevent), [MoveEvent](#moveevent), [BuyHomeEvent](#buyhomeevent), [SellHomeEvent](#sellhomeevent), [OneTimeExpenseEvent](#onetimeexpenseevent), [RecurringExpenseEvent](#recurringexpenseevent), [ChangeSpendingEvent](#changespendingevent), [AddAccountEvent](#addaccountevent), [ContributeEvent](#contributeevent), [ConvertToRothEvent](#converttorothevent), [ClaimSocialSecurityEvent](#claimsocialsecurityevent), [DieEvent](#dieevent)] |  | [] |  | Dated life events. |
 
 ## Meta
@@ -117,7 +121,7 @@ Builds: `Person`.
 |---|---|---|---|---|---|
 | `id` | string |  | **required** |  | Unique person id (referenced by relationships, events, trusts). |
 | `name` | string |  | **required** | `Person.name` | Display name. |
-| `age` | integer | age | **required** | `Person.age` | Age passed to Person(age=). Engine semantics until Plan 26 item 1: age is incremented before the first simulated year, so the person is age + 1 during start_year. |
+| `age` | integer | age | **required** | `Person.age` | Age during the first simulated year (start_year); the person is age + 1 the year after. |
 | `birth` | string (optional) | YYYY-MM | — |  | Birth month (exact ages). NOT YET SUPPORTED (Plan 32 D4): rejected by the validator. |
 | `gender` | `"male"` \\| `"female"` \\| `"other"` |  | `"other"` | `Person.gender` | Gender at birth for the mortality table ('other' blends). |
 | `retirement_age` | number | age | **required** | `Person.retirement_age` | Age at which every job stops. |
@@ -137,7 +141,6 @@ Builds: `Person`.
 | `self_employment` | [SelfEmployment](#selfemployment) (optional) |  | — |  | Self-employment income. NOT YET SUPPORTED (Plan 31): rejected by the validator. |
 | `contribution_plans` | list[[ContributionPlan](#contributionplan)] (optional) |  | — |  | Recurring contributions. NOT YET SUPPORTED (Plan 27 D4): rejected by the validator. |
 | `savings_policy` | [SavingsPolicy](#savingspolicy) (optional) |  | — |  | Surplus sweep above a cash floor. NOT YET SUPPORTED (Plan 27 D4): rejected by the validator. |
-| `withdrawal_order` | list[`"bank"` \\| `"brokerage"` \\| `"roth_basis"` \\| `"pretax"` \\| `"roth_earnings"`] (optional) |  | — |  | Order accounts are drawn to pay bills. NOT YET SUPPORTED (Plan 26 D4): rejected by the validator. |
 
 ## Spending
 
@@ -239,9 +242,9 @@ Builds: `BankAccount`.
 | `company` | string |  | `"Bank"` | `BankAccount.company` | Bank name. |
 | `type` | string |  | `"Checking"` | `BankAccount.type` | Account type label (Checking, Savings, ...). |
 | `balance` | number | USD | `0.0` | `BankAccount.balance` | Balance at the as-of date. |
-| `interest_pct` | number \\| `"economy"` | percent | `"economy"` | `BankAccount.interest_rate` | Annual interest rate; 'economy' (the core default) follows the economy's cash yield. Interest is not yet taxed (Plan 26 item 5). |
+| `interest_pct` | number \\| `"economy"` | percent | `"economy"` | `BankAccount.interest_rate` | Annual interest rate (APR, compounded per 'compounding'); 'economy' (the core default) follows the economy's cash yield. Interest is taxed as ordinary income. |
 | `primary` | boolean |  | `False` |  | Receives income and pays bills first. Exactly one per person when they have several bank accounts; otherwise the first in canonical order is primary. |
-| `compounding` | `"monthly"` \\| `"annual"` (optional) |  | — |  | Interest compounding convention. NOT YET SUPPORTED (Plan 26 D5): rejected by the validator. |
+| `compounding` | `"monthly"` \\| `"annual"` (optional) |  | — | `BankAccount.compounding` | How interest_pct compounds: 'monthly' (an APR) or 'annual' (enter an APY). Defaults to the configured convention. |
 | `reserve` | boolean |  | `False` |  | Emergency reserve not drawn for ordinary bills. NOT YET SUPPORTED (Plan 27 D2/D4): rejected by the validator. |
 
 ## FixedIncomeAccount
@@ -306,13 +309,13 @@ Builds: `Job401kAccount`.
 | `job` | string (optional) |  | — | `Job401kAccount.job` | Id of the person's job offering the plan. A standalone (old-employer) plan without a job is NOT YET SUPPORTED (Plan 27 D3). |
 | `pretax_balance` | number | USD | `0.0` | `Job401kAccount.pretax_balance` | Pre-tax balance. |
 | `roth_balance` | number | USD | `0.0` | `Job401kAccount.roth_balance` | Roth balance. |
-| `pretax_contrib_pct` | number | percent (typically > 1) | `0.0` | `Job401kAccount.pretax_contrib_percent` | Pre-tax deferral, percent of base salary. |
-| `roth_contrib_pct` | number | percent (typically > 1) | `0.0` | `Job401kAccount.roth_contrib_percent` | Roth deferral, percent of base salary. |
+| `pretax_contrib_pct` | number | percent (typically > 1) | `0.0` | `Job401kAccount.pretax_contrib_percent` | Pre-tax deferral, percent of plan pay (base salary, plus bonus with match_on_bonus). |
+| `roth_contrib_pct` | number | percent (typically > 1) | `0.0` | `Job401kAccount.roth_contrib_percent` | Roth deferral, percent of plan pay (base salary, plus bonus with match_on_bonus). |
 | `growth_pct` | number \\| `"economy"` | percent (typically > 1) | `"economy"` | `Job401kAccount.average_growth` | Annual return; 'economy' follows the equity return. |
-| `company_match_pct` | number | percent (typically > 1) | `0.0` | `Job401kAccount.company_match_percent` | Core's legacy match: this percent OF THE DEFERRAL, capped at this percent of pay (so 6 with a 6% deferral on $100k matches $360; Plan 26 item 7). Prefer match_tiers once supported. |
-| `match_tiers` | list[[MatchTier](#matchtier)] (optional) |  | — |  | Tiered match, e.g. [{match_pct: 100, up_to_pay_pct: 3}, {match_pct: 50, up_to_pay_pct: 2}]. NOT YET SUPPORTED (Plan 26 D7): rejected by the validator. |
-| `match_on_bonus` | boolean |  | `False` |  | Match applies to bonus pay. NOT YET SUPPORTED (Plan 26 D7): rejected by the validator. |
-| `match_vesting_years` | integer (optional) | years | — |  | Years until the match vests. NOT YET SUPPORTED (Plan 26 D7): rejected by the validator. |
+| `match_tiers` | list[[MatchTier](#matchtier)] (optional) |  | — | `Job401kAccount.match_tiers` | The employer match as the plan states it, tier by tier over the deferral rate: [{match_pct: 100, up_to_pay_pct: 3}, {match_pct: 50, up_to_pay_pct: 2}] is 100% of the first 3% of pay deferred plus 50% of the next 2%. |
+| `match_on_bonus` | boolean |  | `False` | `Job401kAccount.match_on_bonus` | Plan pay includes the bonus (deferral percentages and match tiers apply to salary + bonus). |
+| `match_vesting_years` | integer | years | `0` | `Job401kAccount.match_vesting_years` | Cliff vesting of employer money (0 = immediately vested); unvested match is forfeited if the job ends first. |
+| `company_match_pct` | number | percent (typically > 1) | `0.0` | `Job401kAccount.company_match_percent` | DEPRECATED (the validator warns): core's legacy match, this percent OF THE DEFERRAL capped at this percent of pay (6 with a 6% deferral on $100k matches $360). Use match_tiers; a dollar-for-dollar match up to 6% of pay is [{match_pct: 100, up_to_pay_pct: 6}]. Mutually exclusive with match_tiers. |
 | `after_tax_balance` | number (optional) | USD | — |  | After-tax (non-Roth) bucket. NOT YET SUPPORTED (Plan 27 D3): rejected by the validator. |
 | `roth_basis` | number (optional) | USD | — |  | Roth contribution basis. NOT YET SUPPORTED (Plan 27 D3): rejected by the validator. |
 | `allocation_pct` | map[string → number] (optional) | percent | — |  | Asset allocation in percent by asset class, e.g. {equity: 70, bond: 30}. NOT YET SUPPORTED (Plan 27 D5): rejected by the validator. |
@@ -425,7 +428,8 @@ Builds: `Pension`.
 | `years_of_service` | integer (optional) | years | — | `Pension.years_of_service` | Credited service (defaults to vesting_years). |
 | `benefit_multiplier_pct` | number (optional) | percent | — | `Pension.benefit_multiplier` | Percent of final salary accrued per year of service (with final_salary_annual). |
 | `final_salary_annual` | number (optional) | USD/year | — | `Pension.final_salary` | Final(-average) salary for the formula. |
-| `accrues_service` | boolean |  | `False` |  | Service and vesting advance while employed. NOT YET SUPPORTED (Plan 27 D1): rejected by the validator. |
+| `job` | string (optional) |  | — | `Pension.job` | Id of the owner's sponsoring job. Defaults to the owner's job whose company equals 'company' (if any). |
+| `accrues_service` | boolean |  | `True` | `Pension.accrues_service` | A year of service (and vesting) accrues for each year the sponsoring job books payroll; a formula benefit's final salary follows that job. |
 | `early_retirement_reduction_pct` | number (optional) | percent | — |  | Reduction per year before normal age. NOT YET SUPPORTED (Plan 27 item 5): rejected by the validator. |
 | `lump_sum_option` | boolean |  | `False` |  | Lump-sum election. NOT YET SUPPORTED (Plan 27 item 5): rejected by the validator. |
 
@@ -443,7 +447,7 @@ Builds: `Annuity`.
 | `balance` | number | USD | `0.0` | `Annuity.initial_balance` | Contract value. |
 | `interest_pct` | number (optional) | percent (typically > 1) | — | `Annuity.interest_rate` | Crediting rate; defaults to the configured rate. |
 | `payout_type` | `"life_only"` \\| `"life_with_period_certain"` \\| `"joint_and_survivor"` \\| `"lump_sum"` |  | `"life_only"` | `Annuity.payout_type` | Payout option. |
-| `payout_start_age` | integer (optional) | age | — | `Annuity.payout_start_age` | Age payouts begin (None = immediate). |
+| `payout_start_age` | integer (optional) | age | — | `Annuity.payout_start_age` | Age the contract annuitizes. Unset: an immediate annuity pays now, a deferred one at the configured age, and a fixed or variable one stays in accumulation. |
 | `payout_monthly` | number (optional) | USD/month | — | `Annuity.monthly_payout` | Fixed monthly payout (computed when unset). |
 | `period_certain_years` | integer (optional) | years | — | `Annuity.period_certain_years` | Guaranteed years for period certain. |
 | `surrender_charge_years` | integer (optional) | years | — | `Annuity.surrender_charge_years` | Years surrender charges apply. |
@@ -624,7 +628,7 @@ Builds: `Apartment`.
 
 ## LifeInsurance
 
-A term or whole life policy. ``premium_schedule: level`` (the default, and what a statement shows) is built through the undocumented core workaround ``premium_increase_rate={}`` (no age multipliers), because core's default re-prices term premiums by age every year (Plan 26 item 8, fixed by Plan 26 D8).
+A term or whole life policy (``premium_schedule`` maps to ``PremiumIncreaseType``).
 
 Builds: `LifeInsurance`.
 

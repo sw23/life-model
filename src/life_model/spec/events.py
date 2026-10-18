@@ -8,27 +8,22 @@
 **Timing.** Every ``at`` resolves to a calendar year:
 
 * ``{year: Y}`` is ``Y``;
-* ``{age: A}`` is ``person.get_year_at_age(A)``, the engine's own age arithmetic. This module adds
-  no off-by-one compensation of its own. Today ``get_year_at_age`` is evaluated at construction
-  with the constructor age, which is "age last year" (Plan 26 item 1: an event "at 42" fires when
-  the simulated age is 43). Plan 26 fixes that inside ``get_year_at_age``; because the builder
-  routes every age through it, age-dated events become correct automatically when Plan 26 lands;
+* ``{age: A}`` is ``person.get_year_at_age(A)``, the engine's own age arithmetic (``start_year +
+  (A - age)``: the constructor age is the age during the first simulated year);
 * ``{relative: {after: E, years: n}}`` is the resolved year of event ``E`` plus ``n``.
 
 **Firing.** Compiled events are ordinary ``LifeEvent`` objects owned by one ``LifeEvents`` agent
-(built last). Today that agent steps after tax-unit settlement, so an event's cash effects land a
-year late (Plan 26 item 2); Plan 26 adds an ``events`` stage before settlement, and these
-``LifeEvent`` objects use it automatically. Events in the same year fire anchors first, then in
-canonical order.
+(built last). They fire in the engine's ``events`` stage, after the year's income and before the
+tax units settle the year, so an event's cash, salary, state and marriage effects apply to the
+year it is dated. Events in the same year fire anchors first, then in canonical order. The builder
+never creates a past-dated ``LifeEvent`` (see :mod:`life_model.spec.builder`).
 
 Two actions are compiled into constructor inputs instead of ``LifeEvent`` callables, because the
-engine decides them inside ``pre_step`` by comparing its own (incremented) age with a threshold:
+engine decides them inside ``pre_step`` by comparing the person's age with a threshold:
 ``claim_social_security`` sets ``SocialSecurity.withdrawal_start_age`` and ``die`` sets fixed-age
-mortality (``Person.death_age``). ``at: {age: A}`` uses ``A`` as that threshold directly (claim at
-70 means the engine's age 70). A ``year`` or ``relative`` time becomes the engine's age *in that
-year* (:func:`threshold_age`), so the event takes effect in the same year as any other event with
-the same ``at``. Until Plan 26 item 1 lands, this means ``die at {age: 85}`` and an ordinary event
-``at {age: 85}`` land a year apart (the ordinary one a year late, through ``get_year_at_age``).
+mortality (``Person.death_age``). ``at: {age: A}`` is that threshold directly; a ``year`` or
+``relative`` time becomes the person's age in that year (the inverse of ``get_year_at_age``). Either
+way the effect lands in the same year as an ordinary event with the same ``at``.
 
 Every compiled ``LifeEvent`` carries ``spec_source`` (the event or marriage it came from), which
 :func:`~life_model.spec.extract.spec_from_model` reads back.
@@ -45,34 +40,6 @@ if TYPE_CHECKING:
 
 #: Event actions applied at build time (constructor inputs) rather than as LifeEvent callables.
 BUILD_TIME_ACTIONS = ("claim_social_security", "die")
-
-_FIRST_YEAR_AGE_OFFSET: int | None = None
-
-
-def first_year_age_offset() -> int:
-    """How many years the engine adds to a constructor age before the first simulated year.
-
-    Measured once by stepping a throwaway one-person model (1 today: ``Person.pre_step`` increments
-    the age before anything else, Plan 26 item 1), so this module never hard-codes the engine's age
-    semantics and follows them when Plan 26 changes them.
-    """
-    global _FIRST_YEAR_AGE_OFFSET
-    if _FIRST_YEAR_AGE_OFFSET is None:
-        from ..model import LifeModel
-        from ..people.family import Family
-        from ..people.person import Person, Spending
-
-        model = LifeModel(start_year=2000, end_year=2000, collect_data=False)
-        person = Person(Family(model), "probe", age=50, retirement_age=119, spending=Spending(model))
-        model.step()
-        _FIRST_YEAR_AGE_OFFSET = person.age - 50
-    return _FIRST_YEAR_AGE_OFFSET
-
-
-def threshold_age(constructor_age: int, start_year: int, year: int) -> int:
-    """The age the engine gives a person in ``year``: the threshold that makes an age-triggered
-    mechanism (``Person.death_age``, ``SocialSecurity.withdrawal_start_age``) fire in ``year``."""
-    return constructor_age + (year - start_year) + first_year_age_offset()
 
 
 class EventTiming:
@@ -106,7 +73,6 @@ class EventTiming:
             return at.year
         if at.age is not None:
             person = self.builder.person(cast(str, at.person or default_person))
-            # No compensation here on purpose: Plan 26 fixes get_year_at_age itself.
             return person.get_year_at_age(at.age)
         relative = cast(s.Relative, at.relative)
         anchor = self.by_id.get(relative.after)
@@ -115,12 +81,13 @@ class EventTiming:
         return self.year_of(anchor, stack) + relative.years
 
     def age_of(self, at: s.At, person_id: str) -> int:
-        """The engine age threshold for a build-time event at ``at`` (see :func:`threshold_age`)."""
+        """The person's age at ``at``: ``at.age`` itself, or the inverse of ``get_year_at_age``."""
         if at.age is not None and (at.person is None or at.person == person_id):
             return at.age
         year = self.resolve(at, person_id)
         person = self.builder.person(person_id)
-        return threshold_age(person.age, self.builder.model.start_year, year)
+        # get_year_at_age is linear with slope 1, so this inverts it.
+        return person.age + (year - person.get_year_at_age(person.age))
 
 
 def apply_build_time_events(builder: "_Builder", timing: EventTiming) -> dict[str, float]:

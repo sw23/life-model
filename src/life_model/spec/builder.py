@@ -11,7 +11,8 @@ family member heads the tax unit, same-priority agents run in insertion order). 
 uses the order the user wrote things in: :func:`canonical` sorts every list into a fixed order and
 the builder then constructs, for all people at each step:
 
-1. model (:func:`create_model`: seed, scenario, economy overrides) and the one ``Family``;
+1. model (:func:`create_model`: seed, scenario, economy overrides) and the one ``Family`` (with the
+   spec's household ``withdrawal_order``);
 2. people (``Spending`` then ``Person``), in :func:`people_order` (marriage heads first, in
    ``relationships`` order, each followed by their spouse; then everyone else by id);
 3. bank accounts (the ``primary`` one first), then jobs (``Salary``, ``Job``), then 401ks, then
@@ -31,8 +32,13 @@ Undocumented core workarounds the builder relies on (each documented on its sche
 turns them into real constructor arguments, and this module switches over then):
 
 * brokerage opening lots: ``BrokerageAccount(balance=0)`` + one ``deposit_with_basis`` per lot;
-* a loan in progress: ``loan_amount=original_amount, principal=balance``;
-* a level term-life premium: ``premium_increase_rate={}`` (no age multipliers).
+* a loan in progress: ``loan_amount=original_amount, principal=balance``.
+
+Past-dated events: the builder never creates a ``LifeEvent`` dated before ``start_year`` and never
+passes ``LifeEvents(allow_past=True)``. A spec event that resolves before the start year is a
+validator error (``event_before_start``); with ``check=False`` the core ``LifeEvents`` raises the
+same problem as a ``ValueError``. Something that already happened belongs in the starting state
+instead (a marriage in ``relationships``, a balance, an owned home).
 """
 
 import json
@@ -349,7 +355,9 @@ class _Builder:
     def __init__(self, model: LifeModel, spec: s.HouseholdSpec):
         self.model = model
         self.spec = spec
-        self.family = Family(model)
+        self.family = Family(
+            model, withdrawal_order=None if spec.withdrawal_order is None else tuple(spec.withdrawal_order)
+        )
         self.built = BuiltHousehold(model=model, family=self.family, spec=spec)
 
     # --- helpers ---
@@ -441,6 +449,7 @@ class _Builder:
                 type=account.type,
                 balance=account.balance,
                 interest_rate=_growth(account.interest_pct),
+                compounding=account.compounding,
             )
         if kind == "401k":
             from ..account.job401k import Job401kAccount
@@ -452,7 +461,12 @@ class _Builder:
                 roth_balance=account.roth_balance,
                 roth_contrib_percent=account.roth_contrib_pct,
                 average_growth=_growth(account.growth_pct),
-                company_match_percent=account.company_match_pct,
+                company_match_percent=account.company_match_pct,  # deprecated; the validator warns
+                match_tiers=None
+                if account.match_tiers is None
+                else [(tier.match_pct, tier.up_to_pay_pct) for tier in account.match_tiers],
+                match_on_bonus=account.match_on_bonus,
+                match_vesting_years=account.match_vesting_years,
             )
         if kind == "brokerage":
             from ..account.brokerage import BrokerageAccount
@@ -527,7 +541,7 @@ class _Builder:
         if kind == "pension":
             from ..account.pension import Pension
 
-            return Pension(
+            pension = Pension(
                 person=person,
                 company=account.company,
                 vesting_years=account.vesting_years,
@@ -538,7 +552,10 @@ class _Builder:
                 years_of_service=account.years_of_service,
                 benefit_multiplier=account.benefit_multiplier_pct,
                 final_salary=account.final_salary_annual,
+                job=self.job_agent(person_spec, account.job) if account.job is not None else None,
             )
+            pension.accrues_service = account.accrues_service
+            return pension
         if kind == "annuity":
             from ..insurance.annuity import Annuity, AnnuityPayoutType, AnnuityType
 
@@ -683,12 +700,12 @@ class _Builder:
 
     def build_insurance(self, person, policy: Any):
         if policy.kind == "life":
-            from ..insurance.life_insurance import LifeInsurance, LifeInsuranceType
+            from ..insurance.life_insurance import LifeInsurance, LifeInsuranceType, PremiumIncreaseType
 
             if policy.premium_schedule == "level":
-                increase: float | dict | None = {}  # workaround: no age multipliers = level premium
+                increase: float | PremiumIncreaseType | None = PremiumIncreaseType.LEVEL
             elif policy.premium_schedule == "age_banded":
-                increase = None
+                increase = PremiumIncreaseType.AGE_BANDED
             else:
                 increase = policy.premium_increase_pct
             return LifeInsurance(

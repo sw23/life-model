@@ -27,6 +27,7 @@ the state); retired jobs are omitted.
 import re
 from typing import Any, Literal, cast
 
+from ..account.bank import COMPOUNDING_PERIODS
 from ..config.financial_config import FinancialConfig
 from . import schema as s
 from .builder import (
@@ -122,8 +123,18 @@ class _Extractor:
             economy=self.economy(),
             people=person_specs,
             relationships=self.relationships(people),
+            withdrawal_order=self.withdrawal_order(),
             events=self.events(),
         )
+
+    def withdrawal_order(self) -> list | None:
+        from ..people.family import Family
+        from ..people.tax_unit import DEFAULT_WITHDRAWAL_ORDER
+
+        for family in (a for a in self.model.agents if isinstance(a, Family)):
+            if family.members and tuple(family.withdrawal_order) != DEFAULT_WITHDRAWAL_ORDER:
+                return list(family.withdrawal_order)
+        return None
 
     def meta(self) -> s.Meta:
         src = self.source_meta
@@ -216,7 +227,7 @@ class _Extractor:
         jobs, ids = [], {}
         active = [job for job in person.jobs if not job.retired]
         for index, job in enumerate(active):
-            needs_id = job.retirement_account is not None
+            needs_id = job.retirement_account is not None or any(p.job is job for p in person.pensions)
             job_id = self.item_id(job, f"{self.pid(person)}_job{index + 1}" if needs_id else None)
             if job_id is not None:
                 ids[job.unique_id] = job_id
@@ -272,6 +283,9 @@ class _Extractor:
                     type=bank.type,
                     balance=bank.balance,
                     interest_pct=_growth(bank._interest_rate_override),
+                    compounding=None
+                    if bank.compound_rate == cfg.accounts.bank.compound_rate
+                    else cast(Any, {v: k for k, v in COMPOUNDING_PERIODS.items()}.get(bank.compound_rate)),
                     primary=getattr(bank, "spec_primary", False)
                     if self.spec_built
                     else (index == 0 and len(banks) > 1),
@@ -290,6 +304,11 @@ class _Extractor:
                     roth_contrib_pct=account.roth_contrib_percent,
                     growth_pct=_growth(account._growth_rate_override),
                     company_match_pct=account.company_match_percent,
+                    match_tiers=None
+                    if account.match_tiers is None
+                    else [s.MatchTier(match_pct=rate, up_to_pay_pct=width) for rate, width in account.match_tiers],
+                    match_on_bonus=account.match_on_bonus,
+                    match_vesting_years=account.match_vesting_years,
                 )
             )
         for account in person.brokerage_accounts:
@@ -375,12 +394,21 @@ class _Extractor:
                     years_of_service=_none_if(pension.years_of_service, pension.vesting_years),
                     benefit_multiplier_pct=pension.benefit_multiplier,
                     final_salary_annual=pension.final_salary,
+                    job=self.item_ids.get(id(pension.job)) or getattr(pension.job, "spec_id", None)
+                    if pension.job is not None
+                    else None,
+                    accrues_service=pension.accrues_service,
                 )
             )
         annuity_cfg = cfg.insurance.annuity
         for annuity in self.model.registries.annuities.get_items(person):
             deferred = annuity.annuity_type == AnnuityType.DEFERRED
-            default_start = annuity_cfg.default_payout_start_age if deferred else person.age
+            if deferred:
+                default_start = annuity_cfg.default_payout_start_age
+            elif annuity.annuity_type == AnnuityType.IMMEDIATE:
+                default_start = person.age
+            else:
+                default_start = None  # FIXED / VARIABLE stay in accumulation
             out.append(
                 s.Annuity(
                     kind="annuity",
@@ -563,10 +591,10 @@ class _Extractor:
             whole = policy.policy_type == LifeInsuranceType.WHOLE
             if policy.premium_increase_type == PremiumIncreaseType.YEARLY:
                 schedule, increase = "yearly_increase", policy.yearly_increase_rate
-            elif whole or not policy.age_multipliers:
-                schedule, increase = "level", None
-            else:
+            elif policy.premium_increase_type == PremiumIncreaseType.AGE_BANDED:
                 schedule, increase = "age_banded", None
+            else:
+                schedule, increase = "level", None
             out.append(
                 s.LifeInsurance(
                     kind="life",

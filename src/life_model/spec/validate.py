@@ -26,7 +26,6 @@ end year.
 
 import re
 from dataclasses import dataclass
-from types import SimpleNamespace
 from typing import Any, Literal, cast
 
 from pydantic import BaseModel, ValidationError
@@ -376,6 +375,17 @@ class _SpecChecker:
                     "set growth_pct: economy (follows inflation) or a percentage.",
                     "zero_growth",
                 )
+            for j, account in enumerate(p.accounts):
+                if isinstance(account, s.Job401k) and account.company_match_pct:
+                    pct = account.company_match_pct
+                    self.warn(
+                        f"{path}.accounts[{j}].company_match_pct",
+                        f"company_match_pct is deprecated: {pct:g} means a {pct:g}% match on each deferred dollar, "
+                        f"capped at {pct:g}% of pay.",
+                        f"use match_tiers; a dollar-for-dollar match up to {pct:g}% of pay is "
+                        f"[{{match_pct: 100, up_to_pay_pct: {pct:g}}}].",
+                        "deprecated_match",
+                    )
             for j, job in enumerate(p.jobs):
                 if job.raise_pct == 0:
                     self.warn(
@@ -497,15 +507,9 @@ class _SpecChecker:
                 married[pid] = path
 
     def year_at_age(self, person: s.Person, age: int) -> int:
-        """The year a person reaches ``age``, by the engine's own ``Person.get_year_at_age``.
-
-        Called on a lightweight stand-in so the validator needs no model, and stays in step with
-        whatever age semantics the engine implements (Plan 26 item 1).
-        """
-        from ..people.person import Person
-
-        stub = SimpleNamespace(model=SimpleNamespace(year=self.start, start_year=self.start), age=person.age)
-        return Person.get_year_at_age(cast(Person, stub), age)
+        """The year a person is ``age``: the engine's ``Person.get_year_at_age`` identity,
+        ``start_year + (age - constructor age)`` (the constructor age is the first year's age)."""
+        return self.start + (age - person.age)
 
     def resolve(self, at: s.At, person_id: str, by_id: dict, stack: tuple = ()) -> int | None:
         if at.year is not None:
@@ -585,12 +589,10 @@ class _SpecChecker:
                 person = self.people.get(event.person)
                 if person is not None and person.social_security is None:
                     self.error(path, f"{person.name} has no social_security to claim.", code="unknown_reference")
-                from .events import threshold_age
-
                 own_age = event.at.person is None or event.at.person == event.person
                 age = event.at.age if own_age else None
                 if age is None and year is not None and person is not None:
-                    age = threshold_age(person.age, self.start, year)
+                    age = person.age + (year - self.start)
                 if age is not None and age < min_claim:
                     self.error(
                         f"{path}.at",
@@ -803,6 +805,15 @@ def validate_model(model) -> list[Finding]:
             elif override is not None and 0 < override < 1:
                 findings.append(_fraction_finding(f"{path}.salary.yearly_increase", override))
             account = agent.retirement_account
+            if account is not None and account.company_match_percent:
+                pct = account.company_match_percent
+                add(
+                    WARNING,
+                    f"{path}.retirement_account.company_match_percent",
+                    f"company_match_percent={pct:g} is deprecated (a {pct:g}% match on each deferred dollar).",
+                    f"pass match_tiers; a dollar-for-dollar match up to {pct:g}% of pay is match_tiers=[(100, {pct:g})].",
+                    "deprecated_match",
+                )
             if account is not None:
                 for name in ("pretax_contrib_percent", "roth_contrib_percent", "company_match_percent"):
                     value = getattr(account, name)

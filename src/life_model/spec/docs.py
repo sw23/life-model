@@ -44,12 +44,15 @@ be written down now; the validator rejects a spec that sets one, naming the plan
 (kind, `primary` bank first, then id and content) and builds model, family, people, bank
 accounts, jobs, 401ks, stock plans, other accounts, debts, housing, insurance, children, 529s,
 healthcare, Social Security, giving, marriages, then events. The head of a married tax unit is the
-first spouse listed in `relationships.marriages`.
+first spouse listed in `relationships.marriages`; that is a modeling choice, since the household
+payment waterfall draws the members' bank accounts in member order.
 
-**Event timing.** `at: {age: A}` resolves through the engine's own `Person.get_year_at_age`, so
-it follows the engine's age semantics (until Plan 26 item 1 lands, an event "at 42" fires when the
-simulated age is 43). Events currently fire after the year's settlement (Plan 26 item 2), so
-their cash effects land the following year.
+**Event timing.** `at: {age: A}` resolves through the engine's own `Person.get_year_at_age`
+(`start_year + (A - age)`: a person's `age` is their age during the first simulated year). Events
+fire in the engine's `events` stage, after the year's income and before the tax units settle the
+year, so their effects apply to the year they are dated. An event dated before `start_year` is an
+error: put what already happened into the starting state (for example a marriage in
+`relationships`).
 """
 
 

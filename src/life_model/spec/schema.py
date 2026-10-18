@@ -492,8 +492,8 @@ class BankAccount(SpecModel):
     )
     interest_pct: Annotated[float, Field(ge=0, le=1000)] | Literal["economy"] = spec_field(
         "economy",
-        description="Annual interest rate; 'economy' (the core default) follows the economy's cash yield. "
-        "Interest is not yet taxed (Plan 26 item 5).",
+        description="Annual interest rate (APR, compounded per 'compounding'); 'economy' (the core default) "
+        "follows the economy's cash yield. Interest is taxed as ordinary income.",
         unit="percent",
         core="BankAccount.interest_rate",
     )
@@ -503,7 +503,10 @@ class BankAccount(SpecModel):
         "bank accounts; otherwise the first in canonical order is primary.",
     )
     compounding: Literal["monthly", "annual"] | None = spec_field(
-        None, description="Interest compounding convention.", not_yet_supported="Plan 26 D5"
+        None,
+        description="How interest_pct compounds: 'monthly' (an APR) or 'annual' (enter an APY). Defaults to the "
+        "configured convention.",
+        core="BankAccount.compounding",
     )
     reserve: bool = spec_field(
         False, description="Emergency reserve not drawn for ordinary bills.", not_yet_supported="Plan 27 D2/D4"
@@ -617,14 +620,14 @@ class Job401k(SpecModel):
     )
     pretax_contrib_pct: NonNegativePercent = spec_field(
         0.0,
-        description="Pre-tax deferral, percent of base salary.",
+        description="Pre-tax deferral, percent of plan pay (base salary, plus bonus with match_on_bonus).",
         unit="percent",
         core="Job401kAccount.pretax_contrib_percent",
         typical_above_one=True,
     )
     roth_contrib_pct: NonNegativePercent = spec_field(
         0.0,
-        description="Roth deferral, percent of base salary.",
+        description="Roth deferral, percent of plan pay (base salary, plus bonus with match_on_bonus).",
         unit="percent",
         core="Job401kAccount.roth_contrib_percent",
         typical_above_one=True,
@@ -636,22 +639,34 @@ class Job401k(SpecModel):
         core="Job401kAccount.average_growth",
         typical_above_one=True,
     )
+    match_tiers: list[MatchTier] | None = spec_field(
+        None,
+        description="The employer match as the plan states it, tier by tier over the deferral rate: "
+        "[{match_pct: 100, up_to_pay_pct: 3}, {match_pct: 50, up_to_pay_pct: 2}] is 100% of the first 3% of pay "
+        "deferred plus 50% of the next 2%.",
+        core="Job401kAccount.match_tiers",
+    )
+    match_on_bonus: bool = spec_field(
+        False,
+        description="Plan pay includes the bonus (deferral percentages and match tiers apply to salary + bonus).",
+        core="Job401kAccount.match_on_bonus",
+    )
+    match_vesting_years: int = spec_field(
+        0,
+        description="Cliff vesting of employer money (0 = immediately vested); unvested match is forfeited if "
+        "the job ends first.",
+        unit="years",
+        core="Job401kAccount.match_vesting_years",
+        ge=0,
+    )
     company_match_pct: NonNegativePercent = spec_field(
         0.0,
-        description="Core's legacy match: this percent OF THE DEFERRAL, capped at this percent of pay (so 6 with "
-        "a 6% deferral on $100k matches $360; Plan 26 item 7). Prefer match_tiers once supported.",
+        description="DEPRECATED (the validator warns): core's legacy match, this percent OF THE DEFERRAL capped at "
+        "this percent of pay (6 with a 6% deferral on $100k matches $360). Use match_tiers; a dollar-for-dollar "
+        "match up to 6% of pay is [{match_pct: 100, up_to_pay_pct: 6}]. Mutually exclusive with match_tiers.",
         unit="percent",
         core="Job401kAccount.company_match_percent",
         typical_above_one=True,
-    )
-    match_tiers: list[MatchTier] | None = spec_field(
-        None,
-        description="Tiered match, e.g. [{match_pct: 100, up_to_pay_pct: 3}, {match_pct: 50, up_to_pay_pct: 2}].",
-        not_yet_supported="Plan 26 D7",
-    )
-    match_on_bonus: bool = spec_field(False, description="Match applies to bonus pay.", not_yet_supported="Plan 26 D7")
-    match_vesting_years: int | None = spec_field(
-        None, description="Years until the match vests.", unit="years", not_yet_supported="Plan 26 D7"
     )
     after_tax_balance: NonNegativeMoney | None = spec_field(
         None, description="After-tax (non-Roth) bucket.", unit="USD", not_yet_supported="Plan 27 D3"
@@ -662,6 +677,12 @@ class Job401k(SpecModel):
     allocation_pct: dict[str, float] | None = spec_field(
         None, description=_ALLOCATION_DESC, unit="percent", not_yet_supported="Plan 27 D5"
     )
+
+    @model_validator(mode="after")
+    def _one_match_formula(self) -> "Job401k":
+        if self.match_tiers is not None and self.company_match_pct:
+            raise ValueError("give either match_tiers or the deprecated company_match_pct, not both")
+        return self
 
 
 class TraditionalIRA(SpecModel):
@@ -846,8 +867,17 @@ class Pension(SpecModel):
     final_salary_annual: NonNegativeMoney | None = spec_field(
         None, description="Final(-average) salary for the formula.", unit="USD/year", core="Pension.final_salary"
     )
+    job: Identifier | None = spec_field(
+        None,
+        description="Id of the owner's sponsoring job. Defaults to the owner's job whose company equals 'company' "
+        "(if any).",
+        core="Pension.job",
+    )
     accrues_service: bool = spec_field(
-        False, description="Service and vesting advance while employed.", not_yet_supported="Plan 27 D1"
+        True,
+        description="A year of service (and vesting) accrues for each year the sponsoring job books payroll; a "
+        "formula benefit's final salary follows that job.",
+        core="Pension.accrues_service",
     )
     early_retirement_reduction_pct: NonNegativePercent | None = spec_field(
         None, description="Reduction per year before normal age.", unit="percent", not_yet_supported="Plan 27 item 5"
@@ -885,7 +915,11 @@ class Annuity(SpecModel):
         "life_only", description="Payout option.", core="Annuity.payout_type"
     )
     payout_start_age: Age | None = spec_field(
-        None, description="Age payouts begin (None = immediate).", unit="age", core="Annuity.payout_start_age"
+        None,
+        description="Age the contract annuitizes. Unset: an immediate annuity pays now, a deferred one at the "
+        "configured age, and a fixed or variable one stays in accumulation.",
+        unit="age",
+        core="Annuity.payout_start_age",
     )
     payout_monthly: NonNegativeMoney | None = spec_field(
         None, description="Fixed monthly payout (computed when unset).", unit="USD/month", core="Annuity.monthly_payout"
@@ -1287,12 +1321,7 @@ Housing = Annotated[Home | Rental, Field(discriminator="kind")]
 
 
 class LifeInsurance(SpecModel):
-    """A term or whole life policy.
-
-    ``premium_schedule: level`` (the default, and what a statement shows) is built through the
-    undocumented core workaround ``premium_increase_rate={}`` (no age multipliers), because core's
-    default re-prices term premiums by age every year (Plan 26 item 8, fixed by Plan 26 D8).
-    """
+    """A term or whole life policy (``premium_schedule`` maps to ``PremiumIncreaseType``)."""
 
     CORE_CLASS = "LifeInsurance"
 
@@ -1530,8 +1559,7 @@ class Person(SpecModel):
     id: Identifier = spec_field(description="Unique person id (referenced by relationships, events, trusts).")
     name: str = spec_field(description="Display name.", core="Person.name")
     age: Age = spec_field(
-        description="Age passed to Person(age=). Engine semantics until Plan 26 item 1: age is incremented before "
-        "the first simulated year, so the person is age + 1 during start_year.",
+        description="Age during the first simulated year (start_year); the person is age + 1 the year after.",
         unit="age",
         core="Person.age",
     )
@@ -1571,9 +1599,6 @@ class Person(SpecModel):
     )
     savings_policy: SavingsPolicy | None = spec_field(
         None, description="Surplus sweep above a cash floor.", not_yet_supported="Plan 27 D4"
-    )
-    withdrawal_order: list[Literal["bank", "brokerage", "roth_basis", "pretax", "roth_earnings"]] | None = spec_field(
-        None, description="Order accounts are drawn to pay bills.", not_yet_supported="Plan 26 D4"
     )
 
     @model_validator(mode="before")
@@ -1806,6 +1831,10 @@ EVENT_ACTIONS: tuple[str, ...] = (
 )
 
 
+#: Payment sources of the household waterfall (``people.tax_unit.DEFAULT_WITHDRAWAL_ORDER``).
+WithdrawalSource = Literal["bank", "brokerage", "roth_basis", "pretax", "roth_earnings"]
+
+
 # --- Top level -----------------------------------------------------------------------------------
 
 
@@ -1817,7 +1846,23 @@ class HouseholdSpec(SpecModel):
     economy: Economy | None = spec_field(None, description="Economy overrides.")
     people: list[Person] = spec_field(description="The people in the household (one family).", min_length=1)
     relationships: Relationships = spec_field(default_factory=Relationships, description="Marriages.")
+    withdrawal_order: list[WithdrawalSource] | None = spec_field(
+        None,
+        description="Household payment waterfall: the order sources are drawn to pay bills and taxes, across "
+        "every member. Each source exactly once, starting with 'bank'. Defaults to bank, brokerage, roth_basis, "
+        "pretax, roth_earnings.",
+        core="Family.withdrawal_order",
+    )
     events: list[Event] = spec_field(default_factory=list, description="Dated life events.")
+
+    @field_validator("withdrawal_order")
+    @classmethod
+    def _valid_order(cls, value: list[str] | None) -> list[str] | None:
+        if value is not None:
+            from ..people.tax_unit import validate_withdrawal_order
+
+            validate_withdrawal_order(value)
+        return value
 
     def person(self, person_id: str) -> Person:
         """The person with ``person_id`` (``KeyError`` when absent)."""

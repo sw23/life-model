@@ -285,7 +285,8 @@ def test_healthcare_toggle_default_off_and_opt_in():
 
 
 def _legacy_single_person_model(prefix, **kwargs):
-    """The pre-spec dashboard construction for one person (verbatim core calls), for parity checks."""
+    """The pre-spec dashboard construction for one person (verbatim core calls, as of the Plan 26
+    merge), for parity checks."""
     from life_model.account.bank import BankAccount
     from life_model.account.job401k import Job401kAccount
     from life_model.healthcare import LongTermCare, MedicalCosts, Medicare
@@ -327,7 +328,9 @@ def _legacy_single_person_model(prefix, **kwargs):
             job=job,
             pretax_balance=d["retirement_balance"],
             pretax_contrib_percent=d["retirement_contrib"],
-            company_match_percent=d["company_match"],
+            # As the pre-spec dashboard wrote it after Plan 26 (fourth-wave 18ece11): a dollar-for-dollar
+            # match up to the slider's percent of pay.
+            match_tiers=[(100, d["company_match"])] if d["company_match"] > 0 else None,
             average_growth=d["retirement_growth"],
         )
     for i in range(int(d["children"])):
