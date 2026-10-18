@@ -733,6 +733,91 @@ def compare(
     return Comparison(base_spec, changed_spec, base, changed, deltas, mc, described)
 
 
+# --------------------------------------------------------------------------------------------------
+# Reconcile (Plan 29)
+# --------------------------------------------------------------------------------------------------
+
+
+def load_actuals(source: Any, year: int | None = None) -> "dict[int, Any]":
+    """Actual records from a path (YAML/JSON), YAML/JSON text, a mapping or an ``ActualRecords``:
+    ``{year: records}``, a spec-like mapping with an ``actuals`` key, or one year's records (then
+    ``year`` says which)."""
+    import yaml
+    from pydantic import ValidationError
+
+    from .spec import SpecValidationError
+    from .spec.actuals import ActualRecords
+    from .spec.validate import _schema_findings
+
+    if isinstance(source, ActualRecords):
+        if year is None:
+            raise InputError("one year's actual records need a year")
+        return {year: source}
+    if isinstance(source, str) and _looks_like_text(source):
+        source = yaml.safe_load(source)
+    elif isinstance(source, (str, os.PathLike)):
+        path = Path(source)
+        if not path.is_file():
+            raise FileNotFoundError(f"No such actuals file: {path}")
+        source = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not isinstance(source, Mapping):
+        raise InputError("actual records must be a mapping")
+    data = dict(source.get("actuals", source))
+    try:
+        if data and all(str(key).isdigit() for key in data):
+            return {int(key): ActualRecords.model_validate(value) for key, value in data.items()}
+        if year is None:
+            raise InputError("the actuals hold one year's records: pass the year")
+        return {year: ActualRecords.model_validate(data)}
+    except ValidationError as error:
+        raise SpecValidationError(_schema_findings(error)) from None
+
+
+def reconcile(
+    spec: SpecLike,
+    year: int,
+    *,
+    actuals: Any = None,
+    seed: int | None = None,
+    scenario: str | None = None,
+    checks: Checks = "warn",
+):
+    """Compare a simulated year with the household's actual records (Plan 29).
+
+    Args:
+        spec: The household (anything :func:`load_spec` accepts), described as of the start of
+            ``meta.start_year`` (start it in ``year`` for the cleanest comparison).
+        year: The tax year to reconcile; the run ends there.
+        actuals: Records to use instead of ``spec.actuals[year]``: a path, YAML/JSON text, a
+            mapping or an ``ActualRecords`` (see :func:`load_actuals`).
+        seed, scenario, checks: As for :func:`run` (``checks`` validates the spec and runs the
+            invariant checker over the simulated years).
+
+    Returns:
+        :class:`~life_model.reconciliation.ReconciliationReport` (``to_markdown()``, ``to_dict()``).
+    """
+    from . import reconciliation
+
+    if checks not in CHECK_MODES:
+        raise InputError(f"checks must be one of {CHECK_MODES}, got {checks!r}")
+    spec = prepare_spec(spec, scenario=scenario)
+    if year < spec.meta.start_year:
+        raise InputError(
+            f"Year {year} is before the spec's start_year {spec.meta.start_year}; describe the household as of "
+            f"the start of {year} to reconcile it"
+        )
+    records = load_actuals(actuals, year).get(year) if actuals is not None else (spec.actuals or {}).get(year)
+    if records is None:
+        raise InputError(f"No actual records for {year}: add actuals.{year} to the spec or pass --actuals FILE")
+    if checks == "strict":
+        from .spec import WARNING, SpecValidationError, validate_spec
+
+        strict = [f for f in validate_spec(spec) if f.level == WARNING]
+        if strict:
+            raise SpecValidationError(strict)
+    return reconciliation.reconcile(spec, year, actuals=records, seed=seed, checks=checks)
+
+
 def finding_dict(finding: "Finding") -> dict[str, Any]:
     """A validator finding as a JSON-ready dict."""
     return asdict(finding)

@@ -22,6 +22,7 @@ life-model examples --copy married_homeowners my-models/h.yaml   # start from a 
 life-model validate my-models/h.yaml                             # errors and warnings, nothing runs
 life-model run my-models/h.yaml --out my-models/out              # summary + out/result.json
 life-model explain my-models/h.yaml --year 2035                  # one year in prose
+life-model reconcile my-models/h.yaml --year 2025                # a simulated year vs the filed return
 life-model compare my-models/h.yaml --set 'people[john].retirement_age=58'
 life-model montecarlo my-models/h.yaml --scenario stochastic --n 500
 ```
@@ -46,6 +47,8 @@ spec, an unknown example/scenario, a year outside the run) or 1 (runtime error).
 - [docs/outputs.md](docs/outputs.md): every output column, ledger kind and event kind (generated).
 - [docs/cli.md](docs/cli.md): the command line, the Python one-call functions and the MCP server.
 - [docs/configuration.md](docs/configuration.md): financial constants, scenarios, the economy.
+- [docs/reconciliation.md](docs/reconciliation.md): actual records and `reconcile`, the invariant
+  checker (`--checks`, `LifeModel(checks=)`), the household goldens and the backtest.
 
 **Privacy.** Real household files live in `my-models/` (git-ignored). Never put a real person's
 name, employer or balance in a tracked file, a test, a fixture, a commit message or a PR; refer to
@@ -129,9 +132,12 @@ Generated docs (regenerate after changing their sources; tests fail while they a
   else is a regression. Dollar assertions use the frozen fixture config
   (`src/life_model/tests/fixtures/test_config.yaml`), not the live defaults.
 - **Money-flow changes need more than a green suite**: run a probe simulation (a spec plus
-  `life-model run`/`explain` works well), check `RunResult.conservation()` (net-worth change equals
-  the ledger's net flow each year), sign and magnitude sanity, and year alignment; compare before
-  and after in a scratch worktree, and explain every changed number. Re-baseline notebooks or golden
+  `life-model run`/`explain` works well) under the invariant checker (`LifeModel(checks="strict")`,
+  `--checks strict`, or `life_model.invariants.check_model(model)`: conservation, continuity, no
+  negative balances, no taxable draw while cash sits above the floor, contribution limits, RMDs,
+  FICA, return identities), check sign and magnitude sanity and year alignment; compare before
+  and after in a scratch worktree, and explain every changed number. Tax changes must keep the
+  household goldens (`src/life_model/tests/goldens/households/`) green. Re-baseline notebooks or golden
   frames deliberately, saying why the numbers moved (see `docs/rebaseline-plan-*.md`).
 - **Financial constants** (brackets, limits, wage bases, premiums) must come from primary sources
   (IRS, SSA, CMS, state revenue departments) and carry `# vintage: <year>, source: <doc>` comments.

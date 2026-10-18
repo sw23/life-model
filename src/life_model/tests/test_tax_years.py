@@ -55,8 +55,12 @@ class TestPublishedValues(unittest.TestCase):
             dependents = view(year).dependents
             self.assertEqual((dependents.ctc_per_child, dependents.ctc_refundable_max), amounts, year)
         # 2024 vs 2025 on the same return: $2,000 vs $2,200 per child.
-        self.assertEqual(sum(child_tax_credit_parts(2, 100000, 10000, FilingStatus.MARRIED_FILING_JOINTLY, view(2024))), 4000)
-        self.assertEqual(sum(child_tax_credit_parts(2, 100000, 10000, FilingStatus.MARRIED_FILING_JOINTLY, view(2025))), 4400)
+        self.assertEqual(
+            sum(child_tax_credit_parts(2, 100000, 10000, FilingStatus.MARRIED_FILING_JOINTLY, view(2024))), 4000
+        )
+        self.assertEqual(
+            sum(child_tax_credit_parts(2, 100000, 10000, FilingStatus.MARRIED_FILING_JOINTLY, view(2025))), 4400
+        )
 
     def test_2026_head_of_household_bracket(self):
         # Rev. Proc. 2025-32 §4.01 Table 2: 24% over $105,700 but not over $201,750.
@@ -69,7 +73,9 @@ class TestPublishedValues(unittest.TestCase):
         self.assertEqual(view(2025).tax.federal.senior_deduction.amount, 6000)
         for year in (2022, 2026):
             niit = view(year).tax.federal.niit
-            self.assertEqual((niit.single, niit.married_filing_jointly, niit.married_filing_separately), (200000, 250000, 125000))
+            self.assertEqual(
+                (niit.single, niit.married_filing_jointly, niit.married_filing_separately), (200000, 250000, 125000)
+            )
 
     def test_additional_standard_deduction_recorded(self):
         # §63(f) amounts (married, unmarried); Plan 31 applies them.

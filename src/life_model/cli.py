@@ -11,6 +11,7 @@ Subcommands (``life-model <command> --help`` for the flags)::
                         [--out DIR --format json|csv|parquet] [--checks strict|warn|off]
     life-model validate SPEC
     life-model explain SPEC --year Y
+    life-model reconcile SPEC --year Y [--actuals FILE]
     life-model compare SPEC (--change CHANGE.yaml | --set PATH=VALUE)... [--montecarlo N]
     life-model montecarlo SPEC [--n 1000] [--seed N] [--out DIR]
     life-model schema
@@ -422,6 +423,25 @@ def _examples(args: argparse.Namespace) -> tuple[dict, str]:
     return {"examples": examples, "scenarios": scenarios}, "\n".join(lines)
 
 
+def _reconcile_add(parser: argparse.ArgumentParser) -> None:
+    _run_arguments(parser, real_dollars=False)
+    parser.add_argument("--year", type=int, required=True, help="the tax year to reconcile (the run ends there)")
+    parser.add_argument(
+        "--actuals",
+        metavar="FILE",
+        help="YAML/JSON actual records ({year: records}, or one year's records) instead of the spec's actuals",
+    )
+
+
+def _reconcile(args: argparse.Namespace) -> tuple[dict, str]:
+    if args.years is not None or args.end_year is not None:
+        raise api.InputError("reconcile runs through --year; --years/--end-year do not apply")
+    report = api.reconcile(
+        _spec_source(args), args.year, actuals=args.actuals, seed=args.seed, scenario=args.scenario, checks=args.checks
+    )
+    return {"report": report.to_dict()}, report.to_markdown().rstrip()
+
+
 def _mcp_add(parser: argparse.ArgumentParser) -> None:
     pass
 
@@ -433,11 +453,17 @@ def _mcp(args: argparse.Namespace) -> tuple[dict, str]:  # pragma: no cover - ex
     return {}, ""
 
 
-#: The subcommands, in ``--help`` order. Plan 29 adds ``reconcile`` here.
+#: The subcommands, in ``--help`` order.
 COMMANDS: list[Command] = [
     Command("run", "build and run a household spec", _run_add, _run),
     Command("validate", "validate a household spec and list the findings", _validate_add, _validate),
     Command("explain", "explain one simulated year (income, bills, payments, taxes)", _explain_add, _explain),
+    Command(
+        "reconcile",
+        "compare a simulated year with the household's filed return, W-2s, 1099s and statements",
+        _reconcile_add,
+        _reconcile,
+    ),
     Command("compare", "run a spec with and without a change and report the deltas", _compare_add, _compare),
     Command("montecarlo", "run many seeded trials and report the success rate", _montecarlo_add, _montecarlo),
     Command("schema", "print the household spec JSON Schema", _schema_add, _schema),

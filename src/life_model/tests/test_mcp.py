@@ -20,7 +20,15 @@ from .. import mcp as server
 from ..spec import dumps, example_path, load_example, to_data
 
 HAS_MCP = importlib.util.find_spec("mcp") is not None
-TOOL_NAMES = {"run_household", "validate_household", "compare_change", "explain_year", "get_schema", "list_examples"}
+TOOL_NAMES = {
+    "run_household",
+    "validate_household",
+    "compare_change",
+    "explain_year",
+    "reconcile_household",
+    "get_schema",
+    "list_examples",
+}
 
 
 class TestToolBodies(unittest.TestCase):

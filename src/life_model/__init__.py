@@ -19,7 +19,7 @@ path; see ``docs/household-spec.md``) and mirror the ``life-model`` command line
 from importlib.metadata import PackageNotFoundError, version
 
 from .account.bank import BankAccount
-from .api import compare, explain, run, validate
+from .api import compare, explain, reconcile, run, validate
 from .economy import EconomyModel
 from .model import LifeModel, LifeModelAgent
 from .montecarlo import MonteCarlo, MonteCarloResult
@@ -51,6 +51,7 @@ __all__ = [
     "__version__",
     "compare",
     "explain",
+    "reconcile",
     "run",
     "validate",
 ]

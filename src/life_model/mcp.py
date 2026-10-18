@@ -17,6 +17,7 @@ Tools (thin wrappers over :mod:`life_model.api`; no simulation logic lives here)
 * ``compare_change``: run a spec with and without a JSON merge patch / ``path=value`` changes, return
   the deltas (and Monte Carlo success rates with ``montecarlo=N``);
 * ``explain_year``: the markdown account of one simulated year;
+* ``reconcile_household``: a simulated year against the household's filed return and statements;
 * ``get_schema``: the household spec JSON Schema;
 * ``list_examples``: the shipped synthetic examples (optionally with their YAML) and the scenarios.
 
@@ -190,6 +191,38 @@ def explain_year(
     return _call(body)
 
 
+def reconcile_household(
+    year: int,
+    spec: dict[str, Any] | str | None = None,
+    spec_path: str | None = None,
+    example: str | None = None,
+    actuals: dict[str, Any] | None = None,
+    actuals_path: str | None = None,
+    seed: int | None = None,
+    scenario: str | None = None,
+    checks: str = "warn",
+) -> dict[str, Any]:
+    """Compare a simulated tax year with the household's actual records (filed Form 1040 lines by that
+    year's line numbers, W-2 boxes, 1099 boxes, paystub, year-end balances): per line simulated vs
+    actual, difference, status (green/yellow/red/not_modeled) and likely cause. Records come from the
+    spec's ``actuals`` or from ``actuals`` / ``actuals_path`` ({year: records} or one year's records)."""
+
+    def body() -> dict[str, Any]:
+        if actuals is not None and actuals_path is not None:
+            raise api.InputError("Pass actuals or actuals_path, not both")
+        report = api.reconcile(
+            _spec_source(spec, spec_path, example),
+            year,
+            actuals=actuals if actuals is not None else actuals_path,
+            seed=seed,
+            scenario=scenario,
+            checks=checks,  # type: ignore[arg-type]
+        )
+        return {"report": report.to_dict(), "markdown": report.to_markdown()}
+
+    return _call(body)
+
+
 def get_schema() -> dict[str, Any]:
     """The household spec JSON Schema (the input format of every other tool)."""
     from .spec import json_schema
@@ -218,6 +251,7 @@ TOOLS: tuple[Callable[..., dict[str, Any]], ...] = (
     validate_household,
     compare_change,
     explain_year,
+    reconcile_household,
     get_schema,
     list_examples,
 )

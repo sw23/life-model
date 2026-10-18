@@ -50,6 +50,7 @@ A complete household: metadata, optional economy overrides, people, relationship
 | `relationships` | [Relationships](#relationships) |  | {} |  | Marriages. |
 | `withdrawal_order` | list[`"bank"` \\| `"brokerage"` \\| `"roth_basis"` \\| `"pretax"` \\| `"roth_earnings"`] (optional) |  | — | `Family.withdrawal_order` | Household payment waterfall: the order sources are drawn to pay bills and taxes, across every member. Each source exactly once, starting with 'bank'. Defaults to bank, brokerage, roth_basis, pretax, roth_earnings. |
 | `events` | list[one of: [MarryEvent](#marryevent), [DivorceEvent](#divorceevent), [RetireEvent](#retireevent), [ChangeJobEvent](#changejobevent), [MoveEvent](#moveevent), [BuyHomeEvent](#buyhomeevent), [SellHomeEvent](#sellhomeevent), [OneTimeExpenseEvent](#onetimeexpenseevent), [RecurringExpenseEvent](#recurringexpenseevent), [ChangeSpendingEvent](#changespendingevent), [AddAccountEvent](#addaccountevent), [ContributeEvent](#contributeevent), [ConvertToRothEvent](#converttorothevent), [ClaimSocialSecurityEvent](#claimsocialsecurityevent), [DieEvent](#dieevent)] |  | [] |  | Dated life events. |
+| `actuals` | map[integer → [ActualRecords](#actualrecords)] (optional) |  | — |  | What the household's real documents say, by tax year (filed 1040 lines, W-2s, 1099s, statement balances): read by 'life-model reconcile' and the backtest, ignored by the builder. Keep real documents in my-models/ (git-ignored). |
 
 ## Meta
 
@@ -1008,3 +1009,93 @@ Death at a given time (sets fixed-age mortality).
 | `person` | string |  | **required** |  | Person the event applies to. |
 | `name` | string (optional) |  | — |  | Description shown in the event list. |
 | `action` | `"die"` |  | **required** |  |  |
+
+## ActualRecords
+
+What the household's documents say about one tax year (``actuals[year]``).
+
+| Field | Type | Unit | Default | Maps to | Description |
+|---|---|---|---|---|---|
+| `form_1040` | map[string → number] | USD | {} |  | The household's Form 1040 lines when it files one return (else use 'returns'). |
+| `schedules` | map[string → map[string → number]] | USD | {} |  | Schedules of that single return: schedule -> line -> amount. |
+| `state_return` | [StateReturnActuals](#statereturnactuals) (optional) |  | — |  | State return of that single return. |
+| `returns` | list[[ReturnActuals](#returnactuals)] |  | [] |  | One entry per filed return (separate filers, several single adults). |
+| `w2` | list[[W2](#w2)] |  | [] |  | Forms W-2. |
+| `form_1099` | list[[InformationReturn](#informationreturn)] |  | [] |  | 1099s, 1098s, 5498s, Form 8606. |
+| `paystub` | list[[Paystub](#paystub)] |  | [] |  | Representative paystubs. |
+| `balances` | map[string → number] | USD | {} |  | Year-end (December 31) statement balances by spec account or debt id (debts as positive balances). |
+| `spending` | [SpendingActuals](#spendingactuals) (optional) |  | — |  | Spending totals for calibration. |
+| `notes` | string (optional) |  | — |  | Free text. |
+
+## StateReturnActuals
+
+The filed state return.
+
+| Field | Type | Unit | Default | Maps to | Description |
+|---|---|---|---|---|---|
+| `state` | string |  | **required** |  | Two-letter state. |
+| `agi` | number (optional) | USD | — |  | State AGI / income. |
+| `taxable_income` | number (optional) | USD | — |  | State taxable income. |
+| `tax` | number (optional) | USD | — |  | State income tax (before payments). |
+| `withheld` | number (optional) | USD | — |  | State tax withheld. |
+| `lines` | map[string → number] |  | {} |  | Other lines by the state form's numbers. |
+
+## ReturnActuals
+
+One filed federal return: the Form 1040 lines, its schedules and the state return.
+
+| Field | Type | Unit | Default | Maps to | Description |
+|---|---|---|---|---|---|
+| `filer` | string (optional) |  | — |  | Person id of the primary filer (the unit head). Optional when the household files one return. |
+| `form_1040` | map[string → number] | USD | {} |  | Form 1040 line -> amount, by that year's line numbers ('1a', '11', '12e'). |
+| `schedules` | map[string → map[string → number]] | USD | {} |  | Schedule ('1', '1-A', '2', '3', 'A', 'B', 'D') -> line -> amount. |
+| `state_return` | [StateReturnActuals](#statereturnactuals) (optional) |  | — |  | The state return. |
+
+## W2
+
+One Form W-2.
+
+| Field | Type | Unit | Default | Maps to | Description |
+|---|---|---|---|---|---|
+| `person` | string (optional) |  | — |  | Person id of the employee (the only adult when unset). |
+| `employer` | string |  | **required** |  | Employer name (matches the job's company). |
+| `boxes` | map[string → number] | USD | {} |  | Box number -> amount, e.g. {'1': 85000, '2': 9100, '3': 92000}. |
+| `box12` | map[string → number] | USD | {} |  | Box 12 code -> amount, e.g. {D: 7000} (pre-tax 401k), AA (Roth 401k), W (HSA). |
+
+## InformationReturn
+
+A 1099 (or 1098, 5498, Form 8606): ``form`` plus box amounts.
+
+| Field | Type | Unit | Default | Maps to | Description |
+|---|---|---|---|---|---|
+| `form` | `"1099-INT"` \\| `"1099-DIV"` \\| `"1099-B"` \\| `"1099-R"` \\| `"SSA-1099"` \\| `"1098"` \\| `"1098-E"` \\| `"5498"` \\| `"8606"` |  | **required** |  | Which form. |
+| `person` | string (optional) |  | — |  | Recipient's person id. |
+| `payer` | string (optional) |  | — |  | Payer / institution name. |
+| `account` | string (optional) |  | — |  | Id of the spec account or debt it reports on (lets reconcile compare that account's flows). |
+| `boxes` | map[string → number] | USD | {} |  | Box -> amount. |
+| `code` | string (optional) |  | — |  | 1099-R box 7 distribution code; 1099-B short/long term. |
+
+## Paystub
+
+A representative paystub, converted to monthly amounts.
+
+| Field | Type | Unit | Default | Maps to | Description |
+|---|---|---|---|---|---|
+| `person` | string (optional) |  | — |  | Employee's person id. |
+| `employer` | string (optional) |  | — |  | Employer name. |
+| `gross_monthly` | number (optional) | USD/month | — |  | Gross pay. |
+| `pretax_deductions_monthly` | map[string → number] | USD/month | {} |  | Pre-tax deductions by name: 401k, roth_401k, health, dental_vision, hsa, fsa, dependent_care_fsa, commuter. |
+| `federal_withholding_monthly` | number (optional) | USD/month | — |  | Federal withholding. |
+| `net_monthly` | number (optional) | USD/month | — |  | Net pay. |
+
+## SpendingActuals
+
+Year totals from bank/card statements, for calibration against the model's assumptions (D6).
+
+| Field | Type | Unit | Default | Maps to | Description |
+|---|---|---|---|---|---|
+| `living_annual` | number (optional) | USD/year | — |  | Living spending. |
+| `medical_out_of_pocket_annual` | number (optional) | USD/year | — |  | Out-of-pocket medical. |
+| `medicare_premiums_annual` | number (optional) | USD/year | — |  | Medicare premiums. |
+| `dependent_costs_annual` | number (optional) | USD/year | — |  | Child and dependent costs. |
+| `housing_annual` | number (optional) | USD/year | — |  | Rent / mortgage / property costs. |
