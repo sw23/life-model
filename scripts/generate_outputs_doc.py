@@ -117,7 +117,8 @@ def render() -> str:
         "",
         "## Tax returns",
         "",
-        "`model.tax_returns[(year, unit_id)]`, `person.tax_returns[year]`, `RunResult.tax_returns`: one",
+        "`model.tax_returns[(year, unit_id)]` (or `[year]` when the year has one return; `.for_year(year)`),",
+        "`person.tax_returns[year]`, `RunResult.tax_returns`: one",
         "`TaxReturn` (`life_model.tax.return_record`) per tax unit per year, built from the numbers the",
         (
             "year was settled with. `total_income - total_adjustments = agi`; `agi - deduction ="

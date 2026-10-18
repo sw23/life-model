@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, Any
 import pandas as pd
 
 from .ledger import LEDGER_COLUMNS
-from .tax.return_record import TaxReturn
+from .tax.return_record import TaxReturn, TaxReturns
 
 if TYPE_CHECKING:
     from .checks import ConservationRecord
@@ -75,7 +75,7 @@ class RunResult:
         self._model: LifeModel | None = None
         self._model_frame = model_frame
         self._agent_frame = agent_frame
-        self.tax_returns: dict[tuple[int, int], TaxReturn] = dict(tax_returns or {})
+        self.tax_returns: TaxReturns = TaxReturns(tax_returns or {})
         self._ledger = ledger
         self._events = events
         self._balance_sheets = balance_sheets

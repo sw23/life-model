@@ -518,8 +518,11 @@ class LifeModel(mesa.Model):
         self.end_year = end_year
         self.year = start_year
         self.event_log = EventLog(self)
-        #: Every settled return, keyed ``(year, unit_id)`` (see :mod:`life_model.tax.return_record`).
-        self.tax_returns: dict = {}
+        #: Every settled return, keyed ``(year, unit_id)``; ``tax_returns[year]`` works when the year
+        #: has one return (see :class:`~life_model.tax.return_record.TaxReturns`).
+        from .tax.return_record import TaxReturns
+
+        self.tax_returns = TaxReturns()
         #: Append-only record of every money movement (see :mod:`life_model.ledger`).
         self.ledger = CashFlowLedger(self)
         #: Balance sheets around each simulated year and the ledger range posted during it, keyed by

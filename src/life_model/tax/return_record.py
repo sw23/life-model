@@ -279,6 +279,25 @@ FIELD_DOCS: dict[str, str] = {
 }
 
 
+class TaxReturns(dict):
+    """``{(year, unit_id): TaxReturn}`` that also answers ``returns[year]`` when that year has a single
+    return (one tax unit), and lists a year's returns with :meth:`for_year`."""
+
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            matches = self.for_year(key)
+            if len(matches) == 1:
+                return matches[0]
+            if not matches:
+                raise KeyError(key)
+            raise KeyError(f"{len(matches)} returns were filed in {key}; index by (year, unit_id) or use for_year()")
+        return super().__getitem__(key)
+
+    def for_year(self, year: int) -> "list[TaxReturn]":
+        """The returns filed for ``year`` (one per tax unit), in unit order."""
+        return [tax_return for (y, _), tax_return in sorted(self.items()) if y == year]
+
+
 _NOT_MONEY = frozenset({"year", "unit_id", "marginal_rate", "effective_rate"})
 
 

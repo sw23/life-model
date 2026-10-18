@@ -163,7 +163,8 @@ class TestReturnsOnWholeHouseholds(unittest.TestCase):
         model.run()
         returns = [r for (year, _), r in model.tax_returns.items() if year == 2030]
         self.assertEqual(len(returns), 1)
-        tax_return = returns[0]
+        tax_return = model.tax_returns[2030]  # the year's only return
+        self.assertIs(tax_return, returns[0])
         self.assertEqual(tax_return.filing_status, "MARRIED_FILING_JOINTLY")
         self.assertEqual(tax_return.member_names, ("John", "Jane"))
         self.assertEqual(tax_return.deduction_taken, "itemized")
@@ -191,6 +192,16 @@ class TestReturnsOnWholeHouseholds(unittest.TestCase):
         self.assertTrue(any(r.ira_distributions_gross > 0 for r in late))  # RMDs from 73
         self.assertTrue(all(r.social_security_gross > 0 for r in late))
         self.assertTrue(all(0 <= r.social_security_taxable <= 0.85 * r.social_security_gross + 0.01 for r in late))
+
+    def test_a_year_with_several_returns_needs_the_unit(self):
+        _, people = _one_year(
+            FilingStatus.MARRIED_FILING_SEPARATELY, [[(IncomeType.WAGES, 50000)], [(IncomeType.WAGES, 60000)]]
+        )
+        returns = people[0].model.tax_returns
+        self.assertEqual(len(returns.for_year(2026)), 2)
+        with self.assertRaises(KeyError):
+            returns[2026]
+        self.assertIs(returns[(2026, people[1].unique_id)], people[1].tax_returns[2026])
 
     def test_penalties_and_adjustments_are_itemized_by_source(self):
         model = LifeModel(start_year=2026, end_year=2026)

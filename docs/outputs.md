@@ -88,7 +88,8 @@ escalators the same way.
 
 ## Tax returns
 
-`model.tax_returns[(year, unit_id)]`, `person.tax_returns[year]`, `RunResult.tax_returns`: one
+`model.tax_returns[(year, unit_id)]` (or `[year]` when the year has one return; `.for_year(year)`),
+`person.tax_returns[year]`, `RunResult.tax_returns`: one
 `TaxReturn` (`life_model.tax.return_record`) per tax unit per year, built from the numbers the
 year was settled with. `total_income - total_adjustments = agi`; `agi - deduction = taxable_income` (both floored at 0); `ordinary_tax + preferential_tax + niit + amt - total_credits + total_penalties = federal_tax`; `federal_tax + state_tax + social_security_tax + medicare_tax = total_tax`, which equals the ledger's tax and penalty outflows for the unit.
 

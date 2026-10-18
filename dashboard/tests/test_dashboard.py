@@ -279,3 +279,14 @@ def test_healthcare_toggle_default_off_and_opt_in():
     model_on.run()
     df = model_on.datacollector.get_model_vars_dataframe()
     assert (df["Medical Costs"] > 0).all()
+
+
+def test_dashboard_models_conserve_money():
+    """Every dollar the dashboard's household gains or loses is on the ledger (Plan 28)."""
+    from life_model.checks import assert_conservation
+
+    for kwargs in ({}, {"home_enabled": True, "healthcare_enabled": True, "scenario": "recession"}):
+        model = DashboardLifeModel(**kwargs)
+        result = model.run()
+        assert_conservation(model)
+        assert result.model_frame["Net Worth"].notna().all()

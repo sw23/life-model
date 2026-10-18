@@ -32,6 +32,7 @@ from ..people.person import MortalityMode, Person, Spending
 from ..work.job import Job, Salary
 from .scenarios import (
     EARNINGS_HISTORY,
+    everything_stochastic,
     married_homeowners,
     mortality_and_estate,
     renter_buys_home,
@@ -132,6 +133,12 @@ class TestConservationOnWholeHouseholds(unittest.TestCase):
 
     def test_home_purchase_by_event_debts_rsus_45_years(self):
         self._assert_conserved(renter_buys_home(years=45), 45)
+
+    def test_everything_stochastic_many_seeds(self):
+        # Stochastic economy and mortality over many products, a dissolved estate, lump-sum heirs.
+        for seed in (0, 4, 8, 12, 27):
+            with self.subTest(seed=seed):
+                self._assert_conserved(everything_stochastic(seed=seed, years=50), 50)
 
     def test_records_describe_the_year(self):
         model = married_homeowners(years=10)
