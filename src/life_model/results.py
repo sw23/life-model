@@ -495,12 +495,30 @@ class RunResult:
                 drawn += float(event.amount or 0.0)
                 lines.append(f"- {event.message}")
         borrowed = rows[(rows["kind"] == "borrow") & rows["from_account"].fillna("").str.startswith("Debt:")]
-        paid_total = bills["amount"].sum() + taxes["amount"].sum() + principal["amount"].sum()
+        # Plan 31 D3: a return's balance due (or refund) accrued in December is settled in April of the next year.
+        accrued = taxes[taxes["from_account"].fillna("").str.startswith(("TaxDue:", "TaxRefund:"))]["amount"].sum()
+        settled = transfers[
+            (transfers["kind"] == "tax")
+            & transfers["to_account"].fillna("").str.startswith("TaxDue:")
+            & transfers["cause"].fillna("").str.contains("balance due")
+        ]["amount"].sum()
+        paid_total = bills["amount"].sum() + taxes["amount"].sum() + principal["amount"].sum() - accrued + settled
         new_debt = borrowed["amount"].sum()
         cash = paid_total - drawn - new_debt
         lines.append(f"- from cash on hand (income and bank balances): {_money(cash)}")
         if new_debt:
             lines.append(f"- carried as new debt: {_money(new_debt)}")
+        refunded = transfers[
+            (transfers["kind"] == "tax") & transfers["from_account"].fillna("").str.startswith("TaxRefund:")
+        ]["amount"].sum()
+        if settled:
+            lines.append(f"- last year's balance due, paid in April: {_money(settled)}")
+        if refunded:
+            lines.append(f"- last year's refund, received in April: {_money(refunded)}")
+        if accrued > 0:
+            lines.append(f"- this year's balance due, payable next April: {_money(accrued)}")
+        elif accrued < 0:
+            lines.append(f"- this year's refund, due next April: {_money(-accrued)}")
         contributions = transfers[transfers["kind"].isin(["contribution", "rmd"])]
         if not contributions.empty:
             lines += ["", "## Savings moves"]
@@ -529,6 +547,23 @@ class RunResult:
                 f"{_money(r.medicare_tax)}; total {_money(r.total_tax)}"
             )
             lines.append(f"- marginal rate {r.marginal_rate:.0f}%, effective federal rate {r.effective_rate:.1f}%")
+            if getattr(r, "settled_in_april", False):
+                due = (
+                    f"balance due {_money(r.amount_owed)}"
+                    if r.amount_owed
+                    else f"refund {_money(r.overpayment)}"
+                    if r.overpayment
+                    else "nothing due"
+                )
+                penalty = (
+                    f" (with a {_money(r.estimated_tax_penalty)} estimated tax penalty)"
+                    if r.estimated_tax_penalty
+                    else ""
+                )
+                lines.append(
+                    f"- paid during the year: federal withholding {_money(r.federal_income_tax_withheld)}, estimated "
+                    f"payments {_money(r.estimated_tax_payments)}; {due}{penalty}, settled in April {r.year + 1}"
+                )
         if not returns:
             lines.append("- none")
 

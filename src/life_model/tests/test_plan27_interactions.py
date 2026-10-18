@@ -27,14 +27,22 @@ from ..work.job import Job, Salary
 TEST_CONFIG = str(Path(__file__).parent / "fixtures" / "test_config.yaml")
 
 
-def _household(*, categories, schedule=None, birth="1985-01", bank=0.0, end_year=2026):
+def _household(*, categories, schedule=None, birth="1985-01", bank=0.0, end_year=2026, salary=60000):
     model = LifeModel(start_year=2026, end_year=end_year, config=FinancialConfig(config_file=TEST_CONFIG))
     spending = Spending(model, 0, 0, categories=categories, schedule=schedule)
     person = Person(Family(model), "P", None, 70, spending, birth=birth)
     bank = BankAccount(person, company="Bank", balance=bank, interest_pct=0)
-    Job(person, company="Co", role="R", salary=Salary(model, base_annual=60000))
+    Job(person, company="Co", role="R", salary=Salary(model, base_annual=salary))
     brokerage = BrokerageAccount(person, company="Broker", growth_pct=0)
     return model, person, bank, brokerage
+
+
+def _tax_month(**household) -> float:
+    """A twelfth of the year's taxes on this steady pay (the contribution plan's monthly hold-back), from the
+    same household's year without the plan."""
+    model, *_ = _household(**household)
+    model.step_year()
+    return model.tax_returns[2026].total_tax / 12
 
 
 def spending_paid(person) -> float:
@@ -43,8 +51,7 @@ def spending_paid(person) -> float:
 
 class TestContributionsAfterSpendingCategories(unittest.TestCase):
     def _eleven_months(self, model, brokerage):
-        """Run January through November (December adds the year's taxes, which an income this tight cannot
-        pay whatever the plan does) and return the contributions by month and the events so far."""
+        """Run January through November and return the contributions by month and the events so far."""
         for _ in range(11):
             model.step()
         ledger = model.ledger.to_frame()
@@ -57,12 +64,18 @@ class TestContributionsAfterSpendingCategories(unittest.TestCase):
             "groceries": SpendingLine(1500, period="monthly", growth_pct=0),
             "travel": SpendingLine(30000, growth_pct=0, essential=False),
         }
-        model, person, _bank, brokerage = _household(categories=categories)
+        # $90,000 of pay (Plan 31: was $60,000, whose year's tax, held back since Plan 31 D3, left nothing).
+        model, person, _bank, brokerage = _household(categories=categories, salary=90000)
         person.add_contribution_plan(ContributionPlan(brokerage, amount_annual=24000))
         by_month, kinds = self._eleven_months(model, brokerage)
-        # $5,000 of pay a month, $4,000 of categorized spending: $1,000 left, not the plan's $2,000.
+        # $7,500 of pay a month, $4,000 of categorized spending: $3,500 left, less the month's share of the year's
+        # (unwithheld) tax, which the plan holds back for December (Plan 31 D3); not the plan's $2,000... unless
+        # that is less.
+        left = 7500.0 - 4000.0 - _tax_month(categories=categories, salary=90000)
+        self.assertGreater(left, 0)
+        self.assertLess(left, 2000.0)
         for month in range(1, 12):
-            self.assertAlmostEqual(by_month.get(month, 0.0), 1000.0, places=6)
+            self.assertAlmostEqual(by_month.get(month, 0.0), left, places=2)
         self.assertNotIn("forced_sale", kinds)
         self.assertNotIn("shortfall_debt", kinds)
         self.assertEqual(person.debt, 0)
@@ -71,15 +84,18 @@ class TestContributionsAfterSpendingCategories(unittest.TestCase):
     def test_schedule_step_frees_cash_for_the_plan(self):
         categories = {"living": SpendingLine(4000, period="monthly", growth_pct=0)}
         # Turns 41 in July 2026: spending halves from July.
-        model, person, _bank, brokerage = _household(categories=categories, schedule=[(41, 50)], birth="1985-07")
+        model, person, _bank, brokerage = _household(
+            categories=categories, schedule=[(41, 50)], birth="1985-07", salary=90000
+        )
         person.add_contribution_plan(ContributionPlan(brokerage, amount_annual=24000))
         by_month, kinds = self._eleven_months(model, brokerage)
+        left = 7500.0 - 4000.0 - _tax_month(categories=categories, schedule=[(41, 50)], birth="1985-07", salary=90000)
         for month in range(1, 7):
-            self.assertAlmostEqual(by_month.get(month, 0.0), 1000.0, places=6)
-        # From July $3,000 is left: the plan catches up toward its yearly $24,000 within it.
+            self.assertAlmostEqual(by_month.get(month, 0.0), left, places=2)
+        # From July $2,000 more is left: the plan catches up toward its yearly $24,000 within it.
         for month in range(7, 12):
-            self.assertGreater(by_month.get(month, 0.0), 1000.0)
-            self.assertLessEqual(by_month.get(month, 0.0), 3000.0 + 1e-6)
+            self.assertGreater(by_month.get(month, 0.0), left)
+            self.assertLessEqual(by_month.get(month, 0.0), left + 2000.0 + 1e-6)
         self.assertNotIn("forced_sale", kinds)
         self.assertEqual(person.debt, 0)
 

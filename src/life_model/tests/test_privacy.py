@@ -48,6 +48,23 @@ SYNTHETIC_ORGS = frozenset(
 #: Other capitalized words free text may use mid-sentence (product names, places, generic nouns).
 GENERIC_PROPER_WORDS = frozenset(
     {
+        # Plan 31 tasks 6-7: the marketplace, months, state names and codes, a form suffix
+        "ACA",
+        "April",
+        "July",
+        "NR",
+        "Texas",
+        "AZ",
+        "GA",
+        "IN",
+        "MD",
+        "MI",
+        "MO",
+        "NC",
+        "NJ",
+        "OH",
+        "TN",
+        "VA",
         "AGI",
         "Additional",
         # Tax-form vocabulary of the Plan 31 golden descriptions.
@@ -83,7 +100,7 @@ GENERIC_PROPER_WORDS = frozenset(
 #: Keys whose value names an organization.
 ORG_KEYS = frozenset({"company", "school", "business", "employer", "charity", "insurer", "trustee", "decedent_name"})
 #: List keys whose items are people (their ``name`` is a person's name).
-PERSON_LISTS = frozenset({"people", "children"})
+PERSON_LISTS = frozenset({"people", "children", "dependents"})
 
 
 def _tracked_data_files() -> list[Path]:

@@ -105,6 +105,8 @@ class ReturnFacts:
     nonrefundable_used: float = 0.0
     #: The earned income credit (set by :func:`apply_credits` before the child tax credit needs it).
     eitc: float = 0.0
+    #: Form 8962's figures when the return has marketplace coverage (:func:`~life_model.tax.ptc.premium_tax_credit`).
+    ptc: "dict[str, float] | None" = None
 
     @property
     def joint(self) -> bool:
@@ -491,6 +493,20 @@ def minimum_tax_credit(facts: ReturnFacts, config: "FinancialConfig") -> CreditL
 
 
 # --------------------------------------------------------------------------------------------------
+# Premium tax credit (IRC §36B; Form 8962)
+# --------------------------------------------------------------------------------------------------
+
+
+def premium_tax_credit_line(facts: ReturnFacts, config: "FinancialConfig") -> CreditLine:
+    """The net premium tax credit (Form 8962 line 26; Schedule 3 line 9): refundable. Excess advance payments
+    are repaid as tax instead (``finish_federal``, from ``facts.ptc['repayment']``)."""
+    if facts.ptc is None:
+        return CreditLine("premium_tax_credit")
+    detail = {k: v for k, v in facts.ptc.items() if k != "net"}
+    return CreditLine("premium_tax_credit", refundable=facts.ptc["net"], detail=detail)
+
+
+# --------------------------------------------------------------------------------------------------
 # The ordered list and the driver
 # --------------------------------------------------------------------------------------------------
 
@@ -504,6 +520,7 @@ CREDITS: "tuple[Callable[[ReturnFacts, FinancialConfig], CreditLine], ...]" = (
     savers_credit,
     child_tax_credit_line,
     minimum_tax_credit,
+    premium_tax_credit_line,
 )
 
 

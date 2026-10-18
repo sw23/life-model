@@ -55,7 +55,7 @@ class TestSpecErrors(unittest.TestCase):
 
     def test_unknown_state(self):
         data = minimal(state="ZZ")
-        data["meta"]["default_state"] = "AZ"
+        data["meta"]["default_state"] = "WY"  # no pack (AZ has had one since Plan 31)
         findings = validate_spec(data)
         self.assertEqual(codes(findings), ["unknown_state", "unknown_state"])
         self.assertEqual({f.path for f in findings}, {"meta.default_state", "people[0].state"})
@@ -291,9 +291,15 @@ class TestModelValidation(unittest.TestCase):
         self.assertEqual(len(zero), 3)  # two spending, one salary
 
     def test_model_errors(self):
+        from ..config.models import UnknownStateError
+
         model = LifeModel(start_year=2026)
         family = Family(model)
-        person = Person(family, "Solo", age=70, retirement_age=65, spending=Spending(model, base_annual=1), state="ZZ")
+        # Plan 31 D4: a state without a tax pack is refused when the person is built (no silent flat rate).
+        with self.assertRaises(UnknownStateError):
+            Person(family, "Solo", age=70, retirement_age=65, spending=Spending(model, base_annual=1), state="ZZ")
+        person = Person(family, "Solo", age=70, retirement_age=65, spending=Spending(model, base_annual=1), state="CA")
+        person._residency = [(person._residency[0][0], "ZZ")]  # a timeline edited past the constructor's check
         Job(person, company="Co", role="Dev", salary=Salary(model, base_annual=1, raise_pct=0.03))
         Apartment(person, "Flat", 1000)
         found = codes(model.validate())

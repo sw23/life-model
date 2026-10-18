@@ -290,7 +290,7 @@ def _liability_labels(ctx: YearContext) -> set[str]:
     from .ledger import account_label
 
     labels = {account_label(a) for a in ctx.model.agents if isinstance(a, (Loan, RevolvingDebt))}
-    labels.update(label for label in ctx.balances.closing.lines if label.startswith("Debt:"))
+    labels.update(label for label in ctx.balances.closing.lines if label.startswith(("Debt:", "TaxDue:")))
     return labels
 
 
@@ -304,7 +304,7 @@ def no_negative_balances(ctx: YearContext) -> list[Violation]:
         for label, value in sheet.lines.items():
             if label in seen:
                 continue
-            is_liability = label in liabilities or label.startswith("Debt:")
+            is_liability = label in liabilities or label.startswith(("Debt:", "TaxDue:"))
             if (not is_liability and value < -MONEY_TOLERANCE) or (is_liability and value > MONEY_TOLERANCE):
                 seen.add(label)
                 what = "liability below zero" if is_liability else "negative balance"
@@ -653,7 +653,7 @@ def taxes_non_negative(ctx: YearContext) -> list[Violation]:
                     r.federal_tax,
                 )
             )
-        liability = r.ordinary_tax + r.preferential_tax + r.kiddie_tax + r.amt
+        liability = r.ordinary_tax + r.preferential_tax + r.kiddie_tax + r.amt + r.excess_advance_ptc_repayment
         if r.nonrefundable_credits > liability + MONEY_TOLERANCE:
             violations.append(
                 Violation(
@@ -722,8 +722,19 @@ def return_identities(ctx: YearContext) -> list[Violation]:
                 + r.kiddie_tax
                 + r.niit
                 + r.amt
+                + r.excess_advance_ptc_repayment
                 - r.total_credits
                 + r.total_penalties,
+            ),
+            # Plan 31 D3: 1040 lines 33-37 (the balance due or overpayment, with the Form 2210 penalty).
+            "amount owed - overpaid = total tax - payments + penalty": (
+                r.amount_owed - r.overpayment,
+                r.federal_tax
+                + r.refundable_credits
+                + r.self_employment_tax
+                + r.additional_medicare_tax
+                - r.total_payments
+                + r.estimated_tax_penalty,
             ),
             "total tax = federal + state + payroll + self-employment": (
                 r.total_tax,

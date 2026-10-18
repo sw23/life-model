@@ -24,6 +24,13 @@ the library, for 2024, 2025 and 2026. They are the external ground truth for the
 | `qcd_retiree` | (Plan 31) a qualified charitable distribution counting toward the RMD (line 4a vs 4b), the §63(f) amount for a single 65+ filer |
 | `ira_deduction_phaseout` | (Plan 31) a traditional IRA contribution (a `contribute` event) by a worker covered by a 401(k): the deduction phased out by MAGI (Pub. 590-A Worksheet 1-2, rounded up to $10), the rest nondeductible basis |
 | `student_loan_phaseout` | (Plan 31) the student loan interest deduction inside its MAGI phase-out (the worksheet's three-decimal fraction) |
+| `withholding_single` | (Plan 31 D3) a default Form W-4: W-2 box 2 by IRS Pub. 15-T's percentage method (Worksheet 1A, twelve monthly paychecks; the 2025 tables predate OBBBA's 2025 standard deduction), and 1040 lines 25a-37: the refund or balance due (settled in April) |
+| `estimated_payments_penalty` | (Plan 31 D3) a pension with equal quarterly estimates under the required installments: 1040 line 26 (January's payment included), Form 2210 Part I and the regular method's penalty worksheet (line 19, 1040 line 38 in line 37) |
+| `aca_ptc_early_retirees` | (Plan 31 task 6) a pre-65 couple on marketplace coverage: Form 8962 (annual method; 2024-2025 enhanced table, 2026 Rev. Proc. 2025-25 table), the net credit (Schedule 3 line 9, 1040 line 31) or, with advance payments, the excess repaid (Schedule 2 line 1a; the 2025 Table 5 limit binds; no limit in 2026) |
+| `qss_widow` | (Plan 31 D5) a qualifying surviving spouse (spouse died the year before) with a child: the joint schedule and standard deduction, the child tax credit |
+| `hoh_dependent_parent` | (Plan 31 D5) head of household with a qualifying-relative parent who lives elsewhere: the head-of-household schedule and the $500 credit for other dependents |
+| `part_year_mover` | (Plan 31 D4; 2025 and 2026) a move from California to Texas in July: the federal return and California Form 540NR (the income-ratio method, prorated exemption credit) |
+| `state_<code>` | (Plan 31 D4; 2025 and 2026) one per new state pack (OH, GA, NC, MI, NJ, VA, AZ, TN, IN, MO, MD): a single W-2 earner's state AGI, taxable income and tax (exact rate schedule; the states' tax tables round) |
 
 ## Files
 
@@ -71,6 +78,15 @@ the 2026 draft forms' line numbers.
   childcare band ($12,000 a child under 6, `dependent_care_mfj`): what the engine charges.
 * `iso_amt_credit`: the spec starts the year before (the exercise year), so the credit carryforward is
   the engine's own; the script works that prior return the same way (`iso_amt_single`).
+* `estimated_payments_penalty`: the prior year's tax and AGI are spec inputs (`estimated_payments.prior_year_tax`,
+  `prior_year_agi`); the 2026 penalty's last rate period (January 1 - April 15, 2027) uses 7%, the 2027 first-quarter
+  underpayment rate not being announced (TODO(verify)). Form 2210 line 4 starts from line 22 (the Tax Table
+  amount), so it, the penalty (within $0.50) and lines 34-37 carry line 16's tolerance.
+* `aca_ptc_early_retirees`: the second-lowest-cost silver plan premium and the advance payments are Form
+  1095-A inputs (`marketplace.slcsp_monthly`, `advance_monthly`). The 2026 table and poverty line are Rev. Proc.
+  2025-25's and the 2025 HHS guidelines (the 2026 Form 8962 instructions are not published yet).
+* `state_<code>`, `part_year_mover`: state packs are year-keyed for 2025 and 2026 only, so these goldens have no 2024
+  year. The 540NR's lines are computed unrounded (the engine's ratio method is the form's).
 
 The Plan 31 goldens reproduce every line on the monthly engine (Plan 32) with their specs unchanged:
 the profit, wages and dependent-care FSA are paid a twelfth a month and sum to the year's documents; the

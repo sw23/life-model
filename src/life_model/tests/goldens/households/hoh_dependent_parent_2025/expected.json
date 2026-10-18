@@ -1,0 +1,78 @@
+{
+  "golden": "hoh_dependent_parent_2025",
+  "year": 2025,
+  "description": "single filer supporting a parent (gross income $3,000, under the qualifying-relative limit) who lives elsewhere: head of household and the $500 credit for other dependents",
+  "method": "Worked by scripts/household_goldens.py from the year's Form 1040 and instructions (see worksheet.md); independent of the library.",
+  "actuals": {
+    "form_1040": {
+      "1a": 60000.0,
+      "1z": 60000.0,
+      "2a": 0.0,
+      "2b": 0.0,
+      "3a": 0.0,
+      "3b": 0.0,
+      "4a": 0.0,
+      "4b": 0.0,
+      "5b": 0.0,
+      "7a": 0.0,
+      "8": 0.0,
+      "6a": 0.0,
+      "10": 0.0,
+      "6b": 0.0,
+      "9": 60000.0,
+      "11a": 60000.0,
+      "11b": 60000.0,
+      "12e": 23625.0,
+      "13a": 0.0,
+      "13b": 0.0,
+      "14": 23625.0,
+      "15": 36375.0,
+      "16": 4025.0,
+      "17": 0.0,
+      "18": 4025.0,
+      "19": 500.0,
+      "20": 0.0,
+      "21": 500.0,
+      "22": 3525.0,
+      "23": 0.0,
+      "24": 3525.0,
+      "28": 0.0
+    },
+    "schedules": {
+      "1": {
+        "26": 0.0
+      },
+      "8812": {
+        "14": 500.0
+      },
+      "2": {
+        "21": 0.0
+      }
+    },
+    "w2": [
+      {
+        "person": "riley",
+        "employer": "Example County",
+        "boxes": {
+          "1": 60000.0,
+          "3": 60000.0,
+          "4": 3720.0,
+          "5": 60000.0,
+          "6": 870.0
+        },
+        "box12": {}
+      }
+    ]
+  },
+  "exact": {
+    "1040:16": 4025.0
+  },
+  "tolerance": {
+    "default": 0.01,
+    "1040:16": 3.5,
+    "1040:18": 3.5,
+    "1040:22": 3.5,
+    "1040:24": 3.5
+  },
+  "xfail": {}
+}

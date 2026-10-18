@@ -1,0 +1,31 @@
+# Household golden (synthetic, not real data). See ../README.md.
+spec_version: 1
+meta:
+  name: State pack GA
+  description: 'Household golden (synthetic): a single W-2 earner: the GA state return.'
+  as_of: 2025-01
+  start_year: 2025
+  end_year: 2025
+  seed: 1
+  default_state: GA
+people:
+- id: casey
+  name: Casey
+  age: 40
+  retirement_age: 67
+  spending:
+    amount_annual: 30000
+    growth_pct: 0
+  jobs:
+  - id: casey_job
+    company: Example Analytics
+    salary_annual: 65000
+  accounts:
+  - kind: bank
+    id: casey_checking
+    company: Community Bank
+    type: Checking
+    balance: 20000
+    interest_pct: 0.0
+    compounding: annual
+    primary: true

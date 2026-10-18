@@ -126,7 +126,7 @@ This package supports a comprehensive range of financial modeling components:
 
 ### Tax System
 - [x] **Federal Taxes** - Complete income tax calculations with brackets
-- [x] **State Taxes** - Per-state tax packs (progressive brackets or flat rate, retirement/Social Security exemptions, SALT integration) with per-person residency
+- [x] **State Taxes** - Per-state, per-year tax packs for 19 states (brackets by filing status or flat rate, exemptions and credits, retirement exclusions, SALT integration), residency timelines with part-year returns; an unknown state is an error
 - [x] **FICA Taxes** - Social Security and Medicare taxes
 - [x] **Capital Gains** - Short-term and long-term capital gains
 - [x] **Required Minimum Distributions (RMDs)** - From 401ks and Traditional IRAs
@@ -137,7 +137,9 @@ This package supports a comprehensive range of financial modeling components:
 - [x] **Self-Employment** - Schedule C profit, self-employment tax sharing the wage base with W-2 wages, SEP and solo 401(k) contributions, QBI deduction
 - [x] **Kiddie Tax** - A child's interest and dividends on the parents' return (Form 8814)
 - [x] **Charitable Distributions** - Qualified charitable distributions from IRAs counting toward the RMD; gifts of appreciated shares at fair market value
-- [ ] **Withholding & Estimated Payments** - Taxes settle as a year-end lump (Plan 31 task 6); no ACA premium tax credit yet
+- [x] **Withholding & Estimated Payments** - Pub. 15-T paycheck withholding (supplemental rates for bonuses and RSU vests, per-employer FICA, state), quarterly estimates (fixed or safe harbor), the balance due or refund settled in April, the Form 2210 penalty; opt-in (the default is a December lump)
+- [x] **ACA Premium Tax Credit** - Form 8962 for marketplace coverage, with advance payments and repayment limits by year
+- [x] **Filing Statuses** - Single, joint, separate, head of household (a child or a qualifying relative such as a parent), qualifying surviving spouse
 
 ### Housing & Lifestyle
 - [x] **Home Ownership** - Purchase, mortgage, appreciation, and selling

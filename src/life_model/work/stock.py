@@ -236,10 +236,11 @@ class StockPlan(LifeModelAgent):
       credit for the year. That is what a real vest is.
     * **Vest income is excluded from 401(k)-eligible compensation**, the common plan-document
       treatment. This needs no code: ``Job.pre_step`` computes contributions off base salary alone.
-    * **Withholding is not modeled.** Real vests withhold at the flat supplemental rate, which
-      chronically under-withholds high earners. Because the simulation settles true annual
-      liability at year end instead of tracking withholding, modeling it would net to zero while
-      adding a spurious cash-timing artifact.
+    * **Withholding follows the job's payroll policy** (Plan 31 D3). Without one (the default) nothing
+      is withheld and the year's taxes settle at year end. With one, a vest is supplemental wages:
+      federal tax at the flat supplemental rate (37% past $1,000,000 of the year's supplemental wages),
+      Social Security, Medicare and state tax are withheld by selling shares to cover them, so the
+      shares (or cash) delivered are the value net of the withholding.
 
     Refreshers are a fixed dollar value grown at a constant rate. Real refreshers are re-sized
     against the current share price and a performance rating, which dampens both tails; that
@@ -436,7 +437,7 @@ class StockPlan(LifeModelAgent):
             self.owner.income.add_wages(ordinary_amount=vested, fica_wages=vested, source="rsu_vest")
             if self.owner.social_security is not None:
                 self.owner.social_security.add_income_for_year(vested)
-            self._dispose(vested)
+            self._dispose(vested, self._vest_withholding(vested))
 
         self.stat_stock_vested = vested
         self.stat_gross_income = vested
@@ -517,7 +518,33 @@ class StockPlan(LifeModelAgent):
             grant.vested_fraction += fraction
         return total
 
-    def _dispose(self, vested: float) -> None:
+    def _vest_withholding(self, vested: float) -> "dict | None":
+        """Taxes withheld from a vest of ``vested`` under the job's withholding policy (None without one)."""
+        job = self.job
+        if job.withholding is None:
+            return None
+        ytd = job._ytd if job._ytd_year == self.model.year else None
+        prior_fica = (ytd.gross - ytd.wage_exclusions) if ytd is not None else 0.0
+        prior_fica += job._withholding_year()["fica_wages"]
+        return job.withhold(0.0, vested, vested, prior_fica)
+
+    def _post_vest_withholding(self, taxes: "dict | None", account, vested: float) -> float:
+        if taxes is None:
+            return 0.0
+        return self.job.post_withholding(taxes, account, "RSU vest", supplemental=vested, fica_wages=vested)
+
+    def _withhold_from_cash(self, taxes: "dict | None", vested: float, withheld: float) -> None:
+        """Take a cash-settled vest's withholding back out of where the vest was paid."""
+        if taxes is None:
+            return
+        destination = self.owner.cash_destination
+        self._post_vest_withholding(taxes, destination, vested)
+        if isinstance(destination, str):
+            self.owner.cash -= withheld
+        else:
+            destination.balance -= withheld
+
+    def _dispose(self, vested: float, taxes: "dict | None" = None) -> None:
         """Sell the vested shares for cash, or hold them in a taxable brokerage account.
 
         Selling at vest realizes exactly zero capital gain: basis is fair market value at vest, so
@@ -525,8 +552,10 @@ class StockPlan(LifeModelAgent):
         with a holding period starting now, so only post-vest appreciation is ever taxed as a gain.
         """
         company = self.job.company
+        withheld = 0.0 if taxes is None else taxes["federal"] + taxes["ss"] + taxes["medicare"] + taxes["state"]
         if self.disposition == "sell":
             self.owner.receive_cash(vested, source=company, kind=FlowKind.VEST, cause="RSU vest (sold at vest)")
+            self._withhold_from_cash(taxes, vested, withheld)
             return
 
         account = self.brokerage_account
@@ -536,11 +565,15 @@ class StockPlan(LifeModelAgent):
         if account is None:
             # Nowhere to hold the shares; fall back to cash rather than losing the value.
             self.owner.receive_cash(vested, source=company, kind=FlowKind.VEST, cause="RSU vest (no brokerage)")
+            self._withhold_from_cash(taxes, vested, withheld)
             return
-        account.deposit_with_basis(vested, cost_basis=vested)
+        # Shares sold to cover the withholding are never delivered: the lot is the net shares, at their value.
+        delivered = vested - withheld
+        account.deposit_with_basis(delivered, cost_basis=delivered)
         self.model.ledger.post(
             vested, FlowKind.VEST, to_account=account, source=company, cause="RSU vest (held)", agent=self.owner
         )
+        self._post_vest_withholding(taxes, account, vested)
 
     # --- ESPP ---
 
