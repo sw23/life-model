@@ -112,7 +112,8 @@ Dashboard tests need `-r dashboard/requirements-dash.txt`; RL and adviser tests 
 (`.github/workflows/python-tox.yml`) runs tox `py312`-`py314`, `lint` (ruff, pinned in `tox.ini`
 and `.pre-commit-config.yaml`), `type` (mypy, non-blocking), `notebooks`, `dashboard`,
 `deepqlearning`, a slow RL smoke job, and **build-and-smoke**, which builds the wheel, installs it in
-a clean venv and runs the `life-model` console script end to end. Don't run `-m slow` tests or RL
+a clean venv and runs the `life-model` console script end to end; `docs.yml` builds Sphinx with
+warnings as errors. The `slm` tox env is not in CI: run `slm/tests` yourself when touching `slm/`. Don't run `-m slow` tests or RL
 training casually: they are long and memory-hungry.
 
 Generated docs (regenerate after changing their sources; tests fail while they are stale):

@@ -701,9 +701,8 @@ def compare(
     if seed is None:
         # Both runs must share their random draws, so an unseeded spec gets one seed for both.
         seed = secrets.randbelow(2**31)
-    kwargs = {"seed": seed, "real_dollars": real_dollars, "checks": checks}
-    base = run(base_spec, **kwargs)
-    changed = run(changed_spec, **kwargs)
+    base = run(base_spec, seed=seed, real_dollars=real_dollars, checks=checks)
+    changed = run(changed_spec, seed=seed, real_dollars=real_dollars, checks=checks)
     deltas = _deltas(summarize(base, yearly=False), summarize(changed, yearly=False))
     described = {
         "patch": copy.deepcopy(dict(change)) if change else None,

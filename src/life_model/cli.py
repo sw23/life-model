@@ -465,7 +465,7 @@ def get_parser() -> argparse.ArgumentParser:
         epilog="Exit codes: 0 ok, 1 runtime error, 2 invalid input. See docs/cli.md.",
     )
     parser.add_argument("--version", "-v", action="version", version=f"%(prog)s {__version__}")
-    common = argparse.ArgumentParser(add_help=False)
+    common = _Parser(add_help=False)
     common.add_argument("--json", action="store_true", help="print one JSON object (machine-readable) to stdout")
     sub = parser.add_subparsers(dest="command", metavar="COMMAND", parser_class=_Parser)
     for command in COMMANDS:
