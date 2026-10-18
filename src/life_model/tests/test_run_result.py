@@ -127,11 +127,13 @@ class TestExports(unittest.TestCase):
                     "ledger.csv",
                     "meta.json",
                     "model.csv",
+                    "monthly_balance_sheets.csv",  # Plan 32: the monthly conservation inputs
                     "tax_returns.csv",
                 ],
             )
             loaded = RunResult.load(Path(directory) / "csv")
             self.assertEqual(len(loaded.model_frame), 6)
+            self.assertEqual(len(loaded.monthly_balance_sheets), 6 * 12)
             self.assertEqual(loaded.tax_returns, self.result.tax_returns)
 
     def test_parquet_needs_pyarrow(self):
@@ -242,3 +244,25 @@ class TestMonteCarloOutputs(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestMonthlyFrames(unittest.TestCase):
+    """Plan 32: RunResult carries the monthly model frame (collect="month") and monthly balance sheets."""
+
+    def test_monthly_frame_and_balance_sheets(self):
+        model = LifeModel(start="2026-07", end_year=2027, collect="month")
+        person = Person(Family(model), "Pat", 40, 70, Spending(model, base=12000))
+        BankAccount(person, "Bank", balance=50000, interest_rate=0)
+        result = model.run()
+        self.assertEqual(len(result.monthly_frame), 6 + 12)
+        self.assertEqual(result.monthly_frame[["Year", "Month"]].iloc[0].tolist(), [2026, 7])
+        sheets = result.monthly_balance_sheets
+        self.assertEqual(len(sheets), 18)
+        self.assertAlmostEqual(sheets["outflows"].sum(), 6000 + 12000, places=6)
+        real = result.real_dollars()
+        self.assertEqual(len(real.monthly_frame), 18)
+        with tempfile.TemporaryDirectory() as directory:
+            result.to_csv(Path(directory) / "csv")
+            loaded = RunResult.load(Path(directory) / "csv")
+            self.assertEqual(len(loaded.monthly_frame), 18)
+        self.assertIsNone(LifeModel(start_year=2026, end_year=2026).run().monthly_frame)

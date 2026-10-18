@@ -441,3 +441,20 @@ def test_nobody_enabled_builds_an_empty_family():
     model = DashboardLifeModel(john_enabled=False, jane_enabled=False)
     assert model.household_spec is None
     model.run()
+
+
+def test_one_step_is_a_year_and_months_feed_the_liquidity_chart():
+    """Plan 32: the engine is monthly; a dashboard Step simulates a year and collects its months."""
+    import solara
+
+    model = DashboardLifeModel(start_year=2023, end_year=2025, jane_enabled=False)
+    model.step()  # SolaraViz's Step / one Play tick
+    assert model.simulated_years == [2023]
+    assert (model.year, model.month) == (2024, 1)
+    rows = model.monthly_frame()
+    assert rows["Month"].tolist() == list(range(1, 13))
+    december = rows[rows["Month"] == 12]["Bank Balance"].tolist()
+    assert december == model.datacollector.get_model_vars_dataframe()["Bank Balance"].tolist()
+    # The component renders from the monthly rows without error.
+    box, _rc = solara.render(app.LiquidityChart(model), handle_error=False)
+    assert box is not None

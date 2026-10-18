@@ -21,6 +21,10 @@ Usage::
     result.success_rate(lambda row: row["Bank Balance"] > 0)   # probability of not running out
     result.percentiles("Bank Balance", [10, 50, 90])           # fan-chart frames
 
+Trials are yearly: each keeps its model's yearly frame (``LifeModel``'s default ``collect="year"``;
+the engine steps monthly, so a 50-year trial runs 600 months). Build trial models with
+``collect="month"`` only if you read the monthly rows from the models yourself.
+
 ``model_factory`` must be a picklable top-level callable so trials can run in worker processes.
 When it is not picklable, the runner transparently falls back to running trials sequentially in the
 current process (the simulation is CPU-light, so this is only a speed difference).
