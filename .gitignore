@@ -135,8 +135,11 @@ dmypy.json
 # General files
 .DS_Store
 
-# Personal life-model scenarios
+# Personal life-model scenarios and household specs (real financial data; never commit).
+# The directory rule covers everything; the explicit spec patterns document where specs live.
 my-models/
+my-models/*.yaml
+my-models/*.json
 
 # ML Models/Results/Plots
 deepqlearning/models/

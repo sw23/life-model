@@ -49,6 +49,7 @@ exclude = ["life_model.tests*"]
 
 [tool.setuptools.package-data]
 "life_model.config" = ["data/*.yaml", "data/scenarios/*.yaml"]
+"life_model.spec" = ["examples/*.yaml"]
 
 [tool.setuptools_scm]
 version_file = "src/life_model/_version.py"

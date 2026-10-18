@@ -1,0 +1,107 @@
+# Synthetic example household (not real data): a single renter early in a career, saving in a
+# 401k and a Roth IRA, paying down a student loan, and buying a condo in 2031.
+spec_version: 1
+meta:
+  name: Single renter
+  description: Synthetic example. A 29-year-old renter in California with a student loan who buys a
+    condo with a 10% down payment five years in.
+  as_of: 2026-01
+  start_year: 2026
+  end_year: 2086
+  seed: 7
+people:
+- id: sam
+  name: Sam
+  age: 29
+  retirement_age: 65
+  state: CA
+  mortality: stochastic
+  spending:
+    amount_annual: 30000
+    growth_pct: economy
+  jobs:
+  - id: sam_job
+    company: Example Analytics
+    role: Data Analyst
+    salary_annual: 85000
+    raise_pct: economy
+    bonus_pct: 5
+  accounts:
+  - kind: bank
+    company: Neighborhood Credit Union
+    balance: 14000
+    interest_pct: 0.5
+  - kind: 401k
+    job: sam_job
+    pretax_balance: 21000
+    pretax_contrib_pct: 8
+    company_match_pct: 50
+  - kind: brokerage
+    company: Example Brokerage
+    balance: 40000
+  - kind: roth_ira
+    balance: 12000
+  debts:
+  - kind: student
+    loan_type: federal_unsubsidized
+    school: State University
+    original_amount: 32000
+    balance: 24500
+    rate_pct: 5.5
+    term_years: 10
+  - kind: credit_card
+    name: Everyday Card
+    credit_limit: 8000
+    balance: 1800
+    payment_strategy: full_balance
+  housing:
+  - kind: rental
+    id: apartment
+    name: Downtown apartment
+    rent_monthly: 2100
+    rent_growth_pct: 3.5
+  insurance:
+  - kind: renters
+    company: Example Mutual
+    premium_annual: 180
+    coverage_amount: 30000
+    deductible: 500
+  social_security:
+    claim_age: 67
+    assumed_career_start_age: 22
+  healthcare:
+    medical_costs: true
+    medicare: true
+events:
+- id: buy_condo
+  at:
+    year: 2031
+  person: sam
+  name: Sam leaves the apartment and buys a condo
+  action: move
+  end_rental: apartment
+  buy_home:
+    kind: home
+    id: condo
+    name: Condo
+    purchase_price: 300000
+    down_payment: 30000
+    mortgage:
+      original_amount: 270000
+      rate_pct: 6.25
+      term_years: 30
+      start_year: 2031
+    expenses:
+      property_tax_pct: 1.1
+      insurance_pct: 0.3
+      maintenance_annual: 2500
+      maintenance_growth_pct: 3
+      hoa_monthly: 350
+      hoa_growth_pct: 3
+- id: sabbatical
+  at:
+    age: 40
+  person: sam
+  name: Sabbatical travel
+  action: one_time_expense
+  amount: 15000
