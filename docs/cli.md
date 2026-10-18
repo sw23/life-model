@@ -84,7 +84,8 @@ Every line shows simulated vs actual, the difference, a status (`green` within r
 `red`, `not_modeled` for lines the engine has no equivalent for, such as withholding) and the
 likely cause of a difference (`missing_income_source`, `input_difference`, `unmodeled_credit`,
 `unmodeled_deduction`, `unit_mismatch`, `timing`, `missing_input`, `propagated`). Describe the
-household as of January 1 of `Y` (`meta.start_year: Y`) for the cleanest comparison; a year before
+household as of January 1 of `Y` (`meta.start_year: Y`) for the cleanest comparison (a `meta.start`
+inside `Y` reconciles a part year: only the simulated months, as the report notes); a year before
 `meta.start_year` exits 2, and `--years`/`--end-year` do not apply. `--json` returns the report as
 `report` (`counts`, `lines`, `notes`). See [reconciliation.md](reconciliation.md).
 

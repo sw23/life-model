@@ -53,8 +53,10 @@ report = life_model.reconcile("my-models/h.yaml", 2025)     # ReconciliationRepo
 print(report.to_markdown()); report.to_dict(); report.red
 ```
 
-The household is run from `meta.start_year` through the year (describe it as of January 1 of that
-year for the cleanest comparison), each `TaxReturn` is mapped onto that year's lines
+The household is run from its first simulated month through the year's December (describe it as of
+January 1 of that year for the cleanest comparison; a spec whose `meta.start` falls inside the year
+reconciles a part year: its return and flows cover only the simulated months, and the report's notes
+say so), each `TaxReturn` is mapped onto that year's lines
 (`life_model.reconciliation.form_1040_lines` / `schedule_lines`), W-2 boxes are rebuilt from the
 ledger per employer, 1099 boxes from the account's flows, balances from the December 31 balance
 sheet. Every line the records carry gets a status:
@@ -151,6 +153,7 @@ balances before it), give each account an `id`, put the later December 31 balanc
 `actuals.<year>.balances`, and use `growth_pct: economy` for accounts invested like the index (a
 fixed rate for the rest). The synthetic 2020-2025 example
 ([backtest-2020-2025.md](backtest-2020-2025.md), `scripts/backtest_example.py`) reproduces its
-statements to the cent; with real statements expect differences from contribution timing (the annual
-engine credits a year's contributions before its growth: about 2% on a growing 401(k) over six years),
-fees and the actual fund mix.
+statements to the cent (they are computed with the engine's conventions: monthly paycheck deposits at
+the start of the month, monthly compounding of the year's return); with real statements expect
+differences from intra-month contribution timing (about 0.3% on a growing 401(k) over six years
+between start- and end-of-month deposits), fees and the actual fund mix.

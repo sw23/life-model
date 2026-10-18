@@ -138,7 +138,8 @@ life-model reconcile my-models/h.yaml --year 2025                      # spec's 
 life-model reconcile my-models/h.yaml --year 2025 --actuals my-models/2025-actuals.yaml
 ```
 
-Describe the household as of January 1 of that year (`meta.start_year: 2025`). Every line comes
+Describe the household as of January 1 of that year (`meta.start_year: 2025`; a `meta.start` later in
+the year reconciles only the simulated months). Every line comes
 back green, yellow or red with the likely cause of a difference: fix `input_difference` and
 `missing_income_source` lines in the spec; `unmodeled_credit`/`unmodeled_deduction` lines are tax
 features the engine lacks; `timing` lines (withholding, refund) and `missing_input` lines (payroll

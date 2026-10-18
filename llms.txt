@@ -1,6 +1,6 @@
 # life-model
 
-> Python package for year-step personal-finance simulation (Mesa agent-based modeling). Describe a
+> Python package for month-step personal-finance simulation (Mesa agent-based modeling). Describe a
 > household as a YAML/JSON household spec, then validate, run, explain and compare it with the
 > `life-model` command line, the `life_model.run/validate/explain/compare` functions, or the
 > optional MCP server. Rates are percentages (4.5 = 4.5%); flows say `_annual` or `_monthly`.

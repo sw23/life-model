@@ -280,3 +280,23 @@ that inject a once-a-year violation from a monthly stage (`pre_step`) act in Jan
 and the pre-Plan-26 reconstruction also restricts the bank draw order to the head's banks (the
 monthly waterfall pays from `_bank_accounts_in_draw_order`, not from a sized `bank_account_balance`).
 New tests cover a between-months move and offsetting unposted months.
+
+### Backtest statements under monthly semantics
+
+`scripts/backtest_example.py statements` (still independent of `life_model`) now computes the
+synthetic 2020-2025 statements with the monthly engine's conventions: each paycheck's 401(k)
+deferral and match (13% of pay a year, a twelfth a month) deposited at the start of its month,
+and every account compounding the year's S&P 500 return monthly (`(1 + R)^(1/12) - 1`). The
+statements moved (the 2025 401(k) from the annual convention's year-start crediting to
+$478,174.32) and `life_model.backtest` reproduces every one of the 18 statements to the cent (largest
+relative difference 0.0000%; acceptance is 1%). The report's timing note now gives the size of
+intra-month timing instead: end-of-month deposits would read $476,693.08 in 2025 (+0.31% against
+the simulated balance).
+
+### Reconcile with a part-year start
+
+`reconcile` runs a spec from its first simulated month, so a `meta.start` inside the reconciled year
+gives a return and flows for the simulated months only; the report now says so in its notes
+(`test_part_year_start_reconciles_only_the_simulated_months`: May-December pays 8/12 of the year's
+wages, a January bonus is not paid, the part-year records reconcile green and a full-year record is
+red on wages with the note).

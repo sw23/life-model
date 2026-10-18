@@ -6,7 +6,7 @@ household-modeling workflow. Keep it current when you change any of these.
 
 ## What this is
 
-`life-model` is a Python package (src layout, import name `life_model`) for year-step
+`life-model` is a Python package (src layout, import name `life_model`) for month-step
 personal-finance simulation built on [Mesa 3](https://mesa.readthedocs.io/) agent-based modeling.
 Auxiliary products live beside it: a Solara dashboard (`dashboard/app.py`), a reinforcement-learning
 stack (`deepqlearning/`: environment registry, from-scratch DQN/REINFORCE/PPO, training loops) and
