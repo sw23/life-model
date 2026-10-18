@@ -18,6 +18,7 @@ life-model examples --copy married_homeowners h.yaml
 life-model validate h.yaml
 life-model run h.yaml --out out --format json
 life-model explain h.yaml --year 2035
+life-model reconcile h.yaml --year 2025 --actuals my-models/2025-actuals.yaml
 life-model compare h.yaml --set 'people[john].retirement_age=58'
 life-model montecarlo h.yaml --scenario stochastic --n 1000 --seed 7 --out mc
 ```
