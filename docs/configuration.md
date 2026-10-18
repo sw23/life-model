@@ -280,7 +280,9 @@ economy.
 Query rates directly with `model.economy.equity_return(year)`,
 `model.economy.inflation(year)`, etc. Report balances in start-year dollars with
 `model.get_yearly_stat_df(..., real_dollars=True)`, which deflates every money
-column by the economy's cumulative inflation.
+column by the economy's cumulative inflation, or with `model.run().real_dollars()`,
+which deflates everything a run produced (model and agent frames, ledger, events
+and tax returns). See [the outputs glossary](outputs.md) for every output.
 
 ## Monte Carlo studies
 
@@ -306,4 +308,7 @@ result.fan_chart("Bank Balance")  # matplotlib fan chart
 ```
 
 Per-trial seeds are derived deterministically from the master `seed`, so a study
-is reproducible.
+is reproducible; `result.seeds[i]` rebuilds trial `i`. Pass `keep_agent_frames=True`
+and/or `keep_events=True` to keep each trial's agent frame and events, convert with
+`result.real_dollars()`, and save with `result.to_parquet(directory)` (needs the
+`parquet` extra) / `MonteCarloResult.load(directory)`.
