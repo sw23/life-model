@@ -38,8 +38,8 @@ tax:
         - [0, 17700, 10]
         - [17701, 67450, 12]
         - [67451, 105700, 22]
-        - [105701, 201775, 24]
-        - [201776, 256200, 32]
+        - [105701, 201750, 24]  # Rev. Proc. 2025-32 §4.01 Table 2 (201,775 before Plan 29 was wrong)
+        - [201751, 256200, 32]
         - [256201, 640600, 35]
         - [640601, .inf, 37]
     # Preferential rates for long-term capital gains and qualified dividends. Same
@@ -59,6 +59,10 @@ tax:
         - [0, 66200, 0]
         - [66201, 579600, 15]
         - [579601, .inf, 20]
+      married_filing_separately:
+        - [0, 49450, 0]
+        - [49451, 306850, 15]
+        - [306851, .inf, 20]
     # Net investment income surtax. Thresholds are statutory and have never been indexed, so they
     # are deliberately excluded from the tax_years projection path below.
     # vintage: statutory, source: IRC §1411 (not inflation-indexed)
@@ -69,9 +73,23 @@ tax:
       head_of_household: 200000
     # vintage: statutory, source: IRC §1211(b) / IRS Topic 409 (not inflation-indexed since 1978)
     capital_loss_ordinary_offset: 3000
-    # vintage: 2026, source: IRC §163(h)(3) (TCJA acquisition-debt limit); §164(b)(6) SALT cap (OBBBA)
+    # vintage: 2026, source: IRC §163(h)(3) (TCJA acquisition-debt limit)
     mortgage_interest_debt_limit: 750000
-    salt_deduction_cap: 40000
+    # SALT cap: static mirror of tax_years[2026].salt (simulated years read the year table; after it,
+    # salt_cap_statute's schedule applies). vintage: 2026, source: OBBBA (P.L. 119-21) §70120, IRC
+    # §164(b)(7): $40,400 cap, reduced by 30% of MAGI over $505,000, not below $10,000 (MFS: half).
+    salt_deduction_cap: 40400
+    salt_phaseout_threshold: 505000
+    salt_phaseout_rate: 30.0
+    salt_cap_floor: 10000
+    # vintage: statutory, source: OBBBA §70120 (IRC §164(b)(7)(A)): cap and threshold grow 1% a year
+    # through 2029, then the cap reverts to $10,000 with no phase-down. The statute states no rounding
+    # for the 1% steps — TODO(verify) against IRS guidance once 2027 is published.
+    salt_cap_statute:
+      annual_increase_percent: 1.0
+      increase_through_year: 2029
+      reversion_year: 2030
+      reversion_cap: 10000
     # vintage: statutory, source: OBBBA §70103 (IRC §151(d)(5)(C)), tax years 2025-2028
     senior_deduction:
       amount: 6000
@@ -720,7 +738,11 @@ healthcare:
   medical_deduction_agi_floor: 7.5    # percent; IRC §213(a) unreimbursed-medical AGI floor
 
 # Year-indexed tax parameters (published values, 2022-2026). Accessed via
-# config.tax_year(year). Years outside the table are projected: earliest entry
+# config.tax_year(year). Plan 29 moved the capital-gains brackets, Child Tax Credit amounts, SALT
+# cap, senior deduction and NIIT thresholds in (and records the §63(f) additional standard deduction
+# for Plan 31); 2022-2026 re-verified 2026-10-18 against Rev. Procs. 2021-45, 2022-38, 2023-34,
+# 2024-40 and 2025-32, OBBBA (P.L. 119-21, govinfo), and IRS Notices 2022-55/2023-75/2024-80/2025-67
+# (see docs/rebaseline-plan-29.md). Years outside the table are projected: earliest entry
 # for prior years, frozen at the latest entry for future years, most-recent
 # published year at-or-before for gaps. Verify against IRS/SSA before extending.
 #   sources: IRS Rev. Proc. 2021-45 (2022), 2022-38 (2023), 2023-34 (2024),
@@ -771,6 +793,25 @@ tax_years:
     limit_hsa_family: 7300
     gift_exclusion: 16000
     rmd_start_age: 73
+    # vintage: 2022, source: IRS Rev. Proc. 2021-45 §3.03 (MFS set explicitly: its 15% bound is not always half the
+    # joint one)
+    capital_gains:
+      single: [[0, 41675, 0], [41676, 459750, 15], [459751, .inf, 20]]
+      married_filing_jointly: [[0, 83350, 0], [83351, 517200, 15], [517201, .inf, 20]]
+      head_of_household: [[0, 55800, 0], [55801, 488500, 15], [488501, .inf, 20]]
+      married_filing_separately: [[0, 41675, 0], [41676, 258600, 15], [258601, .inf, 20]]
+    # vintage: 2022, source: IRC §24(h)(2) (pre-OBBBA); refundable: Rev. Proc. 2021-45 §3.05
+    ctc_per_child: 2000
+    ctc_refundable_max: 1500
+    # vintage: 2022, source: IRC §164(b)(6) (TCJA)
+    salt: {cap: 10000, phaseout_threshold: null}
+    # vintage: statutory, source: OBBBA §70103 (IRC §151(d)(5)(C)), tax years 2025-2028 only
+    senior_deduction_amount: 0
+    # vintage: statutory, source: IRC §1411(b) (never indexed)
+    niit: {rate: 3.8, single: 200000, married_filing_jointly: 250000, head_of_household: 200000,
+           married_filing_separately: 125000}
+    # vintage: 2022, source: IRS Rev. Proc. 2021-45 §3.15(3) (§63(f); recorded for Plan 31, not applied yet)
+    additional_standard_deduction: {married: 1400, unmarried: 1750}
   2023:
     standard_deduction:
       single: 13850
@@ -811,6 +852,25 @@ tax_years:
     limit_hsa_family: 7750
     gift_exclusion: 17000
     rmd_start_age: 73
+    # vintage: 2023, source: IRS Rev. Proc. 2022-38 §3.03 (MFS set explicitly: its 15% bound is not always half the
+    # joint one)
+    capital_gains:
+      single: [[0, 44625, 0], [44626, 492300, 15], [492301, .inf, 20]]
+      married_filing_jointly: [[0, 89250, 0], [89251, 553850, 15], [553851, .inf, 20]]
+      head_of_household: [[0, 59750, 0], [59751, 523050, 15], [523051, .inf, 20]]
+      married_filing_separately: [[0, 44625, 0], [44626, 276900, 15], [276901, .inf, 20]]
+    # vintage: 2023, source: IRC §24(h)(2) (pre-OBBBA); refundable: Rev. Proc. 2022-38 §3.05
+    ctc_per_child: 2000
+    ctc_refundable_max: 1600
+    # vintage: 2023, source: IRC §164(b)(6) (TCJA)
+    salt: {cap: 10000, phaseout_threshold: null}
+    # vintage: statutory, source: OBBBA §70103 (IRC §151(d)(5)(C)), tax years 2025-2028 only
+    senior_deduction_amount: 0
+    # vintage: statutory, source: IRC §1411(b) (never indexed)
+    niit: {rate: 3.8, single: 200000, married_filing_jointly: 250000, head_of_household: 200000,
+           married_filing_separately: 125000}
+    # vintage: 2023, source: IRS Rev. Proc. 2022-38 §3.15(3) (§63(f); recorded for Plan 31, not applied yet)
+    additional_standard_deduction: {married: 1500, unmarried: 1850}
   2024:
     standard_deduction:
       single: 14600
@@ -851,6 +911,25 @@ tax_years:
     limit_hsa_family: 8300
     gift_exclusion: 18000
     rmd_start_age: 73
+    # vintage: 2024, source: IRS Rev. Proc. 2023-34 §3.03 (MFS set explicitly: its 15% bound is not always half the
+    # joint one)
+    capital_gains:
+      single: [[0, 47025, 0], [47026, 518900, 15], [518901, .inf, 20]]
+      married_filing_jointly: [[0, 94050, 0], [94051, 583750, 15], [583751, .inf, 20]]
+      head_of_household: [[0, 63000, 0], [63001, 551350, 15], [551351, .inf, 20]]
+      married_filing_separately: [[0, 47025, 0], [47026, 291850, 15], [291851, .inf, 20]]
+    # vintage: 2024, source: IRC §24(h)(2) (pre-OBBBA); refundable: Rev. Proc. 2023-34 §3.05
+    ctc_per_child: 2000
+    ctc_refundable_max: 1700
+    # vintage: 2024, source: IRC §164(b)(6) (TCJA)
+    salt: {cap: 10000, phaseout_threshold: null}
+    # vintage: statutory, source: OBBBA §70103 (IRC §151(d)(5)(C)), tax years 2025-2028 only
+    senior_deduction_amount: 0
+    # vintage: statutory, source: IRC §1411(b) (never indexed)
+    niit: {rate: 3.8, single: 200000, married_filing_jointly: 250000, head_of_household: 200000,
+           married_filing_separately: 125000}
+    # vintage: 2024, source: IRS Rev. Proc. 2023-34 §3.15(3) (§63(f); recorded for Plan 31, not applied yet)
+    additional_standard_deduction: {married: 1550, unmarried: 1950}
   2025:
     standard_deduction:
       single: 15750
@@ -891,6 +970,25 @@ tax_years:
     limit_hsa_family: 8550
     gift_exclusion: 19000
     rmd_start_age: 73
+    # vintage: 2025, source: IRS Rev. Proc. 2024-40 §2.03 (MFS set explicitly: its 15% bound is not always half the
+    # joint one)
+    capital_gains:
+      single: [[0, 48350, 0], [48351, 533400, 15], [533401, .inf, 20]]
+      married_filing_jointly: [[0, 96700, 0], [96701, 600050, 15], [600051, .inf, 20]]
+      head_of_household: [[0, 64750, 0], [64751, 566700, 15], [566701, .inf, 20]]
+      married_filing_separately: [[0, 48350, 0], [48351, 300000, 15], [300001, .inf, 20]]
+    # vintage: 2025, source: OBBBA §70104(a)(2), Rev. Proc. 2025-32 §2.03; refundable: Rev. Proc. 2024-40 §2.05
+    ctc_per_child: 2200
+    ctc_refundable_max: 1700
+    # vintage: 2025, source: OBBBA (P.L. 119-21) §70120, IRC §164(b)(7)
+    salt: {cap: 40000, phaseout_threshold: 500000}
+    # vintage: statutory, source: OBBBA §70103 (IRC §151(d)(5)(C)), tax years 2025-2028 only
+    senior_deduction_amount: 6000
+    # vintage: statutory, source: IRC §1411(b) (never indexed)
+    niit: {rate: 3.8, single: 200000, married_filing_jointly: 250000, head_of_household: 200000,
+           married_filing_separately: 125000}
+    # vintage: 2025, source: IRS Rev. Proc. 2024-40 §2.15(3) (§63(f); recorded for Plan 31, not applied yet)
+    additional_standard_deduction: {married: 1600, unmarried: 2000}
   2026:
     standard_deduction:
       single: 16100
@@ -917,8 +1015,8 @@ tax_years:
         - [0, 17700, 10]
         - [17701, 67450, 12]
         - [67451, 105700, 22]
-        - [105701, 201775, 24]
-        - [201776, 256200, 32]
+        - [105701, 201750, 24]  # Rev. Proc. 2025-32 §4.01 Table 2 (201,775 before Plan 29 was wrong)
+        - [201751, 256200, 32]
         - [256201, 640600, 35]
         - [640601, .inf, 37]
     ss_wage_base: 184500
@@ -931,3 +1029,22 @@ tax_years:
     limit_hsa_family: 8750
     gift_exclusion: 19000
     rmd_start_age: 73
+    # vintage: 2026, source: IRS Rev. Proc. 2025-32 §4.03 (MFS set explicitly: its 15% bound is not always half the
+    # joint one)
+    capital_gains:
+      single: [[0, 49450, 0], [49451, 545500, 15], [545501, .inf, 20]]
+      married_filing_jointly: [[0, 98900, 0], [98901, 613700, 15], [613701, .inf, 20]]
+      head_of_household: [[0, 66200, 0], [66201, 579600, 15], [579601, .inf, 20]]
+      married_filing_separately: [[0, 49450, 0], [49451, 306850, 15], [306851, .inf, 20]]
+    # vintage: 2026, source: Rev. Proc. 2025-32 §4.05(1)-(2)
+    ctc_per_child: 2200
+    ctc_refundable_max: 1700
+    # vintage: 2026, source: OBBBA (P.L. 119-21) §70120, IRC §164(b)(7) (101% of 2025)
+    salt: {cap: 40400, phaseout_threshold: 505000}
+    # vintage: statutory, source: OBBBA §70103 (IRC §151(d)(5)(C)), tax years 2025-2028 only
+    senior_deduction_amount: 6000
+    # vintage: statutory, source: IRC §1411(b) (never indexed)
+    niit: {rate: 3.8, single: 200000, married_filing_jointly: 250000, head_of_household: 200000,
+           married_filing_separately: 125000}
+    # vintage: 2026, source: IRS Rev. Proc. 2025-32 §4.14(3) (§63(f); recorded for Plan 31, not applied yet)
+    additional_standard_deduction: {married: 1650, unmarried: 2050}

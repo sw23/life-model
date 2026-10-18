@@ -12,7 +12,7 @@ from ..model import Event, EventKind, LifeModel, LifeModelAgent
 from ..services.debt_service import DebtService
 from ..services.payment_service import PaymentService
 from ..services.tax_calculation_service import TaxCalculationService
-from ..tax.deductions import deductible_charity, senior_deduction
+from ..tax.deductions import deductible_charity, salt_cap, senior_deduction
 from ..tax.federal import FilingStatus, get_federal_standard_deduction
 from ..tax.income import IncomeLedger, IncomeType
 from ..tax.tax import TaxesDue
@@ -338,8 +338,18 @@ class Person(LifeModelAgent):
         """Itemizable unreimbursed medical with no prospective income (see the ``_with`` method)."""
         return self.medical_expense_deduction_with(0.0)
 
+    def salt_paid(self, state_income_tax_paid: float = 0.0) -> float:
+        """State and local taxes paid this year before the cap: property tax on the person's homes plus
+        ``state_income_tax_paid``."""
+        return state_income_tax_paid + sum(home.property_tax_for_year for home in self.homes)
+
     def itemized_deductions(
-        self, state_income_tax_paid: float = 0.0, additional_income: float = 0.0, *, include_charitable: bool = True
+        self,
+        state_income_tax_paid: float = 0.0,
+        additional_income: float = 0.0,
+        *,
+        include_charitable: bool = True,
+        include_salt: bool = True,
     ) -> float:
         """Calculate total itemized deductions.
 
@@ -355,12 +365,13 @@ class Person(LifeModelAgent):
           sized taxes equal settled taxes.
 
         ``include_charitable=False`` leaves charity out so a return can add it back capped at its AGI
-        limit (see :mod:`life_model.tax.deductions`).
+        limit (see :mod:`life_model.tax.deductions`); ``include_salt=False`` leaves SALT out so a joint
+        return can cap the members' combined SALT once (the cap is per return, not per person).
         """
         itemized = self.charitable_deductions if include_charitable else 0.0
         itemized += self.medical_expense_deduction_with(additional_income)
 
-        federal = self.model.config.tax.federal
+        federal = self.model.year_config.tax.federal
         # A separate return gets half of the joint mortgage-debt and SALT limits.
         limit_share = 0.5 if self.filing_status == FilingStatus.MARRIED_FILING_SEPARATELY else 1.0
         salt_paid = state_income_tax_paid
@@ -377,8 +388,10 @@ class Person(LifeModelAgent):
                 itemized += interest
             salt_paid += home.property_tax_for_year
 
-        # SALT deduction (property tax + state income tax) is capped.
-        itemized += min(salt_paid, federal.salt_deduction_cap * limit_share)
+        if include_salt:
+            # SALT deduction (property tax + state income tax) is capped (the year's cap and phase-down).
+            cap = salt_cap(self.filing_status, self.agi(additional_income), self.model.year_config)
+            itemized += min(salt_paid, cap)
 
         return itemized
 
@@ -388,7 +401,7 @@ class Person(LifeModelAgent):
         """The non-charity parts of :meth:`itemized_deductions` by line, for the tax return record:
         ``mortgage_interest`` (limited to the acquisition-debt cap), ``salt`` (after the cap) and
         ``medical`` (above the floor). Charity is added per return (it is capped at the return's AGI)."""
-        federal = self.model.config.tax.federal
+        federal = self.model.year_config.tax.federal
         limit_share = 0.5 if self.filing_status == FilingStatus.MARRIED_FILING_SEPARATELY else 1.0
         mortgage_interest = 0.0
         salt_paid = state_income_tax_paid
@@ -401,9 +414,10 @@ class Person(LifeModelAgent):
                     interest *= debt_limit / mortgage.loan_amount
                 mortgage_interest += interest
             salt_paid += home.property_tax_for_year
+        cap = salt_cap(self.filing_status, self.agi(additional_income), self.model.year_config)
         return {
             "mortgage_interest": mortgage_interest,
-            "salt": min(salt_paid, federal.salt_deduction_cap * limit_share),
+            "salt": min(salt_paid, cap),
             "medical": self.medical_expense_deduction_with(additional_income),
         }
 

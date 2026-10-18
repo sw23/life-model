@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 from ..ledger import FlowKind, debt_label
 from ..model import Event, EventKind, round_money
 from ..tax.credits import child_tax_credit_parts
-from ..tax.deductions import deductible_charity, senior_deduction, settle_charitable_carryforwards
+from ..tax.deductions import deductible_charity, salt_cap, senior_deduction, settle_charitable_carryforwards
 from ..tax.federal import FilingStatus, get_federal_standard_deduction
 from ..tax.income import IncomeType
 from ..tax.return_record import TaxReturn, build_tax_return
@@ -237,19 +237,26 @@ class TaxUnit:
         itemized = 0.0
         for index, member in enumerate(self.members):
             member_income = allocation[member.unique_id] if allocation else 0.0
-            member_state_tax = state_income_tax_paid if index == 0 else 0.0
-            itemized += member.itemized_deductions(member_state_tax, member_income, include_charitable=False)
+            itemized += member.itemized_deductions(0.0, member_income, include_charitable=False, include_salt=False)
+        itemized += self.salt_deduction(state_income_tax_paid, additional_income)
         itemized += deductible_charity(self.members, self.agi(additional_income), self.config)
         return standard_deduction, itemized
+
+    def salt_deduction(self, state_income_tax_paid: float = 0.0, additional_income: float = 0.0) -> float:
+        """The return's SALT deduction: the members' property taxes plus the unit's state income tax,
+        capped once per return at the year's cap (phased down by the return's MAGI from 2025)."""
+        paid = sum(m.salt_paid(state_income_tax_paid if i == 0 else 0.0) for i, m in enumerate(self.members))
+        return min(paid, salt_cap(self.filing_status, self.agi(additional_income), self.config))
 
     def itemized_components(self, state_income_tax_paid: float = 0.0) -> dict[str, float]:
         """Itemized deductions by line for the return (state income tax in the head's SALT, charity
         capped at the return's AGI limit). Reporting only: :meth:`_deduction_choice` is the value used."""
         components = {"mortgage_interest": 0.0, "salt": 0.0, "medical": 0.0}
-        for index, member in enumerate(self.members):
-            member_state_tax = state_income_tax_paid if index == 0 else 0.0
-            for name, amount in member.itemized_deduction_components(member_state_tax).items():
-                components[name] += amount
+        for member in self.members:
+            for name, amount in member.itemized_deduction_components(0.0).items():
+                if name != "salt":
+                    components[name] += amount
+        components["salt"] = self.salt_deduction(state_income_tax_paid)
         components["charity"] = deductible_charity(self.members, self.agi(), self.config)
         return components
 
