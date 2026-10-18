@@ -304,9 +304,11 @@ class _SpecChecker:
                         f"{p.name} retires before Medicare and the spec has " + " and ".join(gaps) + ".",
                         f"add insurance {{kind: health, premium_annual: <quote>, coverage_start_age: "
                         f"{int(p.retirement_age)}, coverage_end_age: {medicare_age - 1}}} for the years before "
-                        f"Medicare (marketplace, COBRA or a retiree plan), and healthcare: {{medicare: true}} (plus "
-                        "medical_costs: true for out-of-pocket costs); or accept it (meta.accepted_warnings: "
-                        "[no_health_coverage]).",
+                        "Medicare: for ACA marketplace coverage add marketplace: {slcsp_monthly: <benchmark "
+                        "premium>, advance_monthly: estimate} (the premium tax credit then offsets the premium "
+                        "on the return), or enter a COBRA or retiree plan's premium; and healthcare: "
+                        "{medicare: true} from 65 (plus medical_costs: true for out-of-pocket costs); or accept "
+                        "it (meta.accepted_warnings: [no_health_coverage]).",
                         "no_health_coverage",
                     )
             ss = p.social_security

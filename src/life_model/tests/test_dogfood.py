@@ -622,5 +622,49 @@ class TestDogfoodHousehold(unittest.TestCase):
         self.assertEqual(model.household.items["dana_student"].loan_type.name, "UNKNOWN")
 
 
+class TestPlan31Interactions(unittest.TestCase):
+    """The dogfood fixes with Plan 31 part 2: marketplace coverage, withholding."""
+
+    def test_marketplace_coverage_satisfies_the_health_warning(self):
+        data = minimal(retirement_age=60)
+        data["meta"]["end_year"] = 2052
+        codes = [f.code for f in life_model.validate(data)]
+        self.assertIn("no_health_coverage", codes)
+        finding = next(f for f in life_model.validate(data) if f.code == "no_health_coverage")
+        self.assertIn("marketplace", finding.fix)
+        self.assertIn("premium tax credit", finding.fix)
+        data["people"][0]["insurance"] = [
+            {
+                "kind": "health",
+                "premium_annual": 9000,
+                "coverage_start_age": 60,
+                "coverage_end_age": 64,
+                "marketplace": {"slcsp_monthly": 800, "advance_monthly": "estimate"},
+            }
+        ]
+        data["people"][0]["healthcare"] = {"medicare": True}
+        self.assertNotIn("no_health_coverage", [f.code for f in life_model.validate(data)])
+
+    def test_dogfood_household_with_withholding(self):
+        data = _dogfood(accepted_warnings=KEPT)
+        for person in data["people"]:
+            for job in person["jobs"]:
+                job.setdefault("payroll", {})["withholding"] = "w4_default"
+        results = {real: life_model.run(data, seed=1, checks="strict", real_dollars=real) for real in (False, True)}
+        for real, result in results.items():
+            with self.subTest(real_dollars=real):
+                summary = api.summarize(result)
+                self.assertEqual(summary["conservation_failures"], [])
+                self.assertEqual(summary["shortfall_years"], [])
+        model = results[False]._model
+        ledger = results[False].ledger
+        taxes = ledger[(ledger["kind"] == "tax") & (ledger["year"] == 2027)]
+        self.assertIn(3, set(taxes["month"]))  # withheld from the paychecks, not a December lump
+        self.assertEqual(model.household.items["sam_car"].schedule, "statement")
+        sam = model.household.people["sam"]
+        self.assertIs(sam.primary_bank_account, model.household.items["joint_checking"])
+        self.assertLess(sam.social_security.override_scale(), 1.0)
+
+
 if __name__ == "__main__":
     unittest.main()
