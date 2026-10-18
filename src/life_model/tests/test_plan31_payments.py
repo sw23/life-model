@@ -141,7 +141,7 @@ class TestWithholdingAndAprilSettlement(unittest.TestCase):
         model = LifeModel(start_year=2025, end_year=2026, checks="strict")
         person = _person(model, state="TX")
         _job(person, 96000, bonus_pct=10)
-        model.run()
+        result = model.run()
         r = model.tax_returns[2025]
         self.assertTrue(r.settled_in_april)
         taxes = _tax_entries(model)
@@ -162,6 +162,10 @@ class TestWithholdingAndAprilSettlement(unittest.TestCase):
         self.assertAlmostEqual(april.amount.sum(), abs(balance), places=2)
         self.assertAlmostEqual(person.taxes_owed, model.tax_returns[2026].amount_owed, places=2)
         self.assertEqual(check_model(model), [])
+        self.assertIn("settled in April 2026", result.explain(2025))
+        self.assertIn(
+            "balance due, paid in April" if balance > 0 else "refund, received in April", result.explain(2026)
+        )
 
     def test_two_employers_over_withhold_social_security(self):
         model = LifeModel(start_year=2025, end_year=2025, checks="strict")
