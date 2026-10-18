@@ -21,6 +21,10 @@ Usage::
     result.success_rate(lambda row: row["Bank Balance"] > 0)   # probability of not running out
     result.percentiles("Bank Balance", [10, 50, 90])           # fan-chart frames
 
+Trials are yearly: each keeps its model's yearly frame (``LifeModel``'s default ``collect="year"``;
+the engine steps monthly, so a 50-year trial runs 600 months). Build trial models with
+``collect="month"`` only if you read the monthly rows from the models yourself.
+
 For a household spec, ``life_model.api.run_montecarlo(spec, n=1000, scenario="stochastic")`` (or
 ``life-model montecarlo SPEC --scenario stochastic``) builds the factory for you.
 

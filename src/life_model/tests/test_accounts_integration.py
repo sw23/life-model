@@ -61,7 +61,7 @@ class TestLiquidationOrder(unittest.TestCase):
         job = Job(person, "Co", "Retiree", Salary(model, base=0))
         Job401kAccount(job, pretax_balance=100000, average_growth=0)
 
-        model.step()
+        model.step_year()
 
         # The $5k of spending came from the brokerage (no embedded gain -> no tax), leaving the
         # 401k untouched.
@@ -91,7 +91,7 @@ class TestAnnualContributionReset(unittest.TestCase):
         for _ in range(3):
             hsa.contribute(1000)
             self.assertEqual(hsa.contributions_ytd, 1000)
-            hsa.post_step()
+            hsa.on_year_end()  # Plan 32: annual resets run at year end
             self.assertEqual(hsa.contributions_ytd, 0)
 
 
@@ -105,7 +105,7 @@ class TestPretaxDrawsAtSettlement(unittest.TestCase):
 
     def test_ira_only_retiree_draws_the_ira_instead_of_running_up_debt(self):
         model, person, ira = self._retiree(age=65, ira_balance=200000)
-        model.step()
+        model.step_year()
         self.assertEqual(person.debt, 0)
         self.assertLess(ira.balance, 200000)
         # Fixture: draw D with tax 10% x (D - $10k) federal + 5% x (D - $10k) state = $30k bills.
@@ -115,7 +115,7 @@ class TestPretaxDrawsAtSettlement(unittest.TestCase):
 
     def test_early_draw_is_sized_for_and_charged_the_penalty(self):
         model, person, ira = self._retiree(age=45, ira_balance=200000)
-        model.step()
+        model.step_year()
         self.assertEqual(person.debt, 0)
         # As above plus the 10% additional tax on the whole draw: 0.75 D + 1,500 = 30,000.
         self.assertAlmostEqual(200000 - ira.balance, 38000.0, places=1)
@@ -132,7 +132,7 @@ class TestTraditionalVersusRoth(unittest.TestCase):
         BankAccount(person, "Bank", balance=10000, interest_rate=0)
         Job(person, "Co", "Dev", Salary(model, base=60000, yearly_increase=0))
         account_cls(person, growth_rate=0).contribute(6000)
-        model.step()
+        model.step_year()
         return model.datacollector.get_model_vars_dataframe()["Federal Taxes"].iloc[-1]
 
     def test_traditional_contribution_lowers_federal_tax_and_roth_does_not(self):
@@ -167,14 +167,14 @@ class TestHsaFundsSettlement(unittest.TestCase):
             stat_medical_costs = 8000
 
         person.model.registries.medical_costs.register(person, _Medical())
-        model.step()
+        model.step_year()
         self.assertAlmostEqual(hsa.balance, 42000, places=2)
         self.assertEqual(person.stat_taxes_paid, 0)  # qualified distribution: no tax, no penalty
         self.assertEqual(person.debt, 0)
 
     def test_non_medical_draw_is_last_resort_and_penalized_before_65(self):
         model, person, hsa = self._person(age=50, hsa_balance=100000, spending=30000)
-        model.step()
+        model.step_year()
         self.assertEqual(person.debt, 0)
         # Fixture: D with 10% x (D - 10k) federal + 20% x D penalty + 5% x (D - 10k) state = 30k:
         # 0.65 D + 1,500 = 30,000 -> D = 43,846.15.

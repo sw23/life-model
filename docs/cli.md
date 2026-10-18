@@ -31,20 +31,24 @@ or `.json`) or `--example NAME` (a shipped synthetic example), plus:
 | Flag | Meaning |
 |---|---|
 | `--seed N` | Random seed; overrides `meta.seed`. An unseeded run draws a seed and reports it. |
-| `--years N` | Number of simulated years: `end_year = start_year + N - 1`. |
+| `--years N` | Number of simulated calendar years: `end_year = start_year + N - 1` (a spec whose `meta.start` is mid-year counts its part first year as one). |
 | `--end-year Y` | Last simulated year (inclusive); overrides `meta.end_year`. Exclusive with `--years`. |
 | `--scenario NAME` | A named scenario (`life-model examples` lists them), replacing `meta.scenario`. `stochastic` draws random returns and inflation each year. |
-| `--checks strict\|warn\|off` | `warn` (default): validator errors fail; validator warnings, invariant violations (the yearly checker in `life_model.invariants`: conservation, no negative balances, contribution limits, RMDs, FICA, ...; see [reconciliation.md](reconciliation.md)) and a failed money-conservation check are reported. `strict`: those fail too. `off`: skip the validator (fields the engine does not support are still rejected) and every check. |
+| `--checks strict\|warn\|off` | `warn` (default): validator errors fail; validator warnings, invariant violations (the checker in `life_model.invariants`, run at each year end: yearly and monthly conservation, no negative month-end balances, contribution limits, RMDs, FICA, ...; see [reconciliation.md](reconciliation.md)) and a failed money-conservation check are reported. `strict`: those fail too. `off`: skip the validator (fields the engine does not support are still rejected) and every check. |
 | `--real-dollars` | Report money in start-year dollars (`RunResult.real_dollars()`). Not on `montecarlo`. |
 | `--json` | Print exactly one JSON object to stdout (every command, see below). |
 
 ### `run`
 
-`life-model run SPEC [--out DIR] [--format json|csv|parquet]`
+`life-model run SPEC [--out DIR] [--format json|csv|parquet] [--collect year|month]`
 
 Builds and runs the household and prints the key columns per year (Year, Income, Taxes, Spending,
-Housing, Bank Balance, Debt, Net Worth) and a summary: final net worth, run totals, years with unpaid
-bills (`shortfall_years`) and any year whose money-conservation check failed. `--out DIR` writes
+Housing, Bank Balance, Debt, Net Worth) and a summary: the span (`2026-05 to 2030-12` when
+`meta.start` is mid-year; `start` in the JSON summary), final net worth, run totals, years with unpaid
+bills (`shortfall_years`) and any year whose money-conservation check failed. `--collect month` also
+collects a row per month end (`RunResult.monthly_frame`: `Year`, `Month` and the model columns, flows
+for the year to date; `months` in the JSON summary), written as `monthly_frame` in `result.json` or
+`monthly.csv` / `monthly.parquet`. `--out DIR` writes
 the whole result: `--format json` (default) writes `DIR/result.json` (one document: seed,
 deflators, the spec, every tax return, the model and agent frames, the ledger, the events and the
 balance sheets); `csv` writes `model.csv`, `agents.csv`, `ledger.csv`, `events.csv`,
@@ -84,7 +88,8 @@ Every line shows simulated vs actual, the difference, a status (`green` within r
 `red`, `not_modeled` for lines the engine has no equivalent for, such as withholding) and the
 likely cause of a difference (`missing_income_source`, `input_difference`, `unmodeled_credit`,
 `unmodeled_deduction`, `unit_mismatch`, `timing`, `missing_input`, `propagated`). Describe the
-household as of January 1 of `Y` (`meta.start_year: Y`) for the cleanest comparison; a year before
+household as of January 1 of `Y` (`meta.start_year: Y`) for the cleanest comparison (a `meta.start`
+inside `Y` reconciles a part year: only the simulated months, as the report notes); a year before
 `meta.start_year` exits 2, and `--years`/`--end-year` do not apply. `--json` returns the report as
 `report` (`counts`, `lines`, `notes`). See [reconciliation.md](reconciliation.md).
 

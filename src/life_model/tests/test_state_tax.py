@@ -228,7 +228,7 @@ class TestSALTIntegration(unittest.TestCase):
             person = Person(Family(model), "Rich", age=40, retirement_age=70, spending=Spending(model, 0), state=state)
             BankAccount(person, "Bank", balance=0, interest_rate=0)
             Job(person, "Co", "Dev", Salary(model=model, base=300000))
-            model.step()
+            model.step_year()
             return person
 
         ca = run(ca_config, "CA")

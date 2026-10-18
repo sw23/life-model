@@ -87,6 +87,50 @@ class TestRun(CliTestCase):
             self.assertTrue((out_dir / f"{name}.csv").exists(), name)
         self.assertTrue((out_dir / "meta.json").exists())
 
+    def test_run_collects_month_end_rows(self):
+        out_dir = self.tmp / "monthly"
+        code, _, err = invoke(
+            "run", str(self.spec_path), "--years", "2", "--collect", "month", "--out", str(out_dir), "--format", "csv"
+        )
+        self.assertEqual(code, 0, msg=err)
+        monthly = (out_dir / "monthly.csv").read_text(encoding="utf-8").splitlines()
+        self.assertTrue(monthly[0].startswith("Year,Month,"))
+        self.assertEqual(len(monthly), 1 + 24)
+        code, payload = invoke_json("run", str(self.spec_path), "--years", "2", "--collect", "month")
+        self.assertEqual(code, 0)
+        self.assertEqual(payload["summary"]["months"], 24)
+        code, payload = invoke_json("run", str(self.spec_path), "--years", "2")
+        self.assertNotIn("months", payload["summary"])
+
+    def test_part_year_start_with_years_end_year_explain_compare_montecarlo(self):
+        data = self.spec_data()
+        data["meta"]["start"] = f"{data['meta']['start_year']}-05"  # before John's June birthday
+        path = self.write_spec(data, "may.yaml")
+        start = data["meta"]["start_year"]
+        code, payload = invoke_json("run", str(path), "--years", "3", "--collect", "month")
+        self.assertEqual(code, 0)
+        summary = payload["summary"]
+        self.assertEqual((summary["years"], summary["start"]), ([start, start + 2], f"{start}-05"))
+        self.assertEqual(summary["months"], 8 + 24)  # May-December, then two full years
+        code, out, err = invoke("run", str(path), "--end-year", str(start + 1))
+        self.assertEqual(code, 0, msg=err)
+        self.assertIn(f"{start}-05 to {start + 1}-12", out)
+        code, payload = invoke_json("explain", str(path), "--year", str(start), "--years", "2")
+        self.assertEqual(code, 0)
+        self.assertIn(f"# {start}", payload["markdown"])
+        code, payload = invoke_json(
+            "compare", str(path), "--set", "people[john].retirement_age=58", "--end-year", str(start + 20)
+        )
+        self.assertEqual(code, 0)
+        self.assertLess(payload["deltas"]["final_net_worth"], 0)
+        self.assertEqual(payload["base"]["start"], f"{start}-05")
+        code, payload = invoke_json(
+            "montecarlo", str(path), "--scenario", "stochastic", "--n", "3", "--workers", "1", "--years", "5"
+        )
+        self.assertEqual(code, 0)
+        self.assertEqual(payload["summary"]["trials"], 3)
+        self.assertEqual(payload["summary"]["years"], [start, start + 4])
+
     def test_run_writes_parquet_tables(self):
         try:
             import pyarrow  # noqa: F401

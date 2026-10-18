@@ -5,13 +5,16 @@
 import html
 from typing import TYPE_CHECKING
 
-from ..model import LifeModelAgent
+from ..model import LifeModelAgent, snap_money
 
 if TYPE_CHECKING:
     from ..people.person import Person, Spending
 
 
 class Child(LifeModelAgent):
+    """A child dependent: the age band's yearly cost is charged a twelfth each month (college months
+    drawn from the child's 529 plans first)."""
+
     STATS_OWNED = frozenset({"stat_dependent_costs"})
 
     def __init__(
@@ -53,6 +56,7 @@ class Child(LifeModelAgent):
         self.education_paid_by_529 = 0.0
         #: Years the American opportunity credit was claimed for this child (at most four).
         self.aotc_years_claimed = 0
+        self._aotc_reserved_this_year = 0.0
         # Register so the child is visible to the person (Person.children) and to death-time
         # ownership reassignment (registries.iter_registries drives estate transfer).
         self.model.registries.children.register(person, self)
@@ -128,26 +132,26 @@ class Child(LifeModelAgent):
         return adult
 
     def pre_step(self):
-        """Charge this year's child cost to the owning person's spending.
+        """Charge this month's child cost (a twelfth of the year's) to the owning person's spending.
 
-        Runs in the pre_step stage so the expense is present when the tax unit reads
-        ``get_yearly_spending()`` during the step stage (cross-stage ordering, safe under
-        construction-order execution). Costs flow through ``Spending.add_expense`` (one-time
-        expenses), never ``base`` — ``base`` is compounded by inflation in ``Spending.post_step``
-        and would otherwise double-count.
+        Runs in the pre_step stage so the expense is pending when the tax unit pays the month's bills
+        in the step stage. Costs flow through ``Spending.add_expense`` (one-time expenses), never
+        ``base`` — ``base`` is compounded by inflation at year end and would otherwise double-count.
         """
-        self.stat_dependent_costs = 0.0
-        self.care_expenses_this_year = 0.0
-        self.education_expenses_this_year = 0.0
-        self.education_paid_by_529 = 0.0
+        if self.model.is_year_start:
+            # The year's Form 2441 / 8863 figures accumulate month by month from the year's first month.
+            self.care_expenses_this_year = 0.0
+            self.education_expenses_this_year = 0.0
+            self.education_paid_by_529 = 0.0
+            self._aotc_reserved_this_year = 0.0
         if self.person.is_deceased:
             return
-        cost = self.yearly_cost()
+        cost = self.yearly_cost() / 12
         if 0 <= self.age < self.CARE_CREDIT_AGE and self.care_expenses_annual > 0:
-            extra = self.care_expenses_annual * self.model.economy.cumulative_inflation(self.model.year)
+            extra = self.care_expenses_annual * self.model.economy.cumulative_inflation(self.model.year) / 12
             self.person.spending.add_expense(extra, category="dependent_care")
             self.care_expenses_this_year += extra
-            self.stat_dependent_costs += extra
+            self.stat_dependent_costs = snap_money(self.stat_dependent_costs + extra)
         if 0 <= self.age < self.CHILDCARE_END_AGE:
             # The childcare band is the cost of care while the parents work (Form 2441 expenses).
             self.care_expenses_this_year += cost
@@ -166,17 +170,18 @@ class Child(LifeModelAgent):
             # phase-out, the first $4,000 of the year's expenses is left for other money.
             reserve = self._aotc_reserve(cost)
             shortfall = self._draw_college_from_529s(cost - reserve)
-            self.education_expenses_this_year = cost
-            self.education_paid_by_529 = cost - reserve - shortfall
+            self.education_expenses_this_year += cost
+            self.education_paid_by_529 += cost - reserve - shortfall
         self.person.spending.add_expense(cost, category="dependents")
-        self.stat_dependent_costs += cost
+        self.stat_dependent_costs = snap_money(self.stat_dependent_costs + cost)
 
     #: Dependent care qualifies for the child and dependent care credit until the child turns 13.
     CARE_CREDIT_AGE = 13
 
     def _aotc_reserve(self, cost: float) -> float:
-        """Expenses kept out of the 529 draw so they can earn the AOTC (0 once its years are used, when
-        the parents' prior-year AGI was past the phase-out, or without a 529 to draw)."""
+        """This month's expenses kept out of the 529 draw so they can earn the AOTC: the year's first
+        $4,000 (0 once its years are used, when the parents' prior-year AGI was past the phase-out, or
+        without a 529 to draw)."""
         if not any(plan.beneficiary is self for plan in self.person.plan_529s):
             return 0.0
         federal = self.model.year_config.tax.federal
@@ -188,7 +193,10 @@ class Child(LifeModelAgent):
         phaseout = edu.phaseout_joint if joint else edu.phaseout_single
         if last_agi is not None and last_agi >= phaseout.end:
             return 0.0
-        return min(cost, edu.aotc_full_expenses + edu.aotc_partial_expenses)
+        room = edu.aotc_full_expenses + edu.aotc_partial_expenses - self._aotc_reserved_this_year
+        reserve = max(0.0, min(cost, room))
+        self._aotc_reserved_this_year += reserve
+        return reserve
 
     def _draw_college_from_529s(self, amount: float) -> float:
         """Draw ``amount`` of qualified education expenses from the owner's 529 plans whose

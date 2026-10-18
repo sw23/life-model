@@ -8,6 +8,7 @@ from enum import Enum
 from typing import ClassVar
 
 from ..base_classes import Investment
+from ..economy import annual_to_monthly
 from ..ledger import FlowKind
 from ..model import Event, EventKind, LifeModelAgent
 from ..people.person import Person
@@ -48,7 +49,7 @@ class Trust(LifeModelAgent):
 
     STATS_OWNED = frozenset({"stat_trust_balance"})
 
-    # Apply growth before tax-unit settlement, matching Investment's step ordering.
+    # Apply growth before the month's bills, matching Investment's step ordering.
     STEP_PRIORITY: ClassVar[dict[str, int]] = {"step": -10}
 
     def __init__(
@@ -227,15 +228,23 @@ class Trust(LifeModelAgent):
         self.model.registries.trusts.unregister(self.grantor, self)
         self.remove()
 
+    @property
+    def monthly_growth_rate(self) -> float:
+        """This month's growth rate (percent): the explicit override's monthly equivalent, else the
+        economy's monthly return for the asset class."""
+        if self._growth_rate_override is not None:
+            return annual_to_monthly(self._growth_rate_override)
+        return self.model.economy.monthly_rate(Investment._ASSET_CLASS_RATES[self.asset_class])
+
     def step(self):
-        """Apply the year's growth and track the balance."""
-        growth = self.balance * (self.growth_rate / 100)
+        """Apply the month's growth."""
+        growth = self.balance * (self.monthly_growth_rate / 100)
         self.balance += growth
-        self.stat_balance_history.append(self.balance)
         if self.trust_type == TrustType.REVOCABLE:
             self.model.ledger.post(growth, FlowKind.GROWTH, to_account=self, source="market", agent=self.grantor)
 
-    def post_step(self):
+    def on_year_end(self):
+        self.stat_balance_history.append(self.balance)
         self.contributions_this_year = 0.0
 
     def collect_stats(self):

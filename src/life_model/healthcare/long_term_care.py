@@ -21,16 +21,22 @@ Documented simplifications (v1):
 """
 
 import math
-from typing import cast
+from typing import ClassVar, cast
 
 from ..insurance.general_insurance import InsuranceType
-from ..model import Event, LifeModel, LifeModelAgent
+from ..model import Event, LifeModel, LifeModelAgent, snap_money
 from ..people.person import Person
 from .inflation import medical_inflation_factor
 
 
 class LongTermCare(LifeModelAgent):
+    """Long-term-care need and costs: an episode may start at each year start (an annual hazard);
+    while in care a twelfth of the year's cost is charged each month, and at year end the year's
+    cost is claimed against LTC insurance and the episode's remaining years count down."""
+
     STATS_OWNED = frozenset({"stat_medical_costs"})
+    # The year's claim runs before the tax settlement (0), which deducts the net medical cost.
+    STEP_PRIORITY: ClassVar[dict[str, int]] = {"on_year_end": -5}
 
     def __init__(self, person: Person):
         """Model long-term-care need and costs for a person.
@@ -45,6 +51,8 @@ class LongTermCare(LifeModelAgent):
         self.in_care = False
         self.care_years_remaining = 0
         self.episodes_started = 0
+        # Care cost charged so far this year (claimed against LTC insurance at year end).
+        self._gross_this_year = 0.0
         # Net (after insurance offset) care cost incurred this year; feeds the "Medical Costs"
         # stat and the unreimbursed-medical itemized deduction.
         self.stat_medical_costs = 0.0
@@ -80,16 +88,22 @@ class LongTermCare(LifeModelAgent):
             )
         )
 
-    def _charge_care_year(self):
-        """Charge this year's care cost through the bill path, net of any LTC insurance offset."""
-        gross = self.config.annual_cost * self._medical_inflation_factor()
+    def _charge_care_month(self):
+        """Charge this month's care cost (a twelfth of the year's) through the bill path."""
+        gross = self.config.annual_cost * self._medical_inflation_factor() / 12
+        self._gross_this_year += gross
+        self.stat_medical_costs = snap_money(self.stat_medical_costs + gross)
         self.person.spending.add_expense(gross, category="long_term_care")
 
-        # Offset with active LTC policies via the claim machinery. The loss is already charged
-        # through the bill path, so the claim only credits the payout (charge_loss=False). The
-        # claim is capped at the policy's coverage (its annual benefit) so an expensive care year
-        # is paid up to the benefit instead of being denied for exceeding coverage; any policy
-        # deductible reduces the payout per the machinery's single-deductible convention.
+    def _claim_care_year(self):
+        """Offset the year's care cost with active LTC policies via the claim machinery.
+
+        The loss was already charged through the bill path, so the claim only credits the payout
+        (charge_loss=False). The claim is capped at the policy's coverage (its annual benefit) so an
+        expensive care year is paid up to the benefit instead of being denied for exceeding coverage;
+        any policy deductible reduces the payout per the machinery's single-deductible convention.
+        """
+        gross = self._gross_this_year
         payout = 0.0
         for policy in self.person.model.registries.general_insurance_policies.get_items(self.person):
             if policy.insurance_type != InsuranceType.LONG_TERM_CARE or not policy.is_coverage_active:
@@ -98,15 +112,13 @@ class LongTermCare(LifeModelAgent):
             claim = policy.file_claim(claimable, "Long-term care", charge_loss=False)
             if claim is not None:
                 payout += claim.payout_amount
+        self.stat_medical_costs = max(0.0, self.stat_medical_costs - payout)
 
-        self.stat_medical_costs = gross - payout
-
-    def pre_step(self):
-        self.stat_medical_costs = 0.0
+    def on_year_start(self):
+        self._gross_this_year = 0.0
         if self.person.is_deceased:
             return
-
-        # Seeded hazard draw (same RNG pattern as stochastic mortality).
+        # Seeded hazard draw (same RNG pattern as stochastic mortality), once a year.
         if (
             not self.in_care
             and self.person.age >= self.config.start_age
@@ -114,12 +126,19 @@ class LongTermCare(LifeModelAgent):
         ):
             self._start_episode()
 
-        if self.in_care:
-            self._charge_care_year()
-            self.care_years_remaining -= 1
-            if self.care_years_remaining <= 0:
-                self.in_care = False
-                self.model.event_log.add(Event(f"{self.person.name} left long-term care at age {self.person.age}"))
+    def pre_step(self):
+        if self.person.is_deceased or not self.in_care:
+            return
+        self._charge_care_month()
+
+    def on_year_end(self):
+        if self.person.is_deceased or not self.in_care:
+            return
+        self._claim_care_year()
+        self.care_years_remaining -= 1
+        if self.care_years_remaining <= 0:
+            self.in_care = False
+            self.model.event_log.add(Event(f"{self.person.name} left long-term care at age {self.person.age}"))
 
     def _repr_html_(self):
         return (

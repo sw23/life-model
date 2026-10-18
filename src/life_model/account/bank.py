@@ -7,6 +7,7 @@ import html
 from typing import ClassVar
 
 from ..base_classes import FinancialAccount
+from ..economy import annual_to_monthly
 from ..ledger import FlowKind
 from ..model import compound_interest
 from ..people.person import Person
@@ -23,10 +24,12 @@ class BankAccount(FinancialAccount):
     year, so the effective yield (APY) is ``(1 + APR / n) ** n - 1``: a 5% APR compounded monthly
     yields 5.116%; pass ``compounding="annual"`` when the rate you have is an APY.
 
-    Interest accrues in the ``step`` stage before the tax unit settles (priority -10, like
-    investment growth) and is posted to the owner's income ledger as ordinary
+    Interest accrues monthly in the ``step`` stage before the month's bills are paid (priority -10,
+    like investment growth): ``APR / 12`` a month when compounded monthly, ``(1 + APY)^(1/12) - 1``
+    when the rate is an annual-compounding APY. It is posted to the owner's income ledger as ordinary
     :attr:`~life_model.tax.income.IncomeType.INTEREST` income (net investment income for the §1411
-    surtax), so it is taxed with the year's return. Year-end statistics are taken in ``post_step``.
+    surtax), so it is taxed with the year's return. Year-end statistics are taken in
+    ``collect_stats``.
     """
 
     STATS_OWNED = frozenset({"stat_useable_balance"})
@@ -91,17 +94,23 @@ class BankAccount(FinancialAccount):
     def _repr_html_(self):
         return f"{self.type} account at {html.escape(self.company)} balance: ${self.balance:,}"
 
+    @property
+    def monthly_interest_rate(self) -> float:
+        """This month's interest rate (percent): a twelfth of the APR when compounded monthly, else the
+        monthly equivalent of the annual rate."""
+        if self.compound_rate == 12:
+            return self.interest_rate / 12
+        return annual_to_monthly(compound_interest(100, self.interest_rate, self.compound_rate))
+
     def step(self):
-        # Apply this year's interest and record it as ordinary income for the year's return.
-        interest = compound_interest(self.balance, self.interest_rate, self.compound_rate)
+        # Apply this month's interest and record it as ordinary income for the year's return.
+        interest = self.balance * self.monthly_interest_rate / 100
         self.balance += interest
         self.stat_total_interest += interest
         self.model.ledger.post(interest, FlowKind.INTEREST, to_account=self, source=self.company, agent=self.person)
         if interest != 0:
             self.person.income.add(IncomeType.INTEREST, interest, source="bank_interest")
 
-    def post_step(self):
-        # Year-end statistics, after the tax unit has paid the year's bills from this account.
+    def collect_stats(self):
+        # Year-end statistics, after the month's bills and the year's taxes were paid.
         self.stat_useable_balance = self.balance
-        # Track balance history (FinancialAccount.step's bookkeeping, at year end).
-        super().step()

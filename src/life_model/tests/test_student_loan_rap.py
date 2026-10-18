@@ -80,7 +80,7 @@ class TestRapServicing(unittest.TestCase):
     def test_in_simulation_the_payment_follows_last_years_agi(self):
         model, person = _borrower(prior_agi=40000)
         loan = _loan(person)
-        model.step()
+        model.step_year()
         self.assertAlmostEqual(loan.principal, 49400.0, delta=0.01)
         self.assertEqual(person.debt, 0)
 

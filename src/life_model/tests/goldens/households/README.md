@@ -59,6 +59,10 @@ the 2026 draft forms' line numbers.
   the spec cannot state a benefit until Plan 27 D10).
 * `early_retiree`: the brokerage sale is what pays the year: proceeds = spending - cash + the tax the
   sale triggers (solved as a fixed point, rounded up to the cent), with the gain pro rata on one lot.
+  The year's spending is paid in one December lump (a `one_time_expense` event), so the savings and the
+  fund are held all year (a full year's interest; dividends of 2% of the opening value, the fund's
+  `dividend_yield_pct` being the quarterly payout that keeps its price flat under monthly compounding).
+  See `docs/rebaseline-plan-32.md`.
 * `married_homeowners`: the 1098 mortgage interest rounds each month's interest to the cent, the
   engine does not; lines carrying it are compared within $0.10.
 * `self_employed_single`: Schedule SE line 13 and the SEP deduction are rounded to the cent before the

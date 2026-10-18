@@ -84,9 +84,9 @@ class TestEconomyConsumers(unittest.TestCase):
         family = Family(model)
         person = Person(family, "A", 30, 65, Spending(model, base=0))
         broker = BrokerageAccount(person, "B", balance=1000)
-        model.step()  # 2026: +10% -> 1100
+        model.step_year()  # 2026: +10% -> 1100
         self.assertAlmostEqual(broker.balance, 1100.0)
-        model.step()  # 2027: -50% -> 550
+        model.step_year()  # 2027: -50% -> 550
         self.assertAlmostEqual(broker.balance, 550.0)
 
     def test_salary_none_opts_into_wage_growth(self):

@@ -37,6 +37,7 @@ from ..tax.income import IncomeLedger, IncomeType
 from ..tax.state import state_income_tax_for_unit
 from ..work.job import Job, Salary
 from ..work.stock import StockPlan, VestingSchedule
+from .helpers import run_months
 
 TEST_CONFIG = str(Path(__file__).parent / "fixtures" / "test_config.yaml")
 
@@ -79,8 +80,8 @@ class TestAgeSemantics(unittest.TestCase):
         person = _worker(model)
         self.assertEqual(person.get_year_at_age(42), 2028)
         self.assertEqual(person.get_year_at_age(40), 2026)
-        model.step()
-        model.step()
+        model.step_year()
+        model.step_year()
         # Stable as the simulation advances (no drift once ages start incrementing).
         self.assertEqual(person.get_year_at_age(42), 2028)
 
@@ -104,13 +105,15 @@ class TestAgeSemantics(unittest.TestCase):
     def test_person_created_mid_run_keeps_constructor_age_that_year(self):
         model = _model()
         _worker(model)
-        model.step()  # 2026
+        model.step_year()  # 2026
         late = _worker(model, name="Late", age=30)  # built between steps: 30 during 2027
         model.add_agent_stat("Age", "age")
-        model.step()  # 2027
-        self.assertEqual(late.age, 30)
-        model.step()  # 2028
-        self.assertEqual(late.age, 31)
+        model.step_year()  # 2027
+        self.assertEqual(late.age_in(2027), 30)
+        model.step_year()  # 2028
+        self.assertEqual(late.age_in(2028), 31)
+        # Between steps the model is at the next month to simulate, and ``age`` is the age then.
+        self.assertEqual((model.year, late.age), (2029, 32))
 
 
 def _frame(model):
@@ -248,7 +251,8 @@ class TestEventsStage(unittest.TestCase):
     def test_post_step_event_takes_effect_next_year(self):
         model = _model(end_year=2028)
         person = _worker(model)
-        LifeEvents(model, [LifeEvent(2026, "late", person.spending.add_expense, 5000, stage="post_step")])
+        # December's post_step: after the year's last bills are paid (Plan 32: events fire in a month).
+        LifeEvents(model, [LifeEvent(2026, "late", person.spending.add_expense, 5000, stage="post_step", month=12)])
         model.run()
         df = _frame(model)
         self.assertEqual(df.loc[2026, "Spending"], 50000)
@@ -274,7 +278,7 @@ class TestCreatedYear(unittest.TestCase):
         Job(person, "Co", "Eng", salary)
         rent = Apartment(person, "Flat", monthly_rent=1000, yearly_increase=10)
         self.assertEqual((salary.created_year, salary.created_in_stage), (2026, None))
-        model.step()
+        model.step_year()
         self.assertAlmostEqual(salary.base, 110000, places=6)
         self.assertAlmostEqual(rent.monthly_rent, 1100, places=6)
 
@@ -484,7 +488,7 @@ class TestBankInterestIsIncome(unittest.TestCase):
         model = _model()
         person = _worker(model, salary=0, bank=0)
         account = BankAccount(person, "Savings", balance=10000, interest_rate=5, compounding="annual")
-        account.step()
+        run_months(model, account.step)  # a year of monthly interest (Plan 32)
         totals = person.income.totals_by_type()
         self.assertAlmostEqual(totals[IncomeType.INTEREST], 500, places=6)
         self.assertAlmostEqual(person.income.net_investment_income, 500, places=6)
@@ -497,7 +501,7 @@ class TestBankInterestIsIncome(unittest.TestCase):
         monthly = BankAccount(person, "M", balance=1000, interest_rate=5, compounding="monthly")
         default = BankAccount(person, "D", balance=1000, interest_rate=5)
         for account in (annual, monthly, default):
-            account.step()
+            run_months(model, account.step)  # a year of monthly interest (Plan 32)
         self.assertAlmostEqual(annual.balance, 1050, places=6)
         # interest_rate is an APR compounded monthly: APY = (1 + 0.05/12)^12 - 1 = 5.116%.
         self.assertAlmostEqual(monthly.balance, 1000 * (1 + 0.05 / 12) ** 12, places=6)
@@ -511,7 +515,15 @@ class TestBankInterestIsIncome(unittest.TestCase):
         account = BankAccount(person, "Savings", balance=100000, interest_rate=5, compounding="annual")
         model.run()
         taxes = person.stat_taxes_paid
-        self.assertAlmostEqual(account.balance, 100000 + 5000 - 10000 - taxes, places=2)
+        # Plan 32: each month's interest (before the month's bills) on the balance left after the
+        # previous month's bills; the year's taxes are paid in December.
+        monthly_rate = 1.05 ** (1 / 12) - 1
+        balance = interest = 0.0
+        balance = 100000.0
+        for _month in range(12):
+            interest += balance * monthly_rate
+            balance += balance * monthly_rate - 10000 / 12
+        self.assertAlmostEqual(account.balance, 100000 + interest - 10000 - taxes, places=2)
         self.assertAlmostEqual(account.stat_useable_balance, account.balance, places=6)
 
 
@@ -657,7 +669,8 @@ class TestMatchTiers(unittest.TestCase):
         account = Job401kAccount(
             job=job, pretax_contrib_percent=6, average_growth=0, match_tiers=[(100, 6)], match_vesting_years=3
         )
-        LifeEvents(model, [LifeEvent(2027, "quit", job.retire)])
+        # Quits after December 2027's paycheck (Plan 32: an event in a year fires in its month).
+        LifeEvents(model, [LifeEvent(2027, "quit", job.retire, month=12)])
         model.run()
         # Two years of deferrals stay; two years of unvested match are forfeited.
         self.assertAlmostEqual(account.pretax_balance, 2 * 6000, places=6)

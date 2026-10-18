@@ -168,12 +168,17 @@ def _table(rows: list[dict[str, Any]]) -> str:
 
 
 def _summary_text(summary: dict[str, Any]) -> str:
+    span = f"{summary['years'][0]}-{summary['years'][-1]}"
+    if summary.get("start"):
+        span = f"{summary['start']} to {summary['years'][-1]}-12"
     lines = [
         (
-            f"{summary.get('household') or 'household'}: {summary['years'][0]}-{summary['years'][-1]}, "
+            f"{summary.get('household') or 'household'}: {span}, "
             f"seed {summary.get('seed')}, {summary['dollars']} dollars"
         ),
     ]
+    if summary.get("months"):
+        lines.append(f"month-end rows: {summary['months']}")
     if "final_net_worth" in summary:
         lines.append(f"final net worth ({summary['final_year']}): {_money(summary['final_net_worth'])}")
         totals = ", ".join(f"{k.lower()} {_money(v)}" for k, v in summary.get("totals", {}).items())
@@ -199,6 +204,13 @@ def _run_add(parser: argparse.ArgumentParser) -> None:
         default="json",
         help="output format for --out: json (DIR/result.json), csv or parquet (one file per table)",
     )
+    parser.add_argument(
+        "--collect",
+        choices=("year", "month"),
+        default="year",
+        help="rows to collect: year (default) or month (also a row per month end: monthly_frame in result.json, "
+        "monthly.csv / monthly.parquet)",
+    )
 
 
 def _run(args: argparse.Namespace) -> tuple[dict, str]:
@@ -207,7 +219,7 @@ def _run(args: argparse.Namespace) -> tuple[dict, str]:
         from .results import _require_parquet
 
         _require_parquet()  # fail before running, and before creating DIR
-    result = api.run(_spec_source(args), **_run_kwargs(args))
+    result = api.run(_spec_source(args), collect=args.collect, **_run_kwargs(args))
     summary = api.summarize(result)
     files: list[str] = []
     if out is not None:

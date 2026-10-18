@@ -6,18 +6,25 @@
 """Economy-wide rate provider for a simulation.
 
 A single :class:`EconomyModel` agent exists per :class:`~life_model.model.LifeModel`. It answers
-per-year queries for the rates that drive the rest of the model — inflation, wage growth, and the
-returns on cash, bonds, equities, and homes. Accounts, salaries, spending, and housing consult the
-economy each year instead of owning their own frozen rate constants, so a whole simulation can be
+queries for the rates that drive the rest of the model — inflation, wage growth, and the returns on
+cash, bonds, equities, and homes — per month (:meth:`EconomyModel.monthly_rate`, what monthly flows
+such as account growth use) and per year (:meth:`EconomyModel.rate`, what annual decisions such as
+raises, cost-of-living adjustments and tax indexation use). Accounts, salaries, spending, and housing
+consult the economy instead of owning their own frozen rate constants, so a whole simulation can be
 run under a single coherent economic assumption (fixed, an explicit path, or stochastic draws).
 
-The economy runs first every year (``STEP_PRIORITY`` puts its ``pre_step`` ahead of everyone
-else's) so that whatever it draws or looks up for the year is already cached before any consumer
-reads it. Rates are cached per year, which makes stochastic runs reproducible under a fixed seed
-(every consumer in a given year sees the same draw) and lets the deflator be reconstructed for
-real-dollar reporting.
+Rates are in **percent**. A year's rate is the compound of its twelve monthly rates, so the two
+views always agree: in ``fixed`` and ``path`` modes an annual percentage ``R`` becomes the monthly
+rate ``(1 + R)^(1/12) - 1``; in ``stochastic`` mode each month is drawn and the year compounds them.
+
+The economy resolves a whole year at a time (its twelve months, all at once) the first time anything
+reads the year, and caches it. That makes stochastic runs reproducible under a fixed seed (every
+consumer in a given year sees the same draws, whatever month the model started in) and lets the
+deflator be reconstructed for real-dollar reporting. Its ``pre_step`` (run first every month)
+resolves the current year before any consumer reads it.
 """
 
+import math
 from typing import TYPE_CHECKING, ClassVar
 
 from .model import LifeModelAgent
@@ -36,18 +43,53 @@ RATE_NAMES = (
 )
 
 
+def annual_to_monthly(percent: float) -> float:
+    """The monthly rate (percent) that compounds to ``percent`` over twelve months."""
+    if percent <= -100:
+        return -100.0
+    return ((1 + percent / 100) ** (1 / 12) - 1) * 100
+
+
+def compound_months(monthly_percents) -> float:
+    """The annual rate (percent) of a sequence of monthly rates (percent)."""
+    factor = 1.0
+    for rate in monthly_percents:
+        factor *= 1 + rate / 100
+    return (factor - 1) * 100
+
+
+def rescale_months(monthly_percents: list[float], annual_percent: float) -> list[float]:
+    """``monthly_percents`` scaled (each month's growth factor by the same multiplier) so they compound
+    to ``annual_percent``: the year's within-year shape is kept, its total is replaced."""
+    current = compound_months(monthly_percents)
+    if current <= -100 or annual_percent <= -100:
+        return [annual_to_monthly(annual_percent)] * len(monthly_percents)
+    factor = ((1 + annual_percent / 100) / (1 + current / 100)) ** (1 / len(monthly_percents))
+    return [((1 + m / 100) * factor - 1) * 100 for m in monthly_percents]
+
+
+def path_month_key(year: int, month: int) -> str:
+    """The ``economy.paths`` key of one month (``"2027-03"``)."""
+    return f"{year:04d}-{month:02d}"
+
+
 class EconomyModel(LifeModelAgent):
-    """Provides per-year economic rates (percentages) to the rest of the model.
+    """Provides per-month and per-year economic rates (percentages) to the rest of the model.
 
-    Query the current year's rate via the named accessors (:meth:`inflation`, :meth:`equity_return`,
-    ...), or any year via ``rate(name, year)``. Behavior is governed by ``config.economy.mode``:
+    Query a month via :meth:`monthly_rate` (defaults to the current month), a year via
+    ``rate(name, year)`` or the named accessors (:meth:`inflation`, :meth:`equity_return`, ...).
+    Behavior is governed by ``config.economy.mode``:
 
-    * ``fixed`` — every year returns the configured constant (default; reproduces the pre-economy
-      per-account constants exactly).
-    * ``path`` — the ``economy.paths`` table overrides individual years per rate; unlisted years
-      fall back to the fixed constant.
-    * ``stochastic`` — equity/bond/inflation are drawn as correlated normals and the remaining
-      series independently, using the model's seeded RNG so runs are reproducible.
+    * ``fixed`` — every year returns the configured constant (each month its twelfth-root share).
+    * ``path`` — the ``economy.paths`` table overrides individual years (``{2027: -20.0}``: the
+      year's annual percent, spread evenly over its months) or individual months
+      (``{"2027-03": -7.2}``: that month's own return); unlisted periods fall back to the year's
+      entry, then the fixed constant.
+    * ``stochastic`` — each month is drawn: equity/bond/inflation as correlated normals (the
+      configured correlation matrix) and the remaining series independently, with the annual mean
+      converted to its monthly equivalent and the annual volatility scaled by ``1/sqrt(12)``, plus an
+      optional AR(1) term per series (``economy.stochastic.autocorrelation``), using the model's
+      seeded RNG so runs are reproducible.
     """
 
     # Run before every other agent's pre_step so the year's rates are cached before anyone reads
@@ -57,8 +99,15 @@ class EconomyModel(LifeModelAgent):
     def __init__(self, model: "LifeModel"):
         super().__init__(model)
         self.config = model.config.economy
-        # year -> {rate_name: percent}
+        # year -> {rate_name: annual percent}
         self._rates_by_year: dict[int, dict[str, float]] = {}
+        # year -> {rate_name: [12 monthly percents, January first]}
+        self._monthly_by_year: dict[int, dict[str, list[float]]] = {}
+        # The standardized AR(1) state of each series (stochastic mode).
+        self._ar_state: dict[str, float] = {}
+        self._cholesky = None
+        # Optional ``(year, annual_rates) -> annual_rates`` hook (see set_year_adjuster).
+        self._year_adjuster = None
         # Cache the starting year immediately so consumers constructed before the first step
         # (the usual case) already see coherent rates.
         self._ensure_year(model.year)
@@ -69,18 +118,43 @@ class EconomyModel(LifeModelAgent):
     def _ensure_year(self, year: int) -> dict[str, float]:
         rates = self._rates_by_year.get(year)
         if rates is None:
-            rates = self._compute_year(year)
-            self._rates_by_year[year] = rates
+            monthly, annual = self._compute_year(year)
+            if self._year_adjuster is not None:
+                monthly, annual = self._adjusted(year, monthly, annual)
+            self._monthly_by_year[year] = monthly
+            self._rates_by_year[year] = rates = annual
         return rates
 
-    def _compute_year(self, year: int) -> dict[str, float]:
+    def _adjusted(self, year: int, monthly: dict, annual: dict) -> "tuple[dict, dict]":
+        adjusted = self._year_adjuster(year, dict(annual))
+        months = {
+            name: (rescale_months(monthly[name], adjusted[name]) if adjusted[name] != annual[name] else monthly[name])
+            for name in monthly
+        }
+        return months, adjusted
+
+    def set_year_adjuster(self, adjuster) -> None:
+        """Install ``adjuster(year, annual_rates) -> annual_rates``: each year's annual rates (percent,
+        by name) as the economy resolves them are replaced by the adjuster's, and the year's monthly
+        rates are rescaled to compound to them (keeping their within-year shape). Years already
+        resolved are adjusted now. Used by scenario overlays that shift or script a stochastic
+        economy."""
+        self._year_adjuster = adjuster
+        for year in list(self._rates_by_year):
+            months, annual = self._adjusted(year, self._monthly_by_year[year], self._rates_by_year[year])
+            self._monthly_by_year[year] = months
+            self._rates_by_year[year] = annual
+
+    def _compute_year(self, year: int) -> "tuple[dict[str, list[float]], dict[str, float]]":
         mode = self.config.mode
         if mode == "fixed":
-            return self._fixed_rates()
+            annual = self._fixed_rates()
+            return {name: [annual_to_monthly(rate)] * 12 for name, rate in annual.items()}, annual
         if mode == "path":
             return self._path_rates(year)
         if mode == "stochastic":
-            return self._stochastic_rates()
+            monthly = self._stochastic_year()
+            return monthly, {name: compound_months(months) for name, months in monthly.items()}
         raise ValueError(f"Unknown economy mode {mode!r}")
 
     def _fixed_rates(self) -> dict[str, float]:
@@ -94,31 +168,71 @@ class EconomyModel(LifeModelAgent):
             "home_appreciation": c.home_appreciation,
         }
 
-    def _path_rates(self, year: int) -> dict[str, float]:
-        rates = self._fixed_rates()
-        for name, series in self.config.paths.items():
-            if name not in rates:
+    def _path_rates(self, year: int) -> "tuple[dict[str, list[float]], dict[str, float]]":
+        annual = self._fixed_rates()
+        monthly: dict[str, list[float]] = {}
+        for name in self.config.paths:
+            if name not in annual:
                 raise ValueError(f"Unknown economy path rate {name!r}; expected one of {RATE_NAMES}")
-            if year in series:
-                rates[name] = series[year]
-        return rates
+        for name, base in annual.items():
+            series = self.config.paths.get(name, {})
+            year_rate = series.get(year, base)
+            months = [annual_to_monthly(year_rate)] * 12
+            listed = False
+            for month in range(1, 13):
+                key = path_month_key(year, month)
+                if key in series:
+                    months[month - 1] = series[key]
+                    listed = True
+            monthly[name] = months
+            # A year with no month entries keeps its annual percent exactly.
+            annual[name] = compound_months(months) if listed else year_rate
+        return monthly, annual
 
-    def _stochastic_rates(self) -> dict[str, float]:
+    def _stochastic_year(self) -> dict[str, list[float]]:
         s = self.config.stochastic
-        # Correlated equity/bond/inflation draw via a Cholesky factor of the correlation matrix.
-        equity_z, bond_z, inflation_z = self._correlated_normals(
-            s.equity_bond_correlation, s.equity_inflation_correlation, s.bond_inflation_correlation
-        )
-        cash = s.cash_yield_mean + s.cash_yield_vol * self.model.random.gauss(0, 1)
-        return {
-            "inflation": s.inflation_mean + s.inflation_vol * inflation_z,
-            "wage_growth": s.wage_growth_mean + s.wage_growth_vol * self.model.random.gauss(0, 1),
-            "equity_return": s.equity_mean + s.equity_vol * equity_z,
-            "bond_return": s.bond_mean + s.bond_vol * bond_z,
-            # A yield can't go negative; floor it at zero.
-            "cash_yield": max(0.0, cash),
-            "home_appreciation": s.home_appreciation_mean + s.home_appreciation_vol * self.model.random.gauss(0, 1),
+        phi = dict(s.autocorrelation)
+        for name in phi:
+            if name not in RATE_NAMES:
+                raise ValueError(f"Unknown autocorrelation rate {name!r}; expected one of {RATE_NAMES}")
+        sqrt12 = math.sqrt(12)
+        params = {
+            "inflation": (s.inflation_mean, s.inflation_vol),
+            "wage_growth": (s.wage_growth_mean, s.wage_growth_vol),
+            "equity_return": (s.equity_mean, s.equity_vol),
+            "bond_return": (s.bond_mean, s.bond_vol),
+            "cash_yield": (s.cash_yield_mean, s.cash_yield_vol),
+            "home_appreciation": (s.home_appreciation_mean, s.home_appreciation_vol),
         }
+        monthly: dict[str, list[float]] = {name: [] for name in RATE_NAMES}
+        for _month in range(12):
+            # Correlated equity/bond/inflation shocks via a Cholesky factor of the correlation matrix,
+            # then the independent series, in a fixed order (the seeded stream is reproducible).
+            equity_z, bond_z, inflation_z = self._correlated_normals(
+                s.equity_bond_correlation, s.equity_inflation_correlation, s.bond_inflation_correlation
+            )
+            shocks = {
+                "equity_return": equity_z,
+                "bond_return": bond_z,
+                "inflation": inflation_z,
+                "cash_yield": self.model.random.gauss(0, 1),
+                "wage_growth": self.model.random.gauss(0, 1),
+                "home_appreciation": self.model.random.gauss(0, 1),
+            }
+            for name in RATE_NAMES:
+                mean, vol = params[name]
+                z = shocks[name]
+                rho = phi.get(name, 0.0)
+                if rho:
+                    # Stationary AR(1) on the standardized shock: the series keeps its volatility
+                    # but bad months cluster.
+                    z = rho * self._ar_state.get(name, 0.0) + math.sqrt(1 - rho * rho) * z
+                    self._ar_state[name] = z
+                value = annual_to_monthly(mean) + vol / sqrt12 * z
+                if name == "cash_yield":
+                    value = max(0.0, value)  # a yield can't go negative
+                monthly[name].append(value)
+        return monthly
 
     def _correlated_normals(self, eq_bond: float, eq_inf: float, bond_inf: float) -> list[float]:
         """Return three correlated standard normals drawn from the model's seeded RNG.
@@ -126,32 +240,51 @@ class EconomyModel(LifeModelAgent):
         Independent normals are combined through the Cholesky factor of the correlation matrix so
         the draw is reproducible under the model seed without a second RNG.
         """
-        import numpy as np
+        if self._cholesky is None:
+            import numpy as np
 
-        corr = np.array(
-            [
-                [1.0, eq_bond, eq_inf],
-                [eq_bond, 1.0, bond_inf],
-                [eq_inf, bond_inf, 1.0],
-            ]
-        )
-        try:
-            factor = np.linalg.cholesky(corr)
-        except np.linalg.LinAlgError:
-            # Not positive-definite (inconsistent correlations); fall back to independent draws.
-            factor = np.eye(3)
-        z = np.array([self.model.random.gauss(0, 1) for _ in range(3)])
-        return list(factor @ z)
+            corr = np.array(
+                [
+                    [1.0, eq_bond, eq_inf],
+                    [eq_bond, 1.0, bond_inf],
+                    [eq_inf, bond_inf, 1.0],
+                ]
+            )
+            try:
+                factor = np.linalg.cholesky(corr)
+            except np.linalg.LinAlgError:
+                # Not positive-definite (inconsistent correlations); fall back to independent draws.
+                factor = np.eye(3)
+            self._cholesky = factor.tolist()
+        z = [self.model.random.gauss(0, 1) for _ in range(3)]
+        return [sum(row[j] * z[j] for j in range(3)) for row in self._cholesky]
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
     def rate(self, name: str, year: int | None = None) -> float:
-        """Return the ``name`` rate (percent) for ``year`` (defaults to the current model year)."""
+        """Return the ``name`` rate (percent) for ``year`` (defaults to the current model year): the
+        compound of its twelve monthly rates."""
         if name not in RATE_NAMES:
             raise ValueError(f"Unknown economy rate {name!r}; expected one of {RATE_NAMES}")
         year = self.model.year if year is None else year
         return self._ensure_year(year)[name]
+
+    def monthly_rate(self, name: str, year: int | None = None, month: int | None = None) -> float:
+        """Return the ``name`` rate (percent) for one month (defaults to the model's current month):
+        e.g. about 0.565 for a 7% year."""
+        if name not in RATE_NAMES:
+            raise ValueError(f"Unknown economy rate {name!r}; expected one of {RATE_NAMES}")
+        year = self.model.year if year is None else year
+        month = self.model.month if month is None else month
+        self._ensure_year(year)
+        return self._monthly_by_year[year][name][month - 1]
+
+    def monthly_rates(self, name: str, year: int | None = None) -> list[float]:
+        """The twelve monthly ``name`` rates (percent) of ``year``, January first."""
+        year = self.model.year if year is None else year
+        self._ensure_year(year)
+        return list(self._monthly_by_year[year][name])
 
     def inflation(self, year: int | None = None) -> float:
         return self.rate("inflation", year)
@@ -171,16 +304,21 @@ class EconomyModel(LifeModelAgent):
     def home_appreciation(self, year: int | None = None) -> float:
         return self.rate("home_appreciation", year)
 
-    def cumulative_inflation(self, year: int) -> float:
-        """Cumulative price level (deflator) from the start year through ``year``.
+    def cumulative_inflation(self, year: int, month: int | None = None) -> float:
+        """Cumulative price level (deflator) from the start year through ``year`` (and, when given,
+        through the start of ``month`` within it).
 
         The start year has a deflator of 1.0; each subsequent year multiplies by
-        ``1 + inflation(previous year)/100``. Dividing a nominal amount in ``year`` by this factor
-        expresses it in start-year dollars.
+        ``1 + inflation(previous year)/100``, and within a year each month by its monthly
+        inflation (so month 1 equals the annual value). Dividing a nominal amount in ``year`` by this
+        factor expresses it in start-year dollars.
         """
         factor = 1.0
         for y in range(self.model.start_year, year):
             factor *= 1 + self.inflation(y) / 100
+        if month is not None:
+            for rate in self.monthly_rates("inflation", year)[: month - 1]:
+                factor *= 1 + rate / 100
         return factor
 
     def pre_step(self):

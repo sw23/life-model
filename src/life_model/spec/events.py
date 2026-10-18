@@ -5,18 +5,24 @@
 
 """Compile spec ``events[]`` (data) into :class:`~life_model.lifeevents.LifeEvent` callables.
 
-**Timing.** Every ``at`` resolves to a calendar year:
+**Timing.** Every ``at`` resolves to a calendar year and month:
 
 * ``{year: Y}`` is ``Y``;
-* ``{age: A}`` is ``person.get_year_at_age(A)``, the engine's own age arithmetic (``start_year +
-  (A - age)``: the constructor age is the age during the first simulated year);
-* ``{relative: {after: E, years: n}}`` is the resolved year of event ``E`` plus ``n``.
+* ``{age: A}`` is ``person.get_year_at_age(A)``, the engine's own age arithmetic (the year the
+  person turns ``A``), in the month they turn ``A`` (their birth month; January when ``birth`` is
+  not given);
+* ``{relative: {after: E, years: n}}`` is the resolved year of event ``E`` plus ``n``, in ``E``'s
+  month.
+
+``at.month`` sets the month explicitly; otherwise a year-dated event fires in the first simulated
+month of its year (January, or ``meta.start``'s month in the first year).
 
 **Firing.** Compiled events are ordinary ``LifeEvent`` objects owned by one ``LifeEvents`` agent
-(built last). They fire in the engine's ``events`` stage, after the year's income and before the
-tax units settle the year, so an event's cash, salary, state and marriage effects apply to the
-year it is dated. Events in the same year fire anchors first, then in canonical order. The builder
-never creates a past-dated ``LifeEvent`` (see :mod:`life_model.spec.builder`).
+(built last). They fire in the engine's ``events`` stage of their month, after the month's income
+and before its bills are paid, so an event's cash, salary, state and marriage effects apply from
+the month it is dated (and to that year's return). Events in the same month fire anchors first,
+then in canonical order. The builder never creates a past-dated ``LifeEvent`` (see
+:mod:`life_model.spec.builder`).
 
 Two actions are compiled into constructor inputs instead of ``LifeEvent`` callables, because the
 engine decides them inside ``pre_step`` by comparing the person's age with a threshold:
@@ -80,6 +86,23 @@ class EventTiming:
             raise ValueError(f"relative event anchor {relative.after!r} does not exist")
         return self.year_of(anchor, stack) + relative.years
 
+    def month_of(self, event, stack: tuple = ()) -> int | None:
+        """The month a spec event fires in (None: the first simulated month of its year)."""
+        return self.resolve_month(event.at, event.person, stack)
+
+    def resolve_month(self, at: s.At, default_person: str | None, stack: tuple = ()) -> int | None:
+        """``at.month``, else the birth month for ``age`` timing, else the anchor's month."""
+        if at.month is not None:
+            return at.month
+        if at.age is not None:
+            person = self.builder.person(cast(str, at.person or default_person))
+            return None if getattr(person, "birth_month_assumed", True) else person.birth_month
+        if at.relative is not None:
+            anchor = self.by_id.get(at.relative.after)
+            if anchor is not None and id(anchor) not in stack:
+                return self.month_of(anchor, (*stack, id(anchor)))
+        return None
+
     def age_of(self, at: s.At, person_id: str) -> int:
         """The person's age at ``at``: ``at.age`` itself, or the inverse of ``get_year_at_age``."""
         if at.age is not None and (at.person is None or at.person == person_id):
@@ -120,8 +143,8 @@ def apply_build_time_events(builder: "_Builder", timing: EventTiming) -> dict[st
     return claims
 
 
-def _life_event(year: int, name: str, source: Any, fn, *args) -> LifeEvent:
-    life_event = LifeEvent(year, name, fn, *args)
+def _life_event(year: int, name: str, source: Any, fn, *args, month: int | None = None) -> LifeEvent:
+    life_event = LifeEvent(year, name, fn, *args, month=month)
     setattr(life_event, "spec_source", source)  # read back by spec_from_model  # noqa: B010
     return life_event
 
@@ -137,15 +160,17 @@ def compile_events(builder: "_Builder", timing: EventTiming) -> list[LifeEvent]:
             head, spouse = (builder.person(pid) for pid in marriage.spouses)
             name = f"{head.name} and {spouse.name} marry"
             le = _life_event(marriage.year, name, marriage, builder.marry, head, spouse, marriage.filing_status)
-            compiled.append(((marriage.year, 0, -1, index), le))
+            compiled.append(((marriage.year, 0, 0, -1, index), le))
 
     for index, event in enumerate(spec.events):
         if event.action in BUILD_TIME_ACTIONS:
             continue
         year = timing.year_of(event)
+        month = timing.month_of(event)
         depth = timing.depth(event)
         for offset, life_event in enumerate(_compile_one(builder, timing, event, year)):
-            compiled.append(((life_event.year, depth, index, offset), life_event))
+            life_event.month = month
+            compiled.append(((life_event.year, life_event.month or 0, depth, index, offset), life_event))
 
     compiled.sort(key=lambda pair: pair[0])
     return [life_event for _, life_event in compiled]

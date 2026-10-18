@@ -93,7 +93,7 @@ def _one_year(status: FilingStatus, incomes: "list[list[tuple]]") -> tuple[LifeM
             person.filing_status = status
     if status == FilingStatus.HEAD_OF_HOUSEHOLD:
         people[0].add_child("Kid", birth_year=2010)
-    model.step()
+    model.step_year()
     return model, people
 
 
@@ -224,7 +224,7 @@ class TestReturnsOnWholeHouseholds(unittest.TestCase):
         person.income.add(IncomeType.PRETAX_DISTRIBUTION, 10000, source="401k")
         person.income.add_penalty(1000)
         person.income.add_penalty(400, source="hsa_non_medical")
-        model.step()
+        model.step_year()
         tax_return = person.tax_returns[2026]
         self.assertEqual(tax_return.adjustments, {"ira_deduction": 5000})
         self.assertEqual(tax_return.penalties, {"early_withdrawal": 1000, "hsa_non_medical": 400})
@@ -249,7 +249,7 @@ class TestTaxStatsOnEveryMember(unittest.TestCase):
         b.income.add(IncomeType.PRETAX_DISTRIBUTION, 10000, source="401k")
         b.income.add_penalty(1000)
         a.add_child("Kid", birth_year=2020)
-        model.step()
+        model.step_year()
         return model, a, b
 
     def test_payroll_and_penalties_are_each_members_own(self):

@@ -6,8 +6,9 @@
 """What a run produced, in one object: :class:`RunResult` (returned by ``LifeModel.run()``).
 
 A result bundles the yearly model frame, the per-agent frame (with ``Year``, ``Name``, ``Type`` and
-``Owner`` columns), every tax return, the cash-flow ledger, every typed event, the per-year
-balance-sheet summary, the seed and (optionally) the household spec the model was built from. It
+``Owner`` columns), every tax return, the cash-flow ledger, every typed event, the per-year and
+per-month balance-sheet summaries, the monthly model frame (``LifeModel(collect="month")``), the
+seed and (optionally) the household spec the model was built from. It
 exports to JSON, CSV or Parquet, loads back, converts to real (start-year) dollars and explains a
 year in prose.
 
@@ -31,6 +32,8 @@ if TYPE_CHECKING:
 
 #: Columns of :attr:`RunResult.balance_sheets`.
 BALANCE_SHEET_COLUMNS = ("year", "opening_net_worth", "closing_net_worth", "inflows", "outflows")
+#: Columns of :attr:`RunResult.monthly_balance_sheets`.
+MONTHLY_BALANCE_SHEET_COLUMNS = ("year", "month", "opening_net_worth", "closing_net_worth", "inflows", "outflows")
 #: Ledger kinds that are income (inflows shown under "Income" by :meth:`RunResult.explain`).
 _INCOME_KINDS = (
     "wage",
@@ -77,6 +80,8 @@ class RunResult:
         ledger: pd.DataFrame | None = None,
         events: pd.DataFrame | None = None,
         balance_sheets: pd.DataFrame | None = None,
+        monthly_frame: pd.DataFrame | None = None,
+        monthly_balance_sheets: pd.DataFrame | None = None,
         seed: int | None = None,
         spec: Any | None = None,
         deflators: dict[int, float] | None = None,
@@ -90,6 +95,8 @@ class RunResult:
         self._ledger = ledger
         self._events = events
         self._balance_sheets = balance_sheets
+        self._monthly_frame = monthly_frame
+        self._monthly_balance_sheets = monthly_balance_sheets
         self.seed = seed
         #: The household spec the model was built from (a Plan 25 ``HouseholdSpec``), when known.
         self.spec = spec
@@ -182,6 +189,39 @@ class RunResult:
         return self._balance_sheets
 
     @property
+    def monthly_frame(self) -> pd.DataFrame | None:
+        """Model-level stats at each month end, with ``Year`` and ``Month`` columns (balances at the
+        month end, flows year to date), when the model was built with ``collect="month"``; else
+        None. Its December rows equal :attr:`model_frame`."""
+        model = self._model
+        if self._monthly_frame is None and model is not None and model.collect == "month" and model.datacollector:
+            self._monthly_frame = model.monthly_frame()
+        return self._monthly_frame
+
+    @property
+    def monthly_balance_sheets(self) -> pd.DataFrame:
+        """Per-month opening/closing net worth and ledger inflows/outflows (the monthly conservation
+        check's inputs)."""
+        if self._monthly_balance_sheets is None:
+            rows = []
+            if self._model is not None:
+                from .checks import conservation_records
+
+                for record in conservation_records(self._model, monthly=True):
+                    rows.append(
+                        {
+                            "year": record.year,
+                            "month": record.month,
+                            "opening_net_worth": record.opening_net_worth,
+                            "closing_net_worth": record.closing_net_worth,
+                            "inflows": record.inflows,
+                            "outflows": record.outflows,
+                        }
+                    )
+            self._monthly_balance_sheets = pd.DataFrame(rows, columns=list(MONTHLY_BALANCE_SHEET_COLUMNS))
+        return self._monthly_balance_sheets
+
+    @property
     def years(self) -> list[int]:
         if self.model_frame is not None:
             return [int(y) for y in self.model_frame["Year"]]
@@ -247,6 +287,10 @@ class RunResult:
             ledger=deflate(self.ledger, ["amount"], "year"),
             events=deflate(self.events, ["amount"], "year"),
             balance_sheets=self._deflate_balance_sheets(),
+            monthly_frame=deflate(self.monthly_frame, self.money_columns, "Year"),
+            monthly_balance_sheets=deflate(
+                self.monthly_balance_sheets, ["opening_net_worth", "closing_net_worth", "inflows", "outflows"], "year"
+            ),
             seed=self.seed,
             spec=self.spec,
             deflators=self.deflators,
@@ -304,6 +348,8 @@ class RunResult:
             "ledger": self._records(self.ledger),
             "events": self._records(self.events),
             "balance_sheets": self._records(self.balance_sheets),
+            "monthly_frame": self._records(self.monthly_frame),
+            "monthly_balance_sheets": self._records(self.monthly_balance_sheets),
         }
         path.write_text(json.dumps(document))
         return path
@@ -315,12 +361,15 @@ class RunResult:
             "ledger": self.ledger,
             "events": self.events,
             "balance_sheets": self.balance_sheets,
+            "monthly_balance_sheets": self.monthly_balance_sheets,
+            "monthly": self.monthly_frame,
             "tax_returns": self.tax_returns_frame(),
         }
 
     def to_csv(self, directory: "str | os.PathLike") -> Path:
         """Write one CSV per table (``model.csv``, ``agents.csv``, ``ledger.csv``, ``events.csv``,
-        ``balance_sheets.csv``, ``tax_returns.csv``) plus ``meta.json``. Returns the directory."""
+        ``balance_sheets.csv``, ``monthly_balance_sheets.csv``, ``tax_returns.csv``, and ``monthly.csv``
+        when collected) plus ``meta.json``. Returns the directory."""
         directory = Path(directory)
         directory.mkdir(parents=True, exist_ok=True)
         for name, frame in self._tables().items():
@@ -367,6 +416,8 @@ class RunResult:
             ledger=read("ledger"),
             events=read("events"),
             balance_sheets=read("balance_sheets"),
+            monthly_frame=read("monthly"),
+            monthly_balance_sheets=read("monthly_balance_sheets"),
             seed=meta.get("seed"),
             spec=meta.get("spec"),
             deflators={int(year): factor for year, factor in meta.get("deflators", {}).items()},

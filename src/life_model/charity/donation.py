@@ -29,10 +29,12 @@ class DonationType(Enum):
 
 
 class Donation(LifeModelAgent):
+    """A recurring gift: the year's donation is made once a year, in the first month of the year,
+    from the donor's bank (deductible on that year's return)."""
+
     STATS_OWNED = frozenset({"stat_charitable_donations"})
 
-    # Donate in pre_step after income is deposited (jobs run at the default priority 0) but
-    # before the tax unit settles taxes in the step stage, so the deduction is visible this year.
+    # Donate in pre_step after the month's income is deposited (jobs run at the default priority 0).
     STEP_PRIORITY: ClassVar[dict[str, int]] = {"pre_step": 10}
 
     def __init__(
@@ -202,13 +204,15 @@ class Donation(LifeModelAgent):
         return desc
 
     def pre_step(self):
-        """Make this year's donation before taxes are settled.
+        """Make this year's donation in the first month of the year (January, or the start month).
 
-        Donations run in ``pre_step`` (after income is deposited, priority 10) so that the
-        charitable deduction is visible when the tax unit settles taxes in the ``step`` stage.
+        Donations run in ``pre_step`` (after the month's income is deposited, priority 10); the
+        charitable deduction is on the year's return, settled in December.
         """
+        if not self.model.is_year_start:
+            return
         # Reset this year's donation stat, then make the donation so the deduction is current. A QCD made
-        # this year already ran (from the IRA, ahead of its RMD) and keeps its figures.
+        # this year already ran (from the IRA, ahead of its RMD, in the year-start stage) and keeps its figures.
         year = self.person.model.year
         self.cash_given_this_year = 0.0
         self.property_given_this_year = 0.0
@@ -221,7 +225,7 @@ class Donation(LifeModelAgent):
         self.make_donation()
 
     def step(self):
-        """No-op: donations are made in pre_step so they are deductible this year."""
+        """No-op: donations are made in pre_step (the year's first month)."""
 
     def post_step(self):
         """No-op: donation cash movement happens in pre_step."""

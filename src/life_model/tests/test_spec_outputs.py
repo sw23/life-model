@@ -51,6 +51,7 @@ class TestSpecExamplesConserveMoney(unittest.TestCase):
                     result = model.run()
                     self.assertEqual(len(model.balance_sheets), 50)
                     assert_conservation(model)
+                    assert_conservation(model, monthly=True)
                     for tax_return in model.tax_returns.values():
                         assert_return_reconciles(self, tax_return)
                     for year in {year for year, _ in model.tax_returns}:

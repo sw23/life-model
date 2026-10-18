@@ -18,7 +18,7 @@ class PaymentService:
     growth-favored money for last:
 
         1. Bank accounts (most liquid, no tax).
-        2. Taxable brokerage accounts (sales realize capital gains, taxed at year-end settlement).
+        2. Taxable brokerage accounts (sales realize capital gains, taxed with the year's return).
         3. Roth 401k balances.
         4. Roth IRAs (contribution basis is drawn before earnings).
 

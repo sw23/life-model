@@ -45,10 +45,6 @@ class InheritedPretaxAccount(Investment):
         self.decedent_name = decedent_name
         self.years_remaining = years
 
-    def calculate_growth(self) -> float:
-        """Calculate investment growth based on the equity return for the year."""
-        return self.balance * (self.growth_rate / 100)
-
     def get_balance(self) -> float:
         return self.balance
 
@@ -63,17 +59,16 @@ class InheritedPretaxAccount(Investment):
         self.balance -= actual
         return actual
 
-    def step(self):
-        """Apply growth (Investment.step), then surface the remaining corpus in the useable-balance
-        stat so the inherited money is visible to balance reporting during the 10-year window.
-        Inherited-account withdrawals carry no early-withdrawal penalty (death exception), so the
-        full balance is genuinely useable."""
-        super().step()
+    def collect_stats(self):
+        """Surface the remaining corpus in the useable-balance stat so the inherited money is visible
+        to balance reporting during the 10-year window. Inherited-account withdrawals carry no
+        early-withdrawal penalty (death exception), so the full balance is genuinely useable."""
+        super().collect_stats()
         self.stat_useable_balance = self.balance
 
-    def pre_step(self):
-        # Distribute this year's even slice before the step-stage tax settlement so the income
-        # lands in the beneficiary's ledger for the current year. Growth is applied later in the
+    def on_year_start(self):
+        # Distribute this year's even slice at the start of each year after the inheritance, so the
+        # income lands on the beneficiary's ledger for the year's return. Growth is applied in the
         # step stage (Investment.step), so the remaining balance keeps compounding.
         if self.years_remaining <= 0 or self.balance <= 0:
             self._finish()

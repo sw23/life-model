@@ -49,7 +49,7 @@ class TestMedicalCosts(unittest.TestCase):
         model = LifeModel(start_year=2026, end_year=2026)
         person = _make_person(model, age=70, base_spending=10000)
         MedicalCosts(person)
-        model.step()
+        model.step_year()
         # Age 70 -> 71 during pre_step, still in the 65-74 band (6000 real, start-year factor 1.0).
         self.assertEqual(person.stat_money_spent, 16000)
 

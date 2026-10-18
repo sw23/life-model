@@ -12,7 +12,9 @@ from datetime import datetime
 from typing import Any
 
 import solara
+from matplotlib.figure import Figure
 from mesa.visualization import Slider, SolaraViz, make_plot_component
+from mesa.visualization.utils import update_counter
 
 from life_model.config.financial_config import FinancialConfig
 from life_model.config.models import DEFAULT_STATE_KEY
@@ -152,6 +154,8 @@ def _person_spec(prefix: str, kwargs: dict[str, Any]) -> dict[str, Any] | None:
         "id": prefix,
         "name": name,
         "age": g("age"),
+        # January of the year that makes them age at the start (the engine's default birth month).
+        "birth": f"{int(start_year) - int(g('age')):04d}-01",
         "retirement_age": g("retirement_age"),
         "state": _state_value(kwargs.get("state")),
         "spending": {
@@ -275,7 +279,12 @@ def _state_value(raw: Any) -> str | None:
 
 
 class DashboardLifeModel(LifeModel):
-    """LifeModel wrapper that builds a family from dashboard parameters through the spec builder."""
+    """LifeModel wrapper that builds a family from dashboard parameters through the spec builder.
+
+    The engine steps monthly; one dashboard **Step** (and each tick of **Play**) simulates a year, so
+    the yearly charts gain a point per step. Month-end rows are collected too (``collect="month"``)
+    for the liquidity chart.
+    """
 
     def __init__(self, **kwargs):
         """Initialize the model from dashboard parameters (Sliders, checkboxes, or plain values)."""
@@ -284,6 +293,7 @@ class DashboardLifeModel(LifeModel):
             end_year=_get(kwargs, "end_year", SHARED_DEFAULTS["end_year"]),
             start_year=_get(kwargs, "start_year", SHARED_DEFAULTS["start_year"]),
             scenario=_scenario_value(kwargs.get("scenario")),
+            collect="month",
         )
         if self.household_spec is None:
             Family(self)  # nobody enabled: an empty family, as before
@@ -291,6 +301,15 @@ class DashboardLifeModel(LifeModel):
         # The sliders bound every value, and a retirement age below the current age is allowed (the
         # person retires in the first year), so the build skips the validator's errors.
         populate_model(self, self.household_spec, check=False)
+
+    def step(self):
+        """Simulate one year: the engine's months through the next year end."""
+        if self.is_finished:
+            super().step()  # clears ``running``
+            return
+        year = self.year
+        while not self.is_finished and self.year == year:
+            super().step()
 
 
 # Model parameters for the dashboard (single source: SHARED_DEFAULTS + PERSON_DEFAULTS).
@@ -380,6 +399,26 @@ taxes_and_income_component = make_plot_component(
 
 
 @solara.component
+def LiquidityChart(model):
+    """Cash on hand at every month end: what the yearly charts (year-end balances) cannot show, e.g. a
+    bank balance that dips below zero mid-year and is carried as debt until income catches up."""
+    update_counter.get()
+    fig = Figure()
+    ax = fig.subplots()
+    rows = model.monthly_frame() if model.collect == "month" else None
+    if rows is not None and not rows.empty:
+        when = rows["Year"] + (rows["Month"] - 1) / 12
+        ax.plot(when, rows["Bank Balance"], label="Bank Balance (month end)", color="tab:blue")
+        ax.plot(when, -rows["Debt"].where(rows["Debt"] > 0, 0), label="-Debt", color="tab:red", alpha=0.5)
+        ax.legend(loc="best")
+    ax.set_xlabel("Year")
+    ax.set_ylabel("Month-end cash ($)")
+    ax.set_title("Liquidity (monthly)")
+    ax.grid(True)
+    solara.FigureMatplotlib(fig)
+
+
+@solara.component
 def ResultsTable(model):
     """Results tab: the yearly-stats DataFrame plus a CSV download of the same data."""
     df = model.datacollector.get_model_vars_dataframe()
@@ -400,6 +439,7 @@ components = [
     balance_comparison_component,
     retirement_savings_component,
     taxes_and_income_component,
+    LiquidityChart,
     (ResultsTable, 1),
 ]
 

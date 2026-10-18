@@ -198,8 +198,8 @@ class StockPlan(LifeModelAgent):
 
     STATS_OWNED = frozenset({"stat_gross_income", "stat_stock_vested", "stat_stock_unvested"})
 
-    # Runs after Job.pre_step (priority 0) so wages are already on the ledger, and well before the
-    # step stage where the tax unit reads it.
+    # Runs after Job.pre_step (priority 0) so wages are already on the ledger. Vests happen once a
+    # year, in the first month of the year (quarterly vesting is a later plan's).
     STEP_PRIORITY: ClassVar[dict[str, int]] = {"pre_step": 5}
 
     def __init__(
@@ -314,6 +314,8 @@ class StockPlan(LifeModelAgent):
         return new_grant
 
     def pre_step(self):
+        if not self.model.is_year_start:
+            return
         if self.job.retired:
             # Leaving forfeits everything unvested — the correct real-world outcome for a
             # departure, and it needs no bookkeeping beyond never recognizing the value.
@@ -435,7 +437,7 @@ class StockPlan(LifeModelAgent):
             # Nowhere to hold the shares; fall back to cash rather than losing the value.
             self.owner.receive_cash(vested, source=company, kind=FlowKind.VEST, cause="RSU vest (no brokerage)")
             return
-        account.deposit_with_basis(vested, cost_basis=vested, acquired_year=self.model.year)
+        account.deposit_with_basis(vested, cost_basis=vested)
         self.model.ledger.post(
             vested, FlowKind.VEST, to_account=account, source=company, cause="RSU vest (held)", agent=self.owner
         )

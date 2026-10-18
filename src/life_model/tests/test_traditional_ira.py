@@ -11,6 +11,7 @@ from ..base_classes import TaxTreatment
 from ..model import LifeModel
 from ..people.family import Family
 from ..people.person import Person, Spending
+from .helpers import run_months
 
 
 class TestTraditionalIRA(unittest.TestCase):
@@ -107,7 +108,8 @@ class TestTraditionalIRATaxSemantics(unittest.TestCase):
     def test_required_minimum_distribution_taken_and_taxed(self):
         person = _plan06_person(age=75, year=2020)
         trad = TraditionalIRA(person, balance=100000, growth_rate=0)
-        trad.pre_step()
+        trad.on_year_start()  # Plan 32: the year's RMD is set at the year start, paid in twelfths
+        run_months(person.model, trad.pre_step)
         self.assertGreater(trad.stat_required_min_distrib, 0)
         self.assertAlmostEqual(person.income.ordinary_taxable, trad.stat_required_min_distrib)
         self.assertEqual(person.income.fica_wages, 0)
@@ -116,7 +118,8 @@ class TestTraditionalIRATaxSemantics(unittest.TestCase):
     def test_no_rmd_before_start_age(self):
         person = _plan06_person(age=60, year=2020)
         trad = TraditionalIRA(person, balance=100000, growth_rate=0)
-        trad.pre_step()
+        trad.on_year_start()
+        run_months(person.model, trad.pre_step)
         self.assertEqual(trad.stat_required_min_distrib, 0)
 
 

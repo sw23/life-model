@@ -131,6 +131,29 @@ class TestReconcile(unittest.TestCase):
             {"section", "line", "simulated", "actual", "difference", "status", "cause"} - set(data["lines"][0]), set()
         )
 
+    def test_part_year_start_reconciles_only_the_simulated_months(self):
+        spec = _spec()
+        part = spec.model_copy(update={"meta": spec.meta.model_copy(update={"start": f"{YEAR}-05"})})
+        full_return = run_for_reconciliation(spec, YEAR).model.tax_returns[YEAR]
+        sim = run_for_reconciliation(part, YEAR)
+        self.assertEqual(sim.model.months_in_year(YEAR), 8)  # May-December (before John's June birthday)
+        part_lines = form_1040_lines(sim.model.tax_returns[YEAR])
+        full_lines = form_1040_lines(full_return)
+        # May-December gross pay: 8/12 of the year's (same pay, no raise inside the year).
+        full_wages = sum(e.amount for e in run_for_reconciliation(spec, YEAR).entries() if e.kind == "wage")
+        part_wages = sum(e.amount for e in sim.entries() if e.kind == "wage")
+        self.assertAlmostEqual(part_wages, full_wages * 8 / 12, delta=1.0)
+        self.assertLess(part_lines["1a"], full_lines["1a"] * 0.7)
+        records = ActualRecords(form_1040={line: round(value) for line, value in part_lines.items()})
+        report = reconcile(part, YEAR, actuals=records)
+        self.assertEqual(report.red, [])
+        self.assertTrue(any("part year" in note and f"{YEAR}-05" in note for note in report.notes))
+        # The full-year return against the part-year run is red on wages, with the note explaining why.
+        full = ActualRecords(form_1040={line: round(value) for line, value in full_lines.items()})
+        report = reconcile(part, YEAR, actuals=full)
+        self.assertEqual(report.find("1040", "1a").status, RED)
+        self.assertTrue(any("last 8 months" in note for note in report.notes))
+
     def test_api_errors(self):
         with self.assertRaises(api.InputError):
             api.reconcile(_spec(), YEAR)  # no actuals in the spec

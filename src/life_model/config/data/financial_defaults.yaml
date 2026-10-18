@@ -678,6 +678,10 @@ equity_comp:
   default_schedule: four_year   # four_year | three_year | front_loaded | back_loaded | even
   default_vesting_years: 4
 
+# Payroll timing (Plan 32: jobs pay monthly). A modeling convention, not a published figure.
+payroll:
+  bonus_month: 3  # month (1-12) a yearly bonus is paid in
+
 # Estate settlement. inherited_pretax_mode controls how a non-spouse beneficiary receives an
 # inherited pre-tax retirement balance: "ten_year" applies the SECURE Act 10-year rule (the
 # balance keeps growing and pays out an even slice each year over ten years), while "lump_sum"

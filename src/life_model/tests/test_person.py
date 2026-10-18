@@ -53,7 +53,7 @@ class TestPerson(unittest.TestCase):
         )
         for salary, taxes_due in tax_data:
             job.salary.base = salary
-            model.step()
+            model.step_year()
             self.assertEqual(person.stat_taxes_paid_federal, taxes_due)
 
     # TODO - Add test for state taxes
@@ -77,7 +77,7 @@ class TestPerson(unittest.TestCase):
         )
         for salary, taxes_due in tax_data:
             job.salary.base = salary
-            model.step()
+            model.step_year()
             self.assertEqual(person.stat_taxes_paid_ss, taxes_due)
 
     def test_medicare_taxes_due(self):
@@ -99,7 +99,7 @@ class TestPerson(unittest.TestCase):
         )
         for salary, taxes_due in tax_data:
             job.salary.base = salary
-            model.step()
+            model.step_year()
             self.assertAlmostEqual(person.stat_taxes_paid_medicare, taxes_due, places=2)
 
 
@@ -191,6 +191,6 @@ class TestPersonWithdrawalHelpers(unittest.TestCase):
             else:
                 # Move the same cash without a ledger entry so both runs have identical balances.
                 person.receive_cash(ira.withdraw(50000))
-            model.step()
+            model.step_year()
             results[withdraw] = person.stat_taxes_paid
         self.assertGreater(results[True], results[False])

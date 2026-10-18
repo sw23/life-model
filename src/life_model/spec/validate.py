@@ -225,6 +225,8 @@ class _SpecChecker:
         self.config = config
         self.findings: list[Finding] = []
         self.start = spec.meta.start_year
+        #: The first simulated month (meta.start's month; January when unset).
+        self.start_month = int(spec.meta.start.split("-")[1]) if spec.meta.start is not None else 1
         self.end = spec.meta.end_year if spec.meta.end_year is not None else self.start + 50
         self.people = {p.id: p for p in spec.people}
         self.person_index = {p.id: i for i, p in enumerate(spec.people)}
@@ -237,7 +239,9 @@ class _SpecChecker:
 
     def run(self) -> list[Finding]:
         self.check_ids()
+        self.check_start()
         self.check_states()
+        self.check_births()
         self.check_people()
         self.check_marriages()
         self.check_events()
@@ -275,6 +279,40 @@ class _SpecChecker:
                         None,
                         "child_files_own_return",
                     )
+
+    # --- the first month and birth months ---
+
+    def check_start(self) -> None:
+        start = self.spec.meta.start
+        if start is not None and int(start.split("-")[0]) != self.start:
+            self.error(
+                "meta.start",
+                f"start {start} is not in start_year {self.start}.",
+                f"use start: {self.start}-MM, or change start_year.",
+                "start_mismatch",
+            )
+
+    def check_births(self) -> None:
+        for i, p in enumerate(self.spec.people):
+            path = f"people[{i}]"
+            if p.birth is None:
+                self.warn(
+                    f"{path}.birth",
+                    f"{p.name} has no birth month; January is assumed, so 59.5, the retirement month and other "
+                    "exact-age thresholds fall in January-based months.",
+                    f"set birth: YYYY-MM (age {p.age} in {self.start}-{self.start_month:02d}).",
+                    "birth_assumed",
+                )
+                continue
+            year, month = (int(part) for part in p.birth.split("-"))
+            age = ((self.start * 12 + self.start_month) - (year * 12 + month)) // 12
+            if age != p.age:
+                self.error(
+                    f"{path}.birth",
+                    f"birth {p.birth} makes {p.name} {age} in {self.start}-{self.start_month:02d}, not {p.age}.",
+                    "make age the completed years in the first simulated month.",
+                    "birth_age_mismatch",
+                )
 
     # --- actual records (Plan 29) ---
 
@@ -600,8 +638,10 @@ class _SpecChecker:
                 married[pid] = path
 
     def year_at_age(self, person: s.Person, age: int) -> int:
-        """The year a person is ``age``: the engine's ``Person.get_year_at_age`` identity,
-        ``start_year + (age - constructor age)`` (the constructor age is the first year's age)."""
+        """The year a person turns ``age``: the engine's ``Person.get_year_at_age`` identity (the birth
+        year plus ``age``; without ``birth``, ``start_year + (age - constructor age)``)."""
+        if person.birth is not None:
+            return int(person.birth.split("-")[0]) + age
         return self.start + (age - person.age)
 
     def resolve(self, at: s.At, person_id: str, by_id: dict, stack: tuple = ()) -> int | None:
@@ -634,6 +674,14 @@ class _SpecChecker:
                     self.error(f"{path}.at.relative", "relative event timing has a cycle", code="event_cycle")
                     continue
             year = self.resolve(event.at, event.person, by_id)
+            if year == self.start and event.at.month is not None and event.at.month < self.start_month:
+                self.error(
+                    f"{path}.at.month",
+                    f"'{event.action}' is dated {year}-{event.at.month:02d}, before the first simulated month "
+                    f"{self.start}-{self.start_month:02d}; it would never fire.",
+                    "move it to the first simulated month or later.",
+                    "event_before_start",
+                )
             if year is not None and year < self.start:
                 self.error(
                     f"{path}.at",

@@ -14,12 +14,14 @@ rather than modeling each condition separately (documented v1 simplification).
 
 from typing import cast
 
-from ..model import LifeModel, LifeModelAgent
+from ..model import LifeModel, LifeModelAgent, snap_money
 from ..people.person import Person
 from .inflation import medical_inflation_factor
 
 
 class MedicalCosts(LifeModelAgent):
+    """Age-banded out-of-pocket medical costs, charged a twelfth of the year's cost each month."""
+
     STATS_OWNED = frozenset({"stat_medical_costs"})
 
     def __init__(self, person: Person):
@@ -63,8 +65,8 @@ class MedicalCosts(LifeModelAgent):
     def pre_step(self):
         if self.person.is_deceased:
             return
-        cost = self.annual_cost()
-        self.stat_medical_costs = cost
+        cost = self.annual_cost() / 12
+        self.stat_medical_costs = snap_money(self.stat_medical_costs + cost)
         self.person.spending.add_expense(cost, category="medical")
 
     def _repr_html_(self):

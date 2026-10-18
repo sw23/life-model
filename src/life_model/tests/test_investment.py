@@ -15,6 +15,7 @@ from ..model import LifeModel
 from ..people.family import Family
 from ..people.person import Person, Spending
 from ..work.job import Job, Salary
+from .helpers import run_months
 
 
 class _ConcreteInvestment(Investment):
@@ -65,14 +66,16 @@ class TestInvestment(unittest.TestCase):
 
     def test_apply_growth_updates_balance_and_history(self):
         inv = _ConcreteInvestment(self.person, balance=1000, growth_rate=10.0)
-        growth = inv.apply_growth()
+        run_months(self.model, inv.apply_growth)  # Plan 32: growth is monthly
+        growth = sum(inv.stat_growth_history)
         self.assertAlmostEqual(growth, 100.0, places=6)
         self.assertAlmostEqual(inv.balance, 1100.0, places=6)
-        self.assertEqual(inv.stat_growth_history, [growth])
+        self.assertEqual(len(inv.stat_growth_history), 12)
 
     def test_step_applies_growth_and_records_balance(self):
         inv = _ConcreteInvestment(self.person, balance=1000, growth_rate=10.0)
-        inv.step()
+        run_months(self.model, inv.step)  # Plan 32: a month of growth per step
+        inv.on_year_end()  # the year-end balance is recorded
         self.assertAlmostEqual(inv.balance, 1100.0, places=6)
         self.assertEqual(inv.stat_balance_history, [1100.0])
 
@@ -96,7 +99,7 @@ class TestInvestmentGrowthParity(unittest.TestCase):
         k401 = Job401kAccount(job, pretax_balance=1000, average_growth=rate)
 
         for account in (brokerage, roth, trad, hsa, k401):
-            account.apply_growth()
+            run_months(person.model, account.apply_growth)  # a year of monthly growth
 
         for account in (brokerage, roth, trad, hsa, k401):
             self.assertAlmostEqual(account.balance, 1100.0, places=6)

@@ -75,7 +75,7 @@ class TestCharitableLimit(unittest.TestCase):
         person.income.add(IncomeType.ORDINARY, 50000)
         Donation(person, "Charity", annual_amount=40000, start_year=2026, end_year=2026)
 
-        model.step()
+        model.step_year()
 
         # 60% of $50k AGI = $30k allowed; the other $10k carries forward from 2026. From 2026 (OBBBA) the
         # 0.5%-of-AGI floor ($250) also comes off, and because the year has a carryover the floor amount
@@ -115,7 +115,7 @@ class TestCharitableLimit(unittest.TestCase):
         model = LifeModel(start_year=2026, end_year=2026)
         person = _person(model, 40)
         person.income.add(IncomeType.ORDINARY, 50000)
-        model.step()
+        model.step_year()
         self.assertEqual(person.stat_itemized_deductions, 0.0)
 
 

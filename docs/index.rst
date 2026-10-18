@@ -4,7 +4,7 @@ Welcome to life-model's documentation!
 
 .. include:: warning.rst
 
-life-model is a Python package for year-step personal-finance simulation built on
+life-model is a Python package for month-step personal-finance simulation built on
 Mesa agent-based modeling. It models people, families, jobs, accounts, homes,
 insurance and taxes over time. See the project `README on GitHub
 <https://github.com/sw23/life-model#readme>`_ for a full feature overview.
@@ -44,6 +44,7 @@ see `AGENTS.md <https://github.com/sw23/life-model/blob/main/AGENTS.md>`_.
    Plan 28: explainable outputs <rebaseline-plan-28.md>
    Plan 29: reconciliation and calibration <rebaseline-plan-29.md>
    Plan 31: tax completeness <rebaseline-plan-31.md>
+   Plan 32: monthly engine <rebaseline-plan-32.md>
 
 Indices and tables
 ==================

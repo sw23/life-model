@@ -175,18 +175,26 @@ class DonorAdvisedFund(Investment):
         desc += "</ul>"
         return desc
 
-    def pre_step(self):
+    def on_year_start(self):
         """Reset stats before the year begins"""
         # Reset this year's stats
         self.stat_charitable_donations = 0
         self.stat_contributions_this_year = 0
 
     def step(self):
-        """Execute annual DAF logic: apply growth, fees, and distributions
+        """No monthly work: the fund is not the household's money, so it is grown once a year."""
 
-        We override parent Investment.step() to control the order of operations.
-        """
-        # Apply growth first (inherited from Investment base class)
+    def apply_growth(self):
+        """Apply a year of growth at the annual rate (the fund is updated once a year)."""
+        growth = self.calculate_growth()
+        self.balance += growth
+        self.stat_growth_history.append(growth)
+        self._post_growth(growth)
+        return growth
+
+    def on_year_end(self):
+        """Execute annual DAF logic at year end: apply growth, fees, and distributions."""
+        # Apply growth first
         self.apply_growth()
 
         # Then apply management fee on the grown balance

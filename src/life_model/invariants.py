@@ -6,15 +6,21 @@
 """The simulation invariant checker (Plan 29 D4).
 
 Every invariant is a rule a correct simulated year must satisfy, written against the year's
-*results* (the balance sheets around the year, the cash-flow ledger, the typed events and the tax
-returns) rather than engine internals, so it holds for any engine that produces those results:
+*results* (the balance sheets around the year and around each of its months, the cash-flow ledger,
+the typed events and the tax returns) rather than engine internals, so it holds for any engine that
+produces those results. They run once a year, at the year end (after December's taxes):
 
-* ``conservation``: net worth changed by exactly the ledger's net external flow (``checks.py``);
-* ``continuity``: between two years nothing moved money without a ledger entry (anything a driver
-  does between ``step()`` calls, such as an RL action, must post what it moves);
-* ``no_negative_balances``: no asset below zero, no liability with a negative balance;
-* ``no_draw_above_cash_floor``: no taxable sale or pre-tax withdrawal by the payment waterfall while
-  the tax unit still held cash above its floor at year end (the rule Plan 26 item 4 broke);
+* ``conservation``: net worth changed by exactly the ledger's net external flow (``checks.py``), over
+  the year and over each of its months;
+* ``continuity``: between two years, and between two months of a year, nothing moved money without a
+  ledger entry (anything a driver does between ``step()`` calls, such as an RL action, must post what
+  it moves);
+* ``no_negative_balances``: at no month end is an asset below zero or a liability negative;
+* ``no_draw_above_cash_floor``: no taxable sale or pre-tax withdrawal by the payment waterfall in a
+  month the tax unit ended with cash above its floor (the rule Plan 26 item 4 broke): the waterfall
+  runs monthly, so a draw in a lean month is legitimate even when later months' pay refills the bank,
+  and money that reached the bank after the month's last draw (a year-end insurance payout, a tax
+  refund) does not count;
 * ``contribution_limits``: 401(k) elective deferrals (402(g) + catch-up), 415(c) annual additions per
   plan, IRA and HSA contributions stay within the year's limits;
 * ``no_income_after_job_end``: no wages, bonus or vests from an employer after the job ended;
@@ -37,14 +43,15 @@ Run them per year with ``LifeModel(checks="strict" | "warn" | "off")`` (``strict
 import warnings
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
+from itertools import pairwise
 from typing import TYPE_CHECKING, Any
 
 from .checks import CONSERVATION_TOLERANCE
 from .ledger import FlowKind
 
 if TYPE_CHECKING:
-    from .checks import YearBalances
-    from .ledger import LedgerEntry
+    from .checks import MonthBalances, YearBalances
+    from .ledger import BalanceSheet, LedgerEntry
     from .model import LifeModel
     from .tax.return_record import TaxReturn
 
@@ -76,12 +83,15 @@ class Violation:
     amount: float | None = None
     person_id: int | None = None
     account: str | None = None
+    #: The month (1-12) of a monthly rule's violation; None for a whole-year rule.
+    month: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
     def __str__(self) -> str:
-        return f"{self.year} {self.invariant}: {self.message}"
+        when = f"{self.year}-{self.month:02d}" if self.month is not None else f"{self.year}"
+        return f"{when} {self.invariant}: {self.message}"
 
 
 class InvariantError(AssertionError):
@@ -125,6 +135,20 @@ class YearContext:
     between: "list[LedgerEntry]" = field(default_factory=list)
     #: Year-start snapshot taken before the stages ran (see :func:`year_start`), when available.
     snapshot: "dict[str, Any] | None" = None
+    #: The year's monthly balance sheets by month (empty on a model that recorded none).
+    months: "dict[int, MonthBalances]" = field(default_factory=dict)
+
+    def month_closing(self, month: int) -> "BalanceSheet":
+        """The balance sheet at the end of ``month`` (the year's closing sheet when months were not
+        recorded)."""
+        balances = self.months.get(month)
+        return balances.closing if balances is not None else self.balances.closing
+
+    def month_ends(self) -> "list[tuple[int | None, BalanceSheet]]":
+        """``(month, closing sheet)`` for each simulated month, or ``[(None, year closing)]``."""
+        if not self.months:
+            return [(None, self.balances.closing)]
+        return [(month, self.months[month].closing) for month in sorted(self.months)]
 
     @property
     def config(self):
@@ -177,37 +201,87 @@ def conservation(ctx: YearContext) -> list[Violation]:
     ]
 
 
-def continuity(ctx: YearContext) -> list[Violation]:
-    """Between the previous year's close and this year's open, net worth moved only by ledger entries
-    posted in between (a driver acting between ``step()`` calls must post what it moves)."""
-    if ctx.previous is None:
-        return []
-    net_flow = sum(e.net_worth_effect for e in ctx.between)
-    change = ctx.balances.opening.net_worth - ctx.previous.closing.net_worth
-    residual = change - net_flow
-    if abs(residual) <= CONSERVATION_TOLERANCE:
-        return []
-    lines = []
-    before, after = ctx.previous.closing.lines, ctx.balances.opening.lines
+def monthly_conservation(ctx: YearContext) -> list[Violation]:
+    """Each month of the year: net worth changed by exactly the ledger's net flow posted in that month
+    (catches money that appears in one month and leaves in another, which the yearly check nets)."""
+    from .checks import account_residuals
+
+    violations = []
+    for month, balances in sorted(ctx.months.items()):
+        entries = ctx.model.ledger.between(balances.ledger_start, balances.ledger_end)
+        net_flow = sum(e.net_worth_effect for e in entries)
+        change = balances.closing.net_worth - balances.opening.net_worth
+        residual = change - net_flow
+        if abs(residual) <= CONSERVATION_TOLERANCE:
+            continue
+        accounts = ", ".join(
+            f"{ctx.model.ledger.describe(label)} {value:+,.2f}"
+            for label, value in list(account_residuals(ctx.model, ctx.year, month=month).items())[:6]
+        )
+        violations.append(
+            Violation(
+                ctx.year,
+                "monthly_conservation",
+                f"net worth changed {change:,.2f} in the month but the ledger's net flow is {net_flow:,.2f} "
+                f"(residual {residual:,.2f}; by account: {accounts or 'n/a'})",
+                amount=residual,
+                month=month,
+            )
+        )
+    return violations
+
+
+def _unposted_move(ctx: YearContext, before, after, between) -> "tuple[float, float, list[str]] | None":
+    """``(change, posted net flow, unposted lines)`` when net worth moved from ``before`` to ``after``
+    by more than the ``between`` entries explain, else None."""
+    net_flow = sum(e.net_worth_effect for e in between)
+    change = after.net_worth - before.net_worth
+    if abs(change - net_flow) <= CONSERVATION_TOLERANCE:
+        return None
     posted: dict[str, float] = {}
-    for entry in ctx.between:
+    for entry in between:
         if entry.from_account is not None:
             posted[entry.from_account] = posted.get(entry.from_account, 0.0) - entry.amount
         if entry.to_account is not None:
             posted[entry.to_account] = posted.get(entry.to_account, 0.0) + entry.amount
-    for label in sorted(set(before) | set(after)):
-        moved = after.get(label, 0.0) - before.get(label, 0.0) - posted.get(label, 0.0)
+    lines = []
+    for label in sorted(set(before.lines) | set(after.lines)):
+        moved = after.lines.get(label, 0.0) - before.lines.get(label, 0.0) - posted.get(label, 0.0)
         if abs(moved) > MONEY_TOLERANCE:
             lines.append(f"{ctx.model.ledger.describe(label)} {moved:+,.2f}")
-    return [
-        Violation(
-            ctx.year,
-            "continuity",
-            f"net worth moved {change:,.2f} between {ctx.year - 1}'s close and {ctx.year}'s open but only "
-            f"{net_flow:,.2f} was posted (residual {residual:,.2f}; unposted: {', '.join(lines[:6]) or 'n/a'})",
-            amount=residual,
+    return change, net_flow, lines
+
+
+def continuity(ctx: YearContext) -> list[Violation]:
+    """Between the previous year's close and this year's open, and between one month's close and the
+    next month's open, net worth moved only by ledger entries posted in between (a driver acting
+    between ``step()`` calls must post what it moves)."""
+    gaps = []
+    if ctx.previous is not None:
+        gaps.append((None, ctx.previous.closing, ctx.balances.opening, ctx.between, f"{ctx.year - 1}'s close"))
+    months = sorted(ctx.months)
+    for prior, month in pairwise(months):
+        before, after = ctx.months[prior], ctx.months[month]
+        between = ctx.model.ledger.between(before.ledger_end, after.ledger_start)
+        gaps.append((month, before.closing, after.opening, between, f"{ctx.year}-{prior:02d}'s close"))
+    violations = []
+    for month, before, after, between, since in gaps:
+        moved = _unposted_move(ctx, before, after, between)
+        if moved is None:
+            continue
+        change, net_flow, lines = moved
+        until = f"{ctx.year}'s open" if month is None else f"{ctx.year}-{month:02d}'s open"
+        violations.append(
+            Violation(
+                ctx.year,
+                "continuity",
+                f"net worth moved {change:,.2f} between {since} and {until} but only {net_flow:,.2f} was posted "
+                f"(residual {change - net_flow:,.2f}; unposted: {', '.join(lines[:6]) or 'n/a'})",
+                amount=change - net_flow,
+                month=month,
+            )
         )
-    ]
+    return violations
 
 
 def _liability_labels(ctx: YearContext) -> set[str]:
@@ -221,31 +295,38 @@ def _liability_labels(ctx: YearContext) -> set[str]:
 
 
 def no_negative_balances(ctx: YearContext) -> list[Violation]:
-    """At year end no asset line is below zero and no liability line is above zero (a negative debt)."""
+    """At no month end is an asset line below zero or a liability line above zero (a negative debt).
+    Each account is reported once a year, at the first month end it is wrong."""
     liabilities = _liability_labels(ctx)
     violations = []
-    for label, value in ctx.balances.closing.lines.items():
-        is_liability = label in liabilities
-        if (not is_liability and value < -MONEY_TOLERANCE) or (is_liability and value > MONEY_TOLERANCE):
-            what = "liability below zero" if is_liability else "negative balance"
-            violations.append(
-                Violation(
-                    ctx.year,
-                    "no_negative_balances",
-                    f"{ctx.model.ledger.describe(label)}: {what} ({value:,.2f})",
-                    amount=value,
-                    account=label,
-                    person_id=ctx.balances.closing.owners.get(label),
+    seen: set[str] = set()
+    for month, sheet in ctx.month_ends():
+        for label, value in sheet.lines.items():
+            if label in seen:
+                continue
+            is_liability = label in liabilities or label.startswith("Debt:")
+            if (not is_liability and value < -MONEY_TOLERANCE) or (is_liability and value > MONEY_TOLERANCE):
+                seen.add(label)
+                what = "liability below zero" if is_liability else "negative balance"
+                violations.append(
+                    Violation(
+                        ctx.year,
+                        "no_negative_balances",
+                        f"{ctx.model.ledger.describe(label)}: {what} ({value:,.2f})",
+                        amount=value,
+                        account=label,
+                        person_id=sheet.owners.get(label),
+                        month=month,
+                    )
                 )
-            )
     return violations
 
 
-def _bank_labels(ctx: YearContext, member_ids: "set[int]") -> list[str]:
+def _bank_labels(ctx: YearContext, member_ids: "set[int]", sheet: "BalanceSheet | None" = None) -> list[str]:
     from .account.bank import BankAccount
 
     agents = ctx.agents_by_label()
-    closing = ctx.balances.closing
+    closing = ctx.balances.closing if sheet is None else sheet
     labels = []
     for label in closing.lines:
         owner = closing.owners.get(label)
@@ -256,36 +337,80 @@ def _bank_labels(ctx: YearContext, member_ids: "set[int]") -> list[str]:
     return labels
 
 
+#: Ledger causes of the payment waterfall's draws (``TaxUnit``: monthly bills, December's taxes, a
+#: purchase raised in cash).
+_WATERFALL_CAUSES = ("pay ", "fund ", "raise cash for ")
+
+
+def _inflows_after_last_draw(ctx: YearContext, month: int | None, banks: "set[str]") -> float:
+    """Money that reached the unit's ``banks`` in ``month`` after the waterfall's last draw (a year-end
+    insurance payout, a refund of refundable credits): the draw could not have spent it, so it does not
+    count against the floor."""
+    balances = ctx.months.get(month) if month is not None else None
+    entries = (
+        ctx.model.ledger.between(balances.ledger_start, balances.ledger_end) if balances is not None else ctx.entries
+    )
+    last = None
+    for index, entry in enumerate(entries):
+        if (
+            entry.kind in (FlowKind.SALE.value, FlowKind.WITHDRAWAL.value)
+            and entry.to_account in banks
+            and (entry.cause or "").startswith(_WATERFALL_CAUSES)
+        ):
+            last = index
+    if last is None:
+        return 0.0
+    inflows = 0.0
+    for entry in entries[last + 1 :]:
+        if entry.to_account in banks and entry.from_account not in banks and entry.amount > 0:
+            inflows += entry.amount
+        elif entry.from_account in banks and entry.to_account not in banks and entry.amount < 0:
+            inflows -= entry.amount  # a negative payment out of the bank: a tax refund
+    return inflows
+
+
 def no_draw_above_cash_floor(ctx: YearContext) -> list[Violation]:
-    """A tax unit whose payment waterfall sold taxable holdings or withdrew pre-tax money this year must
-    end the year with no more than its cash floor in its banks: money that was sitting in a member's
-    bank should have been spent before anything taxable was sold (Plan 26 item 4)."""
+    """A tax unit whose payment waterfall sold taxable holdings or withdrew pre-tax money in a month must
+    end that month with no more than its cash floor in its banks: money sitting in a member's bank
+    should have been spent before anything taxable was sold (Plan 26 item 4). The waterfall pays each
+    month's bills (December's also funds the year's taxes), so the rule looks at the draw's month: a
+    draw in a lean month is fine when a later month's pay refills the bank, and money that reached the
+    banks after the month's last draw does not count. Reported once per unit and year, at the first
+    offending month."""
     floor = getattr(ctx.model, "cash_floor", DEFAULT_CASH_FLOOR)
-    draws: dict[int, float] = {}
+    draws: dict[tuple[int, int | None], float] = {}
     for event in ctx.events:
         if event.kind.value in _WATERFALL_DRAW_KINDS and event.person_id is not None and event.amount:
-            draws[event.person_id] = draws.get(event.person_id, 0.0) + event.amount
+            key = (event.person_id, getattr(event, "month", None) if ctx.months else None)
+            draws[key] = draws.get(key, 0.0) + event.amount
     if not draws:
         return []
     violations = []
     for tax_return in ctx.returns:
         members = set(tax_return.member_ids)
-        drawn = sum(draws.get(member, 0.0) for member in members)
-        if drawn <= MONEY_TOLERANCE:
-            continue
-        cash = sum(ctx.balances.closing.lines[label] for label in _bank_labels(ctx, members))
-        if cash > floor + CASH_FLOOR_TOLERANCE:
-            names = ", ".join(tax_return.member_names)
-            violations.append(
-                Violation(
-                    ctx.year,
-                    "no_draw_above_cash_floor",
-                    f"{names}: the waterfall sold or withdrew {drawn:,.2f} of taxable money while the unit ended the "
-                    f"year with {cash:,.2f} in its banks (floor {floor:,.2f})",
-                    amount=cash - floor,
-                    person_id=tax_return.unit_id,
+        months = sorted({month for person, month in draws if person in members}, key=lambda m: m or 0)
+        for month in months:
+            drawn = sum(amount for (person, m), amount in draws.items() if person in members and m == month)
+            if drawn <= MONEY_TOLERANCE:
+                continue
+            sheet = ctx.balances.closing if month is None else ctx.month_closing(month)
+            banks = _bank_labels(ctx, members, sheet)
+            cash = sum(sheet.lines[label] for label in banks) - _inflows_after_last_draw(ctx, month, set(banks))
+            if cash > floor + CASH_FLOOR_TOLERANCE:
+                names = ", ".join(tax_return.member_names)
+                when = "year" if month is None else f"month ({ctx.year}-{month:02d})"
+                violations.append(
+                    Violation(
+                        ctx.year,
+                        "no_draw_above_cash_floor",
+                        f"{names}: the waterfall sold or withdrew {drawn:,.2f} of taxable money while the unit ended "
+                        f"the {when} with {cash:,.2f} in its banks (floor {floor:,.2f})",
+                        amount=cash - floor,
+                        person_id=tax_return.unit_id,
+                        month=month,
+                    )
                 )
-            )
+                break
     return violations
 
 
@@ -626,6 +751,7 @@ def return_identities(ctx: YearContext) -> list[Violation]:
 #: Every invariant, in report order. Add a rule by appending ``name: function(YearContext)``.
 INVARIANTS: dict[str, Invariant] = {
     "conservation": conservation,
+    "monthly_conservation": monthly_conservation,
     "continuity": continuity,
     "no_negative_balances": no_negative_balances,
     "no_draw_above_cash_floor": no_draw_above_cash_floor,
@@ -679,6 +805,7 @@ def _context(model: "LifeModel", year: int) -> YearContext:
         previous=previous,
         between=between,
         snapshot=getattr(model, "_invariant_snapshots", {}).get(year),
+        months={month: sheet for (y, month), sheet in model.month_balance_sheets.items() if y == year},
     )
 
 

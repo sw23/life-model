@@ -10,6 +10,7 @@ from ..account.traditional_IRA import TraditionalIRA
 from ..model import LifeModel
 from ..people.family import Family
 from ..people.person import Person, Spending
+from .helpers import run_months
 
 
 class TestRothIRA(unittest.TestCase):
@@ -85,7 +86,7 @@ class TestRothIRATaxSemantics(unittest.TestCase):
     def test_non_qualified_earnings_taxed_and_penalized(self):
         person = _plan06_person(age=40)
         roth = RothIRA(person, balance=1000, growth_rate=10)
-        roth.apply_growth()  # balance 1100, basis 1000, earnings 100
+        run_months(person.model, roth.apply_growth)  # a year of growth: balance 1100, basis 1000, earnings 100
         roth.withdraw(1000)  # basis first: tax-free
         self.assertEqual(person.income.ordinary_taxable, 0)
         roth.withdraw(100)  # all earnings: taxed + 10% penalty
@@ -102,10 +103,10 @@ class TestRothIRATaxSemantics(unittest.TestCase):
 
     def test_tax_free_withdrawable_is_basis_before_59_and_a_half(self):
         roth = RothIRA(_plan06_person(age=40), balance=1000, growth_rate=10)
-        roth.apply_growth()
+        run_months(roth.model, roth.apply_growth)  # a year of growth (Plan 32: monthly)
         self.assertAlmostEqual(roth.tax_free_withdrawable(), 1000)
         old_roth = RothIRA(_plan06_person(age=66), balance=1000, growth_rate=10)
-        old_roth.apply_growth()
+        run_months(old_roth.model, old_roth.apply_growth)
         self.assertAlmostEqual(old_roth.tax_free_withdrawable(), 1100)
 
     def test_ira_limit_shared_with_traditional(self):

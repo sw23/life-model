@@ -53,6 +53,9 @@ SpecLike = Any
 #: (:mod:`life_model.invariants`) and the conservation check.
 Checks = Literal["strict", "warn", "off"]
 CHECK_MODES = ("strict", "warn", "off")
+#: ``collect`` modes: a row per simulated year, or also a row per month end.
+Collect = Literal["year", "month"]
+COLLECT_MODES = ("year", "month")
 
 #: Model-frame columns shown in summaries (when present).
 SUMMARY_COLUMNS = ("Year", "Income", "Taxes", "Spending", "Housing", "Bank Balance", "Debt", "Net Worth")
@@ -248,9 +251,16 @@ def validate(spec: SpecLike, *, scenario: str | None = None) -> "list[Finding]":
     return _scenario_findings(loaded) + list(validate_spec(loaded))
 
 
-def build(spec: SpecLike, *, seed: int | None = None, checks: Checks = "warn", collect_data: bool = True):
+def build(
+    spec: SpecLike,
+    *,
+    seed: int | None = None,
+    checks: Checks = "warn",
+    collect_data: bool = True,
+    collect: Collect = "year",
+):
     """Build a ready-to-run :class:`~life_model.model.LifeModel` from ``spec`` (see :func:`run` for
-    ``checks``)."""
+    ``checks`` and ``collect``)."""
     from .spec import WARNING, SpecValidationError, build_model, validate_spec
 
     if checks not in CHECK_MODES:
@@ -263,7 +273,9 @@ def build(spec: SpecLike, *, seed: int | None = None, checks: Checks = "warn", c
         strict = [f for f in validate_spec(spec) if f.level == WARNING]
         if strict:
             raise SpecValidationError(strict)
-    model = build_model(spec, seed=seed, check=checks != "off", collect_data=collect_data)
+    if collect not in COLLECT_MODES:
+        raise InputError(f"collect must be one of {COLLECT_MODES}, got {collect!r}")
+    model = build_model(spec, seed=seed, check=checks != "off", collect_data=collect_data, collect=collect)
     # The same mode runs the yearly invariant checker (life_model.invariants): strict raises
     # InvariantError at the first year with a violation, warn emits InvariantWarning.
     model.checks = checks
@@ -294,6 +306,7 @@ def run(
     scenario: str | None = None,
     real_dollars: bool = False,
     checks: Checks = "warn",
+    collect: Collect = "year",
 ) -> "RunResult":
     """Build and run a household; returns its :class:`~life_model.results.RunResult`.
 
@@ -311,13 +324,15 @@ def run(
             :class:`CheckWarning`. ``"strict"``: those raise too (``SpecValidationError`` /
             ``InvariantError`` / ``ConservationError``). ``"off"``: no validator (only
             not-yet-supported fields are rejected) and no checks.
+        collect: ``"year"`` (default): one row per simulated year. ``"month"``: also a row per
+            month end (``RunResult.monthly_frame``, written by ``to_json``/``to_csv``/``to_parquet``).
 
     Raises:
         SpecValidationError: The spec is invalid (``findings`` lists why).
         InputError: Bad overrides (unknown scenario, ``years`` and ``end_year`` both set...).
     """
     spec = prepare_spec(spec, years=years, end_year=end_year, scenario=scenario)
-    model = build(spec, seed=seed, checks=checks)
+    model = build(spec, seed=seed, checks=checks, collect=collect)
     result = model.run()
     _check_conservation(result, checks)
     return result.real_dollars() if real_dollars else result
@@ -363,6 +378,19 @@ def _balance_columns(frame) -> list[str]:
     return columns + [c for c in ("Home Equity", "Debt", "Mortgage Principal") if c in frame.columns]
 
 
+def _spec_start(spec: Any) -> str | None:
+    """``meta.start`` ("YYYY-MM") of a spec or spec dict, if set."""
+    if spec is None:
+        return None
+    meta = getattr(spec, "meta", None)
+    if meta is not None:
+        return getattr(meta, "start", None)
+    if isinstance(spec, Mapping):
+        start = (spec.get("meta") or {}).get("start")
+        return None if start is None else str(start)
+    return None
+
+
 def summarize(result: "RunResult", *, yearly: bool = True) -> dict[str, Any]:
     """A JSON-ready summary of a run: span, seed, final-year net worth and balances, run totals,
     shortfall years, conservation status and (with ``yearly``) the key columns per year."""
@@ -378,6 +406,12 @@ def summarize(result: "RunResult", *, yearly: bool = True) -> dict[str, Any]:
         "dollars": "real" if result.real else "nominal",
         "years": [result.years[0], result.years[-1]] if result.years else [],
     }
+    start = _spec_start(spec)
+    if start is not None and not start.endswith("-01"):
+        summary["start"] = start  # a part first year: the run starts in this month
+    monthly = result.monthly_frame
+    if monthly is not None:
+        summary["months"] = len(monthly)
     if frame is None or frame.empty:
         return summary
     last = frame.iloc[-1]

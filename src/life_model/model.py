@@ -37,6 +37,32 @@ def round_money(amount: float) -> float:
     return round(amount, 2)
 
 
+def snap_money(amount: float) -> float:
+    """``amount`` with floating-point residue removed: a value within a millionth of a cent of a whole
+    cent becomes that cent (``99999.99999999999`` -> ``100000.0``); any other value is returned
+    unchanged. Twelve monthly twelfths of a salary then add back to the salary."""
+    cents = round(amount, 2)
+    return cents if abs(amount - cents) < 1e-8 else amount
+
+
+def parse_year_month(text: str) -> tuple[int, int]:
+    """``"YYYY-MM"`` (or ``"YYYY-MM-DD"``, whose day is ignored: events fire in their month) as
+    ``(year, month)``."""
+    parts = str(text).split("-")
+    try:
+        year, month = int(parts[0]), int(parts[1])
+    except (IndexError, ValueError):
+        raise ValueError(f"Expected a 'YYYY-MM' date, got {text!r}") from None
+    if not 1 <= month <= 12:
+        raise ValueError(f"Month must be 1-12 in {text!r}")
+    return year, month
+
+
+def month_index(year: int, month: int) -> int:
+    """An absolute month number (``year * 12 + month - 1``): differences are months apart."""
+    return year * 12 + month - 1
+
+
 class Stat:
     def __init__(
         self,
@@ -47,6 +73,7 @@ class Stat:
         *,
         description: str = "",
         default=0,
+        flow: bool = False,
     ):
         """Stat
 
@@ -58,6 +85,9 @@ class Stat:
             description (str, optional): What the stat measures (rendered into docs/outputs.md).
             default (optional): Model-level value when no agent owns the stat (an aggregator such as
                 ``max`` has no value for an empty sequence).
+            flow (bool, optional): A flow over the year (income, taxes, spending) rather than a balance
+                read at year end. Flow stats accumulate month by month and are reset to 0 after each
+                year's row is collected (keyword-only).
         """
         self.name = name
         self.title = title or name
@@ -65,22 +95,28 @@ class Stat:
         self.aggregator = aggregator or sum
         self.description = description
         self.default = default
+        self.flow = flow
 
     def model_reporter(self, model: "LifeModel"):
         """Aggregate the stat over the agents whose class declares it in ``STATS_OWNED``.
 
         Only owners are counted, so a stat can never be double counted by an agent type that
-        merely inherited a zero, and a write to an undeclared agent cannot leak into the total.
+        merely inherited a zero, and a write to an undeclared agent cannot leak into the total. A flow
+        stat also counts what agents removed earlier in the year (a decedent, a closed account)
+        accumulated before they left.
         """
         values = [getattr(agent, self.name) for agent in model.agents if self.name in agent.STATS_OWNED]
+        departed = getattr(model, "_departed_flows", {}).get(self.name) if self.flow else None
+        if departed:
+            values.append(departed)
         if not values:
             return self.default
         return self.aggregator(values)
 
 
 class MoneyStat(Stat):
-    def __init__(self, name: str, title: str | None = None, description: str = ""):
-        super().__init__(name, title, FMT_MONEY, description=description)
+    def __init__(self, name: str, title: str | None = None, description: str = "", *, flow: bool = False):
+        super().__init__(name, title, FMT_MONEY, description=description, flow=flow)
 
 
 class EventKind(str, Enum):
@@ -182,6 +218,8 @@ class Event:
             self.kind = EventKind.NOTE
             message = kind if message is None else message
         self.year = year
+        #: Month (1-12) it was logged in (stamped by :meth:`EventLog.add`).
+        self.month: int | None = None
         self.person_name: str | None = getattr(person, "name", person)
         self.person_id: int | None = getattr(person, "unique_id", None)
         self.amount = amount
@@ -232,6 +270,7 @@ class Event:
 
         return {
             "year": self.year,
+            "month": self.month,
             "kind": self.kind.value,
             "person": self.person_name,
             "person_id": self.person_id,
@@ -250,6 +289,7 @@ class Event:
 #: Columns of :meth:`EventLog.to_frame` (and ``RunResult.events``).
 EVENT_COLUMNS = (
     "year",
+    "month",
     "kind",
     "person",
     "person_id",
@@ -285,6 +325,8 @@ class EventLog:
         if event.year is None or event.kind == EventKind.NOTE:
             # Stamped with the year it was logged (as always for free-text events).
             event.year = self.model.year
+        if event.month is None and event.year == self.model.year:
+            event.month = self.model.month
         self.list.append(event)
 
     def of_kind(self, *kinds: "EventKind | str") -> list[Event]:
@@ -361,11 +403,30 @@ class LifeModelDataCollector(mesa.DataCollector):
         """Collect ``reporter`` (an attribute name or a callable on the agent) as column ``name``."""
         self._new_agent_reporter(name, reporter)
 
+    def collect(self, model):
+        """Collect a row, numbering agent records by collection (1, 2, ...) rather than Mesa's
+        ``model.time``, which counts months: the agent frame's ``Step`` is the n-th collected row."""
+        self._collections = getattr(self, "_collections", 0) + 1
+        super().collect(model)
+        for records in (self._agent_records, self._agenttype_records):
+            if model.time in records and model.time != self._collections:
+                records[self._collections] = records.pop(model.time)
+
+    def _record_agents(self, model):
+        number = self._collections
+        return ((number, *record[1:]) for record in super()._record_agents(model))
+
 
 class LifeModel(mesa.Model):
     STATS: ClassVar[list[MoneyStat]] = [
-        MoneyStat("stat_gross_income", "Income", "Gross income made in the year (salary, bonus, RSU vests)."),
-        MoneyStat("stat_bank_balance", "Bank Balance", "Bank account balances after the year's bills are paid."),
+        MoneyStat(
+            "stat_gross_income", "Income", "Gross income made in the year (salary, bonus, RSU vests).", flow=True
+        ),
+        MoneyStat(
+            "stat_bank_balance",
+            "Bank Balance",
+            "Bank account balances at year end, after December's bills and the taxes.",
+        ),
         MoneyStat("stat_brokerage_balance", "Brokerage Balance", "Taxable brokerage balances at year end."),
         MoneyStat("stat_401k_balance", "401k Balance", "401k balances (pre-tax plus Roth) at year end."),
         MoneyStat(
@@ -373,41 +434,68 @@ class LifeModel(mesa.Model):
         ),
         MoneyStat("stat_debt", "Debt", "Unpaid-bills debt plus outstanding loan and mortgage balances."),
         MoneyStat(
-            "stat_taxes_paid", "Taxes", "All taxes paid in the year: federal, state, payroll, NIIT, net of credits."
+            "stat_taxes_paid",
+            "Taxes",
+            "All taxes paid in the year: federal, state, payroll, NIIT, net of credits.",
+            flow=True,
         ),
-        MoneyStat("stat_money_spent", "Spending", "Living expenses plus one-time expenses charged in the year."),
-        MoneyStat("stat_retirement_contrib", "401k Contrib", "Employee 401k deferrals (pre-tax and Roth) in the year."),
-        MoneyStat("stat_retirement_match", "401k Match", "Employer 401k match in the year."),
-        MoneyStat("stat_required_min_distrib", "RMDs", "Required minimum distributions taken in the year."),
-        MoneyStat("stat_housing_costs", "Housing", "Mortgage payments, home expenses and rent paid in the year."),
-        MoneyStat("stat_interest_paid", "Interest Paid", "Interest charged on mortgages, loans and carried debt."),
-        MoneyStat("stat_ss_income", "SS Income", "Social Security benefits received in the year."),
-        MoneyStat("stat_charitable_donations", "Charity", "Charitable donations (direct and DAF grants) in the year."),
+        MoneyStat(
+            "stat_money_spent", "Spending", "Living expenses plus one-time expenses charged in the year.", flow=True
+        ),
+        MoneyStat(
+            "stat_retirement_contrib",
+            "401k Contrib",
+            "Employee 401k deferrals (pre-tax and Roth) in the year.",
+            flow=True,
+        ),
+        MoneyStat("stat_retirement_match", "401k Match", "Employer 401k match in the year.", flow=True),
+        MoneyStat("stat_required_min_distrib", "RMDs", "Required minimum distributions taken in the year.", flow=True),
+        MoneyStat(
+            "stat_housing_costs", "Housing", "Mortgage payments, home expenses and rent paid in the year.", flow=True
+        ),
+        MoneyStat(
+            "stat_interest_paid", "Interest Paid", "Interest charged on mortgages, loans and carried debt.", flow=True
+        ),
+        MoneyStat("stat_ss_income", "SS Income", "Social Security benefits received in the year.", flow=True),
+        MoneyStat(
+            "stat_charitable_donations",
+            "Charity",
+            "Charitable donations (direct and DAF grants) in the year.",
+            flow=True,
+        ),
     ]
 
     EXTRA_STATS: ClassVar[list[Stat]] = [
-        MoneyStat("stat_taxes_paid_federal", "Federal Taxes", "Federal income tax, including penalties."),
-        MoneyStat("stat_taxes_paid_state", "State Taxes", "State income tax."),
-        MoneyStat("stat_taxes_paid_ss", "SS Taxes", "Social Security payroll tax."),
-        MoneyStat("stat_taxes_paid_medicare", "Medicare Taxes", "Medicare payroll tax (incl. the additional tax)."),
-        MoneyStat("stat_premium_payments", "Life Ins Premiums", "Life insurance premiums paid in the year."),
+        MoneyStat("stat_taxes_paid_federal", "Federal Taxes", "Federal income tax, including penalties.", flow=True),
+        MoneyStat("stat_taxes_paid_state", "State Taxes", "State income tax.", flow=True),
+        MoneyStat("stat_taxes_paid_ss", "SS Taxes", "Social Security payroll tax.", flow=True),
+        MoneyStat(
+            "stat_taxes_paid_medicare", "Medicare Taxes", "Medicare payroll tax (incl. the additional tax).", flow=True
+        ),
+        MoneyStat("stat_premium_payments", "Life Ins Premiums", "Life insurance premiums paid in the year.", flow=True),
         MoneyStat("stat_cash_value", "Life Ins Cash Value", "Whole-life cash value."),
-        MoneyStat("stat_death_benefit_paid", "Death Benefits", "Life insurance death benefits paid out."),
-        MoneyStat("stat_medical_costs", "Medical Costs", "Healthcare, Medicare and long-term-care costs."),
-        MoneyStat("stat_dependent_costs", "Dependent Costs", "Child and dependent costs charged in the year."),
-        MoneyStat("stat_pension_income", "Pension Income", "Defined-benefit pension income received."),
-        MoneyStat("stat_taxes_paid_niit", "NIIT", "Net investment income tax."),
-        MoneyStat("stat_capital_gains", "Capital Gains", "Net capital gains realized (after loss netting)."),
-        MoneyStat("stat_stock_vested", "Stock Vested", "Value of stock compensation vesting in the year."),
+        MoneyStat("stat_death_benefit_paid", "Death Benefits", "Life insurance death benefits paid out.", flow=True),
+        MoneyStat("stat_medical_costs", "Medical Costs", "Healthcare, Medicare and long-term-care costs.", flow=True),
+        MoneyStat(
+            "stat_dependent_costs", "Dependent Costs", "Child and dependent costs charged in the year.", flow=True
+        ),
+        MoneyStat("stat_pension_income", "Pension Income", "Defined-benefit pension income received.", flow=True),
+        MoneyStat("stat_taxes_paid_niit", "NIIT", "Net investment income tax.", flow=True),
+        MoneyStat("stat_capital_gains", "Capital Gains", "Net capital gains realized (after loss netting).", flow=True),
+        MoneyStat("stat_stock_vested", "Stock Vested", "Value of stock compensation vesting in the year.", flow=True),
         MoneyStat("stat_stock_unvested", "Stock Unvested", "Value of unvested stock grants at year end."),
         MoneyStat(
             "stat_itemized_deductions",
             "Itemized Deductions",
             "Itemized deductions claimed (0 when standard was taken).",
+            flow=True,
         ),
-        MoneyStat("stat_tax_credits", "Credits", "Tax credits (child tax credit, ...) claimed."),
+        MoneyStat("stat_tax_credits", "Credits", "Tax credits (child tax credit, ...) claimed.", flow=True),
         MoneyStat(
-            "stat_tax_penalties", "Penalties", "Additional taxes (early-withdrawal penalties); part of Federal Taxes."
+            "stat_tax_penalties",
+            "Penalties",
+            "Additional taxes (early-withdrawal penalties); part of Federal Taxes.",
+            flow=True,
         ),
         MoneyStat(
             "stat_net_worth",
@@ -425,8 +513,8 @@ class LifeModel(mesa.Model):
         MoneyStat("stat_home_value", "Home Value", "Market value of homes owned at year end."),
         MoneyStat("stat_home_equity", "Home Equity", "Home value minus the mortgage balance."),
         MoneyStat("stat_mortgage_principal", "Mortgage Principal", "Mortgage balances at year end."),
-        MoneyStat("stat_agi", "AGI", "Adjusted gross income on the year's returns."),
-        MoneyStat("stat_taxable_income", "Taxable Income", "Taxable income on the year's returns."),
+        MoneyStat("stat_agi", "AGI", "Adjusted gross income on the year's returns.", flow=True),
+        MoneyStat("stat_taxable_income", "Taxable Income", "Taxable income on the year's returns.", flow=True),
         Stat(
             "stat_marginal_rate",
             "Marginal Rate",
@@ -443,28 +531,39 @@ class LifeModel(mesa.Model):
             default=False,
         ),
         MoneyStat(
-            "stat_forced_sales", "Forced Sales", "Brokerage holdings the payment waterfall sold to pay bills and taxes."
+            "stat_forced_sales",
+            "Forced Sales",
+            "Brokerage holdings the payment waterfall sold to pay bills and taxes.",
+            flow=True,
         ),
         MoneyStat(
             "stat_pretax_withdrawals",
             "Pre-tax Withdrawals",
             "401k/IRA/HSA money the payment waterfall withdrew to pay bills and taxes (RMDs excluded).",
+            flow=True,
         ),
     ]
 
-    #: The ordered stages one ``step()`` (one simulated year) runs over every agent:
+    #: The ordered stages one ``step()`` (one simulated **month**) runs over every agent:
     #:
-    #: * ``pre_step``: the year starts — ages advance, mortality, wages and benefits arrive, RMDs.
+    #: * ``pre_step``: the month starts — mortality, wages and benefits arrive, RMDs.
     #: * ``events``: scheduled life events fire (``LifeEvents`` is the only default participant),
-    #:   after income has arrived and before anything is settled, so an event's expense, purchase,
-    #:   marriage, state or salary change applies to *this* year.
-    #: * ``step``: account growth, then tax-unit settlement (taxes, bills, withdrawals).
-    #: * ``post_step``: year-end resets and escalators.
+    #:   after the month's income has arrived and before its bills are paid, so an event's expense,
+    #:   purchase, marriage, state or salary change applies from *this* month.
+    #: * ``step``: payroll true-up, account growth and interest, then the tax units pay the month's
+    #:   bills through the household waterfall.
+    #: * ``post_step``: end-of-month bookkeeping.
     #:
-    #: Within a stage agents run by ``STEP_PRIORITY`` (ascending), then construction order. A later
-    #: plan can extend the tuple (e.g. a year-end stage); every ``LifeModelAgent`` has a no-op
-    #: method per stage, so a new stage only needs a default method on the base class.
+    #: Within a stage agents run by ``STEP_PRIORITY`` (ascending), then construction order. Every
+    #: ``LifeModelAgent`` has a no-op method per stage, so a new stage only needs a default method on
+    #: the base class.
     STAGES: ClassVar[tuple[str, ...]] = ("pre_step", "events", "step", "post_step")
+    #: Stages run once per simulated year, before the first month's ``pre_step`` (January, or the
+    #: start month of a part-year first year): per-year setup such as the year's RMD amount.
+    YEAR_START_STAGES: ClassVar[tuple[str, ...]] = ("on_year_start",)
+    #: Stages run once per simulated year, after December's ``post_step``: tax settlement,
+    #: escalators, contribution-limit resets. Data is collected after them.
+    YEAR_END_STAGES: ClassVar[tuple[str, ...]] = ("on_year_end",)
 
     def __init__(
         self,
@@ -475,13 +574,21 @@ class LifeModel(mesa.Model):
         scenario: str | None = None,
         *,
         collect_data: bool = True,
+        start: str | None = None,
+        start_month: int | None = None,
+        collect: str = "year",
         checks: str = "off",
     ):
         """LifeModel Helper Class
 
+        The model steps one calendar **month** at a time (``step()``); a simulated year is a reporting
+        cadence (``step_year()``, data collected at each year end). ``end_year`` is the last
+        simulated December.
+
         Args:
-            end_year (int, optional): End date of the model. Defaults to None.
-            start_year (int, optional): Start date of the model. Defaults to None.
+            end_year (int, optional): Last simulated year (its December is the last month). Defaults
+                to ``start_year + 50``.
+            start_year (int, optional): First simulated year. Defaults to the current year.
             seed (int, optional): Random seed. Defaults to None.
             config (FinancialConfig, optional): Per-model financial configuration.
                 Defaults to a fresh copy of the packaged defaults so that separate
@@ -493,6 +600,13 @@ class LifeModel(mesa.Model):
                 reporting helpers (``get_yearly_stat_df``, ``add_agent_stat``) cannot be used.
                 Intended for high-throughput consumers (e.g. RL rollouts) that never read the
                 collected frames. Defaults to True (keyword-only).
+            start (str, optional): First simulated month as ``"YYYY-MM"`` (keyword-only); sets
+                ``start_year`` and ``start_month``. A model started in October simulates three months
+                of its first year.
+            start_month (int, optional): First simulated month (1-12) of ``start_year``
+                (keyword-only). Defaults to January.
+            collect (str, optional): ``"year"`` (default) collects one row per simulated year;
+                ``"month"`` also collects a row per month (see :meth:`monthly_frame`). Keyword-only.
             checks (str, optional): Run the invariant checker (:mod:`life_model.invariants`) at the
                 end of every simulated year: ``"strict"`` raises ``InvariantError`` on a violation,
                 ``"warn"`` emits ``InvariantWarning``, ``"off"`` (default) skips it. Violations are
@@ -502,8 +616,21 @@ class LifeModel(mesa.Model):
         super().__init__(rng=seed)
         #: The seed this model was built with (None when unseeded; see ``RunResult.seed``).
         self.initial_seed = seed
+        if start is not None:
+            start_year_from, start_month_from = parse_year_month(start)
+            if start_year is not None and start_year != start_year_from:
+                raise ValueError(f"start={start!r} conflicts with start_year={start_year}")
+            if start_month is not None and start_month != start_month_from:
+                raise ValueError(f"start={start!r} conflicts with start_month={start_month}")
+            start_year, start_month = start_year_from, start_month_from
         if start_year is None:
             start_year = datetime.now().astimezone().year
+        if start_month is None:
+            start_month = 1
+        if not 1 <= int(start_month) <= 12:
+            raise ValueError(f"start_month must be 1-12, got {start_month}")
+        if collect not in ("year", "month"):
+            raise ValueError(f"collect must be 'year' or 'month', got {collect!r}")
 
         # Resolve per-model financial configuration.
         if config is None:
@@ -521,7 +648,16 @@ class LifeModel(mesa.Model):
             end_year = start_year + 50
         self.start_year = start_year
         self.end_year = end_year
+        #: First simulated month (1-12) of ``start_year``.
+        self.start_month = int(start_month)
+        #: The calendar year being (or about to be) simulated.
         self.year = start_year
+        #: The calendar month (1-12) being (or about to be) simulated.
+        self.month = self.start_month
+        #: Months simulated so far (0-based index of the current month since the start).
+        self.period = 0
+        #: ``"year"`` or ``"month"`` (see the ``collect`` argument).
+        self.collect = collect
         self.event_log = EventLog(self)
         #: Every settled return, keyed ``(year, unit_id)``; ``tax_returns[year]`` works when the year
         #: has one return (see :class:`~life_model.tax.return_record.TaxReturns`).
@@ -533,6 +669,8 @@ class LifeModel(mesa.Model):
         #: Balance sheets around each simulated year and the ledger range posted during it, keyed by
         #: year (recorded when collecting data; read by :mod:`life_model.checks`).
         self.balance_sheets: dict = {}
+        #: The same around each simulated month, keyed ``(year, month)``.
+        self.month_balance_sheets: dict = {}
         self.simulated_years = []
         # Invariant checker (Plan 29 D4): mode, the violations found, and per-year start snapshots.
         from .invariants import validate_mode
@@ -541,11 +679,18 @@ class LifeModel(mesa.Model):
         self.invariant_violations: list = []
         self._invariant_snapshots: dict = {}
         self._stages = list(self.STAGES)
+        self._year_opening = None
+        self._year_ledger_start = 0
+        #: Model-level rows collected each month when ``collect="month"`` (see :meth:`monthly_frame`).
+        self._monthly_rows: list[dict] = []
+        # This year's flow stats of agents removed during it (see LifeModelAgent.remove).
+        self._departed_flows: dict[str, float] = {}
         # Attributes snapshotted before post_step (see add_agent_stat(..., pre_post=True)).
         self._pre_post_attrs: set[str] = {"base_salary", "base_spending"}
         self._closing_sheet = None
-        #: The stage currently executing (one of ``STAGES``), or None outside ``step()`` (model
-        #: setup, between years). Agents record it at construction (``created_in_stage``).
+        #: The stage currently executing (one of ``STAGES``, ``YEAR_START_STAGES`` or
+        #: ``YEAR_END_STAGES``), or None outside ``step()`` (model setup, between months). Agents
+        #: record it at construction (``created_in_stage``).
         self.current_stage: str | None = None
 
         # The economy provides the year's rates (inflation, returns, wage growth) to every other
@@ -616,85 +761,173 @@ class LifeModel(mesa.Model):
                 return stat
         return None
 
+    # ------------------------------------------------------------------
+    # Time
+    # ------------------------------------------------------------------
+
+    @property
+    def is_year_end(self) -> bool:
+        """Whether the current month is December (the year-end stages run after it)."""
+        return self.month == 12
+
+    @property
+    def is_year_start(self) -> bool:
+        """Whether the current month is the first simulated month of its year (January, or the
+        start month of a part-year first year)."""
+        return self.month == 1 or self.period == 0
+
+    @property
+    def month_index(self) -> int:
+        """The current month as an absolute month number (see :func:`month_index`)."""
+        return month_index(self.year, self.month)
+
+    def months_in_year(self, year: int | None = None) -> int:
+        """How many months of ``year`` (default: the current year) the model simulates: 12, or fewer
+        for a part-year first year."""
+        year = self.year if year is None else year
+        if year == self.start_year:
+            return 13 - self.start_month
+        return 12
+
+    @property
+    def first_month_of_year(self) -> int:
+        """The first simulated month of the current year (``start_month`` in the first year, else 1)."""
+        return self.start_month if self.year == self.start_year else 1
+
+    @property
+    def is_finished(self) -> bool:
+        """Whether every month through ``end_year``'s December has been simulated."""
+        return self.year > self.end_year
+
     def step(self):
-        """Execute one step of the model for a single simulated year.
+        """Execute one step of the model: one simulated **month**.
 
-        Canonical yearly sequence (see ``STAGES``, and LifeModelAgent.STEP_PRIORITY for ordering
-        within a stage):
+        Monthly sequence (see ``STAGES``, and LifeModelAgent.STEP_PRIORITY for ordering within a
+        stage):
 
-        * ``pre_step``: age++, mortality, RMDs, income and benefits deposited
-        * ``events``: scheduled life events fire (before settlement, so they apply this year)
-        * ``step``: payroll true-up, account growth, then tax units settle taxes/spending/withdrawals
-        * ``post_step``: stat resets, escalators (salary/spending/rent increases), taxable_income reset
+        * year start (first month of a year only): flow stats reset to 0, then every agent's
+          ``on_year_start``
+        * ``pre_step``: mortality, wages and benefits deposited, RMDs
+        * ``events``: scheduled life events fire (before the month's bills are paid)
+        * ``step``: payroll true-up, account growth and interest, then the month's bills
+        * ``post_step``: end-of-month bookkeeping
+        * year end (December only): every agent's ``on_year_end`` (tax settlement, escalators,
+          resets), then every agent's ``collect_stats`` and data collection
 
-        Then every agent's ``collect_stats`` year-end hook runs.
+        The DataCollector row for year Y is collected at Y's year end (while ``self.year`` still
+        equals Y), so the row for year Y contains year-Y flows and end-of-year-Y balances.
 
-        The DataCollector row for year Y is collected *after* the stages run (while ``self.year``
-        still equals Y), so the row for year Y contains year-Y flows and end-of-year-Y balances.
-
-        Once the final year has been simulated ``self.running`` is cleared and further calls are
+        Once the final December has been simulated ``self.running`` is cleared and further calls are
         no-ops. This lets interactive drivers (SolaraViz's Play loop, which runs while
-        ``self.running``) stop at ``end_year``; the notebook ``run()`` path calls step() exactly
-        once per year in the range and never reaches the no-op branch.
+        ``self.running``) stop at ``end_year``.
         """
         # Don't step past the configured final year.
-        if self.year > self.end_year:
+        if self.is_finished:
             self.running = False
             return
 
-        self.simulated_years.append(self.year)
         checking = self.checks != "off"
         track = self.datacollector is not None or checking
+        if self.is_year_start:
+            if self.period > 0:
+                self._reset_flow_stats()
+            self.simulated_years.append(self.year)
+            if track:
+                from .ledger import household_balance_sheet
+
+                self._year_opening = household_balance_sheet(self)
+                self._year_ledger_start = len(self.ledger)
+            if checking:
+                from .invariants import year_start
+
+                year_start(self)
+            self._run_stages(self.YEAR_START_STAGES)
         if track:
             from .ledger import household_balance_sheet
 
-            opening = household_balance_sheet(self)
-            ledger_start = len(self.ledger)
-        if checking:
-            from .invariants import year_start
+            month_opening = household_balance_sheet(self)
+            month_ledger_start = len(self.ledger)
 
-            year_start(self)
+        year_end = self.is_year_end
+        self._run_stages(self.STAGES, year_end=year_end)
+        if year_end:
+            self._run_stages(self.YEAR_END_STAGES)
+            self._collect_year_end_stats()
+        elif self.datacollector is not None and self.collect == "month":
+            self._collect_month_end_stats()
 
-        # Execute each stage in a deterministic, priority-ordered sequence per stage. The agent list
-        # is snapshotted per stage: an agent created during a stage first runs in the next stage, and
-        # an agent removed during a stage (a decedent's pension, say) does not run the rest of it.
-        agents = self.agents
-        for stage in self._stages:
-            self.current_stage = stage
-            if stage == "post_step":
-                # Escalators run in post_step; snapshot what they change so reporters can show the
-                # year's value (e.g. this year's salary, not next year's).
-                self._snapshot_pre_post()
-            for agent in sorted(agents, key=lambda a: a.STEP_PRIORITY.get(stage, 0)):
-                if agent in agents:
-                    getattr(agent, stage)()
-        self.current_stage = None
-        self._collect_year_end_stats()
-
-        # Collect after the stages so row Year=Y holds year-Y flows and balances
-        # (skipped entirely when the model was built with collect_data=False).
         if track:
-            from .checks import YearBalances
+            from .checks import MonthBalances, YearBalances
+            from .ledger import household_balance_sheet
 
-            closing = self._closing_sheet
-            self.balance_sheets[self.year] = YearBalances(
+            closing = self._closing_sheet if year_end else household_balance_sheet(self)
+            self.month_balance_sheets[(self.year, self.month)] = MonthBalances(
                 year=self.year,
-                opening=opening,
+                month=self.month,
+                opening=month_opening,
                 closing=closing,
-                ledger_start=ledger_start,
+                ledger_start=month_ledger_start,
                 ledger_end=len(self.ledger),
             )
-        if self.datacollector is not None:
-            for record in self.ledger.to_records(ledger_start):
-                self.datacollector.add_table_row("Ledger", record)
-            self.datacollector.collect(self)
-        if checking:
+            if self.collect == "month" and self.datacollector is not None:
+                self._monthly_rows.append(self._monthly_row())
+            if year_end:
+                self.balance_sheets[self.year] = YearBalances(
+                    year=self.year,
+                    opening=self._year_opening,
+                    closing=closing,
+                    ledger_start=self._year_ledger_start,
+                    ledger_end=len(self.ledger),
+                )
+                # Collect after the stages so row Year=Y holds year-Y flows and balances.
+                if self.datacollector is not None:
+                    for record in self.ledger.to_records(self._year_ledger_start):
+                        self.datacollector.add_table_row("Ledger", record)
+                    self.datacollector.collect(self)
+        if year_end and checking:
             from .invariants import run_year_checks
 
             run_year_checks(self, self.year)
 
-        self.year += 1
-        self.running = self.year <= self.end_year
+        self._advance_month()
+        self.running = not self.is_finished
+
+    def step_year(self):
+        """Simulate through the next year end: the rest of the current year's months (12, or fewer
+        for a part-year first year). A no-op (that clears ``running``) once the run is finished."""
+        if self.is_finished:
+            self.step()
+            return
+        year = self.year
+        while not self.is_finished and self.year == year:
+            self.step()
+
+    def _advance_month(self) -> None:
+        self.period += 1
+        if self.month == 12:
+            self.month = 1
+            self.year += 1
+        else:
+            self.month += 1
+
+    def _run_stages(self, stages, *, year_end: bool = False) -> None:
+        """Run ``stages`` over every agent in priority order.
+
+        The agent list is snapshotted per stage: an agent created during a stage first runs in the
+        next stage, and an agent removed during a stage (a decedent's pension, say) does not run the
+        rest of it.
+        """
+        for stage in stages:
+            self.current_stage = stage
+            if stage == "post_step" and year_end:
+                # Escalators run at year end; snapshot what they change so reporters can show the
+                # year's value (e.g. this year's salary, not next year's).
+                self._snapshot_pre_post()
+            agents = self.agents
+            for agent in sorted(agents, key=lambda a: a.STEP_PRIORITY.get(stage, 0)):
+                if agent in agents:
+                    getattr(agent, stage)()
+        self.current_stage = None
 
     def _collect_year_end_stats(self) -> None:
         """Run every agent's :meth:`LifeModelAgent.collect_stats` and set each person's net worth from
@@ -702,17 +935,53 @@ class LifeModel(mesa.Model):
         from .ledger import household_balance_sheet
         from .people.person import Person
 
+        flows = self._flow_stat_names()
         for agent in list(self.agents):
             agent.collect_stats()
+            for name in flows & agent.STATS_OWNED:
+                value = getattr(agent, name)
+                if isinstance(value, float):
+                    setattr(agent, name, snap_money(value))
         sheet = household_balance_sheet(self)
         for agent in self.agents:
             if isinstance(agent, Person) and not agent.is_deceased:
                 agent.stat_net_worth = sheet.owner_total(agent.unique_id)
         self._closing_sheet = sheet
 
+    def _collect_month_end_stats(self) -> None:
+        """Month-end balance stats for ``collect="month"`` (the year-end hook, mid-year)."""
+        self._collect_year_end_stats()
+
+    def _monthly_row(self) -> dict:
+        row = {"Year": self.year, "Month": self.month}
+        for stat in (*self.STATS, *self.EXTRA_STATS):
+            row[stat.title] = stat.model_reporter(self)
+        return row
+
+    def monthly_frame(self) -> pd.DataFrame:
+        """Model-level stats at each month end (``collect="month"`` only): ``Year`` and ``Month``
+        columns, balances at the month end and flows year to date (they reset after each year end)."""
+        if self.collect != "month":
+            raise ModelSetupException("Monthly rows are collected only with LifeModel(collect='month')")
+        return pd.DataFrame(self._monthly_rows)
+
+    def _reset_flow_stats(self) -> None:
+        """Start the new year's flow stats (income, spending, taxes, ...) at zero, before its first
+        month runs (so after ``step_year()`` an agent's flow stats still hold the year just
+        simulated). Balance stats are left as they are (they are re-read at each year end)."""
+        flows = self._flow_stat_names()
+        for agent in self.agents:
+            for name in flows & agent.STATS_OWNED:
+                setattr(agent, name, 0)
+        self._departed_flows = {}
+
+    @classmethod
+    def _flow_stat_names(cls) -> frozenset[str]:
+        return frozenset(stat.name for stat in (*cls.STATS, *cls.EXTRA_STATS) if stat.flow)
+
     def _snapshot_pre_post(self) -> None:
         """Copy the attributes registered with ``add_agent_stat(..., pre_post=True)`` (and the
-        built-in ``Salary``/``Spending Base`` columns) before the ``post_step`` escalators run."""
+        built-in ``Salary``/``Spending Base`` columns) before the year-end escalators run."""
         attrs = self._pre_post_attrs
         for agent in self.agents:
             values = {attr: getattr(agent, attr) for attr in attrs if hasattr(agent, attr)}
@@ -768,17 +1037,19 @@ class LifeModel(mesa.Model):
         return self.config_for_year(self.year)
 
     def run(self, *, spec=None) -> "RunResult":
-        """Run the simulation over the inclusive year range ``[start_year, end_year]``.
+        """Run the simulation over every remaining month through ``end_year``'s December.
 
-        The number of simulated years is ``end_year - start_year + 1``.
+        The number of simulated years is ``end_year - start_year + 1`` (the first may be a part
+        year; see ``start``).
 
         Returns:
             RunResult: the run's frames, tax returns, ledger, events and seed (see
             :mod:`life_model.results`). Callers that ignore it lose nothing: the frames are built
             from the model only when read. ``spec`` (keyword-only) is recorded on the result.
         """
-        for _ in self.get_year_range():
+        while not self.is_finished:
             self.step()
+        self.running = False
         return self.result(spec=spec)
 
     def result(self, *, spec=None) -> "RunResult":
@@ -947,14 +1218,15 @@ class LifeModel(mesa.Model):
 class LifeModelAgent(mesa.Agent):
     # Per-stage execution priority. Within a stage, agents run in ascending priority order
     # (lower runs first); ties preserve construction order. Priorities order the agents whose
-    # effects depend on each other, so the yearly sequence does not depend on construction order
+    # effects depend on each other, so the monthly sequence does not depend on construction order
     # (see LifeModel.step docstring and the shuffled-construction test):
-    #   pre_step:  economy (-100), Person ages/mortality (-20), pre_step life events (-15),
-    #              RMDs (-10), income and benefits (0), stock vests (5), cash consumers such as
-    #              premiums and donations (10)
-    #   events:    LifeEvents (0)
-    #   step:      payroll true-up (-30), account growth and bank interest (-10), settlement (0)
-    #   post_step: stat resets/escalators (0), post_step life events (10)
+    #   pre_step:    economy (-100), pre_step life events (-15), RMDs (-10), wages and benefits (0),
+    #                mortality (1), stock vests (5), cash consumers such as premiums and donations (10)
+    #   events:      LifeEvents (0)
+    #   step:        payroll true-up (-30), account growth and bank interest (-10), the month's bills (0)
+    #   post_step:   post_step life events (10)
+    #   on_year_end: LTC claims and life-insurance updates (-5), tax settlement (0), pension service
+    #                and COLA (5), escalators (10), the person's yearly resets (20)
     STEP_PRIORITY: ClassVar[dict[str, int]] = {}
 
     #: Model-level stats (``LifeModel.STATS`` / ``EXTRA_STATS`` names) this agent type reports.
@@ -980,6 +1252,8 @@ class LifeModelAgent(mesa.Agent):
         """
         super().__init__(model)  # unique_id is now automatically assigned
 
+        #: The model period (``LifeModel.period``, months since the start) when this agent was built.
+        self.created_period: int = getattr(model, "period", 0)
         #: The model year when this agent was constructed.
         self.created_year: int = model.year
         #: The stage running when this agent was constructed (e.g. ``"events"`` for an agent built
@@ -994,12 +1268,11 @@ class LifeModelAgent(mesa.Agent):
     @property
     def created_during_this_year(self) -> bool:
         """True when this agent was built *during* the current simulated year (by a life event or
-        another agent mid-year), as opposed to at setup or between years.
+        another agent mid-year), as opposed to at setup or between months.
 
-        Agents built in the ``pre_step`` or ``events`` stage are consumed in their creation year
-        (settlement pays their bills, ``Job.step`` books a new job's payroll), so they escalate at
-        that year end like setup agents do; this flag is for code that does need to tell a
-        brand-new agent apart (e.g. a first partial period once the engine is monthly).
+        Agents built in the ``pre_step`` or ``events`` stage are consumed from their creation month
+        (the month's bills pay their costs, ``Job.step`` books a new job's paycheck), so they escalate
+        at that year end like setup agents do; ``created_period`` says which month that was.
         """
         return self.created_in_stage is not None and self.created_year == self.model.year
 
@@ -1015,9 +1288,28 @@ class LifeModelAgent(mesa.Agent):
     def post_step(self):
         """Post-step phase. Called for all agents after the step phase."""
 
+    def remove(self):
+        """Remove the agent from the model, keeping this year's flow stats (income, spending, taxes,
+        ...) it accumulated in the year's model totals."""
+        model = self.model
+        departed = getattr(model, "_departed_flows", None)
+        if departed is not None:
+            for name in model._flow_stat_names() & self.STATS_OWNED:
+                value = getattr(self, name, 0) or 0
+                if value:
+                    departed[name] = departed.get(name, 0.0) + value
+        super().remove()
+
+    def on_year_start(self):
+        """Year-start phase: once per simulated year, before the first month's ``pre_step``."""
+
+    def on_year_end(self):
+        """Year-end phase: once per simulated year, after December's ``post_step`` (tax settlement,
+        escalators, annual resets)."""
+
     def collect_stats(self):
-        """Year-end hook: record end-of-year balance stats. Called for every agent after the stages
-        and before data collection (a monthly engine calls it at December's year end)."""
+        """Year-end hook: record end-of-year balance stats. Called for every agent after the
+        year-end stages and before data collection (and at each month end with ``collect="month"``)."""
 
 
 class ModelSetupException(Exception):
