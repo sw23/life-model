@@ -97,15 +97,15 @@ def _spec_fixed(name: str) -> LifeModel:
     return build_model(HouseholdSpec.model_validate(data))
 
 
-#: Year-end net worth from the pre-plan annual engine (fourth-wave, 2cb84b0) under the fixed economy,
-#: in years 1, 5, 10 and 20 (``docs/rebaseline-plan-32.md``, "Fixed-economy tolerance").
+#: Year-end net worth from the pre-plan annual engine (fourth-wave at f66307f, with Plans 29 and 30) under
+#: the fixed economy, in years 1, 5, 10 and 20 (``docs/rebaseline-plan-32.md``, "Fixed-economy tolerance").
 ANNUAL_ENGINE_NET_WORTH = {
-    "spec_single_renter": {2026: 81906.82, 2030: 182710.97, 2035: 426597.66, 2045: 1234972.7},
-    "spec_married_homeowners": {2026: 546979.78, 2030: 941259.06, 2035: 1406483.02, 2045: 2498165.32},
+    "spec_single_renter": {2026: 81906.82, 2030: 182710.97, 2035: 426597.66, 2045: 1232550.88},
+    "spec_married_homeowners": {2026: 546979.78, 2030: 941760.71, 2035: 1407704.97, 2045: 2499441.99},
     "spec_retiree_couple": {2026: 1491226.71, 2030: 1731972.56, 2035: 2033657.23, 2045: 2553160.72},
-    "scn_married_homeowners": {2026: 1066243.59, 2030: 1793714.36, 2035: 2976980.52, 2045: 6104876.15},
+    "scn_married_homeowners": {2026: 1066243.59, 2030: 1790192.55, 2035: 2951423.5, 2045: 6044398.45},
     "scn_stochastic_retiree": {2026: 1485951.2, 2030: 1775419.5, 2035: 2207432.14, 2045: 3139082.6},
-    "scn_mortality_and_estate": {2026: 4973286.26, 2030: 6434775.25, 2035: 9109242.07, 2045: 16239553.62},
+    "scn_mortality_and_estate": {2026: 4973286.26, 2030: 6434775.25, 2035: 9109242.07, 2045: 16239174.12},
 }
 
 #: Allowed relative difference (percent) by horizon: year 1, through year 10, through year 20.

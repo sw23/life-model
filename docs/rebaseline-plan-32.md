@@ -164,7 +164,7 @@ year's settlement.
 
 Measured with `economy.mode: fixed` and immortal people on the example households (age-only, as
 before this plan added birth months to them; up to 50 years) and the four Plan 28 scenario households (the stochastic retiree under a fixed economy),
-against the pre-plan engine (`fourth-wave` at 2cb84b0, run in a scratch worktree). "Aligned" runs
+against the pre-plan engine (`fourth-wave` at f66307f, run in a scratch worktree). "Aligned" runs
 the monthly engine with every retirement age raised by 11/12 of a year, so a person retires in
 December of the year they reach their retirement age — the annual engine's last paid year — which
 isolates the monthly flows from the exact-age retirement month. Maximum absolute difference in
@@ -172,13 +172,20 @@ year-end net worth, as a percent of the annual engine's:
 
 | Household | Year 1 | Years 1-5 | Years 1-10 | Years 1-20 | All years | All years, not aligned |
 | --- | --- | --- | --- | --- | --- | --- |
-| Example single renter (50 y) | 0.68 | 1.76 | 2.20 | 2.25 | 3.21 | 8.97 |
+| Example single renter (61 y) | 0.68 | 1.76 | 2.20 | 2.25 | 3.28 | 9.48 |
 | Example married homeowners (47 y) | 0.10 | 0.47 | 0.76 | 1.22 | 1.73 | 8.38 |
 | Example retiree couple (31 y) | 0.08 | 0.59 | 0.94 | 1.30 | 1.91 | 1.91 |
-| Plan 28 married homeowners (45 y) | 0.38 | 1.30 | 1.87 | 2.44 | 4.14 | 11.87 |
-| Plan 28 stochastic retiree, fixed economy (40 y) | 0.00 | 0.35 | 0.70 | 0.70 | 6.20 | 6.20 |
+| Plan 28 married homeowners (45 y) | 0.38 | 1.29 | 1.84 | 2.42 | 4.38 | 12.14 |
+| Plan 28 stochastic retiree, fixed economy (40 y) | 0.00 | 0.35 | 0.70 | 0.70 | 6.23 | 6.23 |
 | Plan 28 mortality and estate (50 y) | 0.00 | 0.03 | 0.17 | 0.30 | 0.33 | 0.57 |
-| Plan 28 renter buys home (45 y) | 1.92 | 2.80 | 5.36 | 13.79 | 23.78 | 25.37 |
+| Plan 28 renter buys home (45 y) | 1.92 | 2.80 | 5.40 | 13.81 | 23.71 | 25.31 |
+
+Re-measured after merging Plans 29 and 30, against `fourth-wave` at f66307f: Plan 29's verified
+`tax_years` table (the SALT cap from 2025 on, among others) moved the annual engine's numbers, so the
+pinned values in `TestFixedEconomyMatchesTheAnnualEngine` were re-measured there too (the Plan 28
+married homeowners' 2035 and 2045 values failed against the 2cb84b0 pins). The first measurement,
+against 2cb84b0 (the single renter over its first 50 years), differed from this one by at most 0.5
+points in any cell.
 
 The plan expected "< 1% for balances". That holds for the first year (except the renter, whose
 first-year 401k starts from $0 so the half-year of growth its new contributions lose is 3% of it) and
