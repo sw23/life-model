@@ -69,7 +69,7 @@ class HealthSavingsAccount(TaxAdvantagedAccount):
         base = (
             hsa_config.contribution_limit_family if self.hsa_type == HSAType.FAMILY else hsa_config.contribution_limit
         )
-        if self.person.age >= hsa_config.catch_up_age:
+        if self.person.age_in(self.model.year) >= hsa_config.catch_up_age:  # by the end of the year
             base += hsa_config.catch_up_amount
         return base
 
@@ -100,7 +100,7 @@ class HealthSavingsAccount(TaxAdvantagedAccount):
         if withdrawn > 0:
             hsa_config = self.model.config.accounts.hsa
             self.person.income.add(IncomeType.PRETAX_DISTRIBUTION, withdrawn, source="hsa")
-            if self.person.age < hsa_config.non_medical_penalty_age:
+            if self.person.age_years_fractional < hsa_config.non_medical_penalty_age:
                 self.person.income.add_penalty(
                     withdrawn * hsa_config.non_medical_penalty_rate / 100, source="hsa_non_medical"
                 )

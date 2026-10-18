@@ -503,7 +503,8 @@ class Person(LifeModelAgent):
         """Remaining 402(g) elective-deferral room this year, aggregated across all jobs."""
         from ..limits import job_401k_contrib_limit
 
-        limit = job_401k_contrib_limit(self.age, self.model.year_config)
+        # Catch-up eligibility is by the age reached by the end of the year (IRC §414(v)).
+        limit = job_401k_contrib_limit(self.age_in(self.model.year), self.model.year_config)
         return max(0.0, limit - self._elective_deferrals_ytd)
 
     @property
@@ -765,10 +766,16 @@ class Person(LifeModelAgent):
         Every one is fully taxable as ordinary income."""
         config = self.model.config
         retirement_penalty = (
-            config.retirement.early_withdrawal_penalty_rate if self.age < federal_retirement_age(config) else 0.0
+            config.retirement.early_withdrawal_penalty_rate
+            if self.age_years_fractional < federal_retirement_age(config)
+            else 0.0
         )
         hsa_config = config.accounts.hsa
-        hsa_penalty = hsa_config.non_medical_penalty_rate if self.age < hsa_config.non_medical_penalty_age else 0.0
+        hsa_penalty = (
+            hsa_config.non_medical_penalty_rate
+            if self.age_years_fractional < hsa_config.non_medical_penalty_age
+            else 0.0
+        )
         return [
             (sum(a.pretax_balance for a in self.all_retirement_accounts), retirement_penalty),
             (sum(a.balance for a in self.traditional_iras), retirement_penalty),
@@ -810,7 +817,7 @@ class Person(LifeModelAgent):
         additional tax. Exceptions (age-55 separation, SEPP, disability, ...) are not modeled.
         """
         config = self.model.config
-        if amount <= 0 or self.age >= federal_retirement_age(config):
+        if amount <= 0 or self.age_years_fractional >= federal_retirement_age(config):
             return 0.0
         return amount * config.retirement.early_withdrawal_penalty_rate / 100
 

@@ -170,15 +170,17 @@ class TestFiftyNineAndAHalf(unittest.TestCase):
     def test_born_july_1966_reaches_fifty_nine_and_a_half_in_january_2026(self):
         model = LifeModel(start="2025-12", end_year=2026)
         person = Person(Family(model), "Jo", None, 70, Spending(model, 0), birth="1966-07")
+        BankAccount(person, "Bank", balance=5000, interest_rate=0)  # pays the year's taxes
         ira = TraditionalIRA(person, balance=10000, growth_rate=0)
         self.assertEqual(person.get_period_at_age(59.5), (2026, 1))
         self.assertFalse(ira.is_useable)  # December 2025: 59 and 5 months
         person.withdraw_from_traditional_iras(1000)
         self.assertAlmostEqual(person.income.penalties, 100)  # 10% early-withdrawal tax
-        model.step()  # -> January 2026
+        model.step()  # December 2025 runs (its return settles the penalty) -> January 2026
+        self.assertAlmostEqual(model.tax_returns[2025].total_penalties, 100)
         self.assertTrue(ira.is_useable)
         person.withdraw_from_traditional_iras(1000)
-        self.assertAlmostEqual(person.income.penalties, 100)  # no new penalty from 59½
+        self.assertEqual(person.income.penalties, 0)  # no penalty from 59½
 
 
 class TestMonthlyConservationOnEveryExample(unittest.TestCase):

@@ -29,7 +29,8 @@ def senior_deduction(
         threshold = cfg.phaseout_start_single
     reduction = cfg.phaseout_rate / 100 * max(0.0, magi - threshold)
     per_person = max(0.0, cfg.amount - reduction)
-    return per_person * sum(1 for member in members if member.age >= cfg.age)
+    # 65 or older by the end of the year.
+    return per_person * sum(1 for member in members if member.age_in(year) >= cfg.age)
 
 
 def charitable_cap(agi: float, config: "FinancialConfig") -> float:

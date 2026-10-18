@@ -58,7 +58,7 @@ class RothIRA(TaxAdvantagedAccount):
         withdrawn = super().withdraw(amount)
         earnings_withdrawn = withdrawn - (basis_before - self.contribution_basis)
         config = self.model.config
-        if earnings_withdrawn > 0 and self.person.age < federal_retirement_age(config):
+        if earnings_withdrawn > 0 and self.person.age_years_fractional < federal_retirement_age(config):
             self.person.income.add(IncomeType.PRETAX_DISTRIBUTION, earnings_withdrawn, source="roth_ira_earnings")
             self.person.income.add_penalty(
                 earnings_withdrawn * config.retirement.early_withdrawal_penalty_rate / 100, source="roth_ira_earnings"
@@ -67,7 +67,7 @@ class RothIRA(TaxAdvantagedAccount):
 
     def tax_free_withdrawable(self) -> float:
         """Amount that can be withdrawn right now without creating taxable income."""
-        if self.person.age >= federal_retirement_age(self.model.config):
+        if self.person.age_years_fractional >= federal_retirement_age(self.model.config):
             return self.balance
         return min(self.balance, self.contribution_basis)
 
