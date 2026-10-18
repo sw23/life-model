@@ -3,7 +3,8 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Simulation invariant checks (Plan 28 task 3; Plan 29 D4 grows this into the full checker).
+"""Money-conservation checks (Plan 28 task 3); :mod:`life_model.invariants` (Plan 29 D4) runs them with
+the other yearly invariants.
 
 **Money conservation.** For every simulated year, the change in household net worth (assets minus
 liabilities, measured independently of the ledger by

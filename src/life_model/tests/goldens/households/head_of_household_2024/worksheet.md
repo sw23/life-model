@@ -1,0 +1,42 @@
+# head of household 2024: worked return
+
+Head of household: one W-2 with a 5% deferral and one child under 17. Synthetic household (`spec.yaml`); computed by `scripts/household_goldens.py` from the forms, independent of the library.
+
+W-2 Example County (riley): box 1 = $72,000.00 - 401(k) $3,600.00 = $68,400.00; box 3 = min(wages, $168,600.00) = $72,000.00; box 4 = 6.2% = $4,464.00; box 5 = $72,000.00; box 6 = 1.45% (+0.9% over $200,000) = $1,044.00.
+
+| Line | How | Amount |
+|---|---|---:|
+| Form 1040 line 1a | W-2 box 1 Example County $68,400.00 | $68,400.00 |
+| Form 1040 line 1z | line 1a | $68,400.00 |
+| Form 1040 line 2a | no tax-exempt interest | $0.00 |
+| Form 1040 line 2b | 1099-INT box 1 (Schedule B line 4) | $0.00 |
+| Form 1040 line 3a | 1099-DIV box 1b | $0.00 |
+| Form 1040 line 3b | 1099-DIV box 1a (all dividends here are qualified) | $0.00 |
+| Form 1040 line 4a | 1099-R box 1 (required minimum distributions) | $0.00 |
+| Form 1040 line 4b | 1099-R box 2a (no basis: fully taxable) | $0.00 |
+| Form 1040 line 5b | no pensions | $0.00 |
+| Form 1040 line 7 | none | $0.00 |
+| Form 1040 line 8 | Schedule 1 line 10: no additional income | $0.00 |
+| Form 1040 line 6a | SSA-1099 box 5 | $0.00 |
+| Schedule 1 line 26 | Schedule 1 lines 11-25: student loan interest only | $0.00 |
+| Form 1040 line 10 | Schedule 1 line 26 | $0.00 |
+| Form 1040 line 6b | no benefits | $0.00 |
+| Form 1040 line 9 | 1z + 2b + 3b + 4b + 5b + 6b + 7 + 8 | $68,400.00 |
+| Form 1040 line 11 | line 9 - line 10 | $68,400.00 |
+| Form 1040 line 12 | standard deduction (hoh) | $21,900.00 |
+| Form 1040 line 13 | no qualified business income | $0.00 |
+| Form 1040 line 14 | 12 + 13 | $21,900.00 |
+| Form 1040 line 15 | line 11 - line 14 | $46,500.00 |
+| | exact rate-schedule tax (what the engine computes): $5,249.00 | |
+| Form 1040 line 16 | Tax Table row $46,500-$46,550: schedule tax on the midpoint $46,525.00, rounded | $5,252.00 |
+| Form 1040 line 17 | no AMT (Schedule 2 line 3) | $0.00 |
+| Form 1040 line 18 | 16 + 17 | $5,252.00 |
+| | Schedule 8812: 1 x $2,000.00 = $2,000.00; MAGI under $200,000.00; limited by tax $5,252.00 | |
+| Form 1040 line 19 | Schedule 8812 line 14 | $2,000.00 |
+| Form 1040 line 20 | Schedule 3 line 8: no other credits | $0.00 |
+| Form 1040 line 21 | 19 + 20 | $2,000.00 |
+| Form 1040 line 22 | 18 - 21 | $3,252.00 |
+| Schedule 2 line 21 | Schedule 2 total other taxes | $0.00 |
+| Form 1040 line 23 | Schedule 2 line 21 | $0.00 |
+| Form 1040 line 24 | 22 + 23 | $3,252.00 |
+| Form 1040 line 28 | no additional child tax credit (credit fully used) | $0.00 |

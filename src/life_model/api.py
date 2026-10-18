@@ -47,9 +47,10 @@ if TYPE_CHECKING:
 
 #: A household spec in any form :func:`load_spec` accepts.
 SpecLike = Any
-#: ``checks`` modes: ``strict`` fails on validator warnings and conservation residuals, ``warn``
-#: (default) fails on validator errors and warns on the rest, ``off`` skips the validator (only
-#: not-yet-supported fields are rejected) and the conservation check.
+#: ``checks`` modes: ``strict`` fails on validator warnings, invariant violations and conservation
+#: residuals, ``warn`` (default) fails on validator errors and warns on the rest, ``off`` skips the
+#: validator (only not-yet-supported fields are rejected), the invariant checker
+#: (:mod:`life_model.invariants`) and the conservation check.
 Checks = Literal["strict", "warn", "off"]
 CHECK_MODES = ("strict", "warn", "off")
 
@@ -73,6 +74,7 @@ def collected_warnings() -> Iterator[list[str]]:
     """Collect the warnings life-model emits inside the block (validator ``SpecWarning``,
     :class:`CheckWarning`, and any other ``UserWarning`` raised from life-model code) into the yielded
     list of messages (deduplicated, in order). Other warnings are re-emitted unchanged."""
+    from .invariants import InvariantWarning
     from .spec import SpecWarning
 
     package = str(Path(__file__).resolve().parent)
@@ -84,7 +86,7 @@ def collected_warnings() -> Iterator[list[str]]:
         finally:
             others = []
             for warning in caught:
-                ours = issubclass(warning.category, (SpecWarning, CheckWarning)) or (
+                ours = issubclass(warning.category, (SpecWarning, CheckWarning, InvariantWarning)) or (
                     issubclass(warning.category, UserWarning) and str(warning.filename).startswith(package)
                 )
                 if ours:
@@ -261,7 +263,11 @@ def build(spec: SpecLike, *, seed: int | None = None, checks: Checks = "warn", c
         strict = [f for f in validate_spec(spec) if f.level == WARNING]
         if strict:
             raise SpecValidationError(strict)
-    return build_model(spec, seed=seed, check=checks != "off", collect_data=collect_data)
+    model = build_model(spec, seed=seed, check=checks != "off", collect_data=collect_data)
+    # The same mode runs the yearly invariant checker (life_model.invariants): strict raises
+    # InvariantError at the first year with a violation, warn emits InvariantWarning.
+    model.checks = checks
+    return model
 
 
 def _check_conservation(result: "RunResult", checks: Checks) -> None:
@@ -300,9 +306,11 @@ def run(
             ``meta.scenario``.
         real_dollars: Return the result in start-year dollars (``RunResult.real_dollars()``).
         checks: ``"warn"`` (default): validator errors raise, validator warnings are emitted as
-            ``SpecWarning`` and a failed money-conservation check as :class:`CheckWarning`.
-            ``"strict"``: warnings raise too (``SpecValidationError`` / ``ConservationError``).
-            ``"off"``: no validator (only not-yet-supported fields are rejected) and no check.
+            ``SpecWarning``, invariant violations (:mod:`life_model.invariants`, checked every
+            simulated year) as ``InvariantWarning`` and a failed money-conservation check as
+            :class:`CheckWarning`. ``"strict"``: those raise too (``SpecValidationError`` /
+            ``InvariantError`` / ``ConservationError``). ``"off"``: no validator (only
+            not-yet-supported fields are rejected) and no checks.
 
     Raises:
         SpecValidationError: The spec is invalid (``findings`` lists why).
@@ -723,6 +731,91 @@ def compare(
             "success_rate_delta": mc_changed["success_rate"] - mc_base["success_rate"],
         }
     return Comparison(base_spec, changed_spec, base, changed, deltas, mc, described)
+
+
+# --------------------------------------------------------------------------------------------------
+# Reconcile (Plan 29)
+# --------------------------------------------------------------------------------------------------
+
+
+def load_actuals(source: Any, year: int | None = None) -> "dict[int, Any]":
+    """Actual records from a path (YAML/JSON), YAML/JSON text, a mapping or an ``ActualRecords``:
+    ``{year: records}``, a spec-like mapping with an ``actuals`` key, or one year's records (then
+    ``year`` says which)."""
+    import yaml
+    from pydantic import ValidationError
+
+    from .spec import SpecValidationError
+    from .spec.actuals import ActualRecords
+    from .spec.validate import _schema_findings
+
+    if isinstance(source, ActualRecords):
+        if year is None:
+            raise InputError("one year's actual records need a year")
+        return {year: source}
+    if isinstance(source, str) and _looks_like_text(source):
+        source = yaml.safe_load(source)
+    elif isinstance(source, (str, os.PathLike)):
+        path = Path(source)
+        if not path.is_file():
+            raise FileNotFoundError(f"No such actuals file: {path}")
+        source = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not isinstance(source, Mapping):
+        raise InputError("actual records must be a mapping")
+    data = dict(source.get("actuals", source))
+    try:
+        if data and all(str(key).isdigit() for key in data):
+            return {int(key): ActualRecords.model_validate(value) for key, value in data.items()}
+        if year is None:
+            raise InputError("the actuals hold one year's records: pass the year")
+        return {year: ActualRecords.model_validate(data)}
+    except ValidationError as error:
+        raise SpecValidationError(_schema_findings(error)) from None
+
+
+def reconcile(
+    spec: SpecLike,
+    year: int,
+    *,
+    actuals: Any = None,
+    seed: int | None = None,
+    scenario: str | None = None,
+    checks: Checks = "warn",
+):
+    """Compare a simulated year with the household's actual records (Plan 29).
+
+    Args:
+        spec: The household (anything :func:`load_spec` accepts), described as of the start of
+            ``meta.start_year`` (start it in ``year`` for the cleanest comparison).
+        year: The tax year to reconcile; the run ends there.
+        actuals: Records to use instead of ``spec.actuals[year]``: a path, YAML/JSON text, a
+            mapping or an ``ActualRecords`` (see :func:`load_actuals`).
+        seed, scenario, checks: As for :func:`run` (``checks`` validates the spec and runs the
+            invariant checker over the simulated years).
+
+    Returns:
+        :class:`~life_model.reconciliation.ReconciliationReport` (``to_markdown()``, ``to_dict()``).
+    """
+    from . import reconciliation
+
+    if checks not in CHECK_MODES:
+        raise InputError(f"checks must be one of {CHECK_MODES}, got {checks!r}")
+    spec = prepare_spec(spec, scenario=scenario)
+    if year < spec.meta.start_year:
+        raise InputError(
+            f"Year {year} is before the spec's start_year {spec.meta.start_year}; describe the household as of "
+            f"the start of {year} to reconcile it"
+        )
+    records = load_actuals(actuals, year).get(year) if actuals is not None else (spec.actuals or {}).get(year)
+    if records is None:
+        raise InputError(f"No actual records for {year}: add actuals.{year} to the spec or pass --actuals FILE")
+    if checks == "strict":
+        from .spec import WARNING, SpecValidationError, validate_spec
+
+        strict = [f for f in validate_spec(spec) if f.level == WARNING]
+        if strict:
+            raise SpecValidationError(strict)
+    return reconciliation.reconcile(spec, year, actuals=records, seed=seed, checks=checks)
 
 
 def finding_dict(finding: "Finding") -> dict[str, Any]:

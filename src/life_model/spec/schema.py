@@ -1837,6 +1837,8 @@ WithdrawalSource = Literal["bank", "brokerage", "roth_basis", "pretax", "roth_ea
 
 # --- Top level -----------------------------------------------------------------------------------
 
+from .actuals import ActualsByYear  # (imported here: actuals reads the unit types defined above)
+
 
 class HouseholdSpec(SpecModel):
     """A complete household: metadata, optional economy overrides, people, relationships, events."""
@@ -1854,6 +1856,12 @@ class HouseholdSpec(SpecModel):
         core="Family.withdrawal_order",
     )
     events: list[Event] = spec_field(default_factory=list, description="Dated life events.")
+    actuals: ActualsByYear | None = spec_field(
+        None,
+        description="What the household's real documents say, by tax year (filed 1040 lines, W-2s, 1099s, "
+        "statement balances): read by 'life-model reconcile' and the backtest, ignored by the builder. Keep real "
+        "documents in my-models/ (git-ignored).",
+    )
 
     @field_validator("withdrawal_order")
     @classmethod

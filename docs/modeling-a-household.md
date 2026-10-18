@@ -129,10 +129,21 @@ household never carried unpaid bills as new debt.
 
 ## 7. Reconcile against actuals
 
-When the household has actual results for a simulated year (a filed tax return, year-end
-statements), compare them with `explain` for that year and correct the spec where they disagree.
-A `life-model reconcile SPEC --year Y` command that does this automatically is planned (Plan 29) and
-is not available yet.
+When the household has actual results for a simulated year (a filed tax return, W-2s, 1099s, a
+paystub, year-end statements), write them into the spec's `actuals` block under that year, by the
+form's own line and box numbers (or keep them in a separate file in `my-models/`), and run:
+
+```bash
+life-model reconcile my-models/h.yaml --year 2025                      # spec's actuals
+life-model reconcile my-models/h.yaml --year 2025 --actuals my-models/2025-actuals.yaml
+```
+
+Describe the household as of January 1 of that year (`meta.start_year: 2025`). Every line comes
+back green, yellow or red with the likely cause of a difference: fix `input_difference` and
+`missing_income_source` lines in the spec; `unmodeled_credit`/`unmodeled_deduction` lines are tax
+features the engine lacks; `timing` lines (withholding, refund) and `missing_input` lines (payroll
+deductions, IRA basis) are not modeled yet; `propagated` totals follow the line they name. See
+[reconciliation.md](reconciliation.md) for the format and the tolerances.
 
 ## 8. Present the results
 
@@ -157,6 +168,7 @@ The same workflow is packaged as a Claude Code skill in
 6. `life-model run --out my-models/out`; check `shortfall_years` and `conservation_failures`.
 7. `life-model explain` the years that matter; `life-model compare` the decision; `montecarlo` with
    `--scenario stochastic` for risk.
-8. Reconcile against actual statements when you have them (by hand until Plan 29's `reconcile`).
+8. Reconcile against actual documents when you have them (`life-model reconcile --year Y`); fix
+   every red `input_difference` / `missing_income_source` line in the spec.
 9. Present the answer with every assumption, default and limitation stated.
 10. Keep real names, employers and balances out of tracked files, commit messages and prompts.

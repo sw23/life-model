@@ -18,6 +18,7 @@ life-model examples --copy married_homeowners h.yaml
 life-model validate h.yaml
 life-model run h.yaml --out out --format json
 life-model explain h.yaml --year 2035
+life-model reconcile h.yaml --year 2025 --actuals my-models/2025-actuals.yaml
 life-model compare h.yaml --set 'people[john].retirement_age=58'
 life-model montecarlo h.yaml --scenario stochastic --n 1000 --seed 7 --out mc
 ```
@@ -33,7 +34,7 @@ or `.json`) or `--example NAME` (a shipped synthetic example), plus:
 | `--years N` | Number of simulated years: `end_year = start_year + N - 1`. |
 | `--end-year Y` | Last simulated year (inclusive); overrides `meta.end_year`. Exclusive with `--years`. |
 | `--scenario NAME` | A named scenario (`life-model examples` lists them), replacing `meta.scenario`. `stochastic` draws random returns and inflation each year. |
-| `--checks strict\|warn\|off` | `warn` (default): validator errors fail, warnings are reported, a failed money-conservation check is reported. `strict`: warnings fail too. `off`: skip the validator (fields the engine does not support are still rejected) and the conservation check. |
+| `--checks strict\|warn\|off` | `warn` (default): validator errors fail; validator warnings, invariant violations (the yearly checker in `life_model.invariants`: conservation, no negative balances, contribution limits, RMDs, FICA, ...; see [reconciliation.md](reconciliation.md)) and a failed money-conservation check are reported. `strict`: those fail too. `off`: skip the validator (fields the engine does not support are still rejected) and every check. |
 | `--real-dollars` | Report money in start-year dollars (`RunResult.real_dollars()`). Not on `montecarlo`. |
 | `--json` | Print exactly one JSON object to stdout (every command, see below). |
 
@@ -70,6 +71,22 @@ Runs the household and prints the markdown account of year `Y`: income by source
 category, how they were paid (every forced sale and pre-tax withdrawal and its cause), savings
 moves, each tax return line by line, the change in net worth, and the year's events
 (`RunResult.explain`). A year outside the run exits 2.
+
+### `reconcile`
+
+`life-model reconcile SPEC --year Y [--actuals FILE]`
+
+Runs the household through year `Y` and compares the year with the household's real documents:
+the filed Form 1040 and schedule lines (by that year's line numbers), W-2 and 1099 boxes, paystub
+amounts, the state return and year-end statement balances. The records come from the spec's
+`actuals` block or from `--actuals FILE` (YAML/JSON: `{2025: records}`, or one year's records).
+Every line shows simulated vs actual, the difference, a status (`green` within rounding, `yellow`,
+`red`, `not_modeled` for lines the engine has no equivalent for, such as withholding) and the
+likely cause of a difference (`missing_income_source`, `input_difference`, `unmodeled_credit`,
+`unmodeled_deduction`, `unit_mismatch`, `timing`, `missing_input`, `propagated`). Describe the
+household as of January 1 of `Y` (`meta.start_year: Y`) for the cleanest comparison; a year before
+`meta.start_year` exits 2, and `--years`/`--end-year` do not apply. `--json` returns the report as
+`report` (`counts`, `lines`, `notes`). See [reconciliation.md](reconciliation.md).
 
 ### `compare`
 
@@ -182,6 +199,8 @@ comparison = life_model.compare("my-models/h.yaml", {"people": {"jane": {"retire
 print(comparison.to_dict()["deltas"])
 mc = api.run_montecarlo("my-models/h.yaml", n=500, scenario="stochastic", seed=7)
 print(api.montecarlo_summary(mc)["success_rate"])
+report = life_model.reconcile("my-models/h.yaml", 2025)           # ReconciliationReport
+print(report.to_markdown())
 ```
 
 A spec argument may be a `HouseholdSpec`, a dict, YAML/JSON text or a path. `run`, `explain`,
@@ -207,6 +226,7 @@ claude mcp add life-model -- life-model mcp       # Claude Code; or python -m li
 | `validate_household` | The validator's findings and `valid`. |
 | `compare_change` | Base vs changed run (`change` merge patch and/or `sets`), deltas, optional `montecarlo`. |
 | `explain_year` | The markdown account of one year. |
+| `reconcile_household` | A simulated year against the actual records (`actuals` / `actuals_path`, or the spec's). |
 | `get_schema` | The household spec JSON Schema. |
 | `list_examples` | The example specs (`include_spec` for their YAML) and the scenarios. |
 

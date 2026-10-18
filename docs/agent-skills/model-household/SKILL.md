@@ -52,9 +52,13 @@ the results with explicit assumptions. You do not need to read `src/`. Reference
    'people[<id>].retirement_age=62'` or `--change my-models/change.yaml` (a merge patch; `events+:`
    appends events). For risk, `life-model montecarlo <spec> --scenario stochastic --n 1000 --seed 1`
    or `compare ... --montecarlo 500 --scenario stochastic`.
-8. **Reconcile against actuals when you have them.** A `life-model reconcile` command is planned
-   (Plan 29) but does not exist yet. Until then, compare `explain` for a past or current year
-   against the actual tax return and statements by hand, and fix the spec where they disagree.
+8. **Reconcile against actuals when you have them.** Put the filed return's lines (by that year's
+   Form 1040 line numbers), W-2/1099 boxes and December 31 balances under `actuals: {<year>: ...}`
+   in the spec (or a separate file in `my-models/`), start the spec on January 1 of that year, and
+   run `life-model reconcile my-models/<name>.yaml --year <year> [--actuals FILE]`. Fix red
+   `input_difference` / `missing_income_source` lines in the spec; report `unmodeled_credit`,
+   `unmodeled_deduction`, `timing` and `missing_input` lines as model limitations, not spec errors
+   (docs/reconciliation.md).
 9. **Present results with assumptions.** Lead with the answer, then list every assumption and
    default you relied on (economy rates, growth, mortality, claiming age, scenario, seed, nominal
    vs real dollars), what you could not model (fields marked not yet supported), and the
@@ -64,4 +68,5 @@ the results with explicit assumptions. You do not need to read `src/`. Reference
 
 `--json` on every command for machine-readable output; exit codes 0 ok, 2 invalid input, 1 runtime
 error. `--years N` / `--end-year Y` shorten a run; `--scenario NAME` (`life-model examples` lists
-them; `stochastic` for random draws); `--checks strict` to fail on warnings.
+them; `stochastic` for random draws); `--checks strict` to fail on validator warnings and on any
+invariant violation (money conservation, negative balances, contribution limits, RMDs, FICA...).

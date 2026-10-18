@@ -76,7 +76,7 @@ The owner argument links the object to its owner (a `Person`, a `Job`, or the `m
 
 | Class | Owner | Required | Optional (default) |
 |---|---|---|---|
-| `LifeModel` (life_model.model) |  | — | `end_year=None`, `start_year=None`, `seed=None`, `config=None`, `scenario=None`, `*collect_data=True` |
+| `LifeModel` (life_model.model) |  | — | `end_year=None`, `start_year=None`, `seed=None`, `config=None`, `scenario=None`, `*collect_data=True`, `*checks='off'` |
 | `Family` (life_model.people.family) | `model` | `model` | `*withdrawal_order=None` |
 | `Person` (life_model.people.person) | `family` | `family`, `name`, `age`, `retirement_age`, `spending` | `*gender=GenderAtBirth.OTHER`, `*mortality_mode=MortalityMode.IMMORTAL`, `*death_age=None`, `*state=None` |
 | `Spending` (life_model.people.person) | `model` | `model` | `base=0`, `yearly_increase=0` |

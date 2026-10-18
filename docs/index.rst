@@ -24,6 +24,8 @@ see `AGENTS.md <https://github.com/sw23/life-model/blob/main/AGENTS.md>`_.
    Units and conventions <units-and-conventions.md>
    Constructor cheat sheet <constructor-cheatsheet.md>
    Outputs glossary <outputs.md>
+   Checking the model: reconciliation, goldens, invariants, backtests <reconciliation.md>
+   Backtest example 2020-2025 <backtest-2020-2025.md>
    Configuration <configuration.md>
    API documentation <apidoc.rst>
    License <license.rst>
@@ -40,6 +42,7 @@ see `AGENTS.md <https://github.com/sw23/life-model/blob/main/AGENTS.md>`_.
 
    Plan 26: engine timing and settlement <rebaseline-plan-26.md>
    Plan 28: explainable outputs <rebaseline-plan-28.md>
+   Plan 29: reconciliation and calibration <rebaseline-plan-29.md>
 
 Indices and tables
 ==================

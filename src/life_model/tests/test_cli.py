@@ -412,7 +412,8 @@ class TestEntryPoint(unittest.TestCase):
         names = [command.name for command in cli.COMMANDS]
         self.assertEqual(len(names), len(set(names)))
         self.assertEqual(
-            set(names), {"run", "validate", "explain", "compare", "montecarlo", "schema", "examples", "mcp"}
+            set(names),
+            {"run", "validate", "explain", "reconcile", "compare", "montecarlo", "schema", "examples", "mcp"},
         )
 
     def test_console_script_is_declared(self):

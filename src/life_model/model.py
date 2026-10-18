@@ -475,6 +475,7 @@ class LifeModel(mesa.Model):
         scenario: str | None = None,
         *,
         collect_data: bool = True,
+        checks: str = "off",
     ):
         """LifeModel Helper Class
 
@@ -492,6 +493,10 @@ class LifeModel(mesa.Model):
                 reporting helpers (``get_yearly_stat_df``, ``add_agent_stat``) cannot be used.
                 Intended for high-throughput consumers (e.g. RL rollouts) that never read the
                 collected frames. Defaults to True (keyword-only).
+            checks (str, optional): Run the invariant checker (:mod:`life_model.invariants`) at the
+                end of every simulated year: ``"strict"`` raises ``InvariantError`` on a violation,
+                ``"warn"`` emits ``InvariantWarning``, ``"off"`` (default) skips it. Violations are
+                kept on ``invariant_violations``. Keyword-only.
         """
         # Mesa 3.5 deprecates ``seed=`` in favor of ``rng=``; both seed ``self.random`` identically.
         super().__init__(rng=seed)
@@ -529,6 +534,12 @@ class LifeModel(mesa.Model):
         #: year (recorded when collecting data; read by :mod:`life_model.checks`).
         self.balance_sheets: dict = {}
         self.simulated_years = []
+        # Invariant checker (Plan 29 D4): mode, the violations found, and per-year start snapshots.
+        from .invariants import validate_mode
+
+        self.checks = validate_mode(checks)
+        self.invariant_violations: list = []
+        self._invariant_snapshots: dict = {}
         self._stages = list(self.STAGES)
         # Attributes snapshotted before post_step (see add_agent_stat(..., pre_post=True)).
         self._pre_post_attrs: set[str] = {"base_salary", "base_spending"}
@@ -632,12 +643,17 @@ class LifeModel(mesa.Model):
             return
 
         self.simulated_years.append(self.year)
-        track = self.datacollector is not None
+        checking = self.checks != "off"
+        track = self.datacollector is not None or checking
         if track:
             from .ledger import household_balance_sheet
 
             opening = household_balance_sheet(self)
             ledger_start = len(self.ledger)
+        if checking:
+            from .invariants import year_start
+
+            year_start(self)
 
         # Execute each stage in a deterministic, priority-ordered sequence per stage. The agent list
         # is snapshotted per stage: an agent created during a stage first runs in the next stage, and
@@ -668,9 +684,14 @@ class LifeModel(mesa.Model):
                 ledger_start=ledger_start,
                 ledger_end=len(self.ledger),
             )
+        if self.datacollector is not None:
             for record in self.ledger.to_records(ledger_start):
                 self.datacollector.add_table_row("Ledger", record)
             self.datacollector.collect(self)
+        if checking:
+            from .invariants import run_year_checks
+
+            run_year_checks(self, self.year)
 
         self.year += 1
         self.running = self.year <= self.end_year
