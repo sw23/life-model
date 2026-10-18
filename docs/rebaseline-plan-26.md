@@ -31,3 +31,9 @@ run. The expected values are unchanged; only the inputs moved.
 | `test_mortality_death.py::TestPensionSurvivorAtDeath::_couple` and `test_nonretired_survivor_receives_benefit_immediately` | 74/74 and 70/49 | 75/75 and 71/50 | D1 |
 | `test_pension.py::TestPension::test_no_cola_before_eligibility` | 63 | 64 | D1: still eligible only in the final year |
 | `test_trust.py::TestTrustEstateIntegration` (`_dying_grantor_with_trust`, `test_revocable_pays_out_to_beneficiaries_outside_the_will`, `test_revocable_trust_with_predeceased_beneficiaries_escheats_to_residual`) | grantor 75 (death 76), others 40/74/45/50 | 76, 41/75/46/51 | D1 |
+
+## Task 2 / D2–D3 — events stage, `created_year`, past events
+
+No existing test's expected value changed. `LifeEvents` was never exercised by the suite; its new
+behaviour is pinned in `test_engine_timing.py` (`TestEventsStage`, `TestCreatedYear`,
+`TestPastEvents`).
