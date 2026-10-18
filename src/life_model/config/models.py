@@ -656,6 +656,10 @@ class YearlyTaxParameters(StrictModel):
     limit_hsa_family: int = Field(ge=0)
     gift_exclusion: int = Field(ge=0)
     rmd_start_age: int = Field(ge=0)
+    #: IRC §415(c)(1)(A) annual-additions limit for defined contribution plans (employee + employer
+    #: money per plan). Optional so older tables still load; None keeps the static
+    #: ``retirement.job_401k_contrib_limit.annual_additions_limit``.
+    limit_415c: int | None = Field(default=None, ge=0)
 
 
 class StochasticEconomyConfig(StrictModel):

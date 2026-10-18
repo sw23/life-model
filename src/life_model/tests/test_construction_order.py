@@ -1,0 +1,238 @@
+# Copyright 2026 Spencer Williams
+#
+# Use of this source code is governed by an MIT license:
+# https://github.com/sw23/life-model/blob/main/LICENSE
+
+"""Plan 26 D11: construction order does not change the simulation.
+
+Each household below is described as a list of construction steps (each step builds one agent, or
+a group that must be built together, such as a job and its 401k). The same household is built in
+the declared order and in five seeded random permutations of the steps (people first, in a
+shuffled order too), and the collected model frames must match. Agent execution order follows
+``STEP_PRIORITY`` then construction order, so a failure here means two agents in the same stage
+and priority depend on each other's effects.
+"""
+
+import random
+import unittest
+
+from ..account.bank import BankAccount
+from ..account.brokerage import BrokerageAccount
+from ..account.hsa import HealthSavingsAccount, HSAType
+from ..account.job401k import Job401kAccount
+from ..account.pension import Pension
+from ..account.roth_IRA import RothIRA
+from ..account.traditional_IRA import TraditionalIRA
+from ..charity.donation import Donation
+from ..debt.car_loan import CarLoan
+from ..dependents.child import Child
+from ..healthcare.medical_costs import MedicalCosts
+from ..healthcare.medicare import Medicare
+from ..housing.apartment import Apartment
+from ..housing.home import Home, HomeExpenses, Mortgage
+from ..insurance.annuity import Annuity, AnnuityType
+from ..insurance.life_insurance import LifeInsurance, LifeInsuranceType
+from ..insurance.social_security import SocialSecurity
+from ..lifeevents import LifeEvent, LifeEvents
+from ..model import LifeModel
+from ..people.family import Family
+from ..people.person import Person, Spending
+from ..work.job import Job, Salary
+from ..work.stock import StockPlan
+
+SHUFFLE_SEEDS = (1, 2, 3, 4, 5)
+_HISTORY = [(year, 70000) for year in range(1985, 2025)]
+
+
+def _home(person, price=500000, loan=400000):
+    model = person.model
+    mortgage = Mortgage(loan_amount=loan, start_date=2022, length_years=30, yearly_interest_rate=6.0)
+    expenses = HomeExpenses(model, 1.1, 0.4, 3000, 3.0, 1000, 3.0, 0, 0.0)
+    Home(person, "Home", price, None, price - loan, mortgage, expenses)
+
+
+def single_saver(model):
+    """A single renter in their thirties: wages, 401k with a tiered match, RSUs, brokerage,
+    Roth IRA, HSA, term life, a car loan, a donation and a scheduled car purchase."""
+    family = Family(model)
+    people = {}
+
+    def person():
+        people["a"] = Person(family, "Sam", age=34, retirement_age=62, spending=Spending(model, base=45000))
+
+    def job():
+        job = Job(people["a"], "Co", "Eng", Salary(model, base=140000, yearly_increase=3, yearly_bonus=10))
+        Job401kAccount(job=job, pretax_contrib_percent=10, match_tiers=[(100, 3), (50, 2)], pretax_balance=60000)
+        StockPlan(job, signon_value=40000, refresher_value=20000)
+
+    steps = [
+        lambda: BankAccount(people["a"], "Bank", balance=25000, interest_rate=3.5),
+        job,
+        lambda: BrokerageAccount(people["a"], "Broker", balance=80000),
+        lambda: RothIRA(people["a"], balance=30000),
+        lambda: HealthSavingsAccount(people["a"], HSAType.INDIVIDUAL, balance=5000),
+        lambda: Apartment(people["a"], "Flat", monthly_rent=2200, yearly_increase=4),
+        lambda: LifeInsurance(people["a"], LifeInsuranceType.TERM, 500000, 40, term_years=20),
+        lambda: CarLoan(people["a"], 30000, 5, 6.5, "Car"),
+        lambda: Donation(people["a"], "Food bank", 2000),
+        lambda: LifeEvents(model, [LifeEvent(2029, "New car", people["a"].spending.add_expense, 35000)]),
+    ]
+    return [person], steps
+
+
+def married_homeowners(model):
+    """A married couple with a mortgage, two jobs, a 401k, brokerage, a child and life insurance."""
+    family = Family(model)
+    people = {}
+
+    def build(key, name, age, salary, bank):
+        def _person():
+            people[key] = Person(family, name, age=age, retirement_age=65, spending=Spending(model, base=40000))
+
+        def _accounts():
+            BankAccount(people[key], "Bank", balance=bank, interest_rate=1.0)
+            job = Job(people[key], f"{name} Co", "Role", Salary(model, base=salary, yearly_increase=2.5))
+            Job401kAccount(job=job, pretax_contrib_percent=8, match_tiers=[(50, 6)], pretax_balance=bank * 3)
+
+        return _person, _accounts
+
+    a_person, a_accounts = build("a", "Alex", 41, 165000, 40000)
+    b_person, b_accounts = build("b", "Blair", 39, 95000, 15000)
+
+    def marry():
+        people["a"].get_married(people["b"])
+
+    steps = [
+        a_accounts,
+        b_accounts,
+        marry,
+        lambda: _home(people["a"]),
+        lambda: BrokerageAccount(people["b"], "Broker", balance=150000),
+        lambda: Child(people["a"], "Kid", birth_year=2019),
+        lambda: LifeInsurance(people["a"], LifeInsuranceType.TERM, 1_000_000, 70, term_years=20),
+        lambda: LifeInsurance(people["b"], LifeInsuranceType.WHOLE, 250000, 150),
+        lambda: MedicalCosts(people["a"]),
+    ]
+    return [a_person, b_person], steps
+
+
+def retired_couple(model):
+    """A retired couple: Social Security for both, a pension, an immediate annuity, RMD-age IRA and
+    401k money, Medicare and medical costs, and a taxable account with embedded gains."""
+    family = Family(model)
+    people = {}
+
+    def build(key, name, age, retirement_age=62):
+        def _person():
+            people[key] = Person(
+                family, name, age=age, retirement_age=retirement_age, spending=Spending(model, base=45000)
+            )
+
+        return _person
+
+    def marry():
+        people["a"].get_married(people["b"])
+
+    def old_401k():
+        job = Job(people["a"], "Former", "Retired", Salary(model, base=0))
+        job.retire()
+        Job401kAccount(job=job, pretax_balance=600000, roth_balance=50000)
+
+    steps = [
+        marry,
+        lambda: BankAccount(people["a"], "Bank", balance=60000, interest_rate=2.0),
+        lambda: BankAccount(people["b"], "Bank", balance=20000, interest_rate=2.0),
+        lambda: SocialSecurity(people["a"], withdrawal_start_age=67, income_history=_HISTORY),
+        lambda: SocialSecurity(
+            people["b"], withdrawal_start_age=67, income_history=[(y, 40000) for y in range(1990, 2025)]
+        ),
+        lambda: Pension(people["a"], "State", vesting_years=5, benefit_amount=18000, cola_percent=2.0),
+        lambda: Annuity(people["b"], AnnuityType.IMMEDIATE, initial_balance=150000, interest_rate=4.0),
+        lambda: TraditionalIRA(people["b"], balance=250000),
+        old_401k,
+        lambda: BrokerageAccount(people["a"], "Broker", balance=300000),
+        lambda: Medicare(people["a"]),
+        lambda: Medicare(people["b"]),
+        lambda: MedicalCosts(people["b"]),
+        lambda: Donation(people["b"], "Church", 5000),
+        # Part-time wages alongside benefits: provisional income must not depend on whether the job
+        # or Social Security books first.
+        lambda: Job(people["b"], "Shop", "Clerk", Salary(model, base=30000)),
+        lambda: LifeInsurance(people["b"], LifeInsuranceType.WHOLE, 100000, 300),
+    ]
+    return [build("a", "Pat", 74), build("b", "Lee", 71, retirement_age=76)], steps
+
+
+def early_retiree(model):
+    """A 52-year-old early retiree living off brokerage, Roth basis and pre-tax money."""
+    family = Family(model)
+    people = {}
+
+    def person():
+        people["a"] = Person(family, "Jo", age=52, retirement_age=50, spending=Spending(model, base=70000))
+
+    def old_401k():
+        job = Job(people["a"], "Former", "Retired", Salary(model, base=0))
+        job.retire()
+        Job401kAccount(job=job, pretax_balance=900000, roth_balance=80000)
+
+    steps = [
+        lambda: BankAccount(people["a"], "Bank", balance=30000, interest_rate=3.0),
+        lambda: BrokerageAccount(people["a"], "Broker", balance=250000),
+        lambda: RothIRA(people["a"], balance=120000),
+        old_401k,
+        lambda: _home(people["a"], price=400000, loan=150000),
+        lambda: MedicalCosts(people["a"]),
+        lambda: Annuity(people["a"], AnnuityType.FIXED, initial_balance=50000, interest_rate=4.0),
+    ]
+    return [person], steps
+
+
+HOUSEHOLDS = {
+    "single_saver": single_saver,
+    "married_homeowners": married_homeowners,
+    "retired_couple": retired_couple,
+    "early_retiree": early_retiree,
+}
+
+
+def run_household(builder, seed=None, years=25):
+    """Build ``builder``'s household (steps shuffled by ``seed``; None keeps the declared order)."""
+    model = LifeModel(start_year=2026, end_year=2026 + years - 1)
+    people, steps = builder(model)
+    if seed is not None:
+        rng = random.Random(seed)
+        people = rng.sample(people, len(people))
+        # Steps that need another step's agent (marriage needs both people) are declared after the
+        # people; everything else is free to move.
+        steps = rng.sample(steps, len(steps))
+    for step in people:
+        step()
+    for step in steps:
+        step()
+    model.run()
+    return model.datacollector.get_model_vars_dataframe()
+
+
+class TestConstructionOrderProperty(unittest.TestCase):
+    """D11: five shuffled constructions of each household give identical frames."""
+
+    def assert_frames_match(self, expected, actual, label):
+        self.assertEqual(list(expected.columns), list(actual.columns))
+        for column in expected.columns:
+            for year, (x, y) in enumerate(zip(expected[column], actual[column])):
+                # Summation order differs with construction order, so allow float round-off only.
+                self.assertAlmostEqual(
+                    float(x), float(y), delta=1e-6 * max(1.0, abs(float(x))), msg=f"{label}: {column} row {year}"
+                )
+
+    def test_households_are_construction_order_independent(self):
+        for name, builder in HOUSEHOLDS.items():
+            baseline = run_household(builder)
+            for seed in SHUFFLE_SEEDS:
+                with self.subTest(household=name, seed=seed):
+                    self.assert_frames_match(baseline, run_household(builder, seed), f"{name} seed {seed}")
+
+
+if __name__ == "__main__":
+    unittest.main()

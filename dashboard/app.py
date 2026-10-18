@@ -126,7 +126,7 @@ def _person_param_specs(prefix: str, name: str) -> dict[str, Any]:
         },
         f"{prefix}_retirement_balance": Slider(f"{name}'s 401k Balance ($)", d["retirement_balance"], 0, 500000, 5000),
         f"{prefix}_retirement_contrib": Slider(f"{name}'s 401k Contribution (%)", d["retirement_contrib"], 0, 50, 1),
-        f"{prefix}_company_match": Slider(f"{name}'s 401k Company Match (%)", d["company_match"], 0, 20, 1),
+        f"{prefix}_company_match": Slider(f"{name}'s 401k Company Match (% of pay)", d["company_match"], 0, 20, 1),
         f"{prefix}_children": Slider(f"{name}'s Children", d["children"], 0, 5, 1),
     }
 
@@ -191,7 +191,12 @@ def _person_spec(prefix: str, kwargs: dict[str, Any]) -> dict[str, Any] | None:
                 "job": f"{prefix}_job",
                 "pretax_balance": g("retirement_balance"),
                 "pretax_contrib_pct": g("retirement_contrib"),
-                "company_match_pct": g("company_match"),
+                # "Company match (% of pay)" is a dollar-for-dollar match on deferrals up to that
+                # percent of pay: one 100% tier (the deprecated company_match_pct meant a percent
+                # *of the deferral*).
+                "match_tiers": [{"match_pct": 100, "up_to_pay_pct": g("company_match")}]
+                if g("company_match") > 0
+                else None,
                 "growth_pct": g("retirement_growth"),
             }
         )

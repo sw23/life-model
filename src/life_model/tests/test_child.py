@@ -178,13 +178,13 @@ class TestChildSurvivesParentDeath(unittest.TestCase):
         parent = Person(
             family,
             "Parent",
-            age=40,
+            age=41,
             retirement_age=65,
             spending=Spending(model, 0),
             mortality_mode=MortalityMode.FIXED_AGE,
             death_age=41,
         )
-        guardian = Person(family, "Guardian", age=38, retirement_age=65, spending=Spending(model, 0))
+        guardian = Person(family, "Guardian", age=39, retirement_age=65, spending=Spending(model, 0))
         child = Child(parent, "Kid", birth_year=2020)
         self.assertIn(child, parent.children)
 

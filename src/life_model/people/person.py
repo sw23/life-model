@@ -14,8 +14,7 @@ from ..services.tax_calculation_service import TaxCalculationService
 from ..tax.deductions import deductible_charity, senior_deduction
 from ..tax.federal import FilingStatus, get_federal_standard_deduction
 from ..tax.income import IncomeLedger, IncomeType
-from ..tax.state import state_income_tax_for_unit
-from ..tax.tax import TaxesDue, compute_taxes
+from ..tax.tax import TaxesDue
 from .family import Family
 from .mortality import get_blended_chance_of_mortality, get_chance_of_mortality
 from .types import GenderAtBirth, MortalityMode
@@ -66,7 +65,9 @@ class Person(LifeModelAgent):
         Args:
             family (Family): Family of which the person is a part.
             name (str): Person's name.
-            age (int): Person's age.
+            age (int): Person's age *during the year the person is created* (for a person built
+                before the run, the first simulated year): the collected ``Age`` for that year
+                equals this value, and the person turns ``age + 1`` the following year.
             retirement_age (float): Person's retirement age.
             spending (Spending): Person's spending habits.
             gender (GenderAtBirth, optional): Gender at birth, used for the mortality table. Defaults
@@ -82,6 +83,9 @@ class Person(LifeModelAgent):
         self.family = family
         self.name = name
         self.age = age
+        # The simulated year ``age`` applies to. ``pre_step`` advances ``age`` only when the model
+        # has moved past this year, so a person is ``age`` for the whole of their first year.
+        self._age_year = self.model.year
         self.retirement_age = retirement_age
         self.spending = spending
         self.state = state
@@ -95,6 +99,9 @@ class Person(LifeModelAgent):
         # Unified estate-tax exemption consumed during life by taxable gifts (e.g. irrevocable
         # trust funding above the annual gift exclusion). Reduces the exemption at death.
         self.estate_exemption_used = 0.0
+        # End-of-life costs the decedent's bank could not cover; the estate (via the inheritor)
+        # pays them in the death year. See _charge_end_of_life_costs.
+        self._unpaid_final_expenses = 0.0
         # Year this person was widowed (used to switch filing status to SINGLE the following year).
         self._widowed_year: int | None = None
         self.debt = 0
@@ -548,6 +555,13 @@ class Person(LifeModelAgent):
         )
         return self._withdraw_sequence(withdrawers, amount)
 
+    def withdraw_tax_free_from_roth_iras(self, amount: float) -> float:
+        """Withdraw up to ``amount`` of tax-free Roth IRA money (basis before 59.5, everything from
+        59.5) into the bank. Returns the amount withdrawn."""
+        withdrawn = amount - self.deduct_from_roth_iras(amount)
+        self.receive_cash(withdrawn, source="Roth IRA")
+        return withdrawn
+
     def withdraw_from_pretax_401ks(self, amount: float) -> float:
         """Withdraws money from pre-tax 401ks into the bank account.
 
@@ -802,7 +816,11 @@ class Person(LifeModelAgent):
         self.receive_cash(amount)
 
     def pay_bills(self, spending_balance: float) -> float:
-        """Pays bills using payment service for optimal prioritization.
+        """Pays bills from this person's own accounts using the payment service.
+
+        Person-level only (bank, brokerage, Roth 401k, tax-free Roth IRA). The engine pays through
+        the household waterfall instead (:meth:`TaxUnit.pay_bills`, via ``TaxUnit.for_member``),
+        which uses a spouse's bank before anyone's brokerage and can draw pre-tax money.
 
         Args:
             spending_balance (float): Amount of money spent.
@@ -813,10 +831,14 @@ class Person(LifeModelAgent):
         return self.payment_service.pay_bills_with_prioritization(spending_balance)
 
     def get_income_taxes_due(self, additional_income: float = 0) -> TaxesDue:
-        """Gets income taxes due for the year for this person as a single filer.
+        """Income taxes due this year on this person's own return, at their filing status.
 
-        FICA is computed on the person's own wages only; ``additional_income`` (e.g. a prospective
-        pre-tax 401k withdrawal) is ordinary income but not FICA wages.
+        A thin view over the one tax path: it is ``TaxUnit([self]).get_income_taxes_due`` (state
+        pack, SALT, Child Tax Credit, Social Security provisional income, early-withdrawal
+        penalties), so it can never disagree with settlement for a one-person unit. FICA is on the
+        person's own wages; ``additional_income`` (e.g. a prospective pre-tax 401k withdrawal) is
+        ordinary income but not FICA wages. A married person's joint liability comes from their
+        actual unit, ``TaxUnit.for_member(person)``.
 
         Args:
             additional_income (float, optional): Additional ordinary income not present in the ledger.
@@ -824,33 +846,9 @@ class Person(LifeModelAgent):
         Returns:
             TaxesDue: Taxes due, split by type.
         """
-        ordinary_income = self.taxable_income + additional_income
-        # State income tax from the state pack. Computed against the property-only AGI base so it
-        # does not depend on itself being in SALT; then folded into SALT for the federal base.
-        # ``additional_income`` raises the medical-expense floor in both the DEFAULT AGI
-        # base and the federal deductions so sizing and settlement stay consistent.
-        totals = self.income.totals_by_type()
-        totals[IncomeType.PRETAX_DISTRIBUTION] = totals.get(IncomeType.PRETAX_DISTRIBUTION, 0.0) + additional_income
-        total_income = ordinary_income + self.preferential_income
-        legacy_agi = max(total_income - self.federal_deductions_with_state_tax(0.0, additional_income), 0)
-        state_tax = state_income_tax_for_unit(
-            totals, self.filing_status, self.state, legacy_agi, self.model.year_config
-        )
-        deductions = self.federal_deductions_with_state_tax(state_tax, additional_income)
-        taxes = compute_taxes(
-            ordinary_income,
-            deductions,
-            self.filing_status,
-            [self.fica_wages],
-            self.model.year_config,
-            state_tax=state_tax,
-            preferential_income=self.preferential_income,
-            net_investment_income=self.income.net_investment_income,
-        )
-        # Early-withdrawal penalties are additional federal tax: those already on the ledger plus
-        # the one a prospective pre-tax withdrawal of ``additional_income`` would trigger.
-        taxes.federal += self.income.penalties + self.prospective_penalty(additional_income)
-        return taxes
+        from .tax_unit import TaxUnit
+
+        return TaxUnit([self]).get_income_taxes_due(additional_income)
 
     def get_married(self, spouse: "Person", link_spouse: bool = True):
         """Get married.
@@ -895,7 +893,10 @@ class Person(LifeModelAgent):
         return Child(self, name, birth_year)
 
     def get_year_at_age(self, age: int) -> int:
-        """Gets the year at a given age.
+        """Gets the simulated year during which the person is ``age``.
+
+        ``get_year_at_age(a) == start_year + (a - constructor_age)`` for a person built before the
+        run, and the answer does not change as the simulation advances.
 
         Args:
             age (int): Age of the person.
@@ -903,12 +904,20 @@ class Person(LifeModelAgent):
         Returns:
             int: Year at the given age.
         """
-        return self.model.year + (age - self.age)
+        return self._age_year + (age - self.age)
+
+    def age_in(self, year: int) -> int:
+        """The person's age during ``year`` (the inverse of :meth:`get_year_at_age`)."""
+        return self.age + (year - self._age_year)
 
     def pre_step(self):
         if self.is_deceased:
             return
-        self.age += 1
+        # Advance to this year's age. The constructor age already is the creation year's age, so
+        # nothing happens in that year (D1: no off-by-one between ``age`` and the calendar).
+        if self.model.year > self._age_year:
+            self.age += self.model.year - self._age_year
+            self._age_year = self.model.year
         # A surviving spouse files jointly for the year of the death, then switches to single the
         # following year (qualifying-widow treatment is a documented simplification, not modeled).
         if self._widowed_year is not None and self.model.year > self._widowed_year:
@@ -1000,6 +1009,7 @@ class Person(LifeModelAgent):
         # 4/5. Transfer the estate and adjust the survivor.
         if inheritor is not None:
             self._transfer_estate(inheritor, is_spouse=inheritor is spouse)
+            self._settle_unpaid_final_expenses(inheritor)
         else:
             self.model.event_log.add(Event(f"{self.name}'s estate had no beneficiary; assets dissolved"))
 
@@ -1037,10 +1047,12 @@ class Person(LifeModelAgent):
         The funeral cost is CPI-indexed from the start year; the final-year medical spike is the
         configured multiplier times the person's current-year medical cost, and keys off the
         ``MedicalCosts`` agent(s) only — a decedent with just Medicare/LongTermCare agents incurs
-        the funeral cost alone. Costs are paid from the deceased's **bank accounts only** before
-        the estate is valued/transferred; any unpayable remainder is forgiven (the estate cannot
-        go negative), so a bank-poor but 401k-rich decedent underpays these costs — retirement
-        accounts are not liquidated for them (documented v1 simplification).
+        the funeral cost alone. Costs are paid from the deceased's bank accounts before the estate
+        is valued/transferred; whatever the bank can't cover is a debt of the estate: it is excluded
+        from the estate-tax base and charged to the inheritor as a death-year bill, which settlement
+        pays from the inherited assets through the household waterfall (see
+        :meth:`_settle_unpaid_final_expenses`). With no inheritor the estate is dissolved and the
+        remainder goes unpaid.
 
         The deceased's healthcare agents are then retired so they are not reassigned to the
         inheritor (medical costs are personal, not inheritable).
@@ -1054,6 +1066,7 @@ class Person(LifeModelAgent):
         for medical in self.medical_costs:
             cost += healthcare.final_year_medical_multiplier * medical.annual_cost()
         unpaid = self.deduct_from_bank_accounts(cost)
+        self._unpaid_final_expenses = unpaid
         self.model.event_log.add(
             Event(f"{self.name}'s estate paid ${cost - unpaid:,.0f} in end-of-life costs (funeral + final medical)")
         )
@@ -1064,6 +1077,17 @@ class Person(LifeModelAgent):
         self.model.registries.medical_costs.clear(self)
         self.model.registries.medicare.clear(self)
         self.model.registries.long_term_care.clear(self)
+
+    def _settle_unpaid_final_expenses(self, inheritor: "Person") -> None:
+        """Charge end-of-life costs the decedent's bank couldn't cover to the inheritor this year."""
+        unpaid = self._unpaid_final_expenses
+        if unpaid <= 0:
+            return
+        self._unpaid_final_expenses = 0.0
+        inheritor.spending.add_expense(unpaid)
+        self.model.event_log.add(
+            Event(f"{inheritor.name} pays ${unpaid:,.0f} of {self.name}'s end-of-life costs from the estate")
+        )
 
     def _settle_pensions_on_death(self, spouse: Optional["Person"]):
         """Continue survivor pensions to a surviving spouse; terminate the rest.
@@ -1086,6 +1110,8 @@ class Person(LifeModelAgent):
                 # against the survivor's own retirement status (a working 50-year-old widow still
                 # receives the joint-and-survivor benefit from the year of death).
                 pension.start_age = spouse.age
+                # The survivor's stream is a fixed benefit: it no longer accrues service.
+                pension.accrues_service = False
                 pensions.unregister(self, pension)
                 pensions.register(spouse, pension)
                 pension.person = spouse
@@ -1136,7 +1162,8 @@ class Person(LifeModelAgent):
         per-beneficiary apportionment of who pays), even when a designation created the liability.
         """
         gross_estate = self._gross_estate_value()
-        taxable_base = max(0.0, gross_estate - self._marital_share(is_spouse))
+        # End-of-life costs still owed are a debt of the estate (deductible, IRC §2053).
+        taxable_base = max(0.0, gross_estate - self._marital_share(is_spouse) - self._unpaid_final_expenses)
 
         self._step_up_taxable_basis()
         self._transfer_designated_accounts()
@@ -1318,7 +1345,9 @@ class Person(LifeModelAgent):
         taxable = max(0.0, taxable_base - exemption)
         estate_tax = taxable * (rate / 100)
         if estate_tax > 0:
-            inheritor.pay_bills(estate_tax)
+            from .tax_unit import TaxUnit
+
+            inheritor.debt += TaxUnit.for_member(inheritor).pay_bills(estate_tax)
             self.model.event_log.add(Event(f"Estate tax of ${estate_tax:,.0f} paid on {self.name}'s estate"))
 
     def _apply_survivor_adjustments(self, spouse: "Person"):

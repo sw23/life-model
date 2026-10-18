@@ -87,12 +87,15 @@ def state_income_tax_for_unit(
     resolved = state_config.resolve_state_code(state)
     pack = state_config.get_pack(state)
 
+    # Interest no state may tax (US Treasuries) and municipal interest (outside the federal base, and
+    # treated as in-state, so exempt here too) never enter a state base.
+    treasury = totals_by_type.get(IncomeType.TREASURY_INTEREST, 0.0)
     if resolved == DEFAULT_STATE_KEY:
-        # ``DEFAULT`` flat rate applied to the federal AGI base.
-        return legacy_agi_base * (pack.flat_rate or 0.0) / 100
+        # ``DEFAULT`` flat rate applied to the federal AGI base (which includes Treasury interest).
+        return max(legacy_agi_base - treasury, 0.0) * (pack.flat_rate or 0.0) / 100
 
     ordinary = sum(totals_by_type.values())
-    base = ordinary
+    base = ordinary - treasury - totals_by_type.get(IncomeType.TAX_EXEMPT_INTEREST, 0.0)
     if not pack.retirement_income_taxable:
         base -= totals_by_type.get(IncomeType.PRETAX_DISTRIBUTION, 0.0)
     if not pack.ss_taxable:

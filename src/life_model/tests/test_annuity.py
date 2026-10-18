@@ -295,8 +295,8 @@ class TestJointAndSurvivor(unittest.TestCase):
             BankAccount(person, "Bank", balance=0, interest_rate=0)
             return person
 
-        husband = make("H", 70, husband_death_age)
-        wife = make("W", 68, wife_death_age)
+        husband = make("H", 71, husband_death_age)
+        wife = make("W", 69, wife_death_age)
         husband.get_married(wife)
         return model, husband, wife
 
@@ -325,7 +325,7 @@ class TestJointAndSurvivor(unittest.TestCase):
             annuity.annuitize()
 
     def test_survivor_receives_the_survivor_share_then_payments_stop(self):
-        # Husband 70 dies at 72 (2027); wife 68 dies at 72 (2030).
+        # Husband is 71 in 2026 and dies at 72 (2027); wife is 69 in 2026 and dies at 72 (2029).
         model, husband, wife = self._couple(husband_death_age=72, wife_death_age=72, end_year=2032)
         annuity = Annuity(
             husband,
@@ -360,13 +360,13 @@ class TestAnnuityDeathTerms(unittest.TestCase):
         owner = Person(
             family,
             "O",
-            age=death_age - 2,
+            age=death_age - 1,
             retirement_age=60,
             spending=Spending(model, 0),
             mortality_mode=MortalityMode.FIXED_AGE,
             death_age=death_age,
         )
-        heir = Person(family, "H", age=40, retirement_age=70, spending=Spending(model, 0))
+        heir = Person(family, "H", age=41, retirement_age=70, spending=Spending(model, 0))
         owner.estate_beneficiary = heir
         for person in (owner, heir):
             BankAccount(person, "Bank", balance=0, interest_rate=0)
@@ -429,13 +429,16 @@ class TestAnnuityReserveConservation(unittest.TestCase):
 class TestTermLifeMultipliersFromConfig(unittest.TestCase):
     def test_age_multipliers_come_from_config(self):
         from ..config.financial_config import FinancialConfig
-        from ..insurance.life_insurance import LifeInsurance, LifeInsuranceType
+        from ..insurance.life_insurance import LifeInsurance, LifeInsuranceType, PremiumIncreaseType
 
         config = FinancialConfig()
         config.apply_scenario("flat", {"insurance": {"life": {"term_age_multipliers": {20: 1.0, 90: 1.0}}}})
         model = LifeModel(start_year=2026, end_year=2026, config=config)
         person = Person(Family(model), "P", age=60, retirement_age=65, spending=Spending(model, 0))
-        policy = LifeInsurance(person, LifeInsuranceType.TERM, 500000, 50.0, 20)
+        # Plan 26 D8: age-banded pricing is explicit (the default is a level premium).
+        policy = LifeInsurance(
+            person, LifeInsuranceType.TERM, 500000, 50.0, 20, premium_increase_rate=PremiumIncreaseType.AGE_BANDED
+        )
         # Scenario dicts deep-merge, so the age-90 point is added to the configured curve.
         self.assertEqual(policy.age_multipliers, dict(config.insurance.life.term_age_multipliers))
         self.assertEqual(policy.age_multipliers[90], 1.0)
