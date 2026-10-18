@@ -118,5 +118,21 @@ class TestAgentFrameColumns(unittest.TestCase):
         self.assertEqual([round(x) for x in persons["Spending"]], [30000, 33000, 36300])
 
 
+class TestOutputsDoc(unittest.TestCase):
+    def test_docs_outputs_md_is_up_to_date(self):
+        import importlib.util
+        from pathlib import Path
+
+        script = Path(__file__).resolve().parents[3] / "scripts" / "generate_outputs_doc.py"
+        spec = importlib.util.spec_from_file_location("generate_outputs_doc", script)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.assertEqual(
+            module.OUTPUT.read_text(),
+            module.render(),
+            "docs/outputs.md is stale: run python scripts/generate_outputs_doc.py",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

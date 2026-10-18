@@ -112,6 +112,27 @@ class EventKind(str, Enum):
         return self in _DETAIL_KINDS
 
 
+#: One-line meaning of every :class:`EventKind` (rendered into docs/outputs.md).
+EVENT_KIND_DOCS: dict[str, str] = {
+    "note": "Free-text event (what Event(message) creates); most legacy messages.",
+    "life_event_fired": "A scheduled LifeEvent fired (details: stage; the record also has name and scheduled_year).",
+    "retired": "A job ended (retirement, a layoff, death).",
+    "retirement_age": "A person reached the federal retirement age (59.5).",
+    "married": "Two people married (details: spouse).",
+    "died": "A person died.",
+    "home_bought": "A home was bought (amount: price; cause: the purchase).",
+    "home_sold": "A home was sold (amount: price; details: net_proceeds, taxable_gain).",
+    "policy_lapsed": "A life insurance policy lapsed (cause: non-payment, or a loan above the cash value).",
+    "annuitized": "An annuity converted to income payments (amount: reserve; details: monthly_payout).",
+    "inheritance": "Assets passed at a death (estate, designated account, trust payout, inherited IRA done).",
+    "forced_sale": "Detail: the payment waterfall sold brokerage holdings (amount, account, cause).",
+    "pretax_withdrawal": "Detail: the waterfall withdrew pre-tax money (amount; details: target = the solver's size).",
+    "withdrawal": "Detail: the waterfall drew Roth money.",
+    "rmd": "Detail: a required minimum distribution (amount, account).",
+    "penalty": "Detail: an additional tax settled with the year's return (amount; cause: its source).",
+    "shortfall_debt": "Detail: bills the household could not pay, carried as debt (amount, cause).",
+}
+
 _DETAIL_KINDS = frozenset(
     {
         EventKind.FORCED_SALE,

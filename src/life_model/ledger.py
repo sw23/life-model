@@ -77,6 +77,36 @@ class FlowKind(str, Enum):
     OTHER = "other"  #: Unclassified external flows (e.g. ``receive_cash`` from user code).
 
 
+#: One-line meaning of every :class:`FlowKind` (rendered into docs/outputs.md).
+FLOW_KIND_DOCS: dict[str, str] = {
+    "wage": "Salary paid by an employer.",
+    "bonus": "Bonus paid by an employer.",
+    "vest": "Stock compensation vesting (to cash or a brokerage account).",
+    "interest": "Interest earned (bank accounts).",
+    "dividend": "Dividends paid into an account.",
+    "growth": "Market growth of an account or asset (negative in a down year).",
+    "contribution": "Money put into a savings account (from pay, the bank, or an employer).",
+    "match": "Employer 401k match (negative when forfeited).",
+    "withdrawal": "Money taken out of a savings account into cash.",
+    "rmd": "A required minimum distribution.",
+    "sale": "A taxable sale (brokerage holdings, a home).",
+    "tax": "Income, payroll and estate taxes (negative for a refund).",
+    "penalty": "Additional taxes (early-withdrawal penalties).",
+    "spending": "Living expenses and one-time expenses.",
+    "housing": "Rent, mortgage payments, property tax, insurance, upkeep, purchase costs.",
+    "debt_service": "Loan payments and the interest charged on debt.",
+    "premium": "Insurance premiums (and whole-life cash value credited from them).",
+    "benefit": "Social Security, pensions, insurance payouts, debt relief.",
+    "transfer": "Money moved between household accounts.",
+    "gift": "Charity, trust funding, and gifts received.",
+    "inheritance": "Assets passing at a death.",
+    "borrow": "New debt: unpaid bills carried forward, policy loans.",
+    "forfeit": "Value surrendered to a counterparty (unvested match, annuity reserve at death).",
+    "opening_balance": "An account or asset that enters the simulation mid-run.",
+    "other": "Unclassified external flows (e.g. ``receive_cash`` from user code).",
+}
+
+
 @dataclass(frozen=True, slots=True)
 class LedgerEntry:
     """One posted movement of money (see the module docstring for the endpoint rules)."""
