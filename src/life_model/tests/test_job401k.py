@@ -13,6 +13,7 @@ from ..model import LifeModel
 from ..people.family import Family
 from ..people.person import Person, Spending
 from ..work.job import Job, Salary
+from .helpers import run_months
 
 
 class TestJob401k(unittest.TestCase):
@@ -72,9 +73,10 @@ class TestJob401k(unittest.TestCase):
     def test_growth_applied_in_step_with_annual_compounding(self):
         """Growth runs in step (after this year's contributions) at an APY, like every Investment."""
         account = self._account(pretax_balance=10000, roth_balance=10000, average_growth=10)
+        account.on_year_start()
         account.pre_step()  # RMD only; the owner is far below RMD age.
         self.assertEqual(account.pretax_balance, 10000)
-        account.step()
+        run_months(account.model, account.step)  # Plan 32: twelve months of growth
         self.assertAlmostEqual(account.pretax_balance, 11000, places=6)
         self.assertAlmostEqual(account.roth_balance, 11000, places=6)
 
@@ -127,7 +129,8 @@ class TestJob401kLimits(unittest.TestCase):
         person = Person(Family(model), "P", 75, 60, Spending(model, base=0))
         job = Job(person, "Co", "Retiree", Salary(model, base=0))
         k401 = Job401kAccount(job, pretax_balance=100000, average_growth=0)
-        k401.pre_step()
+        k401.on_year_start()  # Plan 32: the year's RMD is set at the year start, paid in twelfths
+        run_months(model, k401.pre_step)
         self.assertGreater(k401.stat_required_min_distrib, 0)
         self.assertAlmostEqual(person.income.ordinary_taxable, k401.stat_required_min_distrib)
         self.assertEqual(person.income.fica_wages, 0)

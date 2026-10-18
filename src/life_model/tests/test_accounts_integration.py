@@ -91,7 +91,7 @@ class TestAnnualContributionReset(unittest.TestCase):
         for _ in range(3):
             hsa.contribute(1000)
             self.assertEqual(hsa.contributions_ytd, 1000)
-            hsa.post_step()
+            hsa.on_year_end()  # Plan 32: annual resets run at year end
             self.assertEqual(hsa.contributions_ytd, 0)
 
 

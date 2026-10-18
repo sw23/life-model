@@ -403,6 +403,63 @@ class TestMonthlyBenefits(unittest.TestCase):
         self.assertAlmostEqual(frame.loc[2026, "Pension Income"], 5000, places=2)
 
 
+class TestMonthlyInvestments(unittest.TestCase):
+    def test_lots_held_twelve_months_are_long_term(self):
+        from ..account.brokerage import BrokerageAccount
+
+        model = LifeModel(start="2026-12", end_year=2028)
+        person = Person(Family(model), "Pat", 40, 70, Spending(model, 0))
+        BankAccount(person, "Bank", balance=0, interest_rate=0)
+        account = BrokerageAccount(person, "B", balance=0, growth_rate=0)
+        account.deposit_with_basis(1000, 400)  # bought December 2026
+        model.step()  # -> January 2027
+        self.assertEqual(account.preview_gain(1000), (0.0, 600.0))  # one month: short-term
+        for _ in range(11):
+            model.step()  # -> December 2027
+        self.assertEqual(account.preview_gain(1000), (600.0, 0.0))  # twelve months: long-term
+
+    def test_dividends_are_paid_quarterly(self):
+        from ..account.brokerage import BrokerageAccount
+
+        model = LifeModel(start_year=2026, end_year=2026)
+        person = Person(Family(model), "Pat", 40, 70, Spending(model, 0))
+        BankAccount(person, "Bank", balance=0, interest_rate=0)
+        BrokerageAccount(person, "B", balance=100000, growth_rate=0, dividend_yield=2)
+        model.run()
+        dividends = [(e.month, round(e.amount, 2)) for e in model.ledger if e.kind == "dividend"]
+        self.assertEqual(dividends, [(3, 500.0), (6, 500.0), (9, 500.0), (12, 500.0)])
+
+    def test_rmd_is_set_at_the_year_start_and_paid_in_twelfths(self):
+        from ..account.traditional_IRA import TraditionalIRA
+        from ..limits import required_min_distrib
+
+        model = LifeModel(start_year=2026, end_year=2026)
+        person = Person(Family(model), "Pat", 80, 65, Spending(model, 0))
+        BankAccount(person, "Bank", balance=0, interest_rate=0)
+        ira = TraditionalIRA(person, balance=100000, growth_rate=6)
+        model.run()
+        payments = [e.amount for e in model.ledger if e.kind == "rmd"]
+        annual = required_min_distrib(80, 100000, config=model.config)
+        self.assertEqual(len(payments), 12)
+        for payment in payments:
+            self.assertAlmostEqual(payment, annual / 12, places=6)
+        self.assertAlmostEqual(ira.stat_required_min_distrib, annual, places=6)
+        self.assertEqual(len(model.event_log.of_kind("rmd")), 1)
+
+    def test_money_grows_from_the_month_it_arrives(self):
+        from ..account.brokerage import BrokerageAccount
+
+        model = LifeModel(start_year=2026, end_year=2026)
+        person = Person(Family(model), "Pat", 40, 70, Spending(model, 0))
+        BankAccount(person, "Bank", balance=0, interest_rate=0)
+        account = BrokerageAccount(person, "B", balance=0, growth_rate=12)
+        for _ in range(6):
+            model.step()
+        account.deposit(1000)  # arrives for July
+        model.run()
+        self.assertAlmostEqual(account.balance, 1000 * 1.12**0.5, places=6)
+
+
 class TestEventsInTheirMonth(unittest.TestCase):
     def test_an_event_fires_in_its_month(self):
         model = LifeModel(start_year=2026, end_year=2026)

@@ -34,9 +34,9 @@ class HealthSavingsAccount(TaxAdvantagedAccount):
     ):
         """Models a Health Savings Account (HSA).
 
-        The HSA now grows like any other investment, uses the correct self-only/family contribution
-        limit (including the age-55 catch-up), counts employer contributions against that limit, and
-        deposits the employer contribution once per year (not 1/12).
+        The HSA grows like any other investment (monthly), uses the correct self-only/family
+        contribution limit (including the age-55 catch-up), counts employer contributions against
+        that limit, and deposits the employer contribution once per year, at the start of the year.
 
         Args:
             person: The person who owns this HSA
@@ -117,8 +117,8 @@ class HealthSavingsAccount(TaxAdvantagedAccount):
         desc += "</ul>"
         return desc
 
-    def step(self):
-        """Add the employer contribution (once per year, counted against the limit), then grow."""
+    def on_year_start(self):
+        """Add the employer contribution (once per year, at its start, counted against the limit)."""
         if self.employer_contribution > 0:
             employer_room = min(self.employer_contribution, self.remaining_contribution_room())
             if employer_room > 0:
@@ -132,4 +132,3 @@ class HealthSavingsAccount(TaxAdvantagedAccount):
                     source="employer HSA contribution",
                     agent=self.person,
                 )
-        super().step()

@@ -414,6 +414,9 @@ class BrokerageAccountConfig(StrictModel):
     # Share of the growth rate paid out as qualified dividends rather than accruing as untaxed
     # price appreciation. Defaults to 0 so accounts are pure-appreciation unless opted in.
     dividend_yield: float = Field(default=0.0, ge=0)
+    # How often dividends are paid (Plan 32): "quarterly" (March, June, September, December) or
+    # "monthly"; each payment is the yield's share of the balance (a quarter or a twelfth).
+    dividend_frequency: Literal["quarterly", "monthly"] = "quarterly"
 
 
 class HSAAccountConfig(StrictModel):

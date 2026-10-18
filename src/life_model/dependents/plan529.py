@@ -230,7 +230,7 @@ class Plan529(Investment):
             return self.withdraw_non_qualified(amount)
 
     def calculate_growth(self) -> float:
-        """Calculate investment growth for the period"""
+        """A year of growth on the current balance at the annual rate (display; growth is monthly)."""
         return compound_interest(self.balance, self.growth_rate, 1, 1)
 
     def reset_annual_contributions(self):
@@ -258,27 +258,17 @@ class Plan529(Investment):
         desc += "</ul>"
         return desc
 
-    def pre_step(self):
-        """Pre-step phase: Apply growth and update earnings tracking"""
-        # Calculate growth
-        growth = self.calculate_growth()
-        self.balance += growth
-        self.total_earnings += growth
-        self.stat_growth_history.append(growth)
-        self._post_growth(growth)
-
     def step(self):
-        """Step phase: Track statistics"""
-        self.stat_529_balance = self.balance
+        """Apply the month's growth and update earnings tracking."""
+        growth = self.apply_growth()
+        self.total_earnings += growth
+
+    def on_year_end(self):
+        """Track the year's statistics, then reset the annual tracking."""
         self.stat_contributions_history.append(self.contributions_this_year)
         self.stat_qualified_withdrawals_history.append(self.qualified_withdrawals)
         self.stat_non_qualified_withdrawals_history.append(self.non_qualified_withdrawals)
-
-        # Track balance history (from FinancialAccount)
-        self.stat_balance_history.append(self.balance)
-
-    def post_step(self):
-        """Post-step phase: Reset annual tracking"""
+        super().on_year_end()  # balance history
         self.reset_annual_contributions()
         # Reset yearly withdrawal tracking
         self.qualified_withdrawals = 0

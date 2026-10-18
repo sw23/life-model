@@ -346,7 +346,7 @@ class StockPlan(LifeModelAgent):
             # Nowhere to hold the shares; fall back to cash rather than losing the value.
             self.owner.receive_cash(vested, source=company, kind=FlowKind.VEST, cause="RSU vest (no brokerage)")
             return
-        account.deposit_with_basis(vested, cost_basis=vested, acquired_year=self.model.year)
+        account.deposit_with_basis(vested, cost_basis=vested)
         self.model.ledger.post(
             vested, FlowKind.VEST, to_account=account, source=company, cause="RSU vest (held)", agent=self.owner
         )

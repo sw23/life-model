@@ -331,14 +331,16 @@ class TestPerAccountBeneficiary(unittest.TestCase):
         cfg.model.economy.equity_return = 0
         model = LifeModel(start_year=2026, end_year=2026, config=cfg)
         family = Family(model)
+        # Plan 32: Bread dies at 72 (before RMDs start), so no January RMD leaves the IRA before the
+        # January death and the estate keeps its round numbers.
         breadwinner = Person(
             family,
             "Bread",
-            age=76,
+            age=72,
             retirement_age=50,
             spending=Spending(model, 0),
             mortality_mode=MortalityMode.FIXED_AGE,
-            death_age=76,
+            death_age=72,
         )
         spouse = Person(family, "Spouse", age=75, retirement_age=50, spending=Spending(model, 0))
         breadwinner.get_married(spouse)

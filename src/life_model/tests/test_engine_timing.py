@@ -37,6 +37,7 @@ from ..tax.income import IncomeLedger, IncomeType
 from ..tax.state import state_income_tax_for_unit
 from ..work.job import Job, Salary
 from ..work.stock import StockPlan, VestingSchedule
+from .helpers import run_months
 
 TEST_CONFIG = str(Path(__file__).parent / "fixtures" / "test_config.yaml")
 
@@ -487,7 +488,7 @@ class TestBankInterestIsIncome(unittest.TestCase):
         model = _model()
         person = _worker(model, salary=0, bank=0)
         account = BankAccount(person, "Savings", balance=10000, interest_rate=5, compounding="annual")
-        account.step()
+        run_months(model, account.step)  # a year of monthly interest (Plan 32)
         totals = person.income.totals_by_type()
         self.assertAlmostEqual(totals[IncomeType.INTEREST], 500, places=6)
         self.assertAlmostEqual(person.income.net_investment_income, 500, places=6)
@@ -500,7 +501,7 @@ class TestBankInterestIsIncome(unittest.TestCase):
         monthly = BankAccount(person, "M", balance=1000, interest_rate=5, compounding="monthly")
         default = BankAccount(person, "D", balance=1000, interest_rate=5)
         for account in (annual, monthly, default):
-            account.step()
+            run_months(model, account.step)  # a year of monthly interest (Plan 32)
         self.assertAlmostEqual(annual.balance, 1050, places=6)
         # interest_rate is an APR compounded monthly: APY = (1 + 0.05/12)^12 - 1 = 5.116%.
         self.assertAlmostEqual(monthly.balance, 1000 * (1 + 0.05 / 12) ** 12, places=6)

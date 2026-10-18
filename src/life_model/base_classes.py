@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 from enum import Enum
 from typing import TYPE_CHECKING, ClassVar, Optional
 
+from .economy import annual_to_monthly
 from .ledger import FlowKind
 from .limits import federal_retirement_age
 from .model import LifeModelAgent, snap_money
@@ -38,6 +39,7 @@ class FinancialAccount(LifeModelAgent, ABC):
     that don't expose the keyword can have ``account.beneficiary`` assigned directly.
     """
 
+    MONTHLY = True
     #: Whether the balance is the household's (counted in net worth and the conservation check).
     #: False for a donor-advised fund, whose money has been given away.
     IN_NET_WORTH: ClassVar[bool] = True
@@ -94,9 +96,13 @@ class FinancialAccount(LifeModelAgent, ABC):
         self.balance -= amount_withdrawn
         return amount_withdrawn
 
-    def step(self):
-        """Track balance history each step"""
+    def record_balance_history(self) -> None:
+        """Append the year-end balance to ``stat_balance_history`` (one entry per simulated year)."""
         self.stat_balance_history.append(self.balance)
+
+    def on_year_end(self):
+        """Track the year-end balance."""
+        self.record_balance_history()
 
 
 class Loan(LifeModelAgent, ABC):
@@ -249,12 +255,15 @@ class Loan(LifeModelAgent, ABC):
 class Investment(FinancialAccount, ABC):
     """Abstract base class for investment accounts with growth.
 
-    Growth is applied with **annual compounding** (APY) as the model-wide default so that every
-    ``Investment`` subclass grows identically given the same nominal rate. Subclasses that need a
-    different growth model override :meth:`calculate_growth`.
+    Growth is applied **monthly** at the month's rate: the economy's monthly return for the
+    account's asset class, or, with an explicit annual ``growth_rate`` (an APY), its monthly
+    equivalent ``(1 + rate)^(1/12) - 1``. Twelve months at a constant rate therefore compound to
+    exactly the annual rate, and every ``Investment`` subclass grows identically given the same
+    rate. Money that arrives mid-year grows only from its month on. Subclasses that need a
+    different growth model override :meth:`calculate_monthly_growth`.
     """
 
-    # Apply growth before tax-unit settlement so withdrawals see the grown balance.
+    # Apply growth before the month's bills are paid (0) so withdrawals see the grown balance.
     STEP_PRIORITY: ClassVar[dict[str, int]] = {"step": -10}
 
     # Maps an account's asset class to the economy rate that drives its return.
@@ -295,31 +304,39 @@ class Investment(FinancialAccount, ABC):
     def growth_rate(self, value: float | None) -> None:
         self._growth_rate_override = value
 
-    def calculate_growth(self) -> float:
-        """Calculate investment growth for the period (annual compounding, APY).
+    @property
+    def monthly_growth_rate(self) -> float:
+        """This month's growth rate (percent): the monthly equivalent of the explicit annual override,
+        else the economy's monthly return for the asset class."""
+        if self._growth_rate_override is not None:
+            return annual_to_monthly(self._growth_rate_override)
+        return self.model.economy.monthly_rate(self._ASSET_CLASS_RATES[self.asset_class])
 
-        One year at an APY is ``balance * rate``; written as a product rather than via
-        ``compound_interest`` so it is exact in floating point.
-        """
+    def calculate_growth(self) -> float:
+        """A year of growth on the current balance at the annual rate (``balance * rate``): an
+        estimate for display; the engine grows the balance monthly (:meth:`calculate_monthly_growth`)."""
         return self.balance * (self.growth_rate / 100)
 
+    def calculate_monthly_growth(self) -> float:
+        """This month's growth on the current balance."""
+        return self.balance * (self.monthly_growth_rate / 100)
+
     def apply_growth(self):
-        """Apply calculated growth to balance"""
-        growth = self.calculate_growth()
+        """Apply this month's growth to the balance."""
+        growth = self.calculate_monthly_growth()
         self.balance += growth
         self.stat_growth_history.append(growth)
         self._post_growth(growth)
         return growth
 
     def _post_growth(self, growth: float) -> None:
-        """Post a year's market growth of this account to the ledger."""
+        """Post a month's market growth of this account to the ledger."""
         if self.IN_NET_WORTH:
             self.model.ledger.post(growth, FlowKind.GROWTH, to_account=self, source="market", agent=self.person)
 
     def step(self):
-        """Apply growth and track statistics"""
+        """Apply the month's growth."""
         self.apply_growth()
-        super().step()
 
 
 class TaxAdvantagedAccount(Investment, ABC):
@@ -420,11 +437,12 @@ class TaxAdvantagedAccount(Investment, ABC):
 
     @property
     def is_useable(self) -> bool:
-        """Whether funds can be withdrawn without an early-withdrawal penalty (age-based)."""
-        return self.person.age >= federal_retirement_age(self.model.config)
+        """Whether funds can be withdrawn without an early-withdrawal penalty (exact age >= 59.5)."""
+        return self.person.age_years_fractional >= federal_retirement_age(self.model.config)
 
-    def post_step(self):
-        """Reset the annual contribution counter at year end."""
+    def on_year_end(self):
+        """Track the year-end balance and reset the annual contribution counter."""
+        super().on_year_end()
         self.reset_annual_contributions()
 
 
@@ -447,13 +465,13 @@ class RetirementAccount(Investment, ABC):
 
     @property
     def is_useable(self) -> bool:
-        """Check if funds can be withdrawn without penalty based on age"""
-        return self.person.age >= federal_retirement_age(self.model.config)
+        """Whether funds can be withdrawn without penalty (exact age >= 59.5)."""
+        return self.person.age_years_fractional >= federal_retirement_age(self.model.config)
 
-    def step(self):
-        """Update useable balance (reset every year, so it never goes stale) and track statistics"""
+    def collect_stats(self):
+        """Year-end useable balance (re-read every year, so it never goes stale)."""
+        super().collect_stats()
         self.stat_useable_balance = self.balance if self.is_useable else 0
-        super().step()
 
 
 class Benefit(LifeModelAgent, ABC):

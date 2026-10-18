@@ -22,6 +22,7 @@ from ..people.tax_unit import TaxUnit
 from ..tax.federal import FilingStatus, capital_gains_tax, net_investment_income_tax
 from ..tax.income import IncomeType
 from ..tax.tax import compute_taxes
+from .helpers import run_months
 
 TEST_CONFIG = str(Path(__file__).parent / "fixtures" / "test_config.yaml")
 
@@ -38,6 +39,13 @@ def _person(model: LifeModel, bank_balance: float = 0.0, spending: float = 0.0) 
     return person
 
 
+def _quarterly_dividends(balance: float, annual_return: float = 7.0, dividend_yield: float = 2.0) -> float:
+    """A year's quarterly dividends on ``balance`` growing at ``annual_return`` (total return): a quarter
+    of the yield on the balance at the start of March, June, September and December."""
+    monthly = (1 + annual_return / 100) ** (1 / 12)
+    return sum(balance * monthly ** (month - 1) * dividend_yield / 400 for month in (3, 6, 9, 12))
+
+
 class TestTaxLots(unittest.TestCase):
     """Basis tracking: FIFO consumption, pro-rata growth, holding-period classification."""
 
@@ -52,7 +60,7 @@ class TestTaxLots(unittest.TestCase):
 
     def test_growth_is_untaxed_until_sale(self):
         account = BrokerageAccount(self.person, "B", balance=10000, growth_rate=10)
-        account.apply_growth()
+        run_months(self.model, account.apply_growth)  # a year of monthly growth (Plan 32)
         self.assertEqual(account.balance, 11000)
         self.assertEqual(account.cost_basis, 10000)
         self.assertEqual(account.unrealized_gain, 1000)
@@ -63,7 +71,7 @@ class TestTaxLots(unittest.TestCase):
     def test_growth_accrues_to_lots_pro_rata(self):
         account = BrokerageAccount(self.person, "B", balance=1000, growth_rate=10)
         account.deposit(3000)  # 25% / 75% split of a $4,000 balance
-        account.apply_growth()
+        run_months(self.model, account.apply_growth)
         self.assertAlmostEqual(account.lots[0].value, 1100.0, places=6)
         self.assertAlmostEqual(account.lots[1].value, 3300.0, places=6)
 
@@ -149,27 +157,29 @@ class TestDividends(unittest.TestCase):
 
     def test_default_yield_leaves_growth_untouched(self):
         account = BrokerageAccount(self.person, "B", balance=10000, growth_rate=7)
-        account.apply_growth()
+        run_months(self.model, account.apply_growth)
         self.assertAlmostEqual(account.balance, 10700.0, places=6)
         self.assertEqual(self.person.income.preferential_income, 0)
         self.assertEqual(len(account.lots), 1)
 
     def test_dividend_splits_total_return_without_changing_it(self):
         account = BrokerageAccount(self.person, "B", balance=10000, growth_rate=7, dividend_yield=2)
-        account.apply_growth()
-        # Total return is still 7%: 5% appreciation plus a 2% dividend that is reinvested.
+        run_months(self.model, account.apply_growth)
+        # Total return is still 7%: appreciation plus a 2% dividend that is reinvested. Plan 32: the
+        # dividend is paid quarterly (0.5% of the balance at the start of March, June, ...).
         self.assertAlmostEqual(account.balance, 10700.0, places=6)
-        self.assertAlmostEqual(self.person.income.preferential_income, 200.0, places=6)
+        self.assertAlmostEqual(self.person.income.preferential_income, _quarterly_dividends(10000), places=6)
         totals = self.person.income.totals_by_type()
-        self.assertAlmostEqual(totals[IncomeType.QUALIFIED_DIVIDEND], 200.0, places=6)
+        self.assertAlmostEqual(totals[IncomeType.QUALIFIED_DIVIDEND], _quarterly_dividends(10000), places=6)
 
     def test_reinvested_dividend_gets_full_basis(self):
         account = BrokerageAccount(self.person, "B", balance=10000, growth_rate=7, dividend_yield=2)
-        account.apply_growth()
-        # $10,000 original basis plus the $200 dividend that was reinvested at cost.
-        self.assertAlmostEqual(account.cost_basis, 10200.0, places=6)
-        self.assertAlmostEqual(account.unrealized_gain, 500.0, places=6)
-        self.assertEqual(len(account.lots), 2)
+        run_months(self.model, account.apply_growth)
+        # $10,000 original basis plus the dividends (four quarterly ones, Plan 32) reinvested at cost.
+        dividends = _quarterly_dividends(10000)
+        self.assertAlmostEqual(account.cost_basis, 10000 + dividends, places=6)
+        self.assertAlmostEqual(account.unrealized_gain, 700.0 - dividends, places=6)
+        self.assertEqual(len(account.lots), 5)
 
 
 class TestPreferentialStacking(unittest.TestCase):
@@ -528,4 +538,7 @@ class TestRothVersusBrokerageOverThirtyYears(unittest.TestCase):
         gain = brokerage.unrealized_gain
         self.assertGreater(gain, 0)
         brk_person.withdraw_from_brokerage_accounts(brokerage.balance)
-        self.assertAlmostEqual(brk_person.preferential_income, gain, places=2)
+        # Plan 32: dividend lots reinvested in the last 12 months (quarterly) sell at a short-term gain.
+        short_term = brk_person.income.totals_by_type()[IncomeType.SHORT_TERM_CAPITAL_GAIN]
+        self.assertAlmostEqual(brk_person.preferential_income + short_term, gain, places=2)
+        self.assertLess(short_term, 0.01 * gain)

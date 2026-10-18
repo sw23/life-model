@@ -9,8 +9,8 @@ from typing import TYPE_CHECKING, ClassVar
 
 from ..base_classes import RetirementAccount
 from ..ledger import FlowKind
-from ..limits import required_min_distrib, rmd_start_age
-from ..model import Event, EventKind
+from ..limits import required_rmd_for_year
+from ..model import Event, EventKind, snap_money
 from ..tax.income import IncomeType
 
 if TYPE_CHECKING:
@@ -20,15 +20,15 @@ if TYPE_CHECKING:
 class Job401kAccount(RetirementAccount):
     """A 401k whose balance is derived from separate pre-tax and Roth sub-balances.
 
-    Ordering within a simulated year:
+    Timing:
 
-    * ``pre_step`` (priority -10): take this year's required minimum distribution from the prior
-      year-end balance (the IRS rule). The taxable share of Social Security is computed at
-      settlement from the whole ledger, so nothing depends on the RMD being booked first.
-    * The job deposits this year's contributions in its own ``pre_step`` (and trues them up at
-      step priority -30 after a mid-year change).
-    * ``step`` (priority -10, before tax-unit settlement): apply growth, so contributions land
-      before growth.
+    * ``on_year_start``: the year's required minimum distribution is set from the balance at the
+      start of the year (the prior December 31 balance, as the IRS rule works) and the owner's age
+      at the end of the year.
+    * ``pre_step`` (priority -10), monthly: a twelfth of the year's RMD is distributed.
+    * The job deposits each paycheck's contributions in its own ``pre_step`` (and trues them up at
+      step priority -30 after a mid-month change).
+    * ``step`` (priority -10, before the month's bills): the month's growth.
     """
 
     STATS_OWNED = frozenset({"stat_401k_balance", "stat_required_min_distrib"})
@@ -115,6 +115,10 @@ class Job401kAccount(RetirementAccount):
 
         self.stat_required_min_distrib = 0
         self.stat_401k_balance = 0
+        # This year's required minimum distribution (set at the year start; paid in twelfths).
+        self.rmd_for_year = 0.0
+        # The year's RMDs by recipient (an account can change hands mid-year), for the event log.
+        self._rmd_by_person: dict = {}
 
         job.retirement_account = self
         self.model.registries.job_401k_accounts.register(job.owner, self)
@@ -250,12 +254,12 @@ class Job401kAccount(RetirementAccount):
         return f"401k at {company} balance: ${self.balance:,}"
 
     def apply_growth(self):
-        """Grow the pre-tax and roth sub-balances with annual compounding (APY).
+        """Grow the pre-tax and roth sub-balances by the month's rate.
 
-        Uses the same annual-compounding growth as every other ``Investment`` so accounts with the
-        same nominal rate grow identically.
+        Uses the same monthly growth as every other ``Investment`` so accounts with the same rate
+        grow identically.
         """
-        rate = self.growth_rate / 100
+        rate = self.monthly_growth_rate / 100
         pretax_growth = self.pretax_balance * rate
         roth_growth = self.roth_balance * rate
         self.pretax_balance += pretax_growth
@@ -266,24 +270,31 @@ class Job401kAccount(RetirementAccount):
         self._post_growth(growth)
         return growth
 
+    def on_year_start(self):
+        # The year's RMD from the balance at the start of the year (the prior year-end balance).
+        self.rmd_for_year = required_rmd_for_year(self.person, self.pretax_balance)
+
     def pre_step(self):
-        # RMD from the prior year-end balance, before Social Security computes provisional income.
+        # A twelfth of the year's RMD, before Social Security computes provisional income.
         self._take_required_min_distribution()
 
-    def step(self):
-        # After the job deposited this year's contributions in pre_step, so contributions land
-        # before growth. RetirementAccount.step applies growth and tracks balance/useable history.
-        super().step()
+    def collect_stats(self):
+        super().collect_stats()
         self.stat_401k_balance = self.balance
 
+    def on_year_end(self):
+        super().on_year_end()
+        # One RMD event per recipient a year (with the year's total).
+        for person, amount in self._rmd_by_person.items():
+            self.model.event_log.add(Event(EventKind.RMD, person=person, amount=amount, account=self))
+        self._rmd_by_person = {}
+
     def _take_required_min_distribution(self):
-        """Force-withdraw the required minimum distribution (pre-tax, ordinary income, no FICA)."""
-        config = self.person.model.config
-        birth_year = self.person.model.year - self.person.age
-        start_age = rmd_start_age(birth_year, config=config, year=self.person.model.year)
-        required_min_dist_amount = self.deduct_pretax(
-            required_min_distrib(self.person.age, self.pretax_balance, config=config, start_age=start_age)
-        )
+        """Force-withdraw this month's share of the year's required minimum distribution (pre-tax,
+        ordinary income, no FICA)."""
+        if self.rmd_for_year <= 0:
+            return
+        required_min_dist_amount = self.deduct_pretax(self.rmd_for_year / 12)
         self.person.deposit_into_bank_account(
             required_min_dist_amount,
             kind=FlowKind.RMD,
@@ -292,11 +303,9 @@ class Job401kAccount(RetirementAccount):
         )
         # RMDs are ordinary income, not FICA wages.
         self.person.income.add(IncomeType.PRETAX_DISTRIBUTION, required_min_dist_amount, source="rmd")
-        self.stat_required_min_distrib = required_min_dist_amount
+        self.stat_required_min_distrib = snap_money(self.stat_required_min_distrib + required_min_dist_amount)
         if required_min_dist_amount > 0:
-            self.model.event_log.add(
-                Event(EventKind.RMD, person=self.person, amount=required_min_dist_amount, account=self)
-            )
+            self._rmd_by_person[self.person] = self._rmd_by_person.get(self.person, 0.0) + required_min_dist_amount
 
     def deduct_pretax(self, amount: float):
         """Deduct from pre-tax balance

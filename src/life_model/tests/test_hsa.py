@@ -66,7 +66,7 @@ class TestHSA(unittest.TestCase):
     def test_employer_contribution_added_in_step(self):
         """The full annual employer contribution lands once per yearly step (was 1/12, Plan 06 item 5)."""
         hsa = self._hsa(contribution_limit=8000, employer_contribution=1200, growth_rate=0)
-        hsa.step()
+        hsa.on_year_start()  # Plan 32: the employer contribution lands at each year start
         self.assertAlmostEqual(hsa.balance, 1200, places=6)
         # Employer money counts against the same annual limit.
         self.assertEqual(hsa.contributions_ytd, 1200)
@@ -91,7 +91,7 @@ class TestHSALimitsAndTaxes(unittest.TestCase):
     def test_family_limit_includes_employer_contribution(self):
         person = _plan06_person()
         hsa = HealthSavingsAccount(person, HSAType.FAMILY, growth_rate=0, employer_contribution=3000)
-        hsa.step()
+        hsa.on_year_start()  # Plan 32: the employer contribution lands at each year start
         self.assertEqual(hsa.remaining_contribution_room(), hsa.annual_contribution_limit() - 3000)
 
     def test_personal_contribution_is_deductible(self):
