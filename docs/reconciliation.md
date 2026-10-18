@@ -100,14 +100,16 @@ for the format and how to add one.
 ## The invariant checker
 
 `life_model.invariants` holds the rules every simulated year must satisfy. They read the year's
-results (balance sheets, the cash-flow ledger, typed events, tax returns), not engine internals:
+results (the balance sheets around the year and around each month, the cash-flow ledger, typed
+events, tax returns), not engine internals, and run at each year end, after December's taxes:
 
 | Invariant | Rule |
 |---|---|
-| `conservation` | Net worth changed by exactly the ledger's net external flow (within $1). |
-| `continuity` | Between two years (outside `step()`), net worth moved only by posted ledger entries. |
-| `no_negative_balances` | No asset below zero, no liability below zero. |
-| `no_draw_above_cash_floor` | No waterfall brokerage sale or pre-tax withdrawal while the tax unit ends the year with cash above its floor (the floor is $0 until Plan 27 adds one). |
+| `conservation` | Net worth changed by exactly the ledger's net external flow over the year (within $1). |
+| `monthly_conservation` | The same for each month of the year (catches money that appears in one month and leaves in another). |
+| `continuity` | Between two years and between two months (outside `step()`), net worth moved only by posted ledger entries. |
+| `no_negative_balances` | At no month end an asset below zero or a liability below zero. |
+| `no_draw_above_cash_floor` | No waterfall brokerage sale or pre-tax withdrawal in a month the tax unit ends with cash above its floor, not counting money that arrived after the month's last draw (the floor is $0 until Plan 27 adds one). The waterfall pays each month's bills, so a sale in a lean month is fine when later pay refills the bank. |
 | `contribution_limits` | 402(g) deferrals (+ catch-up), 415(c) additions per plan, IRA and HSA contributions within the year's limits. |
 | `no_income_after_job_end` | No wages, bonus or vests from an employer after the job ended. |
 | `fica_wage_base` | Social Security tax = 6.2% of wages up to the wage base, per worker; no payroll tax without wages. |

@@ -139,21 +139,56 @@ class TestEachInvariant(unittest.TestCase):
         bank = next(a for a in model.agents if isinstance(a, BankAccount))
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            model.step()
+            model.step_year()
             bank.balance += 1000  # a driver moved money without posting it
-            model.step()
-            model.step()
+            model.step_year()
+            model.step_year()
         found = [v for v in model.invariant_violations if v.invariant == "continuity"]
         self.assertEqual([v.year for v in found], [2027])
+        self.assertIsNone(found[0].month)
         self.assertAlmostEqual(found[0].amount, 1000.0)
+
+    def test_continuity_flags_money_moved_between_months(self):
+        model = _simple_model(checks="warn")
+        bank = next(a for a in model.agents if isinstance(a, BankAccount))
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            for _ in range(4):
+                model.step()
+            bank.balance += 1000  # moved between April and May without a ledger entry
+            model.step_year()
+        found = [v for v in model.invariant_violations if v.invariant == "continuity"]
+        self.assertEqual([(v.year, v.month) for v in found], [(2026, 5)])
+        self.assertAlmostEqual(found[0].amount, 1000.0)
+        self.assertIn("2026-04's close and 2026-05's open", found[0].message)
 
     def test_continuity_accepts_posted_moves(self):
         model = _simple_model(checks="strict")
         person = next(a for a in model.agents if isinstance(a, Person))
-        model.step()
+        model.step_year()
         person.receive_cash(1000, source="gift from a relative", kind=FlowKind.GIFT)
         model.step()
+        person.receive_cash(1000, source="gift from a relative", kind=FlowKind.GIFT)
+        model.step_year()
         self.assertEqual(model.invariant_violations, [])
+
+    def test_monthly_conservation_catches_money_moved_inside_a_year(self):
+        model = _simple_model(years=1, checks="warn")
+        bank = next(a for a in model.agents if isinstance(a, BankAccount))
+        original = BankAccount.step
+
+        def step(self):
+            original(self)
+            if self is bank and model.month in (3, 9):
+                # Unposted: +500 in March, -500 in September; the year nets to zero.
+                self._balance += 500.0 if model.month == 3 else -500.0
+
+        with mock.patch.object(BankAccount, "step", step):
+            found = self._run(model)
+        self.assertNotIn("conservation", found)
+        months = [(v.month, round(v.amount, 2)) for v in model.invariant_violations]
+        self.assertEqual(months, [(3, 500.0), (9, -500.0)])
+        self.assertTrue(all(v.invariant == "monthly_conservation" for v in model.invariant_violations))
 
     def test_negative_balance(self):
         model = _simple_model()
@@ -179,7 +214,7 @@ class TestEachInvariant(unittest.TestCase):
 
         def pre_step(self):
             original(self)
-            if self is ira:
+            if self is ira and model.month == 1:
                 self.contribute(20000, from_account=person.bank_accounts[0])
                 person.bank_accounts[0].balance -= 20000
 
@@ -202,7 +237,7 @@ class TestEachInvariant(unittest.TestCase):
             original(self)
             if model.year == 2027:
                 job.retire()
-            if model.year == 2028:
+            if model.year == 2028 and model.month == 1:
                 person.receive_cash(5000, source="Acme", kind=FlowKind.WAGE)
 
         with mock.patch.object(Job, "pre_step", pre_step):
@@ -262,14 +297,20 @@ class TestCashFloorRegressionGuard(unittest.TestCase):
         model.checks = "strict"
         model.run()
         self.assertEqual(model.invariant_violations, [])
-        # 2026's bills fit in the two banks together; the brokerage is first sold in 2027.
+        # 2026's bills fit in the two banks together; the brokerage is first sold in 2027 (monthly
+        # from the month the banks run dry).
         sales = [e.year for e in model.event_log.list if e.kind.value == "forced_sale"]
-        self.assertEqual(sales, [2027])
+        self.assertEqual(sorted(set(sales)), [2027])
 
     def test_pre_plan_26_waterfall_is_flagged(self):
         model = self._couple()
+        # The unit sees (sizes against, and pays from) only the head's bank.
         head_only = property(lambda self: self.members[0].bank_account_balance)
-        with mock.patch.object(TaxUnit, "bank_account_balance", head_only):
+        head_banks = lambda self: list(self.members[0].bank_accounts)  # noqa: E731
+        with (
+            mock.patch.object(TaxUnit, "bank_account_balance", head_only),
+            mock.patch.object(TaxUnit, "_bank_accounts_in_draw_order", head_banks),
+        ):
             violations = _quiet(lambda: (setattr(model, "checks", "warn"), model.run(), model.invariant_violations)[2])
         found = [v for v in violations if v.invariant == "no_draw_above_cash_floor"]
         self.assertEqual(found[0].year, 2026)
