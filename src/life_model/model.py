@@ -610,10 +610,13 @@ class LifeModel(mesa.Model):
 
         Canonical yearly sequence (see ``STAGES``, and LifeModelAgent.STEP_PRIORITY for ordering
         within a stage):
-          * pre_step:  age++, mortality, RMDs, income and benefits deposited
-          * events:    scheduled life events fire (before settlement, so they apply this year)
-          * step:      payroll true-up, account growth, then tax units settle taxes/spending/withdrawals
-          * post_step: stat resets, escalators (salary/spending/rent increases), taxable_income reset
+
+        * ``pre_step``: age++, mortality, RMDs, income and benefits deposited
+        * ``events``: scheduled life events fire (before settlement, so they apply this year)
+        * ``step``: payroll true-up, account growth, then tax units settle taxes/spending/withdrawals
+        * ``post_step``: stat resets, escalators (salary/spending/rent increases), taxable_income reset
+
+        Then every agent's ``collect_stats`` year-end hook runs.
 
         The DataCollector row for year Y is collected *after* the stages run (while ``self.year``
         still equals Y), so the row for year Y contains year-Y flows and end-of-year-Y balances.
@@ -758,9 +761,15 @@ class LifeModel(mesa.Model):
         return self.result(spec=spec)
 
     def result(self, *, spec=None) -> "RunResult":
-        """The :class:`~life_model.results.RunResult` of what has been simulated so far."""
+        """The :class:`~life_model.results.RunResult` of what has been simulated so far.
+
+        ``spec`` defaults to the household spec the model was built from (``model.household.spec``,
+        set by :func:`life_model.spec.build_model`), if any.
+        """
         from .results import RunResult
 
+        if spec is None:
+            spec = getattr(getattr(self, "household", None), "spec", None)
         return RunResult.from_model(self, spec=spec)
 
     def validate(self) -> list:

@@ -363,10 +363,9 @@ def run_spec_shuffled_construction(name: str, seed: int | None):
         return timing
 
     if seed is not None:
-        # People keep the spec's order: the first spouse listed in relationships heads the unit, and
-        # the head is a modeling choice, not an accident of construction. (It matters: the household
-        # waterfall draws the members' banks in member order, so with different bank rates the
-        # interest earned depends on whose bank pays first.)
+        # People keep the spec's order here because stochastic mortality draws follow it (RNG
+        # consumption order). Which spouse heads the unit no longer matters for the money: see
+        # TestHeadOfUnitIndependence.
         steps = random.Random(seed).sample(steps, len(steps))
     for step in people_steps:
         step()
@@ -409,6 +408,64 @@ class TestSpecExampleConstructionOrder(unittest.TestCase):
                     self.assert_frames_match(
                         baseline, run_spec_shuffled_construction(name, seed), f"{name} seed {seed}"
                     )
+
+
+def _head_swap_spec(name: str, swap: bool, years: int = 50):
+    """An example spec (deaths made deterministic, so no RNG draw depends on people order) with the
+    spouses of every marriage, and the people list, in declared or reversed order."""
+    spec = _spec_example(name, years)
+    people = [
+        p.model_copy(update={"mortality": "fixed_age", "death_age": 84 + 3 * i}) if p.mortality == "stochastic" else p
+        for i, p in enumerate(spec.people)
+    ]
+    marriages = spec.relationships.marriages
+    if swap:
+        people = list(reversed(people))
+        marriages = [m.model_copy(update={"spouses": list(reversed(m.spouses))}) for m in marriages]
+    relationships = spec.relationships.model_copy(update={"marriages": marriages})
+    return spec.model_copy(update={"people": people, "relationships": relationships})
+
+
+class TestHeadOfUnitIndependence(unittest.TestCase):
+    """Which spouse is listed first (and so heads the joint tax unit) does not change the money.
+
+    The household waterfall draws the unit's bank accounts lowest-yield first and its other sources
+    in a canonical member order, refunds land in the highest-yield bank, and the return is the
+    unit's; so with same-state spouses and different bank rates the model totals are identical.
+    """
+
+    assert_frames_match = TestConstructionOrderProperty.assert_frames_match
+
+    def test_swapping_the_head_spouse(self):
+        import warnings
+
+        from ..spec import build_model
+
+        for name in ("married_homeowners", "retiree_couple"):
+            with self.subTest(example=name):
+                frames = []
+                for swap in (False, True):
+                    spec = _head_swap_spec(name, swap)
+                    states = {p.state for p in spec.people}
+                    self.assertEqual(len(states), 1, "the unit files in the head's state: keep spouses in one state")
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore", UserWarning)
+                        model = build_model(spec)
+                    model.run()
+                    frames.append(model.datacollector.get_model_vars_dataframe())
+                self.assert_frames_match(frames[0], frames[1], f"{name} head swapped")
+
+    def test_banks_with_different_rates_are_drawn_lowest_yield_first(self):
+        from ..spec import build_model, load_example
+
+        model = build_model(load_example("married_homeowners"))
+        from ..people.tax_unit import TaxUnit
+
+        (family,) = [a for a in model.agents if type(a).__name__ == "Family"]
+        (unit,) = TaxUnit.build_units(family)
+        rates = [account.interest_rate for account in unit._bank_accounts_in_draw_order()]
+        self.assertEqual(rates, sorted(rates))
+        self.assertGreater(len(set(rates)), 1)
 
 
 if __name__ == "__main__":

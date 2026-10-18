@@ -98,3 +98,31 @@ else changed. `get_yearly_stat_df` no longer inserts `extra_columns` into the ca
 list (it used to mutate it) and takes `styled=False` to return the plain DataFrame. The Monte Carlo
 runner's private `_run_trial` now returns a dict (frame, seed, deflators, and optionally the agent
 frame and events); `MonteCarloResult(frames)` still works positionally.
+
+## Follow-up after merging Plan 25 — order-independent household waterfall
+
+The household waterfall used to drain the unit members' bank accounts in member order (head
+first), so with spouses' banks paying different rates, which spouse heads the unit (the first
+listed / constructed) changed the result: on the `married_homeowners` spec example, swapping the
+spouses moved `Bank Balance` by up to $57.8k and `Net Worth` by up to $90.4k over 50 years.
+
+Now (`TaxUnit._bank_accounts_in_draw_order`, `TaxUnit._members_for`):
+
+* bills are paid from all of the unit's bank accounts **lowest yield (APY) first**; ties go by owner
+  name, institution, account type, then the larger balance first;
+* the brokerage, Roth and HSA-medical steps draw members in canonical order (by name), and the
+  pre-tax step draws members past the early-withdrawal age first, then by name (the sizing
+  solver's allocation mirrors it);
+* a refund from refundable credits lands in the highest-yield bank.
+
+With same-state spouses, swapping the head now changes nothing (`TestHeadOfUnitIndependence`,
+including the `retiree_couple` example with deterministic deaths; under stochastic mortality the
+death draws still follow people order, which is RNG consumption order, not money).
+
+No existing test's expected value changed. Output changes (merge commit vs. this fix):
+
+| Run | Change |
+| --- | --- |
+| `married_homeowners` spec example | From 2027 Jane's 0.01%/0.1% banks pay before John's 0.5% bank: `Bank Balance` +$1k by 2029, +$12.6k by 2044; in 2047 a $14.7k brokerage sale replaces a $16.7k pre-tax withdrawal (taxes −$2.0k); final `Net Worth` $7,319,960 → $7,397,947 (+1.1%). |
+| `retiree_couple` spec example (seed 11) | `Net Worth` −$872 to −$909 from 2045. In the death year 2045 the decedent's own bank now has the cash to pay the end-of-life costs (an outflow outside the `Spending` stat), so the survivor's bills no longer carry them: `Spending` −$77.8k that year. |
+| Plan 28 test scenarios (`tests/scenarios.py`), `single_renter` | Unchanged (one bank per unit, or members' draws never overlapped). |

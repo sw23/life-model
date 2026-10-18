@@ -195,7 +195,7 @@ class TaxUnit:
         """
         allocation: dict[int, float] = {}
         remaining = amount
-        for member in self.members:
+        for member in self._members_for("pretax"):
             available = member.pretax_account_balance
             take = min(remaining, available)
             allocation[member.unique_id] = take
@@ -450,7 +450,7 @@ class TaxUnit:
 
     def withdraw_from_pretax_401ks(self, amount: float) -> float:
         """Withdraw ``amount`` from members' pre-tax 401ks. Returns the amount not withdrawn."""
-        for member in self.members:
+        for member in self._members_for("pretax"):
             if amount <= 0:
                 break
             amount -= member.withdraw_from_pretax_401ks(amount)
@@ -459,10 +459,10 @@ class TaxUnit:
     def withdraw_from_pretax_accounts(self, amount: float) -> float:
         """Withdraw ``amount`` from members' pre-tax 401ks then Traditional IRAs, member by member.
 
-        Returns the amount not withdrawn. This order is what ``_prospective_withdrawal_allocation``
-        predicts during sizing.
+        Returns the amount not withdrawn. This order (:meth:`_members_for`) is what
+        ``_prospective_withdrawal_allocation`` predicts during sizing.
         """
-        for member in self.members:
+        for member in self._members_for("pretax"):
             if amount <= 0:
                 break
             amount -= member.withdraw_from_pretax_accounts(amount)
@@ -500,21 +500,54 @@ class TaxUnit:
                 remaining = self._pay_from_banks(remaining, **post)
         return max(0.0, remaining)
 
-    def _pay_from_banks(self, amount: float, **post) -> float:
-        """Pay ``amount`` from every member's bank accounts, in member order. Returns the shortfall.
-        ``post`` (``kind``, ``sink``, ``to_account``, ``cause``) posts the payment to the ledger."""
-        for member in self.members:
+    def _bank_accounts_in_draw_order(self) -> list:
+        """Every member's bank accounts in the order the household draws them: lowest yield (APY)
+        first, so the cash left over earns the most. Ties go by owner name, institution, account type
+        and then the larger balance first, none of which depend on construction order or on which
+        spouse heads the unit."""
+
+        def key(account):
+            periods = account.compound_rate or 1
+            apy = (1 + account.interest_rate / 100 / periods) ** periods - 1
+            return (apy, account.person.name, account.company, account.type, -account.balance)
+
+        return sorted((a for m in self.members for a in m.bank_accounts), key=key)
+
+    def _members_for(self, source: str) -> "list[Person]":
+        """The order members are drawn in by a non-bank waterfall step: canonical (by name), not by
+        who heads the unit. Pre-tax draws take members past the early-withdrawal age first (no 10%
+        additional tax)."""
+        if source == "pretax":
+            return sorted(self.members, key=lambda m: (m.early_withdrawal_penalty(100.0), m.name, m.age))
+        return sorted(self.members, key=lambda m: (m.name, m.age))
+
+    def _pay_from_banks(self, amount: float, *, kind=None, sink=None, to_account=None, cause=None) -> float:
+        """Pay ``amount`` from the unit's bank accounts in :meth:`_bank_accounts_in_draw_order`.
+        Returns the shortfall. ``kind`` (with ``sink``/``to_account``, ``cause``) posts the payment
+        to the ledger."""
+        for account in self._bank_accounts_in_draw_order():
             if amount <= 0:
                 return 0.0
-            amount = member.deduct_from_bank_accounts(amount, **post)
+            taken = account.withdraw(amount)
+            amount -= taken
+            if kind is not None and taken > 0:
+                account.model.ledger.post(
+                    taken,
+                    kind,
+                    from_account=account,
+                    to_account=to_account,
+                    sink=None if to_account is not None else (sink or cause),
+                    cause=cause,
+                    agent=account.person,
+                )
         return amount
 
     def _payer_account(self):
-        """The account settlement posts the household's bills from: the first member bank account,
+        """The account settlement posts the household's bills from: the first bank in draw order,
         else the head's cash pocket (the per-account split of the payment is not tracked)."""
-        for member in self.members:
-            if member.bank_accounts:
-                return member.bank_accounts[0]
+        accounts = self._bank_accounts_in_draw_order()
+        if accounts:
+            return accounts[0]
         return self.members[0].cash_destination
 
     def _raise_cash(self, source: str, amount: float) -> float:
@@ -523,7 +556,7 @@ class TaxUnit:
         the amount raised."""
         before = self._source_balances(source)
         raised = 0.0
-        for member in self.members:
+        for member in self._members_for(source):
             if raised >= amount:
                 break
             want = amount - raised
@@ -633,8 +666,8 @@ class TaxUnit:
 
     def withdraw_from_brokerage_accounts(self, amount: float) -> float:
         """Sell ``amount`` from members' brokerage accounts (into the bank). Returns the unfilled
-        remainder. Members are drained in order, mirroring the pre-tax 401k helper."""
-        for member in self.members:
+        remainder. Members are drained in canonical order (:meth:`_members_for`)."""
+        for member in self._members_for("brokerage"):
             if amount <= 0:
                 break
             amount -= member.withdraw_from_brokerage_accounts(amount)
@@ -646,7 +679,7 @@ class TaxUnit:
         remaining = amount
         long_term = 0.0
         short_term = 0.0
-        for member in self.members:
+        for member in self._members_for("brokerage"):
             if remaining <= 0:
                 break
             take = min(remaining, member.brokerage_balance)
@@ -664,7 +697,7 @@ class TaxUnit:
         member's medical costs, and their HSA balances. (With enough cash the HSA is left to grow.)
         """
         shortfall = bills - self.bank_account_balance
-        for member in self.members:
+        for member in self._members_for("hsa"):
             if shortfall <= 0:
                 break
             shortfall -= member.reimburse_medical_from_hsas(shortfall)
@@ -931,7 +964,12 @@ class TaxUnit:
         if net_due >= 0:
             shortfall = round_money(max(0.0, self._pay_from_banks(net_due)))
         else:
-            self.members[0].receive_cash(-net_due, source="refundable tax credits", post=False)
+            # The refund lands in the highest-yield bank (or the head's cash pocket without one).
+            accounts = self._bank_accounts_in_draw_order()
+            if accounts:
+                accounts[-1].balance += -net_due
+            else:
+                self.members[0].receive_cash(-net_due, source="refundable tax credits", post=False)
             shortfall = 0.0
         for line in bill_lines:
             line.post(model.ledger, payer)
