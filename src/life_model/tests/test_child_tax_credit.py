@@ -113,7 +113,7 @@ class TestTaxUnitCTCWiring(unittest.TestCase):
         Job(parent, "Co", "Dev", Salary(model=model, base=80000, yearly_increase=0, yearly_bonus=0))
         if with_child:
             Child(parent, "Kid", birth_year=2020)  # age 6 in 2026 -> qualifying
-        model.step()
+        model.step_year()
         return model, parent
 
     def test_ctc_reduces_taxes_by_exactly_per_child_amount(self):
@@ -129,14 +129,14 @@ class TestTaxUnitCTCWiring(unittest.TestCase):
         Job(parent, "Co", "Dev", Salary(model=model, base=80000, yearly_increase=0, yearly_bonus=0))
         Child(parent, "Unborn", birth_year=2030)  # negative age
         Child(parent, "Grown", birth_year=2000)  # age 26
-        model.step()
+        model.step_year()
         taxes = model.datacollector.get_model_vars_dataframe().iloc[-1]["Taxes"]
 
         model2, parent2 = LifeModel(start_year=2026, end_year=2026, config=_fixture_config()), None
         parent2 = Person(Family(model2), "Parent", age=45, retirement_age=70, spending=Spending(model2, base=0))
         BankAccount(parent2, "Bank", balance=100000, interest_rate=0)
         Job(parent2, "Co", "Dev", Salary(model=model2, base=80000, yearly_increase=0, yearly_bonus=0))
-        model2.step()
+        model2.step_year()
         taxes_no_children = model2.datacollector.get_model_vars_dataframe().iloc[-1]["Taxes"]
 
         self.assertAlmostEqual(taxes, taxes_no_children, places=2)

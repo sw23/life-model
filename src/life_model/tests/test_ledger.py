@@ -76,7 +76,8 @@ class TestLedgerEntries(unittest.TestCase):
         taxes = frame[frame.kind.isin(["tax", "penalty"])].amount.sum()
         self.assertAlmostEqual(taxes, person.tax_returns[2026].total_tax, places=6)
         self.assertEqual(frame.year.unique().tolist(), [2026])
-        self.assertTrue(frame.month.isna().all())
+        # Every entry carries the month it was posted in (Plan 32: the engine is monthly).
+        self.assertTrue(frame.month.between(1, 12).all())
         self.assertEqual(model.ledger.names[f"BankAccount:{bank.unique_id}"], "Pat's BankAccount (Bank)")
         # The DataCollector table exposes the same rows.
         table = model.datacollector.get_table_dataframe("Ledger")
@@ -90,9 +91,12 @@ class TestLedgerEntries(unittest.TestCase):
         BrokerageAccount(person, "Broker", balance=200000)
         model.run()
         sales = [e for e in model.ledger if e.kind == "sale"]
-        self.assertEqual(len(sales), 1)
-        self.assertEqual(sales[0].cause, "fund 2026 bills and taxes")
-        self.assertTrue(sales[0].is_transfer)
+        # Plan 32: each month's bills sell what the bank can't cover; December also funds the taxes.
+        bill_sales = [e for e in sales if e.cause != "fund 2026 taxes"]
+        self.assertEqual([e.month for e in bill_sales], list(range(1, 13)))
+        for sale in bill_sales:
+            self.assertEqual(sale.cause, f"pay 2026-{sale.month:02d} bills")
+        self.assertTrue(all(sale.is_transfer for sale in sales))
         assert_conservation(model)
 
 
@@ -118,6 +122,7 @@ class TestConservationOnWholeHouseholds(unittest.TestCase):
         model.run()
         self.assertEqual(len(model.balance_sheets), years)
         assert_conservation(model)
+        assert_conservation(model, monthly=True)
         self.assertFalse(check_conservation(model))
 
     def test_married_homeowners_45_years(self):
@@ -193,7 +198,9 @@ class TestMoneyConservationBugs(unittest.TestCase):
         SocialSecurity(person, withdrawal_start_age=67, income_history=EARNINGS_HISTORY)
         model.run()
         benefits = [e for e in model.ledger if e.kind == "benefit" and e.source == "Social Security"]
-        self.assertEqual(sorted({e.year for e in benefits}), [2026, 2027])
+        # Plan 32: the death (January 2028, at 72) comes after that month's benefit, then nothing.
+        self.assertEqual(max((e.year, e.month) for e in benefits), (2028, 1))
+        self.assertEqual(sorted({e.year for e in benefits}), [2026, 2027, 2028])
         self.assertEqual(person.cash, 0)
         assert_conservation(model)
 
@@ -204,14 +211,14 @@ class TestMoneyConservationBugs(unittest.TestCase):
         heir = Person(person.family, "Heir", 50, 65, Spending(model, base=0))
         BankAccount(person, "Bank", balance=1000)
         BankAccount(heir, "Bank", balance=200000)
-        model.step()
+        model.step_year()
         carried = person.debt
         self.assertGreater(carried, 40000)
-        model.step()
+        model.step_year()
         self.assertTrue(person.is_deceased)
         self.assertEqual(person.debt, 0)
-        # The heir's settlement repaid the inherited debt (with a year of interest).
-        repaid = [e for e in model.ledger.for_year(2027) if e.cause == "repay unpaid bills carried from last year"]
+        # The heir's settlement repaid the inherited debt (with a month of interest, Plan 32).
+        repaid = [e for e in model.ledger.for_year(2027) if e.cause == "repay unpaid bills"]
         self.assertGreater(sum(e.amount for e in repaid), carried)
         assert_conservation(model)
 
@@ -248,8 +255,9 @@ class TestMoneyConservationBugs(unittest.TestCase):
         Pension(bob, "Utility", vesting_years=1, benefit_amount=20000, survivor_percent=50)
         model.run()
         self.assertTrue(sue.is_deceased)
-        paid = {(e.year, e.to_account) for e in model.ledger if e.kind == "benefit"}
-        self.assertNotIn(2029, {year for year, _ in paid})  # Sue died in 2029
+        paid = {(e.year, e.month) for e in model.ledger if e.kind == "benefit"}
+        # Sue died in January 2029, after that month's survivor benefit (Plan 32: deaths are monthly).
+        self.assertEqual(max(paid), (2029, 1))
         self.assertEqual(sue.cash, 0)
         assert_conservation(model)
 

@@ -53,8 +53,10 @@ report = life_model.reconcile("my-models/h.yaml", 2025)     # ReconciliationRepo
 print(report.to_markdown()); report.to_dict(); report.red
 ```
 
-The household is run from `meta.start_year` through the year (describe it as of January 1 of that
-year for the cleanest comparison), each `TaxReturn` is mapped onto that year's lines
+The household is run from its first simulated month through the year's December (describe it as of
+January 1 of that year for the cleanest comparison; a spec whose `meta.start` falls inside the year
+reconciles a part year: its return and flows cover only the simulated months, and the report's notes
+say so), each `TaxReturn` is mapped onto that year's lines
 (`life_model.reconciliation.form_1040_lines` / `schedule_lines`), W-2 boxes are rebuilt from the
 ledger per employer, 1099 boxes from the account's flows, balances from the December 31 balance
 sheet. Every line the records carry gets a status:
@@ -100,14 +102,16 @@ for the format and how to add one.
 ## The invariant checker
 
 `life_model.invariants` holds the rules every simulated year must satisfy. They read the year's
-results (balance sheets, the cash-flow ledger, typed events, tax returns), not engine internals:
+results (the balance sheets around the year and around each month, the cash-flow ledger, typed
+events, tax returns), not engine internals, and run at each year end, after December's taxes:
 
 | Invariant | Rule |
 |---|---|
-| `conservation` | Net worth changed by exactly the ledger's net external flow (within $1). |
-| `continuity` | Between two years (outside `step()`), net worth moved only by posted ledger entries. |
-| `no_negative_balances` | No asset below zero, no liability below zero. |
-| `no_draw_above_cash_floor` | No waterfall brokerage sale or pre-tax withdrawal while the tax unit ends the year with cash above its floor (the floor is $0 until Plan 27 adds one). |
+| `conservation` | Net worth changed by exactly the ledger's net external flow over the year (within $1). |
+| `monthly_conservation` | The same for each month of the year (catches money that appears in one month and leaves in another). |
+| `continuity` | Between two years and between two months (outside `step()`), net worth moved only by posted ledger entries. |
+| `no_negative_balances` | At no month end an asset below zero or a liability below zero. |
+| `no_draw_above_cash_floor` | No waterfall brokerage sale or pre-tax withdrawal in a month the tax unit ends with cash above its floor, not counting money that arrived after the month's last draw (a year-end insurance payout, a refund) (the floor is $0 until Plan 27 adds one). The waterfall pays each month's bills, so a sale in a lean month is fine when later pay refills the bank. |
 | `contribution_limits` | 402(g) deferrals (+ catch-up), 415(c) additions per plan, IRA and HSA contributions within the year's limits. |
 | `no_income_after_job_end` | No wages, bonus or vests from an employer after the job ended. |
 | `fica_wage_base` | Social Security tax = 6.2% of wages up to the wage base, per worker; no payroll tax without wages. |
@@ -149,6 +153,7 @@ balances before it), give each account an `id`, put the later December 31 balanc
 `actuals.<year>.balances`, and use `growth_pct: economy` for accounts invested like the index (a
 fixed rate for the rest). The synthetic 2020-2025 example
 ([backtest-2020-2025.md](backtest-2020-2025.md), `scripts/backtest_example.py`) reproduces its
-statements to the cent; with real statements expect differences from contribution timing (the annual
-engine credits a year's contributions before its growth: about 2% on a growing 401(k) over six years),
-fees and the actual fund mix.
+statements to the cent (they are computed with the engine's conventions: monthly paycheck deposits at
+the start of the month, monthly compounding of the year's return); with real statements expect
+differences from intra-month contribution timing (about 0.3% on a growing 401(k) over six years
+between start- and end-of-month deposits), fees and the actual fund mix.

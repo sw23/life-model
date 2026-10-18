@@ -43,7 +43,7 @@ from typing import TYPE_CHECKING
 
 from ..config.financial_config import resolve_financial_config as _fin
 from ..ledger import FlowKind
-from ..model import LifeModelAgent
+from ..model import LifeModelAgent, snap_money
 from ..people.person import Person
 from ..tax.federal import FilingStatus
 
@@ -342,6 +342,9 @@ class Income:
 
 
 class SocialSecurity(LifeModelAgent):
+    """Social Security benefits: a monthly benefit from the month the person reaches
+    ``withdrawal_start_age`` (exact age), at the year's primary insurance amount (with COLAs)."""
+
     def __init__(
         self,
         person: Person,
@@ -376,6 +379,8 @@ class SocialSecurity(LifeModelAgent):
         # Monthly PIA floor granted as a Social Security survivor benefit when a spouse dies: the
         # survivor's benefit is raised to at least the deceased's benefit (approximation).
         self.survivor_pia_floor = 0.0
+        # The year's PIA (it changes with COLAs only at year boundaries): {year: pia}.
+        self._pia_by_year: dict[int, float] = {}
 
         # Register social security
         self.person.social_security = self
@@ -412,7 +417,18 @@ class SocialSecurity(LifeModelAgent):
     @property
     def withdrawal_start_year(self) -> int:
         """Returns the year in which the person starts withdrawing Social Security benefits"""
-        return self.person.get_year_at_age(int(self.withdrawal_start_age))
+        return self.claim_period[0]
+
+    @property
+    def claim_period(self) -> tuple[int, int]:
+        """``(year, month)`` of the first benefit: the month the person's exact age reaches
+        ``withdrawal_start_age`` (January of that year for a whole-year age and a January birth)."""
+        return self.person.get_period_at_age(self.withdrawal_start_age)
+
+    @property
+    def is_claiming(self) -> bool:
+        """Whether benefits are being paid this month."""
+        return (self.model.year, self.model.month) >= self.claim_period
 
     def get_indexed_income_history(self) -> list[float]:
         """Computes indexed earnings for a person"""
@@ -509,22 +525,31 @@ class SocialSecurity(LifeModelAgent):
         # Round to the nearest cent
         return round(pia, 2)
 
+    def monthly_benefit(self) -> float:
+        """This month's benefit: the year's PIA (computed once a year), floored at any survivor
+        benefit."""
+        year = self.model.year
+        pia = self._pia_by_year.get(year)
+        if pia is None:
+            pia = self._pia_by_year[year] = self.get_pia()
+        return max(pia, self.survivor_pia_floor)
+
     def pre_step(self):
-        # Pay the year's benefit once benefits have started: the gross benefit is deposited as cash
-        # and recorded on the income ledger. How much of it is taxable depends on the whole return's
-        # provisional income (spouse's income, gains, RSU vests, the year-end withdrawal), so the
-        # tax unit computes the taxable portion at settlement (TaxUnit.taxable_social_security);
-        # nothing here depends on which other income has already been booked.
+        # Pay the month's benefit once benefits have started: the gross benefit is deposited as cash
+        # and recorded on the income ledger. How much of the year's benefits is taxable depends on
+        # the whole return's provisional income (spouse's income, gains, RSU vests, the year-end
+        # withdrawal), so the tax unit computes the taxable portion at settlement
+        # (TaxUnit.taxable_social_security); nothing here depends on which other income has
+        # already been booked.
         if self.person.is_deceased:
             # Benefits stop at death (a surviving spouse's survivor floor is applied to their own
             # record in Person._apply_survivor_adjustments).
             return
-        if self.model.year >= self.withdrawal_start_year:
-            # Apply any survivor-benefit floor (max of own vs. deceased spouse's benefit).
-            yearly_pia = max(self.get_pia(), self.survivor_pia_floor) * 12
-            self.person.income.add_social_security(yearly_pia)
-            self.person.receive_cash(yearly_pia, source="Social Security", kind=FlowKind.BENEFIT)
-            self.person.stat_ss_income = yearly_pia
+        if self.is_claiming:
+            benefit = self.monthly_benefit()
+            self.person.income.add_social_security(benefit)
+            self.person.receive_cash(benefit, source="Social Security", kind=FlowKind.BENEFIT)
+            self.person.stat_ss_income = snap_money(self.person.stat_ss_income + benefit)
 
     def _taxable_benefit_portion(self, annual_benefit: float) -> float:
         """Taxable portion of ``annual_benefit`` on this person's own ledger (IRS Pub. 915).

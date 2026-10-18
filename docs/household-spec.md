@@ -65,7 +65,7 @@ Builds: `LifeModel`.
 | `as_of` | string (optional) |  | — |  | Date the balances were read from statements (YYYY-MM or YYYY-MM-DD). Informational. |
 | `start_year` | integer | year | **required** | `LifeModel.start_year` | First simulated year. |
 | `end_year` | integer (optional) | year | — | `LifeModel.end_year` | Last simulated year (inclusive). Defaults to start_year + 50. |
-| `start` | string (optional) | YYYY-MM | — |  | First simulated month (YYYY-MM) for a part-year first year. NOT YET SUPPORTED (Plan 32 D1): rejected by the validator. |
+| `start` | string (optional) | YYYY-MM | — | `LifeModel.start` | First simulated month (YYYY-MM), in start_year: a model started in October simulates three months of its first year. Defaults to January of start_year. |
 | `seed` | integer (optional) |  | — | `LifeModel.seed` | Random seed (stochastic economy and mortality draws). |
 | `scenario` | string (optional) |  | — | `LifeModel.scenario` | Named economic/regulatory scenario from life_model.config.scenarios (e.g. 'recession'). |
 | `default_state` | string (optional) |  | — | `config.tax.state.default_state` | Two-letter state of residence for people without their own 'state'. Must have a state tax pack (unknown codes are errors, never a silent flat 6%). |
@@ -122,8 +122,8 @@ Builds: `Person`.
 |---|---|---|---|---|---|
 | `id` | string |  | **required** |  | Unique person id (referenced by relationships, events, trusts). |
 | `name` | string |  | **required** | `Person.name` | Display name. |
-| `age` | integer | age | **required** | `Person.age` | Age during the first simulated year (start_year); the person is age + 1 the year after. |
-| `birth` | string (optional) | YYYY-MM | — |  | Birth month (exact ages). NOT YET SUPPORTED (Plan 32 D4): rejected by the validator. |
+| `age` | integer | age | **required** | `Person.age` | Age (completed years) in the first simulated month (meta.start, else January of start_year). Without birth the birth month is taken to be January, so the person is age for the rest of the first year and age + 1 the year after. |
+| `birth` | string (optional) | YYYY-MM | — | `Person.birth` | Birth month (YYYY-MM) for exact ages: 59.5, the retirement month, Social Security and Medicare start in the right month. Must agree with age. When missing, January is assumed (the validator warns). |
 | `gender` | `"male"` \\| `"female"` \\| `"other"` |  | `"other"` | `Person.gender` | Gender at birth for the mortality table ('other' blends). |
 | `retirement_age` | number | age | **required** | `Person.retirement_age` | Age at which every job stops. |
 | `state` | string (optional) |  | — | `Person.state` | Two-letter state of residence (defaults to meta.default_state). |
@@ -795,7 +795,7 @@ Marry another person in the household (``person`` becomes the head).
 
 ## At
 
-When an event happens: exactly one of ``year``, ``age`` or ``relative``. Shorthand: an integer is a year (``at: 2030``). Age timing resolves through ``Person.get_year_at_age`` (the engine's own age semantics), so the builder needs no age arithmetic of its own; see :mod:`life_model.spec.events`.
+When an event happens: exactly one of ``year``, ``age`` or ``relative``, plus an optional ``month``. Shorthand: an integer is a year (``at: 2030``); ``"2030-07"`` is July 2030. Age timing resolves through ``Person.get_year_at_age`` (the engine's own age semantics), so the builder needs no age arithmetic of its own; see :mod:`life_model.spec.events`.
 
 | Field | Type | Unit | Default | Maps to | Description |
 |---|---|---|---|---|---|
@@ -803,7 +803,7 @@ When an event happens: exactly one of ``year``, ``age`` or ``relative``. Shortha
 | `age` | integer (optional) | age | — |  | Age (whole years) of the event's person. |
 | `person` | string (optional) |  | — |  | Whose age 'age' refers to. Defaults to the event's person. |
 | `relative` | [Relative](#relative) (optional) |  | — |  | Relative to another event. |
-| `month` | integer (optional) | month | — |  | Month of the year (1-12). NOT YET SUPPORTED (Plan 32 D1): rejected by the validator. |
+| `month` | integer (optional) | month | — | `LifeEvent.month` | Month (1-12) the event happens in, within the resolved year. Defaults to the first simulated month of that year (January), or for 'age' to the month the person reaches that age (their birth month). |
 
 ## Relative
 

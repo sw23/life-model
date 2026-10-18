@@ -29,7 +29,8 @@ def senior_deduction(
         threshold = cfg.phaseout_start_single
     reduction = cfg.phaseout_rate / 100 * max(0.0, magi - threshold)
     per_person = max(0.0, cfg.amount - reduction)
-    return per_person * sum(1 for member in members if member.age >= cfg.age)
+    # 65 or older by the end of the year.
+    return per_person * sum(1 for member in members if member.age_in(year) >= cfg.age)
 
 
 def salt_cap(filing_status: FilingStatus, magi: float, config: "FinancialConfig") -> float:
@@ -75,7 +76,7 @@ def deductible_charity(members: "list[Person]", agi: float, config: "FinancialCo
 
 
 def settle_charitable_carryforwards(members: "list[Person]", agi: float, year: int, config: "FinancialConfig") -> None:
-    """Consume carryforwards and record this year's excess, once, at year-end settlement.
+    """Consume carryforwards and record this year's excess, once, at the year's tax settlement.
 
     Current-year gifts are deducted first, then carryforwards oldest first (Treas. Reg. 1.170A-10).
     Carryforwards are used up even in a year the return takes the standard deduction, as the

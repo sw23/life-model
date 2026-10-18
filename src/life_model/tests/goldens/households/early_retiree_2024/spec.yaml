@@ -14,8 +14,10 @@ people:
   name: Sam
   age: 58
   retirement_age: 50
+  # The year's $80,000 of spending is paid in one December lump (event below), so the savings and the
+  # brokerage are held all year and the year is paid by one sale, as the 1099s state.
   spending:
-    amount_annual: 80000
+    amount_annual: 0
     growth_pct: 0
   accounts:
   - kind: bank
@@ -41,4 +43,13 @@ people:
       cost_basis: 300000
       acquired_year: 2015
     growth_pct: 2
-    dividend_yield_pct: 2
+    # A fund that pays out its whole 2% total return (price flat over the year): with growth compounded
+    # monthly and quarterly dividends on the start-of-month balance, that payout is
+    # 4 x (1.02^(1/12) - 1.02^(-1/6)) = 1.9786...% a year, and the year's dividends are 2% of $900,000.
+    dividend_yield_pct: 1.97863149058084
+events:
+- action: one_time_expense
+  person: sam
+  at: 2024-12
+  amount: 80000
+  name: the year's living spending

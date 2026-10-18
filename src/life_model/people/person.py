@@ -17,7 +17,7 @@ from ..tax.federal import FilingStatus, get_federal_standard_deduction
 from ..tax.income import IncomeLedger, IncomeType
 from ..tax.tax import TaxesDue
 from .family import Family
-from .mortality import get_blended_chance_of_mortality, get_chance_of_mortality
+from .mortality import get_blended_chance_of_mortality, get_chance_of_mortality, monthly_hazard
 from .types import GenderAtBirth, MortalityMode
 
 if TYPE_CHECKING:
@@ -54,14 +54,16 @@ class Person(LifeModelAgent):
         }
     )
 
-    # Age first in pre_step so income/RMD calculations see the current-year age.
-    STEP_PRIORITY: ClassVar[dict[str, int]] = {"pre_step": -20}
+    # Mortality is drawn in pre_step after the month's income and benefits arrived (0), so a death in
+    # month m stops wages and benefits from month m+1; before stock vests (5) and premiums (10). The
+    # year-end resets run after the tax settlement (0) and the escalators (10).
+    STEP_PRIORITY: ClassVar[dict[str, int]] = {"pre_step": 1, "on_year_end": 20}
 
     def __init__(
         self,
         family: Family,
         name: str,
-        age: int,
+        age: int | None,
         retirement_age: float,
         spending: "Spending",
         *,
@@ -69,15 +71,21 @@ class Person(LifeModelAgent):
         mortality_mode: MortalityMode = MortalityMode.IMMORTAL,
         death_age: int | None = None,
         state: str | None = None,
+        birth: str | None = None,
     ):
         """Person
+
+        Ages are exact: the person has a birth month (``birth``, or January of the year that makes
+        them ``age`` now), :attr:`age` is their completed years in the current month and
+        :attr:`age_years_fractional` drives thresholds such as 59.5.
 
         Args:
             family (Family): Family of which the person is a part.
             name (str): Person's name.
-            age (int): Person's age *during the year the person is created* (for a person built
-                before the run, the first simulated year): the collected ``Age`` for that year
-                equals this value, and the person turns ``age + 1`` the following year.
+            age (int): Person's age (completed years) in the month the person is created — for a
+                person built before the run, the first simulated month. Without ``birth`` the birth
+                month is assumed to be January, so the person is ``age`` for the rest of that year and
+                turns ``age + 1`` the following January. May be None when ``birth`` is given.
             retirement_age (float): Person's retirement age.
             spending (Spending): Person's spending habits.
             gender (GenderAtBirth, optional): Gender at birth, used for the mortality table. Defaults
@@ -88,14 +96,31 @@ class Person(LifeModelAgent):
             state (str, optional): Two-letter state of residence for state income tax. Defaults to
                 ``None``, which falls back to ``config.tax.state.default_state``. A
                 single state applies to the whole tax unit (no part-year/multi-state).
+            birth (str, optional): Birth month ``"YYYY-MM"`` (keyword-only). When given with
+                ``age``, the two must agree.
         """
         super().__init__(family.model)
         self.family = family
         self.name = name
-        self.age = age
-        # The simulated year ``age`` applies to. ``pre_step`` advances ``age`` only when the model
-        # has moved past this year, so a person is ``age`` for the whole of their first year.
-        self._age_year = self.model.year
+        self._death_month_index = None
+        if birth is not None:
+            from ..model import parse_year_month
+
+            #: Birth year and month (exact ages; see :attr:`age`).
+            self.birth_year, self.birth_month = parse_year_month(birth)
+            if age is not None and self.age != age:
+                raise ValueError(
+                    f"{name}: birth {birth} makes them {self.age} in {self.model.year}-{self.model.month:02d}, "
+                    f"not {age}"
+                )
+        elif age is None:
+            raise ValueError(f"{name}: give an age or a birth month")
+        else:
+            self.birth_year, self.birth_month = self.model.year - age, 1
+            #: Whether the birth month was assumed (January) because only an age was given.
+            self.birth_month_assumed = True
+        if birth is not None:
+            self.birth_month_assumed = False
         self.retirement_age = retirement_age
         self.spending = spending
         if getattr(spending, "person", None) is None:
@@ -105,6 +130,8 @@ class Person(LifeModelAgent):
         self.mortality_mode = mortality_mode
         self.death_age = death_age
         self.is_deceased = False
+        # The absolute month (``LifeModel.month_index``) of death; ages stop advancing then.
+        self._death_month_index: int | None = None
         # Optional explicit estate beneficiary (a Person). When unset, the estate passes to the
         # surviving spouse, then to the first surviving family member.
         self.estate_beneficiary: Person | None = None
@@ -116,6 +143,8 @@ class Person(LifeModelAgent):
         self._unpaid_final_expenses = 0.0
         # Year this person was widowed (used to switch filing status to SINGLE the following year).
         self._widowed_year: int | None = None
+        # A spouse who died this year: their income so far this year is on this person's joint return.
+        self.deceased_spouse_this_year: Person | None = None
         self.debt = 0
         # Per-person income ledger: separates FICA wages from ordinary taxable income so that
         # payroll tax and income tax each see the correct base (see tax/income.py).
@@ -127,7 +156,7 @@ class Person(LifeModelAgent):
         #: The return this person was on each year (a :class:`~life_model.tax.return_record.TaxReturn`,
         #: shared by both spouses of a joint return), stamped during ``TaxUnit.settle_year``.
         self.tax_returns: dict = {}
-        # Medical costs reimbursed tax-free from HSAs this year (reset in post_step).
+        # Medical costs reimbursed tax-free from HSAs this year (reset at year end).
         self.hsa_medical_reimbursed = 0.0
         # Charitable gifts above the AGI limit, carried forward as (year given, amount).
         self.charitable_carryforwards: list[tuple[int, float]] = []
@@ -488,7 +517,8 @@ class Person(LifeModelAgent):
         """Remaining 402(g) elective-deferral room this year, aggregated across all jobs."""
         from ..limits import job_401k_contrib_limit
 
-        limit = job_401k_contrib_limit(self.age, self.model.year_config)
+        # Catch-up eligibility is by the age reached by the end of the year (IRC §414(v)).
+        limit = job_401k_contrib_limit(self.age_in(self.model.year), self.model.year_config)
         return max(0.0, limit - self._elective_deferrals_ytd)
 
     @property
@@ -510,8 +540,8 @@ class Person(LifeModelAgent):
 
     @property
     def is_retired(self) -> bool:
-        """Check if person is retired"""
-        return self.age >= self.retirement_age
+        """Whether the person has reached their retirement age (exact age)."""
+        return self.age_years_fractional >= self.retirement_age
 
     def _repr_html_(self):
         desc = self.name
@@ -732,7 +762,7 @@ class Person(LifeModelAgent):
 
     @property
     def spendable_resources(self) -> float:
-        """Everything year-end settlement can draw to pay this person's bills: bank, brokerage,
+        """Everything the payment waterfall can draw to pay this person's bills: bank, brokerage,
         pre-tax 401k/IRA/HSA, Roth 401k and Roth IRA balances."""
         roth_401k = sum(a.roth_balance for a in self.all_retirement_accounts)
         roth_ira = sum(a.balance for a in self.roth_iras)
@@ -750,10 +780,16 @@ class Person(LifeModelAgent):
         Every one is fully taxable as ordinary income."""
         config = self.model.config
         retirement_penalty = (
-            config.retirement.early_withdrawal_penalty_rate if self.age < federal_retirement_age(config) else 0.0
+            config.retirement.early_withdrawal_penalty_rate
+            if self.age_years_fractional < federal_retirement_age(config)
+            else 0.0
         )
         hsa_config = config.accounts.hsa
-        hsa_penalty = hsa_config.non_medical_penalty_rate if self.age < hsa_config.non_medical_penalty_age else 0.0
+        hsa_penalty = (
+            hsa_config.non_medical_penalty_rate
+            if self.age_years_fractional < hsa_config.non_medical_penalty_age
+            else 0.0
+        )
         return [
             (sum(a.pretax_balance for a in self.all_retirement_accounts), retirement_penalty),
             (sum(a.balance for a in self.traditional_iras), retirement_penalty),
@@ -795,7 +831,7 @@ class Person(LifeModelAgent):
         additional tax. Exceptions (age-55 separation, SEPP, disability, ...) are not modeled.
         """
         config = self.model.config
-        if amount <= 0 or self.age >= federal_retirement_age(config):
+        if amount <= 0 or self.age_years_fractional >= federal_retirement_age(config):
             return 0.0
         return amount * config.retirement.early_withdrawal_penalty_rate / 100
 
@@ -808,7 +844,7 @@ class Person(LifeModelAgent):
     #
     # Each helper mirrors withdraw_from_pretax_401ks: it moves money from the account type into
     # the bank and records the correct income-ledger entry, so the withdrawal is taxed when the
-    # tax unit settles the year inside model.step(). Taxes therefore bite at year-end settlement,
+    # tax unit settles the year in December. Taxes therefore bite at the year's settlement,
     # not at the moment of withdrawal — that is the simulator's actual semantics.
     #
     # Early-withdrawal penalties are recorded on the ledger as additional federal tax: 10% on
@@ -1075,11 +1111,37 @@ class Person(LifeModelAgent):
             birth_year = self.model.year
         return Child(self, name, birth_year)
 
+    @property
+    def months_old(self) -> int:
+        """Completed months of life at the start of the current model month (frozen at the month of
+        death)."""
+        from ..model import month_index
+
+        now = self._death_month_index if self._death_month_index is not None else self.model.month_index
+        return now - month_index(self.birth_year, self.birth_month)
+
+    @property
+    def age(self) -> int:
+        """Completed years of age in the current model month (the person turns a year older in their
+        birth month)."""
+        return self.months_old // 12
+
+    @age.setter
+    def age(self, value: int) -> None:
+        # Re-date the birth (keeping the birth month) so the person is ``value`` this month.
+        self.birth_year += self.age - int(value)
+
+    @property
+    def age_years_fractional(self) -> float:
+        """Exact age in years this month (``59.5`` six months after the 59th birthday): what
+        age thresholds such as the 59.5 early-withdrawal age compare against."""
+        return self.months_old / 12
+
     def get_year_at_age(self, age: int) -> int:
-        """Gets the simulated year during which the person is ``age``.
+        """Gets the year in which the person turns ``age`` (the whole year for a January birth).
 
         ``get_year_at_age(a) == start_year + (a - constructor_age)`` for a person built before the
-        run, and the answer does not change as the simulation advances.
+        run without a ``birth``, and the answer does not change as the simulation advances.
 
         Args:
             age (int): Age of the person.
@@ -1087,32 +1149,42 @@ class Person(LifeModelAgent):
         Returns:
             int: Year at the given age.
         """
-        return self._age_year + (age - self.age)
+        return self.birth_year + int(age)
+
+    def get_period_at_age(self, age: float) -> tuple[int, int]:
+        """``(year, month)`` of the first month in which :attr:`age_years_fractional` reaches ``age``."""
+        import math
+
+        from ..model import month_index
+
+        index = month_index(self.birth_year, self.birth_month) + math.ceil(round(age * 12, 9))
+        return index // 12, index % 12 + 1
 
     def age_in(self, year: int) -> int:
-        """The person's age during ``year`` (the inverse of :meth:`get_year_at_age`)."""
-        return self.age + (year - self._age_year)
+        """The age the person reaches during ``year`` (their age at its end; the inverse of
+        :meth:`get_year_at_age`)."""
+        return year - self.birth_year
 
-    def pre_step(self):
-        # This year's waterfall accumulators start over (they are collected at year end).
-        self.stat_forced_sales = 0.0
-        self.stat_pretax_withdrawals = 0.0
-        if self.is_deceased:
-            return
-        # Advance to this year's age. The constructor age already is the creation year's age, so
-        # nothing happens in that year (D1: no off-by-one between ``age`` and the calendar).
-        if self.model.year > self._age_year:
-            self.age += self.model.year - self._age_year
-            self._age_year = self.model.year
+    def on_year_start(self):
         # A surviving spouse files jointly for the year of the death, then switches to single the
         # following year (qualifying-widow treatment is a documented simplification, not modeled).
         if self._widowed_year is not None and self.model.year > self._widowed_year:
             self.filing_status = FilingStatus.SINGLE
             self._widowed_year = None
+        self.deceased_spouse_this_year = None
+
+    def pre_step(self):
+        if self.is_deceased:
+            return
         self._check_mortality()
 
     def _check_mortality(self):
-        """Determine whether the person dies this year and, if so, orchestrate the death."""
+        """Determine whether the person dies this month and, if so, orchestrate the death.
+
+        ``FIXED_AGE`` dies in the birth month of ``death_age``. ``STOCHASTIC`` converts the annual
+        probability ``q`` at the person's age into a monthly hazard ``1 - (1 - q)^(1/12)`` and draws
+        every month.
+        """
         if self.mortality_mode == MortalityMode.IMMORTAL:
             return
         if self.mortality_mode == MortalityMode.FIXED_AGE:
@@ -1124,22 +1196,25 @@ class Person(LifeModelAgent):
             else:
                 chance = get_chance_of_mortality(self.age, self.gender)
             # Draw against the model RNG so seeded runs are reproducible.
-            if self.model.random.random() <= chance:
+            if self.model.random.random() <= monthly_hazard(chance):
                 self.die()
 
     def step(self):
-        # Year-end settlement (taxes, spending, housing, one-time expenses, debt) is performed
-        # at the tax-unit level in Family.step. Here the person only handles retirement.
+        # Bills and taxes are settled at the tax-unit level in Family. Here the person only handles
+        # retirement.
         #
-        # Retirement uses crossing detection (>=, fired once) so that a non-integer retirement
-        # age still triggers and a person can't draw a full salary while "retired".
-        if not self.retirement_triggered and self.age >= self.retirement_age:
+        # Retirement uses crossing detection (>=, fired once) on the exact age, so a person retires in
+        # the month they reach ``retirement_age`` (after that month's paycheck) and a non-integer
+        # retirement age (65.5) takes effect six months after the birthday.
+        if self.is_deceased:
+            return
+        if not self.retirement_triggered and self.age_years_fractional >= self.retirement_age:
             for job in self.jobs:
                 job.retire()
             self.retirement_triggered = True
 
         retirement_age = federal_retirement_age(self.model.config)
-        if not self._retirement_age_event_logged and self.age >= int(retirement_age):
+        if not self._retirement_age_event_logged and self.age_years_fractional >= retirement_age:
             self.model.event_log.add(
                 Event(
                     EventKind.RETIREMENT_AGE,
@@ -1168,6 +1243,7 @@ class Person(LifeModelAgent):
         if self.is_deceased:
             return
         self.is_deceased = True
+        self._death_month_index = self.model.month_index
         self.model.event_log.add(Event(EventKind.DIED, person=self, message=f"{self.name} died at age {self.age}"))
 
         # 1. Earned income stops immediately (jobs retire).
@@ -1217,6 +1293,12 @@ class Person(LifeModelAgent):
 
         if spouse is not None:
             self._apply_survivor_adjustments(spouse)
+        elif inheritor is not None:
+            # Income received this year before the death: a surviving spouse reports it on the year's
+            # joint return (the decedent stays on the survivor's tax unit until year end). Without
+            # one, the heir reports it (an approximation of the decedent's final return, which is not
+            # modeled); with no heir it goes untaxed.
+            inheritor.income.absorb(self.income)
 
         # 6. Remove the deceased (and any now-empty owned agents) from the simulation.
         self._remove_from_simulation()
@@ -1655,6 +1737,7 @@ class Person(LifeModelAgent):
         approximate the Social Security survivor benefit."""
         spouse.spouse = None
         spouse._widowed_year = self.model.year
+        spouse.deceased_spouse_this_year = self
         # Social Security survivor approximation: the survivor receives at least the deceased's
         # benefit (max of own vs. deceased's), applied as a monthly floor once benefits start.
         if self.social_security is not None and spouse.social_security is not None:
@@ -1678,24 +1761,41 @@ class Person(LifeModelAgent):
         # Drop the deceased from their family so no tax unit is built for them.
         if self in self.family.members:
             self.family.members.remove(self)
-        # Zero the deceased's own statistics so the model's per-agent sums exclude them.
-        for name in self.STATS_OWNED:
+        # Zero the deceased's balance statistics so the model's per-agent sums exclude them (their
+        # flows so far this year stay in the year's totals; see LifeModelAgent.remove).
+        flows = self.model._flow_stat_names()
+        for name in self.STATS_OWNED - flows:
             setattr(self, name, 0)
         self.remove()
 
-    def post_step(self):
+    def collect_stats(self):
+        """Year-end balances (after December's bills and the year's taxes)."""
+        if self.is_deceased:
+            return
+        self.stat_bank_balance = self.bank_account_balance
+        self.stat_brokerage_balance = self.brokerage_balance
+
+    def on_year_end(self):
+        # After the year's return was settled: next year's ledger and limits start empty.
         self.income.clear()
         self.hsa_medical_reimbursed = 0.0
         self._elective_deferrals_ytd = 0.0
 
 
 class Spending(LifeModelAgent):
+    """A person's living spending: an annual ``base`` paid a twelfth a month, plus one-time expenses
+    paid with the bills of the month they are added in (an expense added after the month's bills
+    were paid is paid the next month). The base escalates at year end."""
+
+    # The escalator runs at year end after the year's taxes are settled (0).
+    STEP_PRIORITY: ClassVar[dict[str, int]] = {"on_year_end": 10}
+
     def __init__(self, model: LifeModel, base: float = 0, yearly_increase: float | None = 0):
         """Spending
 
         Args:
             model (LifeModel): LifeModel instance.
-            base (float): Base spending amount.
+            base (float): Base spending amount (a year's; paid monthly).
             yearly_increase (float, optional): Yearly percentage increase in spending. 10 = 10%.
                 Pass None to grow with the economy's inflation each year. Defaults to 0 (no increase).
         """
@@ -1704,9 +1804,12 @@ class Spending(LifeModelAgent):
         self._yearly_increase_override = yearly_increase
         #: The person whose spending this is (set by ``Person``).
         self.person = None
+        #: This year's one-time expenses (added so far this year).
         self.one_time_expenses = 0
         #: This year's one-time expenses by category (they sum to ``one_time_expenses``).
         self.one_time_by_category: dict[str, float] = {}
+        # One-time expenses not yet paid, by category (paid with the next month's bills).
+        self._unpaid_by_category: dict[str, float] = {}
 
     @property
     def yearly_increase(self) -> float:
@@ -1720,7 +1823,8 @@ class Spending(LifeModelAgent):
         self._yearly_increase_override = value
 
     def add_expense(self, amount: float, *, category: str = "one_time"):
-        """Adds a one-time expense.
+        """Adds a one-time expense, paid with this month's bills (or next month's, when added after
+        this month's bills were paid).
 
         Args:
             amount (float): Amount of expense to add.
@@ -1729,6 +1833,26 @@ class Spending(LifeModelAgent):
         """
         self.one_time_expenses += amount
         self.one_time_by_category[category] = self.one_time_by_category.get(category, 0.0) + amount
+        self._unpaid_by_category[category] = self._unpaid_by_category.get(category, 0.0) + amount
+
+    @property
+    def unpaid_one_time_expenses(self) -> float:
+        """One-time expenses added but not yet paid."""
+        return sum(self._unpaid_by_category.values())
+
+    def month_base(self) -> float:
+        """This month's share of the base spending (a twelfth)."""
+        return self.base / 12
+
+    def take_month_lines(self) -> dict[str, float]:
+        """This month's bills by category: ``base`` (a twelfth of the base) plus every unpaid one-time
+        category. Marks the one-time expenses as paid (the tax unit pays the lines)."""
+        lines = {"base": self.month_base()} if self.base else {}
+        for category, amount in self._unpaid_by_category.items():
+            if amount:
+                lines[category] = lines.get(category, 0.0) + amount
+        self._unpaid_by_category = {}
+        return lines
 
     def year_spending_lines(self) -> dict[str, float]:
         """This year's spending by category: ``base`` plus each one-time category (any amount added
@@ -1743,7 +1867,7 @@ class Spending(LifeModelAgent):
         return lines
 
     def get_yearly_spending(self) -> float:
-        """Gets yearly spending."""
+        """This year's spending: the base plus the one-time expenses added so far this year."""
         return self.base + self.one_time_expenses
 
     @property
@@ -1760,9 +1884,10 @@ class Spending(LifeModelAgent):
         """
         self.base = self.base * (base_percent / 100)
 
-    def post_step(self):
-        # Consume-then-advance: the year's spending is read during the step stage; only after
-        # it has been spent do we clear one-time expenses and apply the yearly increase.
+    def on_year_end(self):
+        # Consume-then-advance: the year's spending was paid month by month; only after the year
+        # end do we start next year's one-time tally and apply the yearly increase. One-time
+        # expenses added after December's bills stay unpaid and are paid in January.
         self.base += self.base * (self.yearly_increase / 100)
         self.one_time_expenses = 0
         self.one_time_by_category = {}

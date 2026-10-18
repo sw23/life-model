@@ -2,7 +2,7 @@
 
 Early retiree (58, single): qualified dividends and a long-term gain straddling the 0%/15% brackets, savings interest. Synthetic household (`spec.yaml`); computed by `scripts/household_goldens.py` from the forms, independent of the library.
 
-Brokerage sale (1099-B box 1d): the sale pays $80,000 of spending less $10,400 of cash (savings plus its interest) plus the tax it triggers: proceeds $69,600.00, gain 2/3 of it $46,400.00 (basis $300,000 of $900,000).
+Brokerage sale (1099-B box 1d): the sale, in December, pays the year's $80,000 of spending (paid in one December lump) less $10,400 of cash (savings plus its full year's interest) plus the tax it triggers: proceeds $69,600.00, gain 2/3 of it $46,400.00 (basis $300,000 of $900,000).
 
 
 | Line | How | Amount |

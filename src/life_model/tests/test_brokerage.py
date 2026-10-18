@@ -21,7 +21,10 @@ class TestBrokerage(unittest.TestCase):
         # Lots record the acquisition year, and growth splits out a dividend slice — both need
         # real numbers rather than Mocks.
         self.mock_person.model.year = 2020
+        self.mock_person.model.month = 1  # Plan 32: lots record their month; growth is monthly
+        self.mock_person.model.economy.monthly_rate.return_value = 0.5654145387405274
         self.mock_person.model.config.accounts.brokerage.dividend_yield = 0.0
+        self.mock_person.model.config.accounts.brokerage.dividend_frequency = "quarterly"
 
         # Create a brokerage account for testing
         self.brokerage = BrokerageAccount(
@@ -207,7 +210,7 @@ class TestBrokerage(unittest.TestCase):
     def test_apply_growth_integration(self):
         """Test integration with inherited apply_growth method."""
         initial_balance = self.brokerage.balance
-        expected_growth = self.brokerage.calculate_growth()
+        expected_growth = self.brokerage.calculate_monthly_growth()  # Plan 32: growth is monthly
 
         # Apply growth using inherited method
         actual_growth = self.brokerage.apply_growth()
@@ -221,8 +224,9 @@ class TestBrokerage(unittest.TestCase):
         """Test integration with inherited step method."""
         initial_balance = self.brokerage.balance
 
-        # Call step method
+        # Call step method (a month's growth), then the year end records the balance (Plan 32)
         self.brokerage.step()
+        self.brokerage.on_year_end()
 
         # Should have applied growth and recorded balance
         self.assertGreater(self.brokerage.balance, initial_balance)

@@ -147,6 +147,12 @@ mortality_rates = [
 ]
 
 
+def monthly_hazard(annual_probability: float) -> float:
+    """The monthly probability of death equivalent to an annual one: ``1 - (1 - q)^(1/12)``, so twelve
+    independent monthly draws die with probability ``q`` over the year."""
+    return 1.0 - (1.0 - min(max(annual_probability, 0.0), 1.0)) ** (1 / 12)
+
+
 def get_chance_of_mortality(age: int, gender: GenderAtBirth) -> float:
     """Get the chance of mortality for a given age and gender"""
     # Bound age to valid range

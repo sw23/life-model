@@ -164,6 +164,13 @@ class IncomeLedger:
         if amount > 0:
             self.penalties_by_source[source] = self.penalties_by_source.get(source, 0.0) + amount
 
+    def absorb(self, other: "IncomeLedger") -> None:
+        """Move every entry and penalty of ``other`` onto this ledger (``other`` is left empty)."""
+        self.entries.extend(other.entries)
+        for source, amount in other.penalties_by_source.items():
+            self.penalties_by_source[source] = self.penalties_by_source.get(source, 0.0) + amount
+        other.clear()
+
     def clear(self) -> None:
         """Reset the ledger for the next year (mirrors the old ``taxable_income = 0``)."""
         self.entries.clear()

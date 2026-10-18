@@ -76,24 +76,78 @@ class StudentLoan(Loan):
         # Monthly payments made under an income-driven plan (counts toward forgiveness).
         self.qualifying_payments = 0
         self.forgiven_amount = 0.0
+        # Unsubsidized interest accrued during deferment this year (capitalized at year end).
+        self.deferred_interest = 0.0
+        # This year's Repayment Assistance Plan payment (set at the year start from the last AGI).
+        self._rap_annual: float | None = None
         self.model.registries.student_loans.register(person, self)
 
     def service_year(self) -> float:
-        """Service the loan for one year, honoring deferment and the subsidized-interest benefit.
+        """Service the loan for one year (twelve :meth:`service_month` payments, then the year-end
+        capitalization of deferred interest). For direct callers; the engine services it monthly."""
+        self.on_year_start()
+        paid = sum(self.service_month() for _ in range(12))
+        self.on_year_end()
+        return paid
 
-        In deferment no borrower payment is made, so no interest is *paid* (the interest deduction
-        sees nothing). For ``FEDERAL_SUBSIDIZED`` the government covers the interest and the balance
-        is unchanged; for other types the year's interest capitalizes onto the principal.
+    def service_month(self) -> float:
+        """Make this month's payment, honoring deferment and the Repayment Assistance Plan.
+
+        In deferment no borrower payment is made (no interest is *paid*); unsubsidized interest
+        accrues (simple, on the principal) and capitalizes at year end, and the government pays a
+        ``FEDERAL_SUBSIDIZED`` loan's interest.
         """
         if self.in_deferment:
-            self.interest_paid_this_year = 0.0
             if self.loan_type is not StudentLoanType.FEDERAL_SUBSIDIZED:
-                # Unsubsidized interest accrues and capitalizes during deferment.
-                self.principal += self.get_interest_amount("year")
+                self.deferred_interest += self.get_interest_amount("month")
             return 0.0
         if self.repayment_plan is StudentLoanRepaymentPlan.REPAYMENT_ASSISTANCE_PLAN:
-            return self._service_year_rap()
-        return super().service_year()
+            return self._service_month_rap()
+        return super().service_month()
+
+    def on_year_start(self):
+        super().on_year_start()
+        self._rap_annual = None
+
+    def on_year_end(self):
+        if self.deferred_interest:
+            # Unsubsidized interest accrued during deferment capitalizes onto the principal.
+            self.principal += self.deferred_interest
+            self.deferred_interest = 0.0
+        super().on_year_end()
+
+    def _service_month_rap(self) -> float:
+        """One income-driven monthly payment, then forgiveness once the horizon is reached.
+
+        Interest the payment doesn't cover is waived (never capitalized); the principal match tops
+        up a month in which principal fell by less than the match amount (government money, not the
+        borrower's). Returns the cash the borrower paid.
+        """
+        if self.principal <= 0:
+            return 0.0
+        cfg = self._rap_config()
+        if self._rap_annual is None:
+            self._rap_annual = self.rap_annual_payment()
+        interest = self.principal * self.monthly_interest_rate
+        payment = min(self._rap_annual / 12, self.principal + interest)
+        to_interest = min(payment, interest)
+        to_principal = payment - to_interest
+        match = max(0.0, min(cfg.principal_match_monthly, payment) - to_principal)
+        reduction = min(self.principal, to_principal + match)
+        self.principal -= reduction
+        self.stat_principal_payment_history.append(to_principal)
+        self.stat_interest_payment_history.append(to_interest)
+        self._record_month(reduction, to_interest)
+        self.qualifying_payments += 1
+        if self.principal > 0 and self.qualifying_payments >= 12 * cfg.forgiveness_years:
+            self.forgiven_amount = self.principal
+            self.principal = 0.0
+            if cfg.forgiveness_taxable:
+                self.person.income.add(IncomeType.ORDINARY, self.forgiven_amount, source="debt_forgiveness")
+            self.model.event_log.add(
+                Event(f"{self.person.name}'s student loan forgiven: ${self.forgiven_amount:,.0f} after RAP payments")
+            )
+        return payment
 
     def _rap_config(self):
         return self.model.config.debt.student_loan.repayment_assistance_plan
@@ -118,47 +172,6 @@ class StudentLoan(Loan):
         adult_age = self.model.config.dependents.adult_age
         dependents = sum(1 for child in self.person.children if 0 <= child.age < adult_age)
         return max(base - 12 * cfg.dependent_credit_monthly * dependents, 12 * cfg.minimum_monthly)
-
-    def _service_year_rap(self) -> float:
-        """Twelve income-driven monthly payments, then forgiveness once the horizon is reached.
-
-        Interest the payment doesn't cover is waived (never capitalized); the principal match tops
-        up any month in which principal fell by less than the match amount (government money, not the
-        borrower's). Returns the cash the borrower paid.
-        """
-        cfg = self._rap_config()
-        monthly_payment = self.rap_annual_payment() / 12
-        monthly_rate = self.monthly_interest_rate
-        paid = interest_paid = principal_paid_year = 0.0
-        for _month in range(12):
-            if self.principal <= 0:
-                break
-            interest = self.principal * monthly_rate
-            payment = min(monthly_payment, self.principal + interest)
-            to_interest = min(payment, interest)
-            to_principal = payment - to_interest
-            match = max(0.0, min(cfg.principal_match_monthly, payment) - to_principal)
-            reduction = min(self.principal, to_principal + match)
-            self.principal -= reduction
-            self.stat_principal_payment_history.append(to_principal)
-            self.stat_interest_payment_history.append(to_interest)
-            paid += payment
-            interest_paid += to_interest
-            principal_paid_year += reduction
-            self.qualifying_payments += 1
-        self.interest_paid_this_year = interest_paid
-        self.stat_yearly_principal_payment_history.append(principal_paid_year)
-        self.stat_yearly_interest_payment_history.append(interest_paid)
-
-        if self.principal > 0 and self.qualifying_payments >= 12 * cfg.forgiveness_years:
-            self.forgiven_amount = self.principal
-            self.principal = 0.0
-            if cfg.forgiveness_taxable:
-                self.person.income.add(IncomeType.ORDINARY, self.forgiven_amount, source="debt_forgiveness")
-            self.model.event_log.add(
-                Event(f"{self.person.name}'s student loan forgiven: ${self.forgiven_amount:,.0f} after RAP payments")
-            )
-        return paid
 
     def get_monthly_payment(self) -> float:
         """Calculate monthly payment using standard loan formula"""

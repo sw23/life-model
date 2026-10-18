@@ -74,7 +74,7 @@ class TestCharitableLimit(unittest.TestCase):
         person.income.add(IncomeType.ORDINARY, 50000)
         Donation(person, "Charity", annual_amount=40000, start_year=2026, end_year=2026)
 
-        model.step()
+        model.step_year()
 
         # 60% of $50k AGI = $30k deductible; the other $10k carries forward from 2026.
         self.assertEqual(person.charitable_carryforwards, [(2026, 10000)])
@@ -112,7 +112,7 @@ class TestCharitableLimit(unittest.TestCase):
         model = LifeModel(start_year=2026, end_year=2026)
         person = _person(model, 40)
         person.income.add(IncomeType.ORDINARY, 50000)
-        model.step()
+        model.step_year()
         self.assertEqual(person.stat_itemized_deductions, 0.0)
 
 

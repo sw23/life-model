@@ -38,7 +38,7 @@ def _episode_trace(seed):
     ltc = LongTermCare(person)
     costs = []
     for _ in model.get_year_range():
-        model.step()
+        model.step_year()
         costs.append(ltc.stat_medical_costs)
     return costs, ltc.episodes_started
 
@@ -73,7 +73,7 @@ class TestLongTermCare(unittest.TestCase):
         ltc = LongTermCare(person)
         ltc.in_care = True
         ltc.care_years_remaining = 3
-        model.step()
+        model.step_year()
         annual_cost = model.config.healthcare.long_term_care.annual_cost
         self.assertEqual(ltc.stat_medical_costs, annual_cost)
         self.assertEqual(person.stat_money_spent, annual_cost)
@@ -87,7 +87,7 @@ class TestLongTermCare(unittest.TestCase):
         ltc = LongTermCare(person)
         ltc.in_care = True
         ltc.care_years_remaining = 1
-        model.step()
+        model.step_year()
         self.assertFalse(ltc.in_care)
 
     def test_insurance_offsets_by_exactly_the_benefit_cap(self):
@@ -108,7 +108,7 @@ class TestLongTermCare(unittest.TestCase):
         ltc = LongTermCare(person)
         ltc.in_care = True
         ltc.care_years_remaining = 2
-        model.step()
+        model.step_year()
         annual_cost = model.config.healthcare.long_term_care.annual_cost  # 111,325
         self.assertEqual(ltc.stat_medical_costs, annual_cost - 60000)
         # Money spent includes the gross care cost plus the LTC premium (both through bills);
@@ -130,7 +130,7 @@ class TestLongTermCare(unittest.TestCase):
         ltc = LongTermCare(person)
         ltc.in_care = True
         ltc.care_years_remaining = 1
-        model.step()
+        model.step_year()
         annual_cost = model.config.healthcare.long_term_care.annual_cost
         # Claimable capped at coverage = 60,000; payout = 60,000 - 10,000 deductible = 50,000.
         self.assertEqual(ltc.stat_medical_costs, annual_cost - 50000)
@@ -150,7 +150,7 @@ class TestLongTermCare(unittest.TestCase):
         ltc = LongTermCare(person)
         ltc.in_care = True
         ltc.care_years_remaining = 1
-        model.step()
+        model.step_year()
         self.assertEqual(ltc.stat_medical_costs, model.config.healthcare.long_term_care.annual_cost)
 
     def test_no_agent_no_effect(self):

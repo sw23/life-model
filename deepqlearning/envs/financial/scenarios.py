@@ -303,6 +303,9 @@ def household_spec(
         "id": AGENT_ID,
         "name": "RL_Agent",
         "age": start_age,
+        # January of the year that makes the agent start_age (the engine's default; stated so the
+        # spec validates without the birth_assumed warning).
+        "birth": f"{start_year - start_age:04d}-01",
         "gender": gender.value if isinstance(gender, GenderAtBirth) else str(gender).lower(),
         "retirement_age": household["person_retirement_age"],
         "mortality": "stochastic",

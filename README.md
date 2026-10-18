@@ -57,6 +57,10 @@ model = build_model(spec)
 model.run()
 ```
 
+The engine steps one calendar month at a time (`model.step()`; `model.step_year()` runs to the next
+year end); salaries, bills, growth and benefits flow monthly and taxes settle in December. See
+[docs/units-and-conventions.md](docs/units-and-conventions.md).
+
 Synthetic examples ship in `life_model/spec/examples/` (`life_model.spec.load_example("married_homeowners")`),
 every field is documented in [docs/household-spec.md](docs/household-spec.md), and
 `python -m life_model.spec schema` prints the JSON Schema.

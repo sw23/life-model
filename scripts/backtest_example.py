@@ -11,9 +11,12 @@ balances for 2020-2025 computed here, by plain arithmetic on the realized series
 ``src/life_model/config/data/realized_economy.yaml`` (no life_model import):
 
 * salary: $90,000 in 2020, then each year's raise is the national average wage index change;
-* 401(k): a 10% pre-tax deferral plus a 50% match on up to 6% of pay (3% of pay), credited at the
-  start of the year (the annual engine's convention), then the year's S&P 500 total return;
-* Roth IRA and brokerage: no flows, the year's S&P 500 total return.
+* 401(k): a 10% pre-tax deferral plus a 50% match on up to 6% of pay (3% of pay), deposited with
+  each monthly paycheck (a twelfth of the year's 13% of pay) at the start of the month, before that
+  month's return;
+* every account compounds monthly: each month returns ``(1 + R) ** (1 / 12) - 1`` of the year's S&P 500
+  total return ``R``, so a year with no flows returns exactly ``R``;
+* Roth IRA and brokerage: no flows.
 
 ``python scripts/backtest_example.py`` (no argument) runs ``life_model.backtest.backtest`` on it and
 writes the report to ``docs/backtest-2020-2025.md``.
@@ -31,41 +34,43 @@ REPORT = ROOT / "docs" / "backtest-2020-2025.md"
 YEARS = range(2020, 2026)
 
 
-def statements() -> dict[int, dict[str, float]]:
+def _k401(year_end_deposit: bool = False) -> dict[int, float]:
+    """The 401(k)'s December 31 balances: each month's deposit (a twelfth of 13% of the year's pay)
+    arrives at the start of the month and earns that month's return, or with ``year_end_deposit`` at
+    the end of the month (earning the month after it)."""
     data = yaml.safe_load(REALIZED.read_text(encoding="utf-8"))
     awi, equity = data["avg_wage_index"], data["sp500_total_return_pct"]
-    salary = 90000.0
-    k401, roth, brokerage = 150000.0, 30000.0, 50000.0
+    salary, balance = 90000.0, 150000.0
     out = {}
     for year in YEARS:
-        growth = 1 + equity[year] / 100
-        k401 = (k401 + salary * 0.10 + salary * 0.03) * growth
-        roth *= growth
-        brokerage *= growth
-        out[year] = {
-            "morgan_401k": round(k401, 2),
-            "morgan_roth": round(roth, 2),
-            "morgan_brokerage": round(brokerage, 2),
-        }
+        monthly = (1 + equity[year] / 100) ** (1 / 12)
+        deposit = salary * 0.13 / 12
+        for _ in range(12):
+            balance = balance * monthly + deposit if year_end_deposit else (balance + deposit) * monthly
+        out[year] = balance
         if year + 1 in awi:
             salary *= awi[year + 1] / awi[year]
     return out
 
 
-def monthly_401k_2025() -> float:
-    """The 2025 401(k) statement if each year's contributions arrived in twelve equal monthly deposits
-    (each earning the rest of the year's return, compounded monthly): the size of the engine's
-    contribution-timing convention."""
+def statements() -> dict[int, dict[str, float]]:
     data = yaml.safe_load(REALIZED.read_text(encoding="utf-8"))
-    awi, equity = data["avg_wage_index"], data["sp500_total_return_pct"]
-    salary, balance = 90000.0, 150000.0
+    equity = data["sp500_total_return_pct"]
+    roth, brokerage = 30000.0, 50000.0
+    k401_by_year = _k401()
+    out = {}
     for year in YEARS:
         monthly = (1 + equity[year] / 100) ** (1 / 12)
-        deposit = salary * 0.13 / 12
-        balance = balance * (1 + equity[year] / 100) + sum(deposit * monthly ** (12 - m) for m in range(1, 13))
-        if year + 1 in awi:
-            salary *= awi[year + 1] / awi[year]
-    return balance
+        k401 = k401_by_year[year]
+        for _ in range(12):
+            roth *= monthly
+            brokerage *= monthly
+        out[year] = {
+            "morgan_401k": round(k401, 2),
+            "morgan_roth": round(roth, 2),
+            "morgan_brokerage": round(brokerage, 2),
+        }
+    return out
 
 
 def write_spec() -> None:
@@ -147,12 +152,13 @@ def write_report() -> None:
         "balances computed independently from the same series (see [reconciliation.md](reconciliation.md)).\n\n"
     )
     simulated = next(s.simulated for s in report.final() if s.account == "morgan_401k")
-    monthly = monthly_401k_2025()
+    late = _k401(year_end_deposit=True)[YEARS[-1]]
     timing = (
-        "\nContribution timing: the annual engine credits a year's 401(k) contributions before that year's "
-        f"growth. Had the same contributions arrived monthly, the 2025 401(k) statement would read ${monthly:,.2f}, "
-        f"{(simulated - monthly) / monthly:+.2%} against the simulated balance: the size of the timing convention a "
-        "backtest against real statements should expect (a monthly engine, Plan 32, is meant to remove it).\n"
+        "\nContribution timing: the engine deposits each paycheck's 401(k) contribution at the start of its "
+        "month, before that month's return, and the statements assume the same. Had every deposit arrived at the "
+        f"end of its month instead, the 2025 401(k) statement would read ${late:,.2f}, "
+        f"{(simulated - late) / late:+.2%} against the simulated balance: the size of the intra-month timing a "
+        "backtest against real statements should expect.\n"
     )
     REPORT.write_text(text.replace("\n\n", "\n\n" + intro, 1) + timing, encoding="utf-8")
     print(f"wrote {REPORT}")

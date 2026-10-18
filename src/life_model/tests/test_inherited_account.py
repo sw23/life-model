@@ -11,6 +11,7 @@ from ..account.bank import BankAccount
 from ..account.inherited import InheritedPretaxAccount
 from ..account.traditional_IRA import TraditionalIRA
 from ..config.financial_config import FinancialConfig
+from ..limits import required_min_distrib
 from ..model import LifeModel
 from ..people.family import Family
 from ..people.person import MortalityMode, Person, Spending
@@ -104,9 +105,11 @@ class TestTenYearInheritance(unittest.TestCase):
         useable = dict(zip(df["Year"], df["Useable Balance"]))
         bank = dict(zip(df["Year"], df["Bank Balance"]))
         # "Useable Balance" also counts bank balances; the inherited corpus is the difference.
-        # Death year: full $500k corpus visible. Mid-window: the remaining corpus.
-        self.assertEqual(useable[2026] - bank[2026], 500000)
-        self.assertEqual(useable[2031] - bank[2031], 250000)  # five $50k slices distributed by then
+        # Death year: the whole corpus visible. Mid-window: the remaining corpus. Plan 32: the parent
+        # dies in January after January's twelfth of the year's RMD, so the corpus is $500k less it.
+        corpus = 500000 - required_min_distrib(80, 500000, config=model.config) / 12
+        self.assertAlmostEqual(useable[2026] - bank[2026], corpus, places=2)
+        self.assertAlmostEqual(useable[2031] - bank[2031], corpus / 2, places=2)  # five slices distributed
         self.assertEqual(useable[2037] - bank[2037], 0)  # fully distributed and removed
 
     def test_401k_pretax_balance_follows_ten_year_rule(self):

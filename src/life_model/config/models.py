@@ -5,7 +5,7 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class StrictModel(BaseModel):
@@ -449,6 +449,9 @@ class BrokerageAccountConfig(StrictModel):
     # Share of the growth rate paid out as qualified dividends rather than accruing as untaxed
     # price appreciation. Defaults to 0 so accounts are pure-appreciation unless opted in.
     dividend_yield: float = Field(default=0.0, ge=0)
+    # How often dividends are paid (Plan 32): "quarterly" (March, June, September, December) or
+    # "monthly"; each payment is the yield's share of the balance (a quarter or a twelfth).
+    dividend_frequency: Literal["quarterly", "monthly"] = "quarterly"
 
 
 class HSAAccountConfig(StrictModel):
@@ -715,10 +718,13 @@ class YearlyTaxParameters(StrictModel):
 class StochasticEconomyConfig(StrictModel):
     """Distribution parameters for the ``stochastic`` economy mode.
 
-    Annual returns are drawn as correlated normals (equity/bond/inflation share a
-    correlation matrix); the remaining series are drawn independently. All values are
-    percentages. Defaults reproduce the ``fixed``-mode means with historically typical
-    volatilities.
+    Monthly returns are drawn as correlated normals (equity/bond/inflation share a
+    correlation matrix); the remaining series are drawn independently. Means and
+    volatilities are annual percentages: each month draws around the monthly equivalent of the
+    mean (``(1 + mean)^(1/12) - 1``) with ``vol / sqrt(12)``. Defaults reproduce the
+    ``fixed``-mode means with historically typical volatilities. ``autocorrelation`` adds an
+    AR(1) term per series (``{"equity_return": 0.1}``; default none), since independent monthly
+    draws understate how bad months cluster.
     """
 
     equity_mean: float = 7.0
@@ -736,6 +742,15 @@ class StochasticEconomyConfig(StrictModel):
     equity_bond_correlation: float = Field(default=0.1, ge=-1, le=1)
     equity_inflation_correlation: float = Field(default=-0.1, ge=-1, le=1)
     bond_inflation_correlation: float = Field(default=-0.2, ge=-1, le=1)
+    autocorrelation: dict[str, float] = Field(default_factory=dict)
+
+    @field_validator("autocorrelation")
+    @classmethod
+    def _stationary(cls, value: dict[str, float]) -> dict[str, float]:
+        for name, phi in value.items():
+            if not -1 < phi < 1:
+                raise ValueError(f"autocorrelation of {name!r} must be in (-1, 1), got {phi}")
+        return value
 
 
 class EconomyConfig(StrictModel):
@@ -756,10 +771,31 @@ class EconomyConfig(StrictModel):
     bond_return: float = 3.0
     cash_yield: float = 0.0
     home_appreciation: float = 4.0
-    # PATH mode: per-rate, per-year overrides, e.g. {"equity_return": {2027: -10.0, 2028: -4.0}}.
-    # Years absent from a rate's table fall back to that rate's fixed constant above.
-    paths: dict[str, dict[int, float]] = Field(default_factory=dict)
+    # PATH mode: per-rate overrides, e.g. {"equity_return": {2027: -10.0, 2028: -4.0}}. A year key is
+    # that year's annual percent; a "YYYY-MM" key is one month's own return (percent for the month).
+    # Periods absent from a rate's table fall back to the year's entry, then the fixed constant above.
+    paths: dict[str, dict[int | str, float]] = Field(default_factory=dict)
     stochastic: StochasticEconomyConfig = Field(default_factory=StochasticEconomyConfig)
+
+    @field_validator("paths")
+    @classmethod
+    def _path_keys(cls, value: dict[str, dict]) -> dict[str, dict]:
+        """Year keys become ints and month keys ``"YYYY-MM"`` (zero-padded); anything else is an error."""
+        normalized: dict[str, dict] = {}
+        for name, series in value.items():
+            out: dict = {}
+            for key, rate in series.items():
+                text = str(key)
+                if text.isdigit():
+                    out[int(text)] = rate
+                    continue
+                parts = text.split("-")
+                if len(parts) == 2 and all(p.isdigit() for p in parts) and 1 <= int(parts[1]) <= 12:
+                    out[f"{int(parts[0]):04d}-{int(parts[1]):02d}"] = rate
+                    continue
+                raise ValueError(f"economy path key {key!r} for {name!r} must be a year or 'YYYY-MM'")
+            normalized[name] = out
+        return normalized
 
 
 class MedicalCostBandConfig(StrictModel):
@@ -907,6 +943,14 @@ class EquityCompConfig(StrictModel):
     default_vesting_years: int = Field(default=4, ge=1)
 
 
+class PayrollConfig(StrictModel):
+    """Payroll timing (Plan 32). Modeling conventions, not published figures: no ``vintage`` stamp.
+    Every field is defaulted so configs that omit the section still load."""
+
+    # Month (1-12) a yearly bonus is paid in (a Salary's bonus_month overrides it).
+    bonus_month: int = Field(default=3, ge=1, le=12)
+
+
 class FinancialConfigModel(StrictModel):
     """Complete financial configuration model with validation"""
 
@@ -922,6 +966,7 @@ class FinancialConfigModel(StrictModel):
     healthcare: HealthcareConfig = Field(default_factory=HealthcareConfig)
     dependents: DependentsConfig = Field(default_factory=DependentsConfig)
     equity_comp: EquityCompConfig = Field(default_factory=EquityCompConfig)
+    payroll: PayrollConfig = Field(default_factory=PayrollConfig)
     tax_years: dict[int, YearlyTaxParameters]
     # How simulated years after the last published ``tax_years`` entry are treated: indexed by the
     # economy's realized inflation (IRS-style rounding), or frozen at the last published values.

@@ -183,22 +183,25 @@ class RevolvingDebt(LifeModelAgent):
         return actual_interest_payment + principal_payment
 
     def service_year(self) -> float:
-        """Service this debt for one simulated year (twelve monthly payments by strategy).
+        """Service this debt for one simulated year (twelve :meth:`service_month` payments). For direct
+        callers; the engine services it monthly. ``interest_paid_this_year`` is the year's interest."""
+        self.interest_paid_this_year = 0.0
+        return sum(self.service_month() for _ in range(12))
 
-        Returns the total cash paid this year; ``interest_paid_this_year`` is updated.
-        """
-        total_paid = 0.0
-        interest_this_year = 0.0
-        for _ in range(12):
-            if self.balance <= 0:
-                break
-            total_paid += self.make_payment(self._scheduled_payment())
-            interest_this_year += self.stat_interest_payment_history[-1]
-        self.interest_paid_this_year = interest_this_year
-        return total_paid
+    def service_month(self) -> float:
+        """Make this month's payment under the strategy (called by the tax unit with the month's
+        bills). Returns the cash paid; the interest is added to ``interest_paid_this_year``."""
+        if self.balance <= 0:
+            return 0.0
+        paid = self.make_payment(self._scheduled_payment())
+        self.interest_paid_this_year += self.stat_interest_payment_history[-1]
+        return paid
 
-    def step(self):
-        """Track balance history."""
+    def on_year_start(self):
+        self.interest_paid_this_year = 0.0
+
+    def on_year_end(self):
+        """Track the year-end balance."""
         self.stat_balance_history.append(self.balance)
 
     def _repr_html_(self):

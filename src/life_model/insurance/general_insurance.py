@@ -125,12 +125,12 @@ class Insurance(LifeModelAgent):
         return self.model.year - self.policy_start_year
 
     def pay_premium(self) -> bool:
-        """Charge the annual premium through the tax unit's bill path.
+        """Charge the annual premium through the tax unit's bill path (once a year, in the first
+        month of the year).
 
-        The premium is added to the person's spending (``spending.add_expense``) so it settles
-        through :meth:`TaxUnit.settle_year` alongside every other bill and participates in
-        withdrawal sizing — a cash-poor retiree sizes a 401k withdrawal to cover it, and it is
-        reflected in ``stat_money_spent``.
+        The premium is added to the person's spending (``spending.add_expense``) so it is paid with
+        that month's bills through the household waterfall — a cash-poor retiree draws a 401k to
+        cover it — and it is reflected in ``stat_money_spent``.
 
         Solvency is resolved at settlement: a unit-wide shortfall becomes debt (as with any other
         bill). A single missed payment does not lapse the policy — an always-paid-if-solvent
@@ -271,8 +271,8 @@ class Insurance(LifeModelAgent):
         claims = self.get_claim_history(year)
         return sum(claim.payout_amount for claim in claims if claim.status == ClaimStatus.APPROVED)
 
-    def step(self):
-        """Process insurance for the current year"""
+    def on_year_end(self):
+        """Year end: reset the year's claim count and apply the premium increase for next year."""
         if not self.is_active:
             return
 
@@ -284,8 +284,8 @@ class Insurance(LifeModelAgent):
             self.annual_premium *= 1 + self.premium_increase_rate / 100
 
     def pre_step(self):
-        """Pre-step processing - pay premiums"""
-        if self.is_coverage_active:
+        """Pay the annual premium in the first month of each year (January, or the start month)."""
+        if self.model.is_year_start and self.is_coverage_active:
             self.pay_premium()
 
     def _repr_html_(self):

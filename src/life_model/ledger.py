@@ -30,13 +30,13 @@ independently (:func:`household_balance_sheet`), the year's change in net worth 
 year's net external flow. :mod:`life_model.checks` asserts it; any difference is money the
 simulation created or destroyed without saying so.
 
-**Time.** Entries carry ``year`` and ``stage`` and a ``month`` field that is ``None`` while the engine
-steps a year at a time (a monthly engine fills it in).
+**Time.** Entries carry the ``year`` and ``month`` they were posted in and the ``stage`` that posted
+them.
 """
 
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass, fields
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
@@ -114,7 +114,7 @@ class LedgerEntry:
     #: Position in the ledger (0-based, strictly increasing).
     seq: int
     year: int
-    #: Month within the year (1-12) once the engine is monthly; ``None`` for the annual engine.
+    #: Month within the year (1-12) the entry was posted in.
     month: int | None
     #: The model stage that posted it (``pre_step``, ``events``, ``step``, ``post_step``), or None.
     stage: str | None
@@ -155,6 +155,8 @@ class LedgerEntry:
             return -self.amount
         return 0.0
 
+
+_ENTRY_FIELDS = tuple(field.name for field in fields(LedgerEntry))
 
 #: Column order of :meth:`CashFlowLedger.to_frame`.
 LEDGER_COLUMNS = (
@@ -262,7 +264,7 @@ class CashFlowLedger:
         entry = LedgerEntry(
             seq=len(self.entries),
             year=self.model.year,
-            month=None,
+            month=getattr(self.model, "month", None),
             stage=getattr(self.model, "current_stage", None),
             kind=kind.value if isinstance(kind, FlowKind) else str(kind),
             amount=float(amount),
@@ -362,7 +364,7 @@ class CashFlowLedger:
         """Entries ``[start, end)`` as dicts (with the accounts' readable names)."""
         records = []
         for entry in self.entries[start:end]:
-            record = asdict(entry)
+            record = {name: getattr(entry, name) for name in _ENTRY_FIELDS}
             record["from_name"] = self.names.get(entry.from_account) if entry.from_account else None
             record["to_name"] = self.names.get(entry.to_account) if entry.to_account else None
             records.append(record)
@@ -407,6 +409,25 @@ class BalanceSheet:
         return sum(value for label, value in self.lines.items() if self.owners.get(label) == owner_id)
 
 
+_SHEET_TYPES: tuple | None = None
+
+
+def _sheet_types() -> tuple:
+    """The agent classes the balance sheet reads (imported once: they import this module)."""
+    global _SHEET_TYPES
+    if _SHEET_TYPES is None:
+        from .base_classes import FinancialAccount, Loan
+        from .debt.credit_card import RevolvingDebt
+        from .estate.trust import Trust, TrustType
+        from .housing.home import Home
+        from .insurance.annuity import Annuity
+        from .insurance.life_insurance import LifeInsurance
+        from .people.person import Person
+
+        _SHEET_TYPES = (Person, FinancialAccount, Loan, RevolvingDebt, Home, Annuity, Trust, TrustType, LifeInsurance)
+    return _SHEET_TYPES
+
+
 def balance_sheet_lines(agent: Any) -> list[tuple[str, float, Any]]:
     """``(label, signed value, owner)`` for each household balance-sheet line ``agent`` carries.
 
@@ -417,13 +438,7 @@ def balance_sheet_lines(agent: Any) -> list[tuple[str, float, Any]]:
     irrevocable trusts (no longer the household's), unvested stock, pensions and Social Security
     (income streams, not balances).
     """
-    from .base_classes import FinancialAccount, Loan
-    from .debt.credit_card import RevolvingDebt
-    from .estate.trust import Trust, TrustType
-    from .housing.home import Home
-    from .insurance.annuity import Annuity
-    from .insurance.life_insurance import LifeInsurance
-    from .people.person import Person
+    Person, FinancialAccount, Loan, RevolvingDebt, Home, Annuity, Trust, TrustType, LifeInsurance = _sheet_types()
 
     if isinstance(agent, Person):
         return [
@@ -457,9 +472,8 @@ def household_balance_sheet(model: "LifeModel") -> BalanceSheet:
     A line counts only while its owner is a living person still in the model, so whatever a
     decedent leaves behind un-inherited drops out (and must be posted as leaving).
     """
-    from .people.person import Person
-
-    living = {agent.unique_id for agent in model.agents if isinstance(agent, Person) and not agent.is_deceased}
+    person_type = _sheet_types()[0]
+    living = {agent.unique_id for agent in model.agents if isinstance(agent, person_type) and not agent.is_deceased}
     lines: dict[str, float] = {}
     owners: dict[str, int] = {}
     for agent in model.agents:

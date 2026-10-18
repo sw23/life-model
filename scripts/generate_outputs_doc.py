@@ -60,7 +60,7 @@ def render() -> str:
     _import_all_modules()
     from life_model.ledger import FLOW_KIND_DOCS, LEDGER_COLUMNS, LedgerEntry
     from life_model.model import EVENT_COLUMNS, EVENT_KIND_DOCS, EventKind, LifeModel, MoneyStat
-    from life_model.results import BALANCE_SHEET_COLUMNS
+    from life_model.results import BALANCE_SHEET_COLUMNS, MONTHLY_BALANCE_SHEET_COLUMNS
     from life_model.tax.return_record import FIELD_DOCS, TaxReturn
 
     out = [
@@ -70,28 +70,43 @@ def render() -> str:
         "",
         "Everything a run produces, column by column. `LifeModel.run()` returns a `RunResult`",
         "(`life_model.results`) holding all of it: `model_frame`, `agent_frame`, `tax_returns`, `ledger`,",
-        "`events`, `balance_sheets`, `seed`, `spec`; `to_json` / `to_csv` / `to_parquet` / `load`,",
-        "`real_dollars()` (money in start-year dollars) and `explain(year)`. Money is nominal dollars",
-        "unless a result is `real`; rates are percents.",
+        "`events`, `balance_sheets`, `monthly_balance_sheets`, `monthly_frame`, `seed`, `spec`; `to_json` /",
+        "`to_csv` / `to_parquet` / `load`, `real_dollars()` (money in start-year dollars) and",
+        "`explain(year)`. Money is nominal dollars unless a result is `real`; rates are percents.",
+        "",
+        "The engine steps one month at a time (`LifeModel.step()`); a year is the reporting cadence.",
+        "Rows are collected at each year end (December), after the year's taxes are settled.",
         "",
         "## Model frame (one row per year)",
         "",
         "`model.datacollector.get_model_vars_dataframe()` / `RunResult.model_frame`. Each column aggregates",
         "a stat over the agents that declare it in `STATS_OWNED` (a joint return's tax stats are split",
         "across both spouses, so the model total is the return's). `STATS` are the default columns of",
-        "`get_yearly_stat_df`; `EXTRA_STATS` are collected too.",
+        "`get_yearly_stat_df`; `EXTRA_STATS` are collected too. A **flow** stat (income, spending, taxes)",
+        "accumulates month by month over the year and restarts at 0 each January (an agent removed during",
+        "the year, such as a decedent, keeps its flows in that year's total); the others are balances read",
+        "at the year end.",
         "",
-        "| Column | Attribute | Set | Owners | Aggregate | Money | Description |",
-        "| --- | --- | --- | --- | --- | --- | --- |",
-        "| Year | `year` | | LifeModel | | no | The simulated year. |",
+        "| Column | Attribute | Set | Owners | Aggregate | Money | Flow | Description |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+        "| Year | `year` | | LifeModel | | no | | The simulated year. |",
     ]
     for group, stats in (("STATS", LifeModel.STATS), ("EXTRA_STATS", LifeModel.EXTRA_STATS)):
         for stat in stats:
             out.append(
                 f"| {stat.title} | `{stat.name}` | {group} | {', '.join(_owners(stat.name))} | "
                 f"{stat.aggregator.__name__} | {'yes' if isinstance(stat, MoneyStat) else 'no'} | "
-                f"{_escape(stat.description)} |"
+                f"{'yes' if stat.flow else ''} | {_escape(stat.description)} |"
             )
+    out += [
+        "",
+        '## Monthly frame (one row per month, `collect="month"`)',
+        "",
+        '`LifeModel(collect="month")` (`life_model.run(spec, collect="month")`, `life-model run --collect',
+        "month`): `model.monthly_frame()` / `RunResult.monthly_frame` (None otherwise). The model frame's",
+        "columns plus `Year` and `Month`, read at each month end: balances as of the month end, flows year",
+        "to date (so each December row equals the year's model-frame row).",
+    ]
 
     out += [
         "",
@@ -112,7 +127,7 @@ def render() -> str:
         "| Salary | This year's base salary (`Salary` rows), read before the year-end raise. |",
         "| Spending Base | This year's base spending (`Spending` rows), read before the year-end increase. |",
         "",
-        "`model.add_agent_stat(title, attr, pre_post=True)` adds a column read before the `post_step`",
+        "`model.add_agent_stat(title, attr, pre_post=True)` adds a column read before the year-end",
         "escalators the same way.",
         "",
         "## Tax returns",
@@ -137,8 +152,10 @@ def render() -> str:
     entry_docs = {
         "seq": "Position in the ledger (0-based, increasing).",
         "year": "Simulated year.",
-        "month": "Month (1-12) once the engine is monthly; empty for the annual engine.",
-        "stage": "Model stage that posted it (`pre_step`, `events`, `step`, `post_step`).",
+        "month": "Simulated month (1-12) it was posted in.",
+        "stage": (
+            "Model stage that posted it (`pre_step`, `events`, `step`, `post_step`, `on_year_start`, `on_year_end`)."
+        ),
         "kind": "Flow kind (below).",
         "amount": "Dollars moved (negative only for corrections such as a payroll true-up).",
         "from_account": "Household account the money left (empty for an inflow).",
@@ -174,18 +191,21 @@ def render() -> str:
         "## Balance sheets and the conservation check",
         "",
         "`model.balance_sheets[year]` (opening and closing `BalanceSheet`, and the ledger range posted",
-        "during the year) / `RunResult.balance_sheets`. `life_model.checks` asserts that each year's",
-        "change in net worth equals the ledger's inflows minus outflows within $1.",
+        "during the year) / `RunResult.balance_sheets`, and the same per month in",
+        "`model.month_balance_sheets[(year, month)]` / `RunResult.monthly_balance_sheets` (with a `month`",
+        "column). `life_model.checks` asserts that each year's (with `monthly=True`, each month's) change in",
+        "net worth equals the ledger's inflows minus outflows within $1.",
         "",
         "| Column | Description |",
         "| --- | --- |",
         "| `year` | Simulated year. |",
-        "| `opening_net_worth` | Household assets minus liabilities before the year's first stage. |",
-        "| `closing_net_worth` | The same after the year's last stage (the `Net Worth` column). |",
-        "| `inflows` | Ledger inflows posted during the year. |",
-        "| `outflows` | Ledger outflows posted during the year. |",
+        "| `month` | Simulated month (`monthly_balance_sheets` only). |",
+        "| `opening_net_worth` | Household assets minus liabilities before the year's (month's) first stage. |",
+        "| `closing_net_worth` | The same after its last stage (December's: the `Net Worth` column). |",
+        "| `inflows` | Ledger inflows posted during the year (month). |",
+        "| `outflows` | Ledger outflows posted during the year (month). |",
     ]
-    assert len(BALANCE_SHEET_COLUMNS) == 5
+    assert len(BALANCE_SHEET_COLUMNS) == 5 and len(MONTHLY_BALANCE_SHEET_COLUMNS) == 6
 
     out += [
         "",
@@ -197,6 +217,7 @@ def render() -> str:
         "| Column | Description |",
         "| --- | --- |",
         "| `year` | Year it happened. |",
+        "| `month` | Month (1-12) it happened in. |",
         "| `kind` | Event kind (below). |",
         "| `person` / `person_id` | Who it is about. |",
         "| `amount` | Dollars involved, when any. |",
@@ -208,7 +229,7 @@ def render() -> str:
         "| Kind | Detail | Meaning |",
         "| --- | --- | --- |",
     ]
-    assert len(EVENT_COLUMNS) == 10
+    assert len(EVENT_COLUMNS) == 11
     for kind in EventKind:
         out.append(f"| `{kind.value}` | {'yes' if kind.is_detail else ''} | {_escape(EVENT_KIND_DOCS[kind.value])} |")
     return "\n".join(out) + "\n"

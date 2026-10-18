@@ -16,6 +16,7 @@ people:
 - id: pat
   name: Pat
   age: 68
+  birth: '1957-10'
   gender: female
   retirement_age: 65
   mortality: stochastic
@@ -104,6 +105,7 @@ people:
 - id: lee
   name: Lee
   age: 66
+  birth: '1959-04'
   gender: male
   retirement_age: 64
   mortality: stochastic

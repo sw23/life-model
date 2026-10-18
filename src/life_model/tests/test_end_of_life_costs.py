@@ -57,7 +57,7 @@ class TestEndOfLifeCosts(unittest.TestCase):
         BankAccount(owner=child, company="Bank", balance=0)
         if with_medical:
             MedicalCosts(parent)
-        model.step()
+        model.step_year()
         return child, model
 
     def test_estate_reduced_by_funeral_and_final_medical(self):

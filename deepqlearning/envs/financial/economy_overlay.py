@@ -20,7 +20,8 @@ An overlay keeps the stochastic economy and layers the scenario on top:
   listed years (a scripted shock inside an otherwise random history).
 
 Non-economy overrides in a scenario (credit-card rates, state tax) are applied through the normal
-config path. The overlay wraps ``EconomyModel`` per-year resolution; the core economy is unchanged.
+config path. The overlay adjusts ``EconomyModel``'s per-year resolution through its
+``set_year_adjuster`` hook (the monthly rates are rescaled to the adjusted year).
 """
 
 from dataclasses import dataclass, field
@@ -83,12 +84,6 @@ class ScenarioOverlay:
         return adjusted
 
     def install(self, economy: Any) -> None:
-        """Wrap ``economy``'s per-year rate resolution (and re-adjust any already-resolved year)."""
-        compute_year = economy._compute_year
-
-        def overlaid(year: int) -> dict[str, float]:
-            return self.adjust(year, compute_year(year))
-
-        economy._compute_year = overlaid
-        for year, rates in list(economy._rates_by_year.items()):
-            economy._rates_by_year[year] = self.adjust(year, rates)
+        """Adjust ``economy``'s per-year rates (and any already-resolved year); each year's monthly
+        rates are rescaled to compound to the adjusted annual rate (``EconomyModel.set_year_adjuster``)."""
+        economy.set_year_adjuster(self.adjust)

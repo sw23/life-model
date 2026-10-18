@@ -81,7 +81,7 @@ _WITHDRAW_SOURCES = {
 # Person-level withdrawal helper for each withdrawal action. Every withdrawal goes
 # through the model's real money path: the helper deposits into the bank and records the correct
 # income-ledger entry (pre-tax 401k / traditional IRA distributions are ordinary income), so the
-# tax unit actually taxes the withdrawal when it settles the year inside ``model.step()``.
+# tax unit actually taxes the withdrawal when it settles the year inside ``model.step_year()``.
 _WITHDRAW_HELPERS = {
     ActionType.WITHDRAW_401K_PRETAX: Person.withdraw_from_pretax_401ks,
     ActionType.WITHDRAW_401K_ROTH: Person.withdraw_from_roth_401ks,
@@ -372,7 +372,7 @@ class WithdrawalAction(FinancialAction):
 
     Execution goes through the person-level helpers (``_WITHDRAW_HELPERS``), so taxable
     withdrawals create income-ledger entries and are taxed at year-end settlement inside
-    ``model.step()`` — not instantly. Early-withdrawal penalties are likewise recorded by the core
+    ``model.step_year()`` — not instantly. Early-withdrawal penalties are likewise recorded by the core
     model and settled at year end, except for Roth 401k withdrawals (see ``_PENALIZED_WITHDRAWALS``),
     whose penalty is still deducted from the bank here.
     """
@@ -393,7 +393,10 @@ class WithdrawalAction(FinancialAction):
         # income on the person's ledger for year-end settlement.
         withdrawn = _WITHDRAW_HELPERS[self.action_type](self.person, amount)
 
-        penalized = self.action_type in _PENALIZED_WITHDRAWALS and self.person.age < EARLY_WITHDRAWAL_AGE
+        # The withdrawal happens now (the first month of the upcoming year): the exact age decides.
+        penalized = (
+            self.action_type in _PENALIZED_WITHDRAWALS and self.person.age_years_fractional < EARLY_WITHDRAWAL_AGE
+        )
         penalty = withdrawn * EARLY_WITHDRAWAL_PENALTY if penalized else 0.0
         if penalty > 0:
             # The helper deposited the gross amount; pull the penalty back out of the bank.

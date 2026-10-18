@@ -12,9 +12,10 @@ liabilities, measured independently of the ledger by
 cash-flow ledger (inflows minus outflows; transfers between household accounts net to zero), to
 within a dollar. A residual is money the simulation created or destroyed without recording why.
 
-The model records an opening and a closing balance sheet around each ``step()`` (when it collects
-data), along with the range of ledger entries posted during the step, so the check also works on a
-finished run.
+The model records an opening and a closing balance sheet around each simulated year and each
+simulated month (when it collects data), along with the range of ledger entries posted during it,
+so the check also works on a finished run. The monthly check (``monthly=True``) is the finer guard:
+every month's change in net worth must equal that month's ledger flows.
 """
 
 from dataclasses import dataclass
@@ -41,14 +42,28 @@ class YearBalances:
 
 
 @dataclass(frozen=True)
+class MonthBalances:
+    """Balance sheets around one simulated month and the ledger entries posted during it."""
+
+    year: int
+    month: int
+    opening: "BalanceSheet"
+    closing: "BalanceSheet"
+    ledger_start: int
+    ledger_end: int
+
+
+@dataclass(frozen=True)
 class ConservationRecord:
-    """One year of the conservation check."""
+    """One year (or, with ``month`` set, one month) of the conservation check."""
 
     year: int
     opening_net_worth: float
     closing_net_worth: float
     inflows: float
     outflows: float
+    #: The month (1-12) of a monthly record; None for a year.
+    month: int | None = None
 
     @property
     def change(self) -> float:
@@ -74,38 +89,45 @@ class ConservationError(AssertionError):
     the ledger's net flow."""
 
 
-def conservation_records(model: "LifeModel") -> list[ConservationRecord]:
-    """One :class:`ConservationRecord` per simulated year (requires a model that collected data)."""
-    records = []
-    for balances in model.balance_sheets.values():
-        entries = model.ledger.between(balances.ledger_start, balances.ledger_end)
-        inflows = sum(e.amount for e in entries if e.is_inflow)
-        outflows = sum(e.amount for e in entries if e.is_outflow)
-        records.append(
-            ConservationRecord(
-                year=balances.year,
-                opening_net_worth=balances.opening.net_worth,
-                closing_net_worth=balances.closing.net_worth,
-                inflows=inflows,
-                outflows=outflows,
-            )
-        )
-    return records
+def _record(model: "LifeModel", balances, month: int | None = None) -> ConservationRecord:
+    entries = model.ledger.between(balances.ledger_start, balances.ledger_end)
+    return ConservationRecord(
+        year=balances.year,
+        month=month,
+        opening_net_worth=balances.opening.net_worth,
+        closing_net_worth=balances.closing.net_worth,
+        inflows=sum(e.amount for e in entries if e.is_inflow),
+        outflows=sum(e.amount for e in entries if e.is_outflow),
+    )
 
 
-def check_conservation(model: "LifeModel", *, tolerance: float = CONSERVATION_TOLERANCE) -> list[ConservationRecord]:
-    """The years whose residual exceeds ``tolerance`` dollars (empty when money is conserved)."""
-    return [record for record in conservation_records(model) if not record.ok(tolerance)]
+def conservation_records(model: "LifeModel", *, monthly: bool = False) -> list[ConservationRecord]:
+    """One :class:`ConservationRecord` per simulated year, or per simulated month with ``monthly=True``
+    (requires a model that collected data)."""
+    if monthly:
+        return [_record(model, balances, balances.month) for balances in model.month_balance_sheets.values()]
+    return [_record(model, balances) for balances in model.balance_sheets.values()]
 
 
-def account_residuals(model: "LifeModel", year: int, *, tolerance: float = 0.01) -> dict[str, float]:
-    """Per-account diagnostic for ``year``: each balance-sheet line's change minus the ledger's net
-    posting to that label, for lines where they differ by more than ``tolerance``.
+def check_conservation(
+    model: "LifeModel", *, tolerance: float = CONSERVATION_TOLERANCE, monthly: bool = False
+) -> list[ConservationRecord]:
+    """The years (or months, with ``monthly=True``) whose residual exceeds ``tolerance`` dollars (empty
+    when money is conserved)."""
+    return [record for record in conservation_records(model, monthly=monthly) if not record.ok(tolerance)]
+
+
+def account_residuals(
+    model: "LifeModel", year: int, *, tolerance: float = 0.01, month: int | None = None
+) -> dict[str, float]:
+    """Per-account diagnostic for ``year`` (or one ``month`` of it): each balance-sheet line's change
+    minus the ledger's net posting to that label, for lines where they differ by more than
+    ``tolerance``.
 
     Settlement posts household bills from one payer account, so a spouse's bank can show offsetting
     residuals; a line whose residual does not cancel against another one points at the bug.
     """
-    balances = model.balance_sheets[year]
+    balances = model.balance_sheets[year] if month is None else model.month_balance_sheets[(year, month)]
     entries = model.ledger.between(balances.ledger_start, balances.ledger_end)
     posted: dict[str, float] = {}
     for entry in entries:
@@ -123,21 +145,24 @@ def account_residuals(model: "LifeModel", year: int, *, tolerance: float = 0.01)
     return residuals
 
 
-def assert_conservation(model: "LifeModel", *, tolerance: float = CONSERVATION_TOLERANCE) -> None:
-    """Raise :class:`ConservationError` naming every year (and the accounts) where net worth moved
-    without a matching ledger flow."""
-    if not model.balance_sheets:
+def assert_conservation(
+    model: "LifeModel", *, tolerance: float = CONSERVATION_TOLERANCE, monthly: bool = False
+) -> None:
+    """Raise :class:`ConservationError` naming every year (every month with ``monthly=True``), and the
+    accounts, where net worth moved without a matching ledger flow."""
+    if not model.balance_sheets and not model.month_balance_sheets:
         raise ConservationError("No balance sheets were recorded (build the model with collect_data=True and run it)")
-    failures = check_conservation(model, tolerance=tolerance)
+    failures = check_conservation(model, tolerance=tolerance, monthly=monthly)
     if not failures:
         return
     lines = []
     for record in failures[:10]:
+        when = f"{record.year}-{record.month:02d}" if record.month is not None else f"{record.year}"
         lines.append(
-            f"{record.year}: net worth changed {record.change:,.2f} but the ledger's net flow is "
+            f"{when}: net worth changed {record.change:,.2f} but the ledger's net flow is "
             f"{record.net_flow:,.2f} (residual {record.residual:,.2f})"
         )
-        for label, residual in account_residuals(model, record.year).items():
+        for label, residual in account_residuals(model, record.year, month=record.month).items():
             name = model.ledger.describe(label)
             lines.append(f"    {name} [{label}]: {residual:,.2f}")
     raise ConservationError("Money was not conserved:\n" + "\n".join(lines))

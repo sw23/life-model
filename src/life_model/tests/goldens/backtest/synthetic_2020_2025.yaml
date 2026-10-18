@@ -55,31 +55,31 @@ people:
 actuals:
   2020:
     balances:
-      morgan_401k: 191452.8
+      morgan_401k: 190436.02
       morgan_roth: 35520.0
       morgan_brokerage: 59200.0
   2021:
     balances:
-      morgan_401k: 262817.01
+      morgan_401k: 259755.53
       morgan_roth: 45717.79
       morgan_brokerage: 76196.32
   2022:
     balances:
-      morgan_401k: 226208.54
+      morgan_401k: 224775.06
       morgan_roth: 37438.3
       morgan_brokerage: 62397.17
   2023:
     balances:
-      morgan_401k: 303374.68
+      morgan_401k: 299804.84
       morgan_roth: 47280.83
       morgan_brokerage: 78801.38
   2024:
     balances:
-      morgan_401k: 397644.93
+      morgan_401k: 391429.44
       morgan_roth: 59110.49
       morgan_brokerage: 98517.49
   2025:
     balances:
-      morgan_401k: 486793.17
+      morgan_401k: 478174.32
       morgan_roth: 69679.45
       morgan_brokerage: 116132.41

@@ -94,9 +94,10 @@ class TestSpecErrors(unittest.TestCase):
         data["events"] = [{"at": 2027, "person": "alex", "action": "convert_to_roth", "amount": 1000}]
         data["meta"]["start"] = "2026-10"
         findings = validate_spec(data)
-        self.assertEqual(codes(findings), ["not_yet_supported"] * 4)
+        # Plan 32 supports birth and meta.start; the other two are still rejected.
+        self.assertEqual(codes(findings), ["not_yet_supported"] * 2)
         messages = " ".join(f.message for f in findings)
-        for plan in ("Plan 32", "Plan 27 D2", "Plan 27 item 3"):
+        for plan in ("Plan 27 D2", "Plan 27 item 3"):
             self.assertIn(plan, messages)
 
     def test_every_not_yet_supported_field_is_rejected(self):
@@ -155,8 +156,8 @@ class TestSpecErrors(unittest.TestCase):
 
     def test_claim_age_relative_to_another_person(self):
         data = _couple()
-        data["people"][0]["age"] = 60
-        data["people"][1]["age"] = 65
+        data["people"][0].update(age=60, birth="1966-01")
+        data["people"][1].update(age=65, birth="1961-01")
         data["people"][0]["social_security"] = {"claim_age": 67}
         data["meta"]["end_year"] = 2040
         data["events"] = [

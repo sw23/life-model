@@ -152,7 +152,7 @@ class TestHoHSettlement(unittest.TestCase):
             BankAccount(parent, "Bank", balance=50000, interest_rate=0)
             Job(parent, "Co", "Dev", Salary(model=model, base=50000, yearly_increase=0, yearly_bonus=0))
             Child(parent, "Kid", birth_year=2020)
-            model.step()
+            model.step_year()
             return parent.stat_taxes_paid
 
         taxes_hoh = run(_fixture_config_with_hoh())

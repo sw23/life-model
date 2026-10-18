@@ -542,10 +542,11 @@ def households(year: int) -> dict[str, dict]:
         ],
         "rmds": {"pat": rmd(1200000, 75), "lee": rmd(800000, 73)},
     }
-    # Early retiree: the brokerage sale pays the year's spending and its own tax. Cash on hand: $0
-    # checking + $10,000 savings + $400 interest credited before the bills; spending $80,000. The sale
-    # x solves x = 80,000 - 10,400 + tax(gain), gain = x x (900,000 - 300,000) / 900,000 (one lot,
-    # FIFO); proceeds are rounded up to the cent.
+    # Early retiree: the brokerage sale pays the year's spending and its own tax. The $80,000 is paid in
+    # one December lump, so the $10,000 savings earns a full year's $400 at 4% and the $900,000 fund
+    # (price flat: it pays out its whole 2% return) pays $18,000 of dividends before the sale. Cash on
+    # hand in December: $0 checking + $10,400 savings. The sale x solves x = 80,000 - 10,400 + tax(gain),
+    # gain = x x (900,000 - 300,000) / 900,000 (one lot, FIFO); proceeds are rounded up to the cent.
     sale, gain = early_retiree_sale(year)
     out["early_retiree"] = {
         "description": "early retiree (58, single): qualified dividends and a long-term gain straddling the 0%/15% "
@@ -696,8 +697,9 @@ def write(name: str, year: int, info: dict) -> None:
     if "sale" in info:
         md += [
             (
-                "Brokerage sale (1099-B box 1d): the sale pays $80,000 of spending less $10,400 of cash (savings "
-                f"plus its interest) plus the tax it triggers: proceeds {money(info['sale'])}, gain 2/3 of it "
+                "Brokerage sale (1099-B box 1d): the sale, in December, pays the year's $80,000 of spending (paid "
+                "in one December lump) less $10,400 of cash (savings plus its full year's interest) plus the tax it "
+                f"triggers: proceeds {money(info['sale'])}, gain 2/3 of it "
                 f"{money(info['sale'] * 2 / 3)} (basis $300,000 of $900,000)."
             ),
             "",

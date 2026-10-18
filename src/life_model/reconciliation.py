@@ -672,8 +672,10 @@ def reconcile(
     """Run ``spec`` through ``year`` and compare it with the year's actual records.
 
     Args:
-        spec: The household (balances as of the start of ``meta.start_year``; for the cleanest
-            comparison start the spec in ``year``).
+        spec: The household (balances as of its first simulated month: ``meta.start``, else January
+            of ``meta.start_year``; for the cleanest comparison start the spec in January of
+            ``year``). A spec that starts mid-``year`` reconciles a part year: its return and flows
+            cover only the simulated months (the report says so in ``notes``).
         year: The tax year to reconcile (``>= meta.start_year``).
         actuals: The records to compare (default: ``spec.actuals[year]``).
         seed: Random seed (overrides ``meta.seed``).
@@ -689,6 +691,14 @@ def reconcile(
         raise ValueError(f"No actual records for {year}: add actuals.{year} to the spec or pass actuals=")
     sim = run_for_reconciliation(spec, year, seed=seed, config=config, checks=checks)
     report = ReconciliationReport(household=spec.meta.name, year=year, seed=sim.model.initial_seed)
+    months = sim.model.months_in_year(year)
+    if months < 12:
+        first = f"{year}-{13 - months:02d}"
+        report.notes.append(
+            f"{year} is a part year: the run starts in {first} (meta.start), so the simulated return and flows cover "
+            f"its last {months} months only (income, deductions and payments before {first} are not in them); compare "
+            "records for the same months, or start the spec in January for a full-year return"
+        )
     table_year = line_table_year(year)
     labels_1040 = FORM_1040_LINES[table_year]
     schedule_labels = SCHEDULE_LINES[table_year]

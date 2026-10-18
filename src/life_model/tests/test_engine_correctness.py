@@ -81,17 +81,17 @@ class TestRunningFlag(unittest.TestCase):
         self.assertTrue(model.running)
 
         # Step through the inclusive range; running stays true until the final year is simulated.
-        model.step()  # 2020
+        model.step_year()  # 2020
         self.assertTrue(model.running)
-        model.step()  # 2021
+        model.step_year()  # 2021
         self.assertTrue(model.running)
-        model.step()  # 2022 (final year)
+        model.step_year()  # 2022 (final year)
         self.assertFalse(model.running)
 
         # Stepping past the end is a no-op: no extra year is collected and year doesn't advance.
         self.assertEqual(model.simulated_years, [2020, 2021, 2022])
         year_after_end = model.year
-        model.step()
+        model.step_year()
         self.assertEqual(model.simulated_years, [2020, 2021, 2022])
         self.assertEqual(model.year, year_after_end)
         self.assertFalse(model.running)
@@ -104,10 +104,10 @@ class TestRunningFlag(unittest.TestCase):
         BankAccount(person, "Bank", balance=1_000_000, interest_rate=0)
 
         spending.add_expense(5000)  # added before the sim runs
-        model.step()  # year 1
+        model.step_year()  # year 1
         self.assertEqual(person.stat_money_spent, 15000)  # base + one-time, increase not yet applied
 
-        model.step()  # year 2
+        model.step_year()  # year 2
         self.assertEqual(person.stat_money_spent, 11000)  # base grew 10%, one-time cleared
 
 
@@ -117,17 +117,20 @@ class TestRetirementCrossing(unittest.TestCase):
     def test_non_integer_retirement_age_triggers(self):
         model = LifeModel(start_year=2020, end_year=2030)
         family = Family(model)
-        person = Person(family, "Cy", age=65, retirement_age=65.5, spending=Spending(model, 0))
+        # Plan 32: ages are exact. Born January 1956, Cy reaches 65.5 in July 2021.
+        person = Person(family, "Cy", age=64, retirement_age=65.5, spending=Spending(model, 0))
         BankAccount(person, "Bank", balance=100000, interest_rate=0)
         job = Job(person, "Co", "Dev", Salary(model=model, base=50000))
 
-        model.step()  # age 65 -> below 65.5, still working
-        self.assertEqual(person.age, 65)
+        model.step_year()  # age 64 -> below 65.5, still working
+        self.assertEqual(person.age_in(2020), 64)
         self.assertFalse(job.retired)
 
-        model.step()  # age 66 -> crosses 65.5, retires
-        self.assertEqual(person.age, 66)
+        model.step_year()  # age 65 -> crosses 65.5 in July, retires after July's paycheck
+        self.assertEqual(person.age_in(2021), 65)
         self.assertTrue(job.retired)
+        self.assertEqual(person.get_period_at_age(65.5), (2021, 7))
+        self.assertAlmostEqual(job.stat_gross_income, 50000 * 7 / 12, places=2)
 
 
 class TestMarriedHousing(unittest.TestCase):
@@ -147,7 +150,7 @@ class TestMarriedHousing(unittest.TestCase):
         principal_before = home.mortgage.principal
         bank_before = bank.balance
 
-        model.step()
+        model.step_year()
 
         # The mortgage amortizes monthly: principal drops by the actual principal paid and cash
         # equal to (principal + interest) paid this year leaves the bank, plus home expenses.
@@ -182,20 +185,21 @@ class TestFamilyDebtPaidOnce(unittest.TestCase):
         # Interest-free carry isolates the paid-once property (interest is covered below).
         model, a, b, bank = self._married_with_debt(debt_rate=0.0)
 
-        model.step()
+        model.step_year()
 
         self.assertEqual(bank.balance, 90000)  # withdrawn once, not twice
         self.assertEqual(a.debt, 0)
         self.assertEqual(b.debt, 0)
 
     def test_carried_debt_accrues_a_year_of_interest(self):
-        """Plan 04 item 14: unpaid bills are a real liability, repaid with a year of interest."""
+        """Plan 04 item 14: unpaid bills are a real liability, repaid with interest. Plan 32: bills
+        are paid monthly, so the carried debt is repaid in January with a month of interest."""
         model, _a, b, bank = self._married_with_debt(debt_rate=18.0)
 
-        model.step()
+        model.step_year()
 
-        self.assertAlmostEqual(bank.balance, 100000 - 10000 * 1.18, places=6)
-        self.assertAlmostEqual(b.stat_interest_paid, 1800, places=6)
+        self.assertAlmostEqual(bank.balance, 100000 - 10000 * (1 + 0.18 / 12), places=6)
+        self.assertAlmostEqual(b.stat_interest_paid, 10000 * 0.18 / 12, places=6)
         self.assertEqual(b.debt, 0)
 
 
@@ -219,7 +223,7 @@ class TestMixedFilingUnits(unittest.TestCase):
         units = TaxUnit.build_units(family)
         self.assertEqual(len(units), 2)
 
-        model.step()
+        model.step_year()
 
         # The 2020 return uses that year's tax parameters (year table, projection rule).
         year_config = model.config_for_year(2020)
@@ -276,7 +280,7 @@ class TestMoneyConservation(unittest.TestCase):
 
         for _ in model.get_year_range():
             bank_before = bank.balance
-            model.step()
+            model.step_year()
             # Pull the year's flows from the collected frame (row for the year just simulated).
             row = model.datacollector.get_model_vars_dataframe().iloc[-1]
             delta_bank = bank.balance - bank_before

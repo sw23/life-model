@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""life-model: year-step personal-finance simulation built on Mesa agent-based modeling.
+"""life-model: month-step personal-finance simulation built on Mesa agent-based modeling.
 
 The one-call functions take a household spec (a ``HouseholdSpec``, dict, YAML/JSON text or a
 path; see ``docs/household-spec.md``) and mirror the ``life-model`` command line::
