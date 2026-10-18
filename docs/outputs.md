@@ -77,9 +77,10 @@ at the year end.
 
 ## Monthly frame (one row per month, `collect="month"`)
 
-`LifeModel(collect="month")`: `model.monthly_frame()` / `RunResult.monthly_frame` (None
-otherwise). The model frame's columns plus `Year` and `Month`, read at each month end: balances
-as of the month end, flows year to date (so each December row equals the year's model-frame row).
+`LifeModel(collect="month")` (`life_model.run(spec, collect="month")`, `life-model run --collect
+month`): `model.monthly_frame()` / `RunResult.monthly_frame` (None otherwise). The model frame's
+columns plus `Year` and `Month`, read at each month end: balances as of the month end, flows year
+to date (so each December row equals the year's model-frame row).
 
 ## Agent frame (one row per agent per year)
 

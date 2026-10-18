@@ -76,15 +76,15 @@ The owner argument links the object to its owner (a `Person`, a `Job`, or the `m
 
 | Class | Owner | Required | Optional (default) |
 |---|---|---|---|
-| `LifeModel` (life_model.model) |  | — | `end_year=None`, `start_year=None`, `seed=None`, `config=None`, `scenario=None`, `*collect_data=True`, `*checks='off'` |
+| `LifeModel` (life_model.model) |  | — | `end_year=None`, `start_year=None`, `seed=None`, `config=None`, `scenario=None`, `*collect_data=True`, `*start=None`, `*start_month=None`, `*collect='year'`, `*checks='off'` |
 | `Family` (life_model.people.family) | `model` | `model` | `*withdrawal_order=None` |
-| `Person` (life_model.people.person) | `family` | `family`, `name`, `age`, `retirement_age`, `spending` | `*gender=GenderAtBirth.OTHER`, `*mortality_mode=MortalityMode.IMMORTAL`, `*death_age=None`, `*state=None` |
+| `Person` (life_model.people.person) | `family` | `family`, `name`, `age`, `retirement_age`, `spending` | `*gender=GenderAtBirth.OTHER`, `*mortality_mode=MortalityMode.IMMORTAL`, `*death_age=None`, `*state=None`, `*birth=None` |
 | `Spending` (life_model.people.person) | `model` | `model` | `base=0`, `yearly_increase=0` |
 | `Job` (life_model.work.job) | `owner` | `owner`, `company`, `role`, `salary` | — |
-| `Salary` (life_model.work.job) | `model` | `model`, `base` | `yearly_increase=0`, `yearly_bonus=0` |
+| `Salary` (life_model.work.job) | `model` | `model`, `base` | `yearly_increase=0`, `yearly_bonus=0`, `*bonus_month=None` |
 | `StockPlan` (life_model.work.stock) | `job` | `job` | `*signon_value=0.0`, `*refresher_value=0.0`, `*refresher_start_year=1`, `*refresher_growth_percent=0.0`, `*schedule=None`, `*signon_schedule=None`, `*disposition='sell'`, `*growth_rate=None`, `*brokerage_account=None` |
 | `BankAccount` (life_model.account.bank) | `owner` | `owner`, `company` | `type='Bank'`, `balance=0`, `interest_rate=None`, `*compounding=None` |
-| `Job401kAccount` (life_model.account.job401k) | `job` | `job` | `pretax_balance=0`, `pretax_contrib_percent=0`, `roth_balance=0`, `roth_contrib_percent=0`, `average_growth=None`, `company_match_percent=0`, `*match_tiers=None`, `*match_on_bonus=False`, `*match_vesting_years=0` |
+| `Job401kAccount` (life_model.account.job401k) | `job` | `job` | `pretax_balance=0`, `pretax_contrib_percent=0`, `roth_balance=0`, `roth_contrib_percent=0`, `average_growth=None`, `company_match_percent=0`, `*match_tiers=None`, `*match_on_bonus=False`, `*match_vesting_years=0`, `*match_true_up=True` |
 | `BrokerageAccount` (life_model.account.brokerage) | `person` | `person`, `company` | `balance=0`, `growth_rate=None`, `*dividend_yield=None` |
 | `TraditionalIRA` (life_model.account.traditional_IRA) | `person` | `person` | `balance=0`, `growth_rate=None`, `contribution_limit=None` |
 | `RothIRA` (life_model.account.roth_IRA) | `person` | `person` | `balance=0`, `growth_rate=None`, `contribution_limit=None` |
