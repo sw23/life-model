@@ -9,9 +9,16 @@ from typing import TYPE_CHECKING
 
 from ..ledger import FlowKind, debt_label
 from ..model import Event, EventKind, round_money
-from ..tax.credits import child_tax_credit_parts
-from ..tax.deductions import deductible_charity, salt_cap, senior_deduction, settle_charitable_carryforwards
+from ..tax.deductions import additional_standard_deduction, charitable_deduction, salt_cap, senior_deduction
 from ..tax.federal import FilingStatus, get_federal_standard_deduction
+from ..tax.household import (
+    finish_federal,
+    plan_deductions,
+    post_year_end_adjustments,
+    record_year_end,
+    se_profits,
+    ss_wages,
+)
 from ..tax.income import IncomeType
 from ..tax.return_record import TaxReturn, build_tax_return
 from ..tax.state import StateTaxDetail, state_income_tax_detail
@@ -229,18 +236,25 @@ class TaxUnit:
         return standard_deduction, itemized, senior
 
     def _deduction_choice(self, additional_income: float = 0.0, state_income_tax_paid: float = 0.0):
-        """``(standard, itemized)`` for the return; itemized includes charity capped at its AGI limit."""
+        """``(standard, itemized)`` for the return; the standard deduction includes the §63(f) amount for
+        each member 65+, and itemized includes charity after its AGI limits (and the 2026+ floor)."""
         standard_deduction = get_federal_standard_deduction(self.filing_status, self.config)
         if self.filing_status == FilingStatus.MARRIED_FILING_SEPARATELY:
             standard_deduction = self.members[0].standard_deduction
+        if standard_deduction > 0:
+            standard_deduction += additional_standard_deduction(self.members, self.filing_status, self.config)
         allocation = self._prospective_withdrawal_allocation(additional_income) if additional_income > 0 else None
         itemized = 0.0
         for index, member in enumerate(self.members):
             member_income = allocation[member.unique_id] if allocation else 0.0
             itemized += member.itemized_deductions(0.0, member_income, include_charitable=False, include_salt=False)
         itemized += self.salt_deduction(state_income_tax_paid, additional_income)
-        itemized += deductible_charity(self.members, self.agi(additional_income), self.config)
+        itemized += self.charitable(additional_income).itemized
         return standard_deduction, itemized
+
+    def charitable(self, additional_income: float = 0.0):
+        """The return's charitable deduction worksheet (:func:`~life_model.tax.deductions.charitable_deduction`)."""
+        return charitable_deduction(self.members, self.agi(additional_income), self.filing_status, self.config)
 
     def salt_deduction(self, state_income_tax_paid: float = 0.0, additional_income: float = 0.0) -> float:
         """The return's SALT deduction: the members' property taxes plus the unit's state income tax,
@@ -257,7 +271,10 @@ class TaxUnit:
                 if name != "salt":
                     components[name] += amount
         components["salt"] = self.salt_deduction(state_income_tax_paid)
-        components["charity"] = deductible_charity(self.members, self.agi(), self.config)
+        charity = self.charitable()
+        # Schedule A line 11 (cash) and line 12 (appreciated property at FMV), each after the 2026+ floor.
+        components["charity"] = charity.cash_allowed - charity.floor_cash
+        components["charity_noncash"] = charity.property_allowed - charity.floor_property
         return components
 
     def agi(self, additional_income: float = 0.0) -> float:
@@ -410,35 +427,58 @@ class TaxUnit:
             additional_short_term=additional_short_term,
         )
         state_tax = state_detail.tax
-        standard, itemized, senior = self._deduction_parts(additional_income + additional_short_term, state_tax)
-        deductions = max(standard, itemized) + senior
+        prospective = additional_income + additional_short_term
+        preferential = self.preferential_income + additional_preferential
+        agi = max(ordinary_income + preferential, 0.0)
+        standard, itemized, senior = self._deduction_parts(prospective, state_tax)
+        charity = self.charitable(prospective)
+        plan = plan_deductions(
+            self,
+            agi,
+            standard,
+            itemized,
+            senior,
+            preferential,
+            additional_standard=(
+                additional_standard_deduction(self.members, self.filing_status, self.config) if standard > 0 else 0.0
+            ),
+            charitable=charity,
+        )
         taxes = compute_taxes(
             ordinary_income,
-            deductions,
+            plan.total,
             self.filing_status,
             wage_incomes,
             self.config,
             state_tax=state_tax,
-            preferential_income=self.preferential_income + additional_preferential,
+            preferential_income=preferential,
             net_investment_income=self.net_investment_income + additional_preferential + additional_short_term,
+            se_incomes=se_profits(self),
+            ss_wage_incomes=ss_wages(self),
         )
-        # Child Tax Credit: computed here (the only place with members, filing status, and AGI in
-        # scope) and recorded on the credits stage. Because the withdrawal-sizing fixed point
-        # consumes this method, credits automatically shrink sized 401k withdrawals.
         taxes.state_detail = state_detail
         taxes.standard_deduction = standard
-        taxes.itemized_deduction = itemized
+        taxes.itemized_deduction = plan.itemized
         taxes.senior_deduction = senior
-        num_children = self.num_qualifying_children
-        if num_children > 0:
-            nonrefundable, refundable = child_tax_credit_parts(
-                num_children, ordinary_income, taxes.federal, self.filing_status, self.config
-            )
-            taxes.credits += nonrefundable + refundable
-            taxes.nonrefundable_credits += nonrefundable
-            taxes.refundable_credits += refundable
-            if nonrefundable + refundable > 0:
-                taxes.credits_detail["child_tax_credit"] = nonrefundable + refundable
+        taxes.additional_standard_deduction = plan.additional_standard
+        taxes.qbi_deduction = plan.qbi.deduction
+        taxes.qbi_detail = plan.qbi
+        taxes.charitable_non_itemizer = plan.non_itemizer_charitable
+        taxes.charitable = charity
+        taxes.itemized_limitation = plan.itemized_limitation
+        taxes.itemize = plan.itemize
+        # The Form 8814 tax, AMT and every credit (Form 1040 order; tax/credits.py). Computed here, the
+        # only place with the members, filing status and AGI in scope; because the withdrawal-sizing
+        # fixed point consumes this method, credits shrink sized withdrawals automatically.
+        finish_federal(
+            self,
+            taxes,
+            agi,
+            plan,
+            self.salt_deduction(state_tax, prospective),
+            additional_preferential=additional_preferential,
+            additional_short_term=additional_short_term,
+        )
         # Early-withdrawal penalties are additional federal tax (added after the credit so the
         # nonrefundable CTC cannot offset them): those already on members' ledgers plus the ones a
         # prospective pre-tax draw of ``additional_income`` would trigger, split across members in
@@ -950,19 +990,15 @@ class TaxUnit:
                 bill_lines.extend(_loan_lines(member, debt, paid, interest, before, after, FlowKind.DEBT_SERVICE))
             member_interest += member_debt_interest
 
-            # Above-the-line student-loan interest deduction (IRC §221): the interest actually paid
-            # on student loans this year, capped, reduces ordinary taxable income (not FICA wages).
-            student_loan_interest = sum(sl.interest_paid_this_year for sl in member.student_loans)
-            deduction_limit = self.config.debt.student_loan.interest_deduction_limit
-            student_loan_deduction = min(student_loan_interest, deduction_limit)
-            if self.filing_status == FilingStatus.MARRIED_FILING_SEPARATELY:
-                student_loan_deduction = 0.0  # not allowed on a separate return (IRC §221(e)(2))
-            if student_loan_deduction > 0:
-                member.income.add(IncomeType.ORDINARY, -student_loan_deduction, source="student_loan_interest")
-
             housing_by_member[member.unique_id] = member_housing
             interest_by_member[member.unique_id] = member_interest + carried_interest_by_member[member.unique_id]
             debt_payment_by_member[member.unique_id] = member_debt_paid
+
+        # The year's settlement-time adjustments, once, before anything is sized against the tax: half
+        # of self-employment tax, taxable dependent care benefits, the Form 8814 inclusion, the IRA and
+        # Roth phase-outs and the student loan interest deduction (IRC §221: the interest paid this year,
+        # capped per return and phased out by MAGI; tax/household.py).
+        post_year_end_adjustments(self)
 
         total_spending = sum(spending_by_member.values())
         total_housing = sum(housing_by_member.values())
@@ -994,10 +1030,10 @@ class TaxUnit:
         for member in self.members:
             member.agi_history[year] = agi
 
-        # Charity above the AGI limit carries forward; consume/record carryforwards exactly once.
-        standard_deduction, itemized = self._deduction_choice(0.0, taxes.state)
-        settle_charitable_carryforwards(self.members, agi, year, self.config)
-        itemized_claimed = itemized if itemized > standard_deduction else 0.0
+        # Charity above the AGI limits carries forward (consumed/recorded exactly once), as do the
+        # minimum tax credit, AOTC years and the saver's-credit distribution history.
+        record_year_end(self, taxes, agi)
+        itemized_claimed = taxes.itemized_deduction if taxes.itemize else 0.0
 
         # Pay everything from the combined banks exactly once; a shortfall becomes new debt (every
         # source has already been drawn into the banks as far as it could be). Refundable credits
@@ -1086,6 +1122,26 @@ class TaxUnit:
                         taxes.medicare_by_worker[index], FlowKind.TAX, member, "medicare tax", sink="IRS: medicare tax"
                     )
                 )
+            if index < len(taxes.se_by_worker) and taxes.se_by_worker[index].total > 0:
+                lines.append(
+                    _BillLine(
+                        taxes.se_by_worker[index].total,
+                        FlowKind.TAX,
+                        member,
+                        "self-employment tax",
+                        sink="IRS: self-employment tax",
+                    )
+                )
+        if taxes.additional_medicare_se > 0:
+            lines.append(
+                _BillLine(
+                    taxes.additional_medicare_se,
+                    FlowKind.TAX,
+                    head,
+                    "additional medicare tax on self-employment income",
+                    sink="IRS: medicare tax",
+                )
+            )
         return lines
 
     def _size_gross_withdrawal(self, bills: float) -> float:
@@ -1157,8 +1213,9 @@ class TaxUnit:
             head.stat_taxes_paid = taxes.total
             head.stat_taxes_paid_federal = taxes.federal
             head.stat_taxes_paid_state = taxes.state
-            head.stat_taxes_paid_ss = taxes.ss
-            head.stat_taxes_paid_medicare = taxes.medicare
+            # Self-employment tax is the self-employed person's Social Security and Medicare tax.
+            head.stat_taxes_paid_ss = taxes.ss + sum(se.social_security for se in taxes.se_by_worker)
+            head.stat_taxes_paid_medicare = taxes.medicare + sum(se.medicare for se in taxes.se_by_worker)
             head.stat_taxes_paid_niit = taxes.niit
             head.stat_tax_credits = taxes.credits
             head.stat_tax_penalties = taxes.penalties
@@ -1175,6 +1232,13 @@ class TaxUnit:
             credits = share * taxes.credits
             ss = taxes.ss_by_worker[index]
             medicare = taxes.medicare_by_worker[index]
+            if index < len(taxes.se_by_worker):
+                se = taxes.se_by_worker[index]
+                se_total = sum(other.net_earnings for other in taxes.se_by_worker)
+                ss += se.social_security
+                medicare += se.medicare
+                if se_total > 0:
+                    medicare += taxes.additional_medicare_se * se.net_earnings / se_total
             member.stat_taxes_paid_federal = federal
             member.stat_taxes_paid_state = state
             member.stat_taxes_paid_ss = ss

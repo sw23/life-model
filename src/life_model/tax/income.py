@@ -45,6 +45,9 @@ class IncomeType(Enum):
     SHORT_TERM_CAPITAL_GAIN = "short_term_capital_gain"
     LONG_TERM_CAPITAL_GAIN = "long_term_capital_gain"  # Held over a year: preferential 0/15/20% rates.
     QUALIFIED_DIVIDEND = "qualified_dividend"  # Taxed at the same preferential rates as long-term gains.
+    # Schedule C net profit of a sole proprietorship: ordinary income, not FICA wages; the tax unit taxes
+    # it on Schedule SE (self-employment tax) and it is qualified business income (§199A).
+    SELF_EMPLOYMENT = "self_employment"
 
 
 #: Income types taxed under the preferential capital-gains rate schedule rather than the ordinary
@@ -102,6 +105,17 @@ class IncomeLedger:
         # 10% on early pre-tax distributions, 20% on non-medical HSA distributions), by source.
         # Settled as federal tax with the year's return.
         self.penalties_by_source: dict[str, float] = {}
+        # Alternative minimum tax adjustments (Form 6251 Part I) by source, e.g. ``"iso"`` for the bargain
+        # element of incentive stock options exercised and held (a deferral item). Not income.
+        self.amt_adjustments: dict[str, float] = {}
+        # Dependent care benefits (a dependent-care FSA, W-2 box 10) left out of wages this year; the
+        # tax unit adds back any part over the Form 2441 exclusion at settlement.
+        self.dependent_care_benefits = 0.0
+
+    def add_amt_adjustment(self, amount: float, *, source: str = "iso") -> None:
+        """Record an AMT adjustment (positive increases alternative minimum taxable income)."""
+        if amount:
+            self.amt_adjustments[source] = self.amt_adjustments.get(source, 0.0) + amount
 
     @property
     def penalties(self) -> float:
@@ -168,6 +182,8 @@ class IncomeLedger:
         """Reset the ledger for the next year (mirrors the old ``taxable_income = 0``)."""
         self.entries.clear()
         self.penalties_by_source = {}
+        self.amt_adjustments = {}
+        self.dependent_care_benefits = 0.0
 
     @property
     def ordinary_taxable(self) -> float:
@@ -206,6 +222,16 @@ class IncomeLedger:
     def fica_wages(self) -> float:
         """Total FICA-subject wages (payroll tax base)."""
         return sum(e.fica_wages for e in self.entries)
+
+    @property
+    def self_employment_income(self) -> float:
+        """Schedule C net profit recorded this year (the Schedule SE base)."""
+        return sum(e.amount for e in self.entries if e.income_type == IncomeType.SELF_EMPLOYMENT)
+
+    @property
+    def wages(self) -> float:
+        """W-2 box 1 wages (ordinary wage entries, net of pre-tax deferrals and excluded benefits)."""
+        return sum(e.amount for e in self.entries if e.income_type == IncomeType.WAGES)
 
     def totals_by_type(self) -> "dict[IncomeType, float]":
         """Taxable amount contributed by each income type, preferential types included.

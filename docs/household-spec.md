@@ -139,7 +139,7 @@ Builds: `Person`.
 | `healthcare` | [Healthcare](#healthcare) (optional) |  | — |  | Opt-in healthcare cost agents. |
 | `giving` | list[[Donation](#donation)] |  | [] |  | Charitable giving. |
 | `children` | list[[Child](#child)] |  | [] |  | Child dependents. |
-| `self_employment` | [SelfEmployment](#selfemployment) (optional) |  | — |  | Self-employment income. NOT YET SUPPORTED (Plan 31): rejected by the validator. |
+| `self_employment` | [SelfEmployment](#selfemployment) (optional) |  | — |  | Self-employment income (Schedule C). |
 | `contribution_plans` | list[[ContributionPlan](#contributionplan)] (optional) |  | — |  | Recurring contributions. NOT YET SUPPORTED (Plan 27 D4): rejected by the validator. |
 | `savings_policy` | [SavingsPolicy](#savingspolicy) (optional) |  | — |  | Surplus sweep above a cash floor. NOT YET SUPPORTED (Plan 27 D4): rejected by the validator. |
 
@@ -185,7 +185,7 @@ Builds: `Job + Salary`.
 | `end_year` | integer (optional) | year | — |  | Last year the job pays. NOT YET SUPPORTED (Plan 27 D3): rejected by the validator. |
 | `bonus_fixed_annual` | number (optional) | USD/year | — |  | Fixed-dollar bonus. NOT YET SUPPORTED (Plan 27 D3): rejected by the validator. |
 | `raises` | list[list[integer, number]] (optional) |  | — |  | (year, raise percent) schedule. NOT YET SUPPORTED (Plan 27 D3): rejected by the validator. |
-| `payroll` | [Payroll](#payroll) (optional) |  | — |  | Pre-tax payroll deductions (health premiums, FSA, ...). NOT YET SUPPORTED (Plan 27 D3): rejected by the validator. |
+| `payroll` | [Payroll](#payroll) (optional) |  | — | `Job.payroll` | Pre-tax payroll deductions (the dependent-care FSA; the others are Plan 27 D3). |
 
 ## StockPlan
 
@@ -205,6 +205,7 @@ Builds: `StockPlan`.
 | `growth_pct` | number \\| `"economy"` | percent (typically > 1) | `"economy"` | `StockPlan.growth_rate` | Company stock growth; 'economy' follows the equity return. |
 | `existing_grants` | list[[StockGrant](#stockgrant)] (optional) |  | — |  | Grants made before the start year with unvested shares. NOT YET SUPPORTED (Plan 27 D1): rejected by the validator. |
 | `espp_discount_pct` | number (optional) | percent | — |  | ESPP purchase discount. NOT YET SUPPORTED (Plan 27 PR B): rejected by the validator. |
+| `options` | list[[StockOption](#stockoption)] |  | [] | `StockPlan.options` | Stock options (ISO / NSO) to exercise. |
 
 ## StockGrant
 
@@ -216,19 +217,35 @@ An existing (already granted, partly unvested) equity grant (Plan 27 D1).
 | `value` | number | USD | **required** |  | Grant value at grant. |
 | `vesting_schedule_pct` | list[number] | percent | **required** |  | Percent vesting each year. |
 
-## Payroll
+## StockOption
 
-Pre-tax payroll deductions (Plan 27 D3).
+A stock option exercised in a planned year (Plan 31): an NSO's spread is wages; an ISO exercised and held puts its spread into AMT (Form 6251 line 2i), and the minimum tax credit follows in later years.
+
+Builds: `StockOption`.
 
 | Field | Type | Unit | Default | Maps to | Description |
 |---|---|---|---|---|---|
-| `health_premium_monthly` | number | USD/month | `0.0` |  | Health premium. |
-| `dental_vision_monthly` | number | USD/month | `0.0` |  | Dental/vision. |
-| `fsa_annual` | number | USD/year | `0.0` |  | Health FSA. |
-| `dependent_care_fsa_annual` | number | USD/year | `0.0` |  | Dependent-care FSA. |
-| `hsa_employee_annual` | number | USD/year | `0.0` |  | Employee HSA. |
-| `hsa_employer_annual` | number | USD/year | `0.0` |  | Employer HSA. |
-| `commuter_monthly` | number | USD/month | `0.0` |  | Commuter benefit. |
+| `kind` | `"iso"` \\| `"nso"` |  | **required** |  | Incentive (ISO) or nonqualified (NSO) option. |
+| `exercise_year` | integer | year | **required** |  | Year the option is exercised. |
+| `exercise_cost` | number | USD | **required** | `StockOption.exercise_cost` | Strike price times shares (cash paid at exercise). |
+| `value` | number | USD | **required** | `StockOption.value` | Market value of the shares at the start year; revalued by the plan's stock growth to the exercise year (set growth_pct 0 to exercise at exactly this value). |
+| `sell_at_exercise` | boolean |  | `False` | `StockOption.sell_at_exercise` | Cashless same-day sale (for an ISO a disqualifying disposition: ordinary income, no AMT). Otherwise the shares are held in the person's first brokerage account. |
+
+## Payroll
+
+Pre-tax payroll deductions (Plan 27 D3; the dependent-care FSA is supported since Plan 31).
+
+Builds: `PayrollDeductions`.
+
+| Field | Type | Unit | Default | Maps to | Description |
+|---|---|---|---|---|---|
+| `health_premium_monthly` | number | USD/month | `0.0` |  | Health premium. NOT YET SUPPORTED (Plan 27 D3): rejected by the validator. |
+| `dental_vision_monthly` | number | USD/month | `0.0` |  | Dental/vision. NOT YET SUPPORTED (Plan 27 D3): rejected by the validator. |
+| `fsa_annual` | number | USD/year | `0.0` |  | Health FSA. NOT YET SUPPORTED (Plan 27 D3): rejected by the validator. |
+| `dependent_care_fsa_annual` | number | USD/year | `0.0` | `PayrollDeductions.dependent_care_fsa_annual` | Dependent-care FSA election (W-2 box 10): excluded from wages and FICA up to the Form 2441 limit ($5,000; $7,500 from 2026), and it reduces the expenses the dependent care credit can use. |
+| `hsa_employee_annual` | number | USD/year | `0.0` |  | Employee HSA. NOT YET SUPPORTED (Plan 27 D3): rejected by the validator. |
+| `hsa_employer_annual` | number | USD/year | `0.0` |  | Employer HSA. NOT YET SUPPORTED (Plan 27 D3): rejected by the validator. |
+| `commuter_monthly` | number | USD/month | `0.0` |  | Commuter benefit. NOT YET SUPPORTED (Plan 27 D3): rejected by the validator. |
 
 ## BankAccount
 
@@ -709,7 +726,7 @@ Builds: `Donation`.
 | `id` | string (optional) |  | — |  | Optional identifier for this donation, unique across the spec. Required when another entry references it (a 401k's job, an event's target, a relative event's anchor). |
 | `charity` | string |  | **required** | `Donation.charity_name` | Charity name. |
 | `amount_annual` | number | USD/year | **required** | `Donation.annual_amount` | Amount given each time (every frequency_years). |
-| `donation_type` | `"cash"` \\| `"stock"` \\| `"property"` \\| `"other"` |  | `"cash"` | `Donation.donation_type` | What is given. |
+| `donation_type` | `"cash"` \\| `"stock"` \\| `"property"` \\| `"other"` \\| `"qcd"` |  | `"cash"` | `Donation.donation_type` | What is given: 'cash'; 'stock' (appreciated long-term shares from the person's brokerage accounts, deducted at fair market value up to 30% of AGI with no capital gain; any shortfall in cash); 'qcd' (a qualified charitable distribution from the person's traditional IRAs from age 70½, up to the year's limit: not income, counts toward the RMD, not deductible; cash before then); 'property' and 'other' are deducted like cash. |
 | `tax_deductible` | boolean |  | `True` | `Donation.tax_deductible` | Deductible. |
 | `frequency_years` | integer | years | `1` | `Donation.frequency_years` | Give every N years. |
 | `start_year` | integer (optional) | year | — | `Donation.start_year` | First year (defaults to start). |
@@ -727,19 +744,27 @@ Builds: `Child`.
 | `name` | string |  | **required** | `Child.name` | Child's name. |
 | `birth_year` | integer | year | **required** | `Child.birth_year` | Birth year (future years are planned births). |
 | `cost_override_annual` | number (optional) | USD/year | — |  | Per-child cost instead of the config bands. NOT YET SUPPORTED (Plan 27 D6): rejected by the validator. |
+| `care_expenses_annual` | number | USD/year | `0.0` | `Child.care_expenses_annual` | Dependent care (after-school care, day camp) paid while the child is under 13, on top of the age-band cost, in start-year dollars. The childcare band's cost (under 6) already counts as care expenses for the dependent care credit. |
+| `interest_annual` | number | USD/year | `0.0` | `Child.interest_annual` | The child's own interest income (a custodial account, not part of the household's balances), reported by the parents on Form 8814 (kiddie tax). |
+| `dividends_annual` | number | USD/year | `0.0` | `Child.dividends_annual` | The child's own qualified dividends (same as interest_annual). |
 
 ## SelfEmployment
 
-Self-employment income (Plan 31): Schedule C profit, SE tax, QBI, estimated payments.
+Self-employment income (Plan 31): a sole proprietorship built as ``Job(kind="self_employed")``. The net profit (gross receipts less expenses) is paid to the bank like wages, taxed as Schedule C income with self-employment tax (Schedule SE, sharing the Social Security wage base with W-2 wages), half of it deducted, the SEP / solo 401(k) contribution deducted, and the qualified business income deduction. Withholding and estimated payments are not modeled yet (the tax is settled with the year, Plan 31 D3). A ``kind: 401k`` account whose ``job`` is this entry's ``id`` is a solo 401(k).
 
-**Not yet supported (Plan 31).**
+Builds: `Job (kind='self_employed')`.
 
 | Field | Type | Unit | Default | Maps to | Description |
 |---|---|---|---|---|---|
-| `business` | string |  | **required** |  | Business name. |
-| `net_profit_annual` | number | USD/year | **required** |  | Schedule C net profit. |
-| `growth_pct` | number \\| `"economy"` | percent | `0.0` |  | Yearly growth of profit. |
-| `sep_ira_contrib_pct` | number | percent | `0.0` |  | SEP-IRA contribution. |
+| `id` | string (optional) |  | — |  | Optional identifier for this business (a solo 401k account names it as its job), unique across the spec. Required when another entry references it (a 401k's job, an event's target, a relative event's anchor). |
+| `business` | string |  | **required** | `Job.company` | Business name. |
+| `net_profit_annual` | number (optional) | USD/year | — | `Salary.base` | Schedule C net profit (line 31). Give it, or gross_receipts_annual and expenses_annual. |
+| `gross_receipts_annual` | number (optional) | USD/year | — | `Salary.base` | Gross receipts (Schedule C line 1). |
+| `expenses_annual` | number | USD/year | `0.0` | `Job.expenses_annual` | Business expenses (Schedule C line 28); they grow with the receipts. |
+| `growth_pct` | number \\| `"economy"` | percent | `0.0` |  | Yearly growth of the receipts; 'economy' follows wage growth. |
+| `sep_ira_contrib_pct` | number | percent | `0.0` | `Job.plan_contribution_percent` | Employer plan rate of the SEP (or the solo 401(k)'s profit sharing), at most 25: the owner contributes rate / (1 + rate) of net profit less half of SE tax (Pub. 560), within the year's limits. |
+| `sep_account` | string (optional) |  | — | `Job.sep_account` | Id of the traditional_ira receiving the SEP contribution (default: the person's first traditional IRA, or a new one). |
+| `sstb` | boolean |  | `False` | `Job.sstb` | A specified service trade or business (§199A(d)(2)). |
 
 ## ContributionPlan
 

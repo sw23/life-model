@@ -101,13 +101,13 @@ year was settled with. `total_income - total_adjustments = agi`; `agi - deductio
 | `member_names` | `tuple` | Names of the members filing the return. |
 | `filing_status` | `str` | Filing status name (``SINGLE``, ``MARRIED_FILING_JOINTLY``, ...). |
 | `state` | `str` | State the unit files in (the head's). |
-| `wages` | `float` | W-2 wages (salary and RSU vests, net of pre-tax 401k deferrals). |
+| `wages` | `float` | W-2 wages (salary and RSU vests, net of pre-tax 401k deferrals and excluded dependent care benefits), plus taxable dependent care benefits (line 1e). |
 | `taxable_interest` | `float` | Taxable interest (bank, corporate and Treasury interest). |
 | `tax_exempt_interest` | `float` | Tax-exempt (municipal) interest; not in total income. |
 | `ordinary_dividends` | `float` | Ordinary dividends (the model's dividends are all qualified). |
 | `qualified_dividends` | `float` | Qualified dividends (taxed on the preferential schedule). |
-| `ira_distributions_gross` | `float` | IRA / 401k / inherited-account distributions, gross. |
-| `ira_distributions_taxable` | `float` | Taxable part of those distributions (all of it in the model). |
+| `ira_distributions_gross` | `float` | IRA / 401k / inherited-account distributions, gross (qualified charitable distributions included). |
+| `ira_distributions_taxable` | `float` | Taxable part of those distributions (all but qualified charitable distributions). |
 | `pensions_and_annuities` | `float` | Taxable pension income and the taxable part of annuity payments. |
 | `social_security_gross` | `float` | Social Security benefits received. |
 | `social_security_taxable` | `float` | Taxable part of the benefits (IRC §86). |
@@ -121,15 +121,15 @@ year was settled with. `total_income - total_adjustments = agi`; `agi - deductio
 | `other_income` | `float` | Other income (non-medical HSA draws, 529 earnings, forgiven debt, ...). |
 | `other_income_by_source` | `dict` | ``other_income`` by source. |
 | `total_income` | `float` | Line 9: sum of the income lines above (excluding tax-exempt interest). |
-| `adjustments` | `dict` | Above-the-line adjustments by source (IRA, HSA, student-loan interest). |
+| `adjustments` | `dict` | Above-the-line adjustments by source (IRA, HSA, student-loan interest, half of SE tax, self-employed plan). |
 | `total_adjustments` | `float` | Sum of ``adjustments``. |
 | `agi` | `float` | Adjusted gross income: ``max(total_income - total_adjustments, 0)``. |
-| `standard_deduction` | `float` | Standard deduction for the filing status (0 for MFS when the spouse itemizes). |
-| `itemized_deductions` | `float` | Itemized deductions compared against the standard deduction. |
-| `itemized_components` | `dict` | Itemized deductions by component (mortgage interest, SALT after the cap, medical, charity). |
+| `standard_deduction` | `float` | Standard deduction for the filing status plus the §63(f) amount for each member 65+ (0 for MFS when the spouse itemizes). |
+| `itemized_deductions` | `float` | Itemized deductions (after the 2026+ §68 limit) compared against the standard deduction. |
+| `itemized_components` | `dict` | Itemized deductions by component before the §68 limit (mortgage interest, SALT after the cap, medical, charity in cash and charity_noncash, each after the 2026+ 0.5% floor). |
 | `deduction_taken` | `str` | ``standard`` or ``itemized``. |
 | `senior_deduction` | `float` | OBBBA senior deduction (added on top of either deduction). |
-| `deduction` | `float` | Total deduction subtracted from AGI. |
+| `deduction` | `float` | Total deduction subtracted from AGI (lines 12e-14: standard or itemized, the non-itemizer charitable deduction, the senior deduction and the QBI deduction). |
 | `taxable_income` | `float` | ``max(agi - deduction, 0)``. |
 | `taxable_ordinary_income` | `float` | Part of taxable income taxed on the ordinary brackets. |
 | `taxable_preferential_income` | `float` | Part of taxable income taxed on the capital-gains schedule. |
@@ -137,23 +137,40 @@ year was settled with. `total_income - total_adjustments = agi`; `agi - deductio
 | `ordinary_brackets` | `tuple` | Bracket slices ``(lower, upper, rate_percent, amount, tax)``; their taxes sum to ``ordinary_tax``. |
 | `preferential_tax` | `float` | Tax on qualified dividends and long-term gains. |
 | `niit` | `float` | Net investment income tax (IRC §1411). |
-| `amt` | `float` | Alternative minimum tax (not modeled yet; always 0). |
-| `credits` | `dict` | Credits by name (``child_tax_credit``). |
+| `amt` | `float` | Alternative minimum tax (Form 6251 line 11). |
+| `credits` | `dict` | Credits by name (``child_tax_credit``, ``earned_income_credit``, ``dependent_care_credit``, ``education_credits``, ``savers_credit``, ``minimum_tax_credit``). |
 | `nonrefundable_credits` | `float` | Credits limited to the income tax. |
 | `refundable_credits` | `float` | Credits paid even beyond the income tax. |
 | `total_credits` | `float` | Sum of ``credits``. |
 | `penalties` | `dict` | Additional taxes by source (``early_withdrawal``, ``hsa_non_medical``, ``roth_ira_earnings``, ...). |
 | `total_penalties` | `float` | Sum of ``penalties``. |
-| `federal_tax` | `float` | Federal income tax: ordinary + preferential + NIIT + AMT - credits + penalties (negative = refund). |
-| `fica` | `tuple` | Payroll taxes per member. |
+| `federal_tax` | `float` | Federal income tax: ordinary + preferential + Form 8814 tax + NIIT + AMT - credits + penalties (negative = refund). |
+| `fica` | `tuple` | Payroll taxes per member (and each member's Schedule SE profit and tax). |
 | `social_security_tax` | `float` | Social Security tax (all members). |
 | `medicare_tax` | `float` | Medicare tax including the additional Medicare tax (all members). |
 | `additional_medicare_tax` | `float` | Additional Medicare tax on combined wages over the threshold. |
 | `state_return` | `life_model.tax.return_record.StateReturn \| None` | State return lines. |
 | `state_tax` | `float` | State income tax. |
-| `total_tax` | `float` | Everything the unit paid in tax this year: federal + state + payroll. |
+| `total_tax` | `float` | Everything the unit paid in tax this year: federal + state + payroll + self-employment tax. |
 | `marginal_rate` | `float` | Ordinary-bracket rate (percent) of the last taxable ordinary dollar. |
 | `effective_rate` | `float` | ``federal_tax / agi`` as a percent (0 when AGI is 0). |
+| `business_income` | `float` | Schedule C net profit (Schedule 1 line 3). |
+| `taxable_dependent_care_benefits` | `float` | Dependent care benefits over the Form 2441 exclusion (line 1e; in ``wages``). |
+| `additional_standard_deduction` | `float` | The §63(f) part of ``standard_deduction`` (members 65+). |
+| `charitable_deduction_non_itemizer` | `float` | Non-itemizer cash charitable deduction (2026+, line 12f). |
+| `itemized_limitation` | `float` | §68 reduction of itemized deductions (2026+, 2/37 rule). |
+| `qualified_business_income` | `float` | Qualified business income (profit less half of SE tax and the self-employed plan). |
+| `qbi_deduction` | `float` | Qualified business income deduction (Form 8995). |
+| `kiddie_tax` | `float` | Form 8814 tax on a child's interest and dividends (part of line 16). |
+| `alternative_minimum_taxable_income` | `float` | Form 6251 line 4. |
+| `tentative_minimum_tax` | `float` | Form 6251 line 9. |
+| `amt_credit_generated` | `float` | Minimum tax credit this year's AMT creates for later years (Form 8801). |
+| `credits_nonrefundable` | `dict` | The nonrefundable part of each credit. |
+| `credits_refundable` | `dict` | The refundable part of each credit. |
+| `earned_income` | `float` | Earned income for the earned income, additional child and dependent care credits. |
+| `self_employment_tax` | `float` | Self-employment tax (Schedule SE line 12, all members). |
+| `self_employment_tax_deduction` | `float` | Deductible half of self-employment tax (Schedule 1 line 15). |
+| `additional_medicare_tax_self_employment` | `float` | The part of ``additional_medicare_tax`` on self-employment income (Form 8959 Part II; in ``medicare_tax``, on no member's FICA line). |
 
 ## Cash-flow ledger
 
@@ -184,7 +201,8 @@ banks) and `Debt:<person>` (unpaid bills carried as debt, a liability).
 | --- | --- |
 | `wage` | Salary paid by an employer. |
 | `bonus` | Bonus paid by an employer. |
-| `vest` | Stock compensation vesting (to cash or a brokerage account). |
+| `vest` | Stock compensation vesting (to cash or a brokerage account), and the spread of exercised stock options. |
+| `business_income` | Self-employment net profit (Schedule C) paid to the owner. |
 | `interest` | Interest earned (bank accounts). |
 | `dividend` | Dividends paid into an account. |
 | `growth` | Market growth of an account or asset (negative in a down year). |

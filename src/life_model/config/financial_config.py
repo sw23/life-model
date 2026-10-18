@@ -33,6 +33,111 @@ if TYPE_CHECKING:
     from ..tax.federal import FilingStatus
 
 
+#: ``YearlyTaxParameters`` fields that live only in ``tax_years`` and are copied onto
+#: ``tax.federal`` by :meth:`FinancialConfig.year_view` (Plan 31).
+YEAR_ONLY_FEDERAL_FIELDS = (
+    "additional_standard_deduction",
+    "eitc",
+    "dependent_care",
+    "savers_credit",
+    "ira_phaseouts",
+    "student_loan_phaseout",
+    "amt",
+    "qbi",
+    "kiddie_tax",
+    "qcd_limit",
+    "ltc_premium_limits",
+    "compensation_limit",
+)
+
+
+def _project_plan31_params(data: dict, factor: float, round_to) -> None:
+    """Index the Plan 31 parameters of a year past the table (in place, on ``model_dump()`` data).
+
+    A projection, not law: each amount is scaled by ``factor`` and rounded the way its statute rounds
+    the yearly adjustment (cited per line); statutory, unindexed amounts (the dependent care credit, the
+    §25A phase-outs, phase-out widths) are kept.
+    """
+
+    def down(value: float, base: int) -> int:
+        return int(math.floor(value * factor / base) * base)
+
+    def near(value: float, base: int) -> int:
+        return round_to(value * factor, base)
+
+    eitc = data.get("eitc")
+    if eitc is not None:
+        # §32(j)(2): earned income and phase-out amounts rounded to the nearest $10; the investment
+        # income limit to the nearest $50. The maximum credit is the rate times the earned income amount.
+        eitc["earned_income_amount"] = [near(v, 10) for v in eitc["earned_income_amount"]]
+        eitc["phaseout_start"] = [near(v, 10) for v in eitc["phaseout_start"]]
+        eitc["phaseout_start_joint"] = [near(v, 10) for v in eitc["phaseout_start_joint"]]
+        eitc["max_credit"] = [
+            round(amount * rate / 100) for amount, rate in zip(eitc["earned_income_amount"], eitc["credit_percent"])
+        ]
+        eitc["investment_income_limit"] = near(eitc["investment_income_limit"], 50)
+    savers = data.get("savers_credit")
+    if savers is not None:
+        # §25B(b)(3): joint amounts rounded down to $500; head of household 3/4 and others 1/2 of joint.
+        joint = [down(v, 500) for v in savers["joint"]]
+        savers.update(joint=joint, head_of_household=[v * 0.75 for v in joint], other=[v * 0.5 for v in joint])
+
+    def shift(phaseout: dict, base: int) -> None:
+        width = phaseout["end"] - phaseout["start"]
+        phaseout["start"] = down(phaseout["start"], base)
+        phaseout["end"] = phaseout["start"] + width
+
+    ira = data.get("ira_phaseouts")
+    if ira is not None:
+        # §219(g)(8) and §408A(c)(3)(D): rounded down to $1,000; the separate-return range is statutory.
+        for name in (
+            "traditional_single",
+            "traditional_joint",
+            "traditional_spouse_covered",
+            "roth_single",
+            "roth_joint",
+        ):
+            shift(ira[name], 1000)
+    student = data.get("student_loan_phaseout")
+    if student is not None:
+        # §221(f)(2): rounded down to $5,000.
+        for name in ("single", "joint"):
+            shift(student[name], 5000)
+    amt = data.get("amt")
+    if amt is not None:
+        # §55(d)(4)(B): exemption and phase-out amounts, and the §55(b)(1) breakpoint, rounded to $100.
+        for name in (
+            "exemption_single",
+            "exemption_joint",
+            "exemption_separate",
+            "phaseout_start_single",
+            "phaseout_start_joint",
+            "phaseout_start_separate",
+            "breakpoint",
+            "breakpoint_separate",
+        ):
+            amt[name] = near(amt[name], 100)
+    qbi = data.get("qbi")
+    if qbi is not None:
+        # §199A(e)(2)(B): thresholds indexed (nearest $50 here); the phase-in widths are statutory; the
+        # §199A(i) minimum deduction and its QBI floor are indexed after 2026 (nearest $5 here).
+        for name in ("threshold_single", "threshold_joint", "threshold_separate"):
+            qbi[name] = near(qbi[name], 50)
+        if qbi.get("minimum_deduction"):
+            qbi["minimum_deduction"] = near(qbi["minimum_deduction"], 5)
+            qbi["minimum_qbi"] = near(qbi["minimum_qbi"], 5)
+    kiddie = data.get("kiddie_tax")
+    if kiddie is not None:
+        kiddie["base_amount"] = near(kiddie["base_amount"], 50)  # §63(c)(4): nearest $50
+    if data.get("qcd_limit") is not None:
+        data["qcd_limit"] = down(data["qcd_limit"], 1000)  # §408(d)(8)(G): rounded down to $1,000
+    if data.get("ltc_premium_limits") is not None:
+        for row in data["ltc_premium_limits"]:
+            row["limit"] = near(row["limit"], 10)  # §213(d)(10)(B): nearest $10
+    if data.get("compensation_limit") is not None:
+        data["compensation_limit"] = down(data["compensation_limit"], 5000)  # §401(a)(17)(B): down to $5,000
+
+
 class FinancialConfig:
     """Configuration for financial parameters, limits, and rates.
 
@@ -223,6 +328,10 @@ class FinancialConfig:
             federal_updates["salt_phaseout_threshold"] = params.salt.phaseout_threshold
         if params.niit is not None:
             federal_updates["niit"] = params.niit
+        for name in YEAR_ONLY_FEDERAL_FIELDS:
+            value = getattr(params, name)
+            if value is not None:
+                federal_updates[name] = value
         if params.senior_deduction_amount is not None:
             federal_updates["senior_deduction"] = federal.senior_deduction.model_copy(
                 update={"amount": params.senior_deduction_amount}
@@ -336,6 +445,7 @@ class FinancialConfig:
             data["additional_standard_deduction"] = {
                 k: round_to(v * factor, 50) for k, v in data["additional_standard_deduction"].items()
             }
+        _project_plan31_params(data, factor, round_to)
         # rmd_start_age is a structural (age) parameter, not a dollar amount — leave it.
         return YearlyTaxParameters(**data)
 

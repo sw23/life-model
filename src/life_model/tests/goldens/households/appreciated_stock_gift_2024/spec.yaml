@@ -1,0 +1,47 @@
+# Household golden (synthetic, not real data). See ../README.md.
+spec_version: 1
+meta:
+  name: Gift of appreciated shares
+  description: 'Household golden (synthetic): a high earner giving appreciated long-term shares to charity.'
+  as_of: 2024-01
+  start_year: 2024
+  end_year: 2024
+  seed: 1
+  default_state: TX
+people:
+- id: pat
+  name: Pat
+  age: 55
+  retirement_age: 67
+  spending:
+    amount_annual: 100000
+    growth_pct: 0
+  jobs:
+  - id: pat_job
+    company: Example Consulting LLC
+    salary_annual: 800000
+  accounts:
+  - kind: bank
+    id: pat_checking
+    company: Community Bank
+    type: Checking
+    balance: 50000
+    interest_pct: 0.0
+    compounding: annual
+    primary: true
+  - kind: brokerage
+    id: pat_brokerage
+    company: Example Brokerage
+    lots:
+    - value: 300000
+      cost_basis: 60000
+      acquired_year: 2015
+    growth_pct: 0
+    dividend_yield_pct: 0
+  giving:
+  - kind: donation
+    charity: Food Bank
+    amount_annual: 300000
+    donation_type: stock
+    start_year: 2024
+    end_year: 2024

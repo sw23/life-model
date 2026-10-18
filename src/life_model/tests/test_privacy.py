@@ -50,6 +50,15 @@ GENERIC_PROPER_WORDS = frozenset(
     {
         "AGI",
         "Additional",
+        # Tax-form vocabulary of the Plan 31 golden descriptions.
+        "American",
+        "FSA",
+        "III",
+        "Part",
+        "Pub",
+        "SE",
+        "SEP",
+        "Schedule",
         "Analyst",
         "Form",
         "IRC",

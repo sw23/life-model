@@ -1,0 +1,44 @@
+# Household golden (synthetic, not real data). See ../README.md.
+spec_version: 1
+meta:
+  name: Retiree giving from an IRA
+  description: 'Household golden (synthetic): a retiree giving to charity straight from a traditional IRA.'
+  as_of: 2024-01
+  start_year: 2024
+  end_year: 2024
+  seed: 1
+  default_state: TX
+people:
+- id: lee
+  name: Lee
+  age: 75
+  retirement_age: 67
+  spending:
+    amount_annual: 30000
+    growth_pct: 0
+  accounts:
+  - kind: bank
+    id: lee_checking
+    company: Community Bank
+    type: Checking
+    balance: 50000
+    interest_pct: 0.0
+    compounding: annual
+    primary: true
+  - kind: bank
+    id: lee_savings
+    company: Credit Union
+    type: Savings
+    balance: 200000
+    interest_pct: 4.0
+    compounding: annual
+  - kind: traditional_ira
+    id: lee_ira
+    balance: 500000
+    growth_pct: 0
+  gender: female
+  giving:
+  - kind: donation
+    charity: Food Bank
+    amount_annual: 10000
+    donation_type: qcd

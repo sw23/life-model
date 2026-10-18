@@ -46,14 +46,3 @@ RMDs (Pub. 590-B): pat $48,780.49; lee $30,188.68 ($1,200,000 / 24.6 at 75; $800
 | Form 1040 line 23 | Schedule 2 line 21 | $0.00 |
 | Form 1040 line 24 | 22 + 23 | $9,222.00 |
 | Form 1040 line 28 | no additional child tax credit (credit fully used) | $0.00 |
-
-## Expected failures
-
-- `1040:12e`: Plan 31 task 1: the engine does not apply the IRC §63(f) additional standard deduction for age 65+ ($1,600 per person on a joint return in 2025)
-- `1040:14`: Plan 31 task 1: the engine does not apply the IRC §63(f) additional standard deduction for age 65+ ($1,600 per person on a joint return in 2025)
-- `1040:15`: Plan 31 task 1: the engine does not apply the IRC §63(f) additional standard deduction for age 65+ ($1,600 per person on a joint return in 2025)
-- `1040:16`: Plan 31 task 1: the engine does not apply the IRC §63(f) additional standard deduction for age 65+ ($1,600 per person on a joint return in 2025)
-- `1040:18`: Plan 31 task 1: the engine does not apply the IRC §63(f) additional standard deduction for age 65+ ($1,600 per person on a joint return in 2025)
-- `1040:22`: Plan 31 task 1: the engine does not apply the IRC §63(f) additional standard deduction for age 65+ ($1,600 per person on a joint return in 2025)
-- `1040:24`: Plan 31 task 1: the engine does not apply the IRC §63(f) additional standard deduction for age 65+ ($1,600 per person on a joint return in 2025)
-- `exact:1040:16`: Plan 31 task 1: the engine does not apply the IRC §63(f) additional standard deduction for age 65+ ($1,600 per person on a joint return in 2025)

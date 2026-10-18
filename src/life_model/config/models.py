@@ -98,12 +98,30 @@ class SeniorDeductionConfig(StrictModel):
 
 
 class CharitableConfig(StrictModel):
-    """AGI limit on deductible cash gifts to public charities (incl. donor-advised funds)."""
+    """Charitable deduction limits: the AGI limits on cash and appreciated property, and the OBBBA
+    changes from 2026 (the non-itemizer deduction, the 0.5%-of-AGI floor and the 2/37 limit on
+    itemized deductions). Every field is statutory (not inflation-indexed)."""
 
     # vintage: statutory, source: IRC §170(b)(1)(G) 60% cash limit (made permanent by OBBBA);
     # §170(d)(1) five-year carryover of the excess
     cash_agi_limit_percent: float = Field(default=60.0, ge=0, le=100)
     carryforward_years: int = Field(default=5, ge=0)
+    # vintage: statutory, source: IRC §170(b)(1)(C)(i): long-term capital gain property given to a
+    # public charity (deducted at fair market value) is limited to 30% of AGI; §170(b)(1)(C)(ii) carryover.
+    property_agi_limit_percent: float = Field(default=30.0, ge=0, le=100)
+    # vintage: statutory, source: OBBBA (P.L. 119-21) §70424, IRC §170(p): non-itemizers deduct cash gifts to
+    # public charities (not donor-advised funds) up to $1,000 ($2,000 joint), tax years after 2025. None: off.
+    non_itemizer_first_year: int | None = None
+    non_itemizer_limit_single: float = Field(default=1000, ge=0)
+    non_itemizer_limit_joint: float = Field(default=2000, ge=0)
+    # vintage: statutory, source: OBBBA §70425, IRC §170(b)(1)(I): itemized charitable deductions are
+    # allowed only to the extent they exceed 0.5% of the contribution base (AGI), tax years after 2025.
+    floor_first_year: int | None = None
+    floor_percent: float = Field(default=0.5, ge=0, le=100)
+    # vintage: statutory, source: OBBBA §70111, IRC §68: itemized deductions are reduced by 2/37 of the
+    # lesser of the deductions or the taxable income (plus the deductions) above the 37% bracket start,
+    # tax years after 2025. None: off.
+    itemized_limit_first_year: int | None = None
 
 
 class SaltCapStatuteConfig(StrictModel):
@@ -126,11 +144,199 @@ class SaltCapYear(StrictModel):
 
 
 class AdditionalStandardDeduction(StrictModel):
-    """IRC §63(f) additional standard deduction per condition (age 65+, blind). Recorded for Plan 31;
-    the engine does not apply it yet."""
+    """IRC §63(f) additional standard deduction per condition (age 65+; blindness is not modeled):
+    ``married`` on a joint or separate return, ``unmarried`` for single and head of household."""
 
     married: int = Field(ge=0)
     unmarried: int = Field(ge=0)
+
+
+class Phaseout(StrictModel):
+    """A MAGI range over which a benefit phases out linearly: full below ``start``, none from ``end``."""
+
+    start: float = Field(ge=0)
+    end: float = Field(ge=0)
+
+    def fraction_allowed(self, magi: float) -> float:
+        """Share of the benefit left at ``magi`` (1 below ``start``, 0 from ``end``)."""
+        if magi <= self.start:
+            return 1.0
+        if magi >= self.end or self.end <= self.start:
+            return 0.0
+        return (self.end - magi) / (self.end - self.start)
+
+
+class EITCYear(StrictModel):
+    """Earned income credit (IRC §32) for 0, 1, 2 and 3+ qualifying children (four-element lists).
+
+    The dollar amounts are the year's published table (Rev. Proc. §32(b) table); the percentages are
+    statutory (§32(b)(1)). ``phaseout_start`` is for every status but joint (``phaseout_start_joint``).
+    """
+
+    earned_income_amount: list[float] = Field(min_length=4, max_length=4)
+    max_credit: list[float] = Field(min_length=4, max_length=4)
+    phaseout_start: list[float] = Field(min_length=4, max_length=4)
+    phaseout_start_joint: list[float] = Field(min_length=4, max_length=4)
+    investment_income_limit: float = Field(ge=0)
+    # vintage: statutory, source: IRC §32(b)(1)
+    credit_percent: list[float] = Field(default=[7.65, 34.0, 40.0, 45.0], min_length=4, max_length=4)
+    phaseout_percent: list[float] = Field(default=[7.65, 15.98, 21.06, 21.06], min_length=4, max_length=4)
+
+
+class DependentCareYear(StrictModel):
+    """Child and dependent care credit (IRC §21) and the dependent care assistance exclusion (§129).
+
+    The credit rate starts at ``max_rate`` and drops one point per ``step`` (or fraction) of AGI over
+    ``first_start``, not below ``first_floor``; from 2026 (OBBBA §70405) it then drops one more point
+    per ``second_step`` (``second_step_joint``) over ``second_start`` (``second_start_joint``), not
+    below ``second_floor``. Not inflation-indexed.
+    """
+
+    exclusion_limit: float = Field(ge=0)  # §129(a)(2)(A); half on a separate return
+    expense_limit_one: float = Field(default=3000, ge=0)  # §21(c)(1)
+    expense_limit_two: float = Field(default=6000, ge=0)  # §21(c)(2)
+    max_rate: float = Field(ge=0, le=100)
+    first_floor: float = Field(ge=0, le=100)
+    first_start: float = Field(default=15000, ge=0)
+    step: float = Field(default=2000, gt=0)
+    second_start: float | None = None
+    second_start_joint: float | None = None
+    second_step: float = Field(default=2000, gt=0)
+    second_step_joint: float = Field(default=4000, gt=0)
+    second_floor: float = Field(default=20.0, ge=0, le=100)
+
+
+class SaversCreditYear(StrictModel):
+    """Retirement savings contributions credit (IRC §25B): AGI ceilings of the 50%, 20% and 10% tiers by
+    filing status; ``rates`` and ``max_contribution`` (per person) are statutory."""
+
+    joint: list[float] = Field(min_length=3, max_length=3)
+    head_of_household: list[float] = Field(min_length=3, max_length=3)
+    other: list[float] = Field(min_length=3, max_length=3)
+    rates: list[float] = Field(default=[50.0, 20.0, 10.0], min_length=3, max_length=3)
+    max_contribution: float = Field(default=2000, ge=0)
+
+
+class IRAPhaseoutsYear(StrictModel):
+    """Traditional IRA deduction (§219(g)) and Roth IRA contribution (§408A(c)(3)) MAGI phase-outs.
+
+    ``traditional_*`` apply to an active participant in a workplace plan (single/HoH, joint) and to a
+    non-participant whose spouse participates (``traditional_spouse_covered``). A separate return
+    phases out over ``separate`` (statutory $0-$10,000) for both.
+    """
+
+    traditional_single: Phaseout
+    traditional_joint: Phaseout
+    traditional_spouse_covered: Phaseout
+    roth_single: Phaseout
+    roth_joint: Phaseout
+    separate: Phaseout = Field(default_factory=lambda: Phaseout(start=0, end=10000))
+
+
+class StudentLoanPhaseoutYear(StrictModel):
+    """Student loan interest deduction (§221(b)(2)) MAGI phase-out by filing status (not allowed on a
+    separate return)."""
+
+    single: Phaseout
+    joint: Phaseout
+
+
+class AMTYear(StrictModel):
+    """Alternative minimum tax (IRC §55): exemption, its phase-out (``phaseout_rate`` percent of AMTI
+    over the threshold: 25%, 50% from 2026 under OBBBA §70107), and the 26%/28% breakpoint."""
+
+    exemption_single: float = Field(ge=0)
+    exemption_joint: float = Field(ge=0)
+    exemption_separate: float = Field(ge=0)
+    phaseout_start_single: float = Field(ge=0)
+    phaseout_start_joint: float = Field(ge=0)
+    phaseout_start_separate: float = Field(ge=0)
+    phaseout_rate: float = Field(default=25.0, ge=0, le=100)
+    breakpoint: float = Field(ge=0)
+    breakpoint_separate: float = Field(ge=0)
+    # vintage: statutory, source: IRC §55(b)(1)(A)
+    low_rate: float = Field(default=26.0, ge=0, le=100)
+    high_rate: float = Field(default=28.0, ge=0, le=100)
+
+
+class QBIYear(StrictModel):
+    """Qualified business income deduction (IRC §199A): taxable-income thresholds and phase-in range
+    widths (50k/100k through 2025; 75k/150k from 2026, OBBBA §70105), and the 2026+ minimum deduction
+    for at least ``minimum_qbi`` of active QBI."""
+
+    threshold_single: float = Field(ge=0)
+    threshold_joint: float = Field(ge=0)
+    threshold_separate: float = Field(ge=0)
+    phase_in_single: float = Field(ge=0)
+    phase_in_joint: float = Field(ge=0)
+    rate: float = Field(default=20.0, ge=0, le=100)
+    minimum_deduction: float = Field(default=0.0, ge=0)
+    minimum_qbi: float = Field(default=1000.0, ge=0)
+
+
+class KiddieTaxYear(StrictModel):
+    """Kiddie tax (IRC §1(g)) amounts: ``base_amount`` is the §1(g)(4)(A)(ii)(I) amount ($1,300 in 2024).
+    Form 8814 (the parents' election, §1(g)(7)) excludes the first ``base_amount`` of the child's interest
+    and dividends, taxes the next ``base_amount`` at 10%, and adds the rest to the parents' income; it
+    is open while the child's gross income is under 10 x ``base_amount``."""
+
+    base_amount: float = Field(ge=0)
+
+
+class LTCPremiumLimit(StrictModel):
+    """§213(d)(10) eligible long-term care premium limit for an attained age up to ``max_age``."""
+
+    max_age: int = Field(ge=0)
+    limit: float = Field(ge=0)
+
+
+class EducationCreditsConfig(StrictModel):
+    """American opportunity and lifetime learning credits (IRC §25A). Statutory and no longer indexed
+    (P.L. 116-260 §104 repealed §25A(h))."""
+
+    # vintage: statutory, source: IRC §25A(b)(1), (b)(2)(C), (i)(5)-(6)
+    aotc_full_expenses: float = Field(default=2000, ge=0)  # 100% of the first $2,000
+    aotc_partial_expenses: float = Field(default=2000, ge=0)  # 25% of the next $2,000
+    aotc_partial_rate: float = Field(default=25.0, ge=0, le=100)
+    aotc_refundable_percent: float = Field(default=40.0, ge=0, le=100)
+    aotc_max_years: int = Field(default=4, ge=0)
+    # vintage: statutory, source: IRC §25A(c)(1)
+    llc_expense_limit: float = Field(default=10000, ge=0)
+    llc_rate: float = Field(default=20.0, ge=0, le=100)
+    # vintage: statutory, source: IRC §25A(d) (both credits; not indexed since 2021)
+    phaseout_single: Phaseout = Field(default_factory=lambda: Phaseout(start=80000, end=90000))
+    phaseout_joint: Phaseout = Field(default_factory=lambda: Phaseout(start=160000, end=180000))
+
+
+class CreditStatuteConfig(StrictModel):
+    """Statutory switches of the credits computed in ``tax/credits.py``."""
+
+    # vintage: statutory, source: SECURE 2.0 Act (P.L. 117-328) §103(e)-(f): from tax year 2027 the §25B
+    # credit covers only ABLE contributions (the Saver's Match, §6433, replaces it; not modeled).
+    savers_credit_last_year: int = 2026
+    # vintage: statutory, source: IRC §32(c)(1)(A)(ii)(II): a worker without a qualifying child must be at
+    # least 25 and under 65.
+    eitc_min_age_no_children: int = 25
+    eitc_max_age_no_children: int = 64
+    # vintage: statutory, source: IRC §25B(c)(1): at least 18 (and not a dependent or full-time student).
+    savers_credit_min_age: int = 18
+    # None (a config without it, such as the frozen test fixture) leaves the education credits off.
+    education: EducationCreditsConfig | None = None
+
+
+class SelfEmploymentTaxConfig(StrictModel):
+    """Self-employment tax (IRC §1401-1402, Schedule SE) and the SEP / solo 401(k) employer limit."""
+
+    # vintage: statutory, source: IRC §1402(a)(12) (Schedule SE line 4a: 92.35%); §1401(a)-(b) rates;
+    # §1402(b)(2) $400 minimum
+    net_earnings_percent: float = Field(default=92.35, ge=0, le=100)
+    social_security_rate: float = Field(default=12.4, ge=0, le=100)
+    medicare_rate: float = Field(default=2.9, ge=0, le=100)
+    minimum_net_earnings: float = Field(default=400, ge=0)
+    # vintage: statutory, source: IRC §404(h)(1)(C), §402(h)(2)(A): SEP contributions up to 25% of
+    # compensation (for a self-employed person, net earnings after the SE-tax deduction and the
+    # contribution itself: Pub. 560 rate table, 25% -> 20%)
+    max_plan_rate: float = Field(default=25.0, ge=0, le=100)
 
 
 class FederalTaxConfig(StrictModel):
@@ -157,6 +363,24 @@ class FederalTaxConfig(StrictModel):
     salt_cap_statute: SaltCapStatuteConfig = Field(default_factory=SaltCapStatuteConfig)
     senior_deduction: SeniorDeductionConfig = Field(default_factory=SeniorDeductionConfig)
     charitable: CharitableConfig = Field(default_factory=CharitableConfig)
+    credits: CreditStatuteConfig = Field(default_factory=CreditStatuteConfig)
+    # Year-indexed parameters of the Plan 31 credits, deductions and regimes. They live in ``tax_years``
+    # only (no static mirror): simulated years read them through ``model.year_config``, where
+    # ``FinancialConfig.year_view`` copies the year's values in. None (a config without them, such as the
+    # frozen test fixture) leaves the feature off.
+    additional_standard_deduction: AdditionalStandardDeduction | None = None
+    eitc: EITCYear | None = None
+    dependent_care: DependentCareYear | None = None
+    savers_credit: SaversCreditYear | None = None
+    ira_phaseouts: IRAPhaseoutsYear | None = None
+    student_loan_phaseout: StudentLoanPhaseoutYear | None = None
+    amt: AMTYear | None = None
+    qbi: QBIYear | None = None
+    kiddie_tax: KiddieTaxYear | None = None
+    qcd_limit: float | None = Field(default=None, ge=0)
+    ltc_premium_limits: list[LTCPremiumLimit] | None = None
+    #: §401(a)(17) compensation limit (caps the pay a SEP / solo 401(k) contribution is figured on).
+    compensation_limit: float | None = Field(default=None, ge=0)
     # Estate transfer parameters (defaults let existing configs load without these keys).
     # The unified exemption shelters estate value below it; transfers to a surviving spouse are
     # fully sheltered by the unlimited marital deduction regardless of the exemption.
@@ -365,6 +589,7 @@ class TaxConfig(StrictModel):
     federal: FederalTaxConfig
     state: StateTaxConfig
     fica: FICATaxConfig
+    self_employment: SelfEmploymentTaxConfig = Field(default_factory=SelfEmploymentTaxConfig)
 
 
 class Job401kContribLimitConfig(StrictModel):
@@ -664,10 +889,24 @@ class DependentsConfig(StrictModel):
     # vintage: 2026, source: IRC §24(h) (OBBBA); Rev. Proc. 2025-32.
     ctc_per_child: float = Field(default=2200.0, ge=0)
     ctc_refundable_max: float = Field(default=1700.0, ge=0)
-    ctc_qualifying_age_max: int = Field(default=17, ge=0)
+    # Oldest age (inclusive) of a qualifying child: under 17 at year end (IRC §24(c)(1)).
+    ctc_qualifying_age_max: int = Field(default=16, ge=0)
     ctc_phaseout_start: CTCPhaseoutStartConfig = Field(default_factory=CTCPhaseoutStartConfig)
     # Credit reduction as a percentage of modified AGI over the threshold ($50 per $1,000).
     ctc_phaseout_rate: float = Field(default=5.0, ge=0, le=100)
+    # Credit for other dependents ($500 per dependent who is not a CTC-qualifying child: a child aged 17-18,
+    # or a full-time student under 24), phased out with the CTC. None (the default) leaves it off so a
+    # config without it is unchanged. vintage: statutory, source: IRC §24(h)(4) (made permanent by OBBBA).
+    odc_per_dependent: float | None = Field(default=None, ge=0)
+    # Additional child tax credit (Schedule 8812 Part II-A): 15% of earned income over $2,500, up to the
+    # refundable maximum per child. None keeps the legacy approximation (no earned-income limit).
+    # vintage: statutory, source: IRC §24(d)(1)(B)(i), §24(h)(6).
+    actc_earned_income_threshold: float | None = Field(default=None, ge=0)
+    actc_rate: float = Field(default=15.0, ge=0, le=100)
+    # Dependency age limits (IRC §152(c)(3)): under 19, or under 24 for a full-time student.
+    # vintage: statutory, source: IRC §152(c)(3)(A)
+    dependent_age_limit: int = Field(default=19, ge=0)
+    student_dependent_age_limit: int = Field(default=24, ge=0)
 
 
 class YearlyTaxParameters(StrictModel):
@@ -708,8 +947,21 @@ class YearlyTaxParameters(StrictModel):
     senior_deduction_amount: float | None = Field(default=None, ge=0)
     #: Net investment income tax thresholds (statutory, never indexed).
     niit: NIITConfig | None = None
-    #: §63(f) additional standard deduction (recorded for Plan 31; not applied yet).
+    #: §63(f) additional standard deduction per person 65+ (Plan 31).
     additional_standard_deduction: AdditionalStandardDeduction | None = None
+    # Plan 31: year-indexed parameters of the credits, deductions and regimes (see the same-named fields
+    # of ``FederalTaxConfig``, where ``year_view`` copies them). Each optional: None leaves it off.
+    eitc: EITCYear | None = None
+    dependent_care: DependentCareYear | None = None
+    savers_credit: SaversCreditYear | None = None
+    ira_phaseouts: IRAPhaseoutsYear | None = None
+    student_loan_phaseout: StudentLoanPhaseoutYear | None = None
+    amt: AMTYear | None = None
+    qbi: QBIYear | None = None
+    kiddie_tax: KiddieTaxYear | None = None
+    qcd_limit: float | None = Field(default=None, ge=0)
+    ltc_premium_limits: list[LTCPremiumLimit] | None = None
+    compensation_limit: float | None = Field(default=None, ge=0)
 
 
 class StochasticEconomyConfig(StrictModel):

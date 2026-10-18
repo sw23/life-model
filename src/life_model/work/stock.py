@@ -139,6 +139,41 @@ class StockGrant:
         return max(0.0, 1.0 - self.vested_fraction)
 
 
+@dataclass
+class StockOption:
+    """A stock option grant the owner exercises in a planned year (Plan 31; dollars, like grants).
+
+    ``value`` is the market value of the option's shares at the plan's start (price index 1.0); it is
+    revalued by the plan's price index to the exercise year. ``exercise_cost`` is the strike price times
+    the shares. At exercise:
+
+    * an **NSO**'s spread (value - cost) is W-2 wages (income tax and FICA);
+    * an **ISO** exercised and held has no regular income: the spread is an AMT adjustment (Form 6251
+      line 2i), which can create AMT and, later, the minimum tax credit (Form 8801);
+    * ``sell_at_exercise=True`` is a cashless same-day sale: for an ISO that is a disqualifying
+      disposition, so the spread is ordinary wages without FICA and no AMT adjustment arises.
+
+    Held shares go to the plan's brokerage account (else the owner's first) as a lot with basis equal
+    to the cost (ISO) or the value (NSO), acquired in the exercise year; the exercise cost is paid
+    through the household waterfall. Simplifications: a held ISO lot is later sold by the waterfall like
+    any lot (a sale within the holding periods is not re-characterized as a disqualifying disposition),
+    and the ISO's higher AMT basis (a negative adjustment when the shares are sold) is not tracked.
+    """
+
+    kind: str
+    exercise_year: int
+    exercise_cost: float
+    value: float
+    sell_at_exercise: bool = False
+    exercised: bool = field(default=False)
+
+    def __post_init__(self):
+        if self.kind not in ("iso", "nso"):
+            raise ValueError(f"StockOption kind must be 'iso' or 'nso', got {self.kind!r}")
+        if self.exercise_cost < 0 or self.value < 0:
+            raise ValueError("StockOption exercise_cost and value must be non-negative")
+
+
 class StockPlan(LifeModelAgent):
     """The equity component of a job: issues grants, vests them, and recognizes the income.
 
@@ -180,6 +215,7 @@ class StockPlan(LifeModelAgent):
         disposition: str = "sell",
         growth_rate: float | None = None,
         brokerage_account: "BrokerageAccount | None" = None,
+        options: "Sequence[StockOption] | None" = None,
     ):
         """Stock compensation plan attached to a job.
 
@@ -202,6 +238,7 @@ class StockPlan(LifeModelAgent):
                 equity return when None, which ties company stock to the broad market.
             brokerage_account: Where ``disposition="hold"`` deposits vested shares. Defaults to the
                 owner's first brokerage account, resolved at vest time.
+            options: Stock options (ISO / NSO) to exercise in planned years (:class:`StockOption`).
         """
         super().__init__(job.owner.model)
         if disposition not in ("sell", "hold"):
@@ -228,6 +265,7 @@ class StockPlan(LifeModelAgent):
         # has moved since its grant.
         self.price_index = 1.0
         self.grants: list[StockGrant] = []
+        self.options: list[StockOption] = list(options or [])
 
         self.stat_stock_vested = 0.0
         self.stat_stock_unvested = 0.0
@@ -289,6 +327,7 @@ class StockPlan(LifeModelAgent):
         self.price_index *= 1 + self.growth_rate / 100
 
         self._issue_refresher_if_due()
+        self._exercise_options()
         vested = self._vest_current_year()
 
         if vested > 0:
@@ -303,6 +342,56 @@ class StockPlan(LifeModelAgent):
         self.stat_stock_vested = vested
         self.stat_gross_income = vested
         self.stat_stock_unvested = self.unvested_value
+
+    def _exercise_options(self) -> None:
+        """Exercise the options planned for this year (see :class:`StockOption`)."""
+        from ..people.tax_unit import TaxUnit
+
+        owner = self.owner
+        company = self.job.company
+        for option in self.options:
+            if option.exercised or option.exercise_year != self.model.year:
+                continue
+            option.exercised = True
+            value = option.value * self.price_index
+            spread = max(0.0, value - option.exercise_cost)
+            account = self.brokerage_account
+            if account is None and owner.brokerage_accounts:
+                account = owner.brokerage_accounts[0]
+            cashless = option.sell_at_exercise or account is None
+            if option.kind == "nso":
+                owner.income.add_wages(ordinary_amount=spread, fica_wages=spread, source="nso_exercise")
+                if owner.social_security is not None:
+                    owner.social_security.add_income_for_year(spread)
+            elif cashless:
+                # Disqualifying disposition: compensation income on the W-2, not FICA wages.
+                owner.income.add_wages(ordinary_amount=spread, fica_wages=0.0, source="iso_disqualifying")
+            else:
+                owner.income.add_amt_adjustment(spread, source="iso")
+            if cashless:
+                owner.receive_cash(
+                    spread, source=company, kind=FlowKind.VEST, cause=f"{option.kind.upper()} exercise and sale"
+                )
+                continue
+            unit = TaxUnit.for_member(owner)
+            shortfall = unit.pay_bills(
+                option.exercise_cost,
+                kind=FlowKind.TRANSFER,
+                cause=f"{option.kind.upper()} exercise cost",
+                to_account=account,
+            )
+            if shortfall > 0:
+                owner.add_debt(shortfall, to_account=account, cause=f"{option.kind.upper()} exercise cost")
+            basis = option.exercise_cost if option.kind == "iso" else value
+            account.deposit_with_basis(value, cost_basis=basis, acquired_year=self.model.year)
+            self.model.ledger.post(
+                spread,
+                FlowKind.VEST,
+                to_account=account,
+                source=company,
+                cause=f"{option.kind.upper()} exercise spread (held)",
+                agent=owner,
+            )
 
     def _issue_refresher_if_due(self) -> None:
         """Issue this year's refresher grant, if the plan has reached the refresher schedule."""

@@ -44,6 +44,8 @@ Each spec entry, the core class the builder constructs, the fields you must give
 | Spending | `Spending` | `amount_annual` | `growth_pct=0.0` |
 | Job | `Job + Salary` | `company`, `salary_annual` | `role='Employee'`, `raise_pct=0.0`, `bonus_pct=0.0` |
 | StockPlan | `StockPlan` | — | `signon_value=0.0`, `refresher_value=0.0`, `refresher_start_year=1`, `refresher_growth_pct=0.0`, `disposition='sell'`, `growth_pct='economy'` |
+| StockOption (`kind: iso`) | `StockOption` | `exercise_year`, `exercise_cost`, `value` | `sell_at_exercise=False` |
+| Payroll | `PayrollDeductions` | — | `health_premium_monthly=0.0`, `dental_vision_monthly=0.0`, `fsa_annual=0.0`, `dependent_care_fsa_annual=0.0`, `hsa_employee_annual=0.0`, `hsa_employer_annual=0.0`, `commuter_monthly=0.0` |
 | BankAccount (`kind: bank`) | `BankAccount` | — | `company='Bank'`, `type='Checking'`, `balance=0.0`, `interest_pct='economy'`, `primary=False`, `reserve=False` |
 | FixedIncomeAccount (`kind: fixed_income`) (not yet supported: Plan 27 D2) | `FixedIncomeHolding (Plan 27)` | `instrument`, `face`, `rate_pct` | `state_tax_exempt=False`, `early_withdrawal_penalty_months=0`, `reserve=True` |
 | BrokerageAccount (`kind: brokerage`) | `BrokerageAccount` | — | `company='Brokerage'`, `growth_pct='economy'`, `reinvest_dividends=True` |
@@ -68,7 +70,8 @@ Each spec entry, the core class the builder constructs, the fields you must give
 | GeneralInsurance (`kind: health`) | `Insurance` | `premium_annual`, `coverage_amount` | `company='Insurer'`, `deductible=0.0` |
 | SocialSecurity | `SocialSecurity` | — | `spousal_benefit=False` |
 | Donation (`kind: donation`) | `Donation` | `charity`, `amount_annual` | `donation_type='cash'`, `tax_deductible=True`, `frequency_years=1` |
-| Child | `Child` | `name`, `birth_year` | — |
+| Child | `Child` | `name`, `birth_year` | `care_expenses_annual=0.0`, `interest_annual=0.0`, `dividends_annual=0.0` |
+| SelfEmployment | `Job (kind='self_employed')` | `business` | `expenses_annual=0.0`, `growth_pct=0.0`, `sep_ira_contrib_pct=0.0`, `sstb=False` |
 
 ## Core constructors
 
@@ -80,13 +83,13 @@ The owner argument links the object to its owner (a `Person`, a `Job`, or the `m
 | `Family` (life_model.people.family) | `model` | `model` | `*withdrawal_order=None` |
 | `Person` (life_model.people.person) | `family` | `family`, `name`, `age`, `retirement_age`, `spending` | `*gender=GenderAtBirth.OTHER`, `*mortality_mode=MortalityMode.IMMORTAL`, `*death_age=None`, `*state=None` |
 | `Spending` (life_model.people.person) | `model` | `model` | `base=0`, `yearly_increase=0` |
-| `Job` (life_model.work.job) | `owner` | `owner`, `company`, `role`, `salary` | — |
+| `Job` (life_model.work.job) | `owner` | `owner`, `company`, `role`, `salary` | `*kind='w2'`, `*expenses_annual=0.0`, `*payroll=None`, `*sep_account=None`, `*plan_contribution_percent=0.0`, `*sstb=False` |
 | `Salary` (life_model.work.job) | `model` | `model`, `base` | `yearly_increase=0`, `yearly_bonus=0` |
-| `StockPlan` (life_model.work.stock) | `job` | `job` | `*signon_value=0.0`, `*refresher_value=0.0`, `*refresher_start_year=1`, `*refresher_growth_percent=0.0`, `*schedule=None`, `*signon_schedule=None`, `*disposition='sell'`, `*growth_rate=None`, `*brokerage_account=None` |
+| `StockPlan` (life_model.work.stock) | `job` | `job` | `*signon_value=0.0`, `*refresher_value=0.0`, `*refresher_start_year=1`, `*refresher_growth_percent=0.0`, `*schedule=None`, `*signon_schedule=None`, `*disposition='sell'`, `*growth_rate=None`, `*brokerage_account=None`, `*options=None` |
 | `BankAccount` (life_model.account.bank) | `owner` | `owner`, `company` | `type='Bank'`, `balance=0`, `interest_rate=None`, `*compounding=None` |
 | `Job401kAccount` (life_model.account.job401k) | `job` | `job` | `pretax_balance=0`, `pretax_contrib_percent=0`, `roth_balance=0`, `roth_contrib_percent=0`, `average_growth=None`, `company_match_percent=0`, `*match_tiers=None`, `*match_on_bonus=False`, `*match_vesting_years=0` |
 | `BrokerageAccount` (life_model.account.brokerage) | `person` | `person`, `company` | `balance=0`, `growth_rate=None`, `*dividend_yield=None` |
-| `TraditionalIRA` (life_model.account.traditional_IRA) | `person` | `person` | `balance=0`, `growth_rate=None`, `contribution_limit=None` |
+| `TraditionalIRA` (life_model.account.traditional_IRA) | `person` | `person` | `balance=0`, `growth_rate=None`, `contribution_limit=None`, `*nondeductible_basis=0.0` |
 | `RothIRA` (life_model.account.roth_IRA) | `person` | `person` | `balance=0`, `growth_rate=None`, `contribution_limit=None` |
 | `HealthSavingsAccount` (life_model.account.hsa) | `person` | `person`, `hsa_type` | `balance=0`, `contribution_limit=None`, `employer_contribution=None`, `*growth_rate=None` |
 | `Plan529` (life_model.dependents.plan529) | `owner` | `owner` | `beneficiary=None`, `balance=0`, `state='NY'`, `growth_rate=None`, `annual_contribution_limit=None`, `lifetime_contribution_limit=None` |
@@ -106,4 +109,4 @@ The owner argument links the object to its owner (a `Person`, a `Job`, or the `m
 | `Insurance` (life_model.insurance.general_insurance) | `person` | `person`, `insurance_type`, `company`, `annual_premium`, `coverage_amount` | `deductible=0`, `coverage_start_age=None`, `coverage_end_age=None`, `premium_increase_rate=None`, `max_claims_per_year=None` |
 | `SocialSecurity` (life_model.insurance.social_security) | `person` | `person` | `withdrawal_start_age=None`, `income_history=None` |
 | `Donation` (life_model.charity.donation) | `person` | `person`, `charity_name`, `annual_amount` | `donation_type=DonationType.CASH`, `tax_deductible=True`, `frequency_years=1`, `start_year=None`, `end_year=None` |
-| `Child` (life_model.dependents.child) | `person` | `person`, `name`, `birth_year` | — |
+| `Child` (life_model.dependents.child) | `person` | `person`, `name`, `birth_year` | `*care_expenses_annual=0.0`, `*interest_annual=0.0`, `*dividends_annual=0.0` |

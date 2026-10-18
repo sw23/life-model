@@ -1,0 +1,44 @@
+# Household golden (synthetic, not real data). See ../README.md.
+spec_version: 1
+meta:
+  name: Incentive stock options
+  description: 'Household golden (synthetic): an employee exercising incentive stock options and holding the shares.'
+  as_of: 2026-01
+  start_year: 2026
+  end_year: 2026
+  seed: 1
+  default_state: TX
+people:
+- id: morgan
+  name: Morgan
+  age: 40
+  retirement_age: 67
+  spending:
+    amount_annual: 60000
+    growth_pct: 0
+  jobs:
+  - id: morgan_job
+    company: Example Analytics
+    salary_annual: 200000
+    stock_plan:
+      growth_pct: 0
+      options:
+      - kind: iso
+        exercise_year: 2026
+        exercise_cost: 50000
+        value: 450000
+  accounts:
+  - kind: bank
+    id: morgan_checking
+    company: Community Bank
+    type: Checking
+    balance: 400000
+    interest_pct: 0.0
+    compounding: annual
+    primary: true
+  - kind: brokerage
+    id: morgan_brokerage
+    company: Example Brokerage
+    balance: 10000
+    growth_pct: 0
+    dividend_yield_pct: 0

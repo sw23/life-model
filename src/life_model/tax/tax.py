@@ -20,6 +20,7 @@ from .fica import (
     get_medicare_rate,
     social_security_tax,
 )
+from .self_employment import SelfEmploymentTax, additional_medicare_on_self_employment, self_employment_tax
 from .state import state_income_tax
 
 if TYPE_CHECKING:
@@ -90,6 +91,40 @@ class TaxesDue:
         #: The state computation's breakdown (a :class:`~life_model.tax.state.StateTaxDetail`), when
         #: the caller resolved one.
         self.state_detail = None
+        # --- Plan 31 ---
+        #: Self-employment tax (Schedule SE line 12, all workers); part of ``total``, not of ``federal``.
+        self.se_tax = 0.0
+        #: Each worker's Schedule SE, in the order of the wage list.
+        self.se_by_worker: list[SelfEmploymentTax] = []
+        #: The part of ``additional_medicare`` on self-employment income (Form 8959 Part II).
+        self.additional_medicare_se = 0.0
+        #: §63(f) additional standard deduction included in ``standard_deduction``.
+        self.additional_standard_deduction = 0.0
+        #: Qualified business income deduction (included in ``deductions``) and its worksheet.
+        self.qbi_deduction = 0.0
+        self.qbi_detail = None
+        #: Non-itemizer charitable deduction (2026+, included in ``deductions``).
+        self.charitable_non_itemizer = 0.0
+        #: The charitable worksheet (:class:`~life_model.tax.deductions.CharitableDeduction`).
+        self.charitable = None
+        #: §68 reduction of itemized deductions (2026+); ``itemized_deduction`` is after it.
+        self.itemized_limitation = 0.0
+        #: Whether the return itemizes (itemized beat the standard plus the non-itemizer deduction).
+        self.itemize = False
+        #: Form 8814 tax on a child's interest and dividends (part of the line 16 tax, in ``federal``).
+        self.kiddie_tax = 0.0
+        #: Alternative minimum tax (in ``federal``) and Form 6251's figures.
+        self.amt = 0.0
+        self.amt_detail = None
+        #: Minimum tax credit generated this year for later years (Form 8801), and what is carried in.
+        self.amt_credit_generated = 0.0
+        #: Credits by name split into their nonrefundable and refundable parts.
+        self.credits_nonrefundable: dict[str, float] = {}
+        self.credits_refundable: dict[str, float] = {}
+        #: Worksheet figures of each credit.
+        self.credit_details: dict[str, dict[str, float]] = {}
+        #: Earned income of the return (for the earned-income credits).
+        self.earned_income = 0.0
 
     @property
     def penalties(self) -> float:
@@ -99,7 +134,7 @@ class TaxesDue:
     @property
     def total(self) -> float:
         """Total taxes due for the year, net of credits (negative means a refund)."""
-        return self.federal + self.state + self.ss + self.medicare + self.niit - self.credits
+        return self.federal + self.state + self.ss + self.medicare + self.niit + self.se_tax - self.credits
 
 
 def compute_taxes(
@@ -113,6 +148,8 @@ def compute_taxes(
     state_tax: "float | None" = None,
     preferential_income: float = 0.0,
     net_investment_income: float = 0.0,
+    se_incomes: "Sequence[float] | None" = None,
+    ss_wage_incomes: "Sequence[float] | None" = None,
 ) -> TaxesDue:
     """Compute income and payroll taxes for a tax unit.
 
@@ -140,6 +177,10 @@ def compute_taxes(
         preferential_income: Long-term capital gains and qualified dividends, taxed on the
             preferential schedule stacked above ordinary income. Defaults to 0.
         net_investment_income: Investment income subject to the §1411 surtax. Defaults to 0.
+        se_incomes: Each worker's Schedule C net profit (same order as ``wage_incomes``), taxed on
+            Schedule SE with the Social Security wage base shared with that worker's W-2 wages.
+        ss_wage_incomes: Each worker's W-2 Social Security wages for that sharing (defaults to
+            ``wage_incomes``).
     """
     # Deductions are applied to ordinary income first and spill onto the gain only once ordinary
     # income is exhausted — the clamp below is what makes a retiree living on gains alone come out
@@ -186,6 +227,26 @@ def compute_taxes(
     if len(medicare_by_worker) == 1:
         medicare_by_worker = [tax_medicare]
 
+    # Schedule SE per worker (the wage base is shared with the worker's W-2 wages), and Form 8959 Part II:
+    # the Additional Medicare Tax on SE earnings over the threshold left after the return's wages.
+    se_by_worker: list[SelfEmploymentTax] = []
+    additional_medicare_se = 0.0
+    if se_incomes is not None and any(profit > 0 for profit in se_incomes):
+        ss_wages = list(ss_wage_incomes) if ss_wage_incomes is not None else list(wage_incomes)
+        se_by_worker = [
+            self_employment_tax(profit, ss_wages[i] if i < len(ss_wages) else 0.0, config)
+            for i, profit in enumerate(se_incomes)
+        ]
+        additional_medicare_se = additional_medicare_on_self_employment(
+            sum(se.net_earnings for se in se_by_worker),
+            combined_wages,
+            additional_threshold,
+            get_medicare_additional_rate(config),
+        )
+        # In ``medicare`` (Form 8959 total) but not in any worker's FICA line (it is not withheld).
+        tax_medicare += additional_medicare_se
+        additional_medicare += additional_medicare_se
+
     taxes = TaxesDue(tax_federal, tax_state, tax_ss, tax_medicare, credits=credits, niit=tax_niit)
     taxes.total_income = total_income
     taxes.deductions = deductions
@@ -198,6 +259,9 @@ def compute_taxes(
     taxes.ss_by_worker = ss_by_worker
     taxes.medicare_by_worker = medicare_by_worker
     taxes.additional_medicare = additional_medicare
+    taxes.additional_medicare_se = additional_medicare_se
+    taxes.se_by_worker = se_by_worker
+    taxes.se_tax = sum(se.total for se in se_by_worker)
     if credits:
         taxes.credits_detail = {"credits": credits}
     return taxes

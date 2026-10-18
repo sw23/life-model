@@ -53,6 +53,7 @@ class FlowKind(str, Enum):
     WAGE = "wage"  #: Salary paid by an employer.
     BONUS = "bonus"  #: Bonus paid by an employer.
     VEST = "vest"  #: Stock compensation vesting (to cash or a brokerage account).
+    BUSINESS_INCOME = "business_income"  #: Self-employment net profit (Schedule C) paid to the owner.
     INTEREST = "interest"  #: Interest earned (bank accounts).
     DIVIDEND = "dividend"  #: Dividends paid into an account.
     GROWTH = "growth"  #: Market growth of an account or asset (negative in a down year).
@@ -81,7 +82,8 @@ class FlowKind(str, Enum):
 FLOW_KIND_DOCS: dict[str, str] = {
     "wage": "Salary paid by an employer.",
     "bonus": "Bonus paid by an employer.",
-    "vest": "Stock compensation vesting (to cash or a brokerage account).",
+    "vest": "Stock compensation vesting (to cash or a brokerage account), and the spread of exercised stock options.",
+    "business_income": "Self-employment net profit (Schedule C) paid to the owner.",
     "interest": "Interest earned (bank accounts).",
     "dividend": "Dividends paid into an account.",
     "growth": "Market growth of an account or asset (negative in a down year).",

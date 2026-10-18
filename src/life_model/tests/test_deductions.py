@@ -59,12 +59,13 @@ class TestSeniorDeduction(unittest.TestCase):
         self.assertEqual(senior_deduction([old], FilingStatus.SINGLE, 50000, 2029, self.config), 0)
 
     def test_reduces_settled_federal_tax(self):
-        """Single 70-year-old, $60,000 of ordinary income in 2026: taxable 60,000 - 16,100 - 6,000 =
-        37,900 -> 10% x 12,400 + 12% x 25,500 = $4,300."""
+        """Single 70-year-old, $60,000 of ordinary income in 2026: taxable 60,000 - (16,100 + the §63(f)
+        $2,050) - 6,000 = 35,850 -> 10% x 12,400 + 12% x 23,450 = $4,054. (Plan 31 re-baseline: $4,300
+        before the §63(f) amount was applied; docs/rebaseline-plan-31.md.)"""
         person = _person(self.model, 70)
         person.income.add(IncomeType.ORDINARY, 60000)
         taxes = TaxUnit([person]).get_income_taxes_due()
-        self.assertAlmostEqual(taxes.federal, 4300.0, places=2)
+        self.assertAlmostEqual(taxes.federal, 4054.0, places=2)
 
 
 class TestCharitableLimit(unittest.TestCase):
@@ -76,9 +77,11 @@ class TestCharitableLimit(unittest.TestCase):
 
         model.step()
 
-        # 60% of $50k AGI = $30k deductible; the other $10k carries forward from 2026.
-        self.assertEqual(person.charitable_carryforwards, [(2026, 10000)])
-        self.assertAlmostEqual(person.stat_itemized_deductions, 30000 + person.stat_taxes_paid_state, places=2)
+        # 60% of $50k AGI = $30k allowed; the other $10k carries forward from 2026. From 2026 (OBBBA) the
+        # 0.5%-of-AGI floor ($250) also comes off, and because the year has a carryover the floor amount
+        # joins it (§170(d)(1)(C)). (Plan 31 re-baseline: [(2026, 10000)] and $30,000 before the floor.)
+        self.assertEqual(person.charitable_carryforwards, [(2026, 10250)])
+        self.assertAlmostEqual(person.stat_itemized_deductions, 29750 + person.stat_taxes_paid_state, places=2)
 
     def test_expired_carryforward_is_not_deductible(self):
         from ..tax.deductions import deductible_charity

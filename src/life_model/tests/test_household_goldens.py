@@ -31,7 +31,20 @@ HOUSEHOLDS = (
     "retiree_couple",
     "early_retiree",
     "married_separately",
+    # Plan 31: credits, deductions and regimes
+    "eitc_head_of_household",
+    "dependent_care_mfj",
+    "education_aotc_mfj",
+    "savers_credit_single",
+    "iso_amt_single",
+    "self_employed_single",
+    "kiddie_tax_mfj",
+    "appreciated_stock_gift",
+    "qcd_retiree",
+    "student_loan_phaseout",
 )
+#: Goldens that need a prior year (the minimum tax credit after an ISO exercise): 2025 and 2026 only.
+FOLLOW_ON = ("iso_amt_credit",)
 
 
 def goldens() -> list[Path]:
@@ -63,6 +76,9 @@ class TestHouseholdGoldens(unittest.TestCase):
         names = {path.name for path in goldens()}
         for household in HOUSEHOLDS:
             for year in (2024, 2025, 2026):
+                self.assertIn(f"{household}_{year}", names)
+        for household in FOLLOW_ON:
+            for year in (2025, 2026):
                 self.assertIn(f"{household}_{year}", names)
 
     def test_every_golden_matches_the_engine(self):

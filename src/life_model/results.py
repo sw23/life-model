@@ -32,7 +32,18 @@ if TYPE_CHECKING:
 #: Columns of :attr:`RunResult.balance_sheets`.
 BALANCE_SHEET_COLUMNS = ("year", "opening_net_worth", "closing_net_worth", "inflows", "outflows")
 #: Ledger kinds that are income (inflows shown under "Income" by :meth:`RunResult.explain`).
-_INCOME_KINDS = ("wage", "bonus", "vest", "interest", "dividend", "benefit", "match", "gift", "inheritance")
+_INCOME_KINDS = (
+    "wage",
+    "bonus",
+    "vest",
+    "business_income",
+    "interest",
+    "dividend",
+    "benefit",
+    "match",
+    "gift",
+    "inheritance",
+)
 
 
 def _require_parquet() -> None:

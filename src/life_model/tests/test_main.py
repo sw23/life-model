@@ -6,6 +6,7 @@
 import subprocess
 import sys
 import unittest
+from pathlib import Path
 
 import life_model
 
@@ -43,12 +44,21 @@ class TestMainModule(unittest.TestCase):
 
     def test_exit_code_for_invalid_input(self):
         """Validation failures exit 2 from the real process, too."""
-        result = subprocess.run(
-            [sys.executable, "-m", "life_model", "run", "--example", "self_employed"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        import tempfile
+
+        import yaml
+
+        from .spec_helpers import not_yet_supported
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "unsupported.yaml"
+            path.write_text(yaml.safe_dump(not_yet_supported()), encoding="utf-8")
+            result = subprocess.run(
+                [sys.executable, "-m", "life_model", "run", str(path)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
         self.assertEqual(result.returncode, 2, msg=result.stderr)
         self.assertIn("not yet supported", result.stderr)
 

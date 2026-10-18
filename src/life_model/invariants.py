@@ -61,7 +61,9 @@ CASH_FLOOR_TOLERANCE = 1.0
 DEFAULT_CASH_FLOOR = 0.0
 
 _WATERFALL_DRAW_KINDS = ("forced_sale", "pretax_withdrawal")
-_EARNED_KINDS = frozenset({FlowKind.WAGE.value, FlowKind.BONUS.value, FlowKind.VEST.value})
+_EARNED_KINDS = frozenset(
+    {FlowKind.WAGE.value, FlowKind.BONUS.value, FlowKind.VEST.value, FlowKind.BUSINESS_INCOME.value}
+)
 
 
 @dataclass(frozen=True)
@@ -289,10 +291,14 @@ def no_draw_above_cash_floor(ctx: YearContext) -> list[Violation]:
 
 def _contributions_by(ctx: YearContext) -> dict[str, dict[int, float]]:
     """``{account label: {person_id: dollars}}`` of contributions (employee and employer) this year."""
+    from .work.job import SELF_EMPLOYED_EMPLOYER_CAUSE
+
     out: dict[str, dict[int, float]] = {}
     for entry in ctx.entries:
         if entry.kind != FlowKind.CONTRIBUTION.value or entry.to_account is None:
             continue
+        if entry.cause == SELF_EMPLOYED_EMPLOYER_CAUSE:
+            continue  # employer money (SEP / profit sharing): 415(c) only, checked separately
         by_person = out.setdefault(entry.to_account, {})
         by_person[entry.agent_id] = by_person.get(entry.agent_id, 0.0) + entry.amount
     return out
@@ -332,8 +338,13 @@ def contribution_limits(ctx: YearContext) -> list[Violation]:
                 base = config.accounts.hsa.contribution_limit
             paid, limit = hsa.get(owner, (0.0, 0.0))
             hsa[owner] = (paid + total, max(limit, base))
+    from .work.job import SELF_EMPLOYED_EMPLOYER_CAUSE
+
     for entry in ctx.entries:
-        if entry.kind == FlowKind.MATCH.value and entry.to_account is not None:
+        employer = entry.kind == FlowKind.MATCH.value or (
+            entry.kind == FlowKind.CONTRIBUTION.value and entry.cause == SELF_EMPLOYED_EMPLOYER_CAUSE
+        )
+        if employer and entry.to_account is not None:
             additions[entry.to_account] = additions.get(entry.to_account, 0.0) + entry.amount
 
     violations = []
@@ -457,7 +468,12 @@ def rmd_minimum(ctx: YearContext) -> list[Violation]:
 
     paid: dict[str, float] = {}
     for entry in ctx.entries:
-        if entry.from_account is not None and entry.kind in (FlowKind.RMD.value, FlowKind.WITHDRAWAL.value):
+        # A qualified charitable distribution (a gift straight from the IRA) counts toward the RMD.
+        if entry.from_account is not None and entry.kind in (
+            FlowKind.RMD.value,
+            FlowKind.WITHDRAWAL.value,
+            FlowKind.GIFT.value,
+        ):
             paid[entry.from_account] = paid.get(entry.from_account, 0.0) + entry.amount
     people = ctx.people()
     violations = []
@@ -513,7 +529,7 @@ def taxes_non_negative(ctx: YearContext) -> list[Violation]:
                     r.federal_tax,
                 )
             )
-        liability = r.ordinary_tax + r.preferential_tax + r.amt
+        liability = r.ordinary_tax + r.preferential_tax + r.kiddie_tax + r.amt
         if r.nonrefundable_credits > liability + MONEY_TOLERANCE:
             violations.append(
                 Violation(
@@ -542,13 +558,25 @@ def deduction_choice(ctx: YearContext) -> list[Violation]:
                     r.itemized_deductions - r.standard_deduction,
                 )
             )
-        expected = max(r.standard_deduction, r.itemized_deductions) + r.senior_deduction
+        standard = r.standard_deduction + r.charitable_deduction_non_itemizer
+        base = r.itemized_deductions if r.deduction_taken == "itemized" else standard
+        if base < max(standard, r.itemized_deductions) - MONEY_TOLERANCE:
+            violations.append(
+                Violation(
+                    ctx.year,
+                    "deduction_choice",
+                    f"{names}: took the smaller deduction ({r.deduction_taken} {base:,.2f})",
+                    base - max(standard, r.itemized_deductions),
+                )
+            )
+        expected = base + r.senior_deduction + r.qbi_deduction
         if abs(r.deduction - expected) > MONEY_TOLERANCE:
             violations.append(
                 Violation(
                     ctx.year,
                     "deduction_choice",
-                    f"{names}: deducted {r.deduction:,.2f}, expected max(standard, itemized) + senior = {expected:,.2f}",
+                    f"{names}: deducted {r.deduction:,.2f}, expected the larger of standard (+ non-itemizer charity) "
+                    f"and itemized, + senior + QBI = {expected:,.2f}",
                     r.deduction - expected,
                 )
             )
@@ -565,11 +593,21 @@ def return_identities(ctx: YearContext) -> list[Violation]:
             "taxable income = max(agi - deduction, 0)": (r.taxable_income, max(r.agi - r.deduction, 0.0)),
             "federal tax = taxes - credits + penalties": (
                 r.federal_tax,
-                r.ordinary_tax + r.preferential_tax + r.niit + r.amt - r.total_credits + r.total_penalties,
+                r.ordinary_tax
+                + r.preferential_tax
+                + r.kiddie_tax
+                + r.niit
+                + r.amt
+                - r.total_credits
+                + r.total_penalties,
             ),
-            "total tax = federal + state + payroll": (
+            "total tax = federal + state + payroll + self-employment": (
                 r.total_tax,
-                r.federal_tax + r.state_tax + r.social_security_tax + r.medicare_tax,
+                r.federal_tax + r.state_tax + r.social_security_tax + r.medicare_tax + r.self_employment_tax,
+            ),
+            "credits = nonrefundable + refundable": (
+                r.total_credits,
+                r.nonrefundable_credits + r.refundable_credits,
             ),
         }
         for what, (value, expected) in checks.items():

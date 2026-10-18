@@ -34,8 +34,9 @@ W-2 Example County (riley): box 1 = $72,000.00 - 401(k) $3,600.00 = $68,400.00; 
 | Form 1040 line 16 | Tax Table row $44,250-$44,300: schedule tax on the midpoint $44,275.00, rounded | $4,959.00 |
 | Form 1040 line 17 | no AMT (Schedule 2 line 3) | $0.00 |
 | Form 1040 line 18 | 16 + 17 | $4,959.00 |
-| | Schedule 8812: 1 x $2,200.00 = $2,200.00; MAGI under $200,000.00; limited by tax $4,959.00 | |
+| | Schedule 8812: 1 x $2,200.00 = $2,200.00; MAGI under $200,000.00; Credit Limit Worksheet A: line 18 less Schedule 3 lines 1-4 = $4,959.00 | |
 | Form 1040 line 19 | Schedule 8812 line 14 | $2,200.00 |
+| Form 8812 line 14 | smaller of line 12 and Credit Limit Worksheet A | $2,200.00 |
 | Form 1040 line 20 | Schedule 3 line 8: no other credits | $0.00 |
 | Form 1040 line 21 | 19 + 20 | $2,200.00 |
 | Form 1040 line 22 | 18 - 21 | $2,759.00 |

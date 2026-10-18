@@ -60,7 +60,9 @@ class TestToolBodies(unittest.TestCase):
         self.assertIn("No such spec file", missing["error"]["message"])
 
     def test_validation_and_runtime_errors(self):
-        invalid = server.run_household(example="self_employed")
+        from .spec_helpers import not_yet_supported
+
+        invalid = server.run_household(spec=not_yet_supported())
         self.assertFalse(invalid["ok"])
         self.assertEqual(invalid["findings"][0]["code"], "not_yet_supported")
         with mock.patch("life_model.api.run", side_effect=RuntimeError("boom")):
@@ -70,7 +72,9 @@ class TestToolBodies(unittest.TestCase):
 
     def test_validate_household(self):
         self.assertEqual(server.validate_household(example="married_homeowners")["valid"], True)
-        result = server.validate_household(example="self_employed")
+        from .spec_helpers import not_yet_supported
+
+        result = server.validate_household(spec=not_yet_supported())
         self.assertTrue(result["ok"])
         self.assertFalse(result["valid"])
         self.assertEqual(server.validate_household(example="single_renter", scenario="x")["valid"], False)

@@ -341,15 +341,35 @@ class Spending(SpecModel):
 
 
 class Payroll(SpecModel):
-    """Pre-tax payroll deductions (Plan 27 D3)."""
+    """Pre-tax payroll deductions (Plan 27 D3; the dependent-care FSA is supported since Plan 31)."""
 
-    health_premium_monthly: NonNegativeMoney = spec_field(0.0, description="Health premium.", unit="USD/month")
-    dental_vision_monthly: NonNegativeMoney = spec_field(0.0, description="Dental/vision.", unit="USD/month")
-    fsa_annual: NonNegativeMoney = spec_field(0.0, description="Health FSA.", unit="USD/year")
-    dependent_care_fsa_annual: NonNegativeMoney = spec_field(0.0, description="Dependent-care FSA.", unit="USD/year")
-    hsa_employee_annual: NonNegativeMoney = spec_field(0.0, description="Employee HSA.", unit="USD/year")
-    hsa_employer_annual: NonNegativeMoney = spec_field(0.0, description="Employer HSA.", unit="USD/year")
-    commuter_monthly: NonNegativeMoney = spec_field(0.0, description="Commuter benefit.", unit="USD/month")
+    CORE_CLASS = "PayrollDeductions"
+
+    health_premium_monthly: NonNegativeMoney = spec_field(
+        0.0, description="Health premium.", unit="USD/month", not_yet_supported="Plan 27 D3"
+    )
+    dental_vision_monthly: NonNegativeMoney = spec_field(
+        0.0, description="Dental/vision.", unit="USD/month", not_yet_supported="Plan 27 D3"
+    )
+    fsa_annual: NonNegativeMoney = spec_field(
+        0.0, description="Health FSA.", unit="USD/year", not_yet_supported="Plan 27 D3"
+    )
+    dependent_care_fsa_annual: NonNegativeMoney = spec_field(
+        0.0,
+        description="Dependent-care FSA election (W-2 box 10): excluded from wages and FICA up to the Form 2441 "
+        "limit ($5,000; $7,500 from 2026), and it reduces the expenses the dependent care credit can use.",
+        unit="USD/year",
+        core="PayrollDeductions.dependent_care_fsa_annual",
+    )
+    hsa_employee_annual: NonNegativeMoney = spec_field(
+        0.0, description="Employee HSA.", unit="USD/year", not_yet_supported="Plan 27 D3"
+    )
+    hsa_employer_annual: NonNegativeMoney = spec_field(
+        0.0, description="Employer HSA.", unit="USD/year", not_yet_supported="Plan 27 D3"
+    )
+    commuter_monthly: NonNegativeMoney = spec_field(
+        0.0, description="Commuter benefit.", unit="USD/month", not_yet_supported="Plan 27 D3"
+    )
 
 
 class StockGrant(SpecModel):
@@ -359,6 +379,31 @@ class StockGrant(SpecModel):
     value: NonNegativeMoney = spec_field(description="Grant value at grant.", unit="USD")
     vesting_schedule_pct: list[NonNegativePercent] = spec_field(
         description="Percent vesting each year.", unit="percent"
+    )
+
+
+class StockOption(SpecModel):
+    """A stock option exercised in a planned year (Plan 31): an NSO's spread is wages; an ISO exercised and
+    held puts its spread into AMT (Form 6251 line 2i), and the minimum tax credit follows in later years."""
+
+    CORE_CLASS = "StockOption"
+
+    kind: Literal["iso", "nso"] = spec_field(description="Incentive (ISO) or nonqualified (NSO) option.")
+    exercise_year: Year = spec_field(description="Year the option is exercised.", unit="year")
+    exercise_cost: NonNegativeMoney = spec_field(
+        description="Strike price times shares (cash paid at exercise).", unit="USD", core="StockOption.exercise_cost"
+    )
+    value: NonNegativeMoney = spec_field(
+        description="Market value of the shares at the start year; revalued by the plan's stock growth to the "
+        "exercise year (set growth_pct 0 to exercise at exactly this value).",
+        unit="USD",
+        core="StockOption.value",
+    )
+    sell_at_exercise: bool = spec_field(
+        False,
+        description="Cashless same-day sale (for an ISO a disqualifying disposition: ordinary income, no AMT). "
+        "Otherwise the shares are held in the person's first brokerage account.",
+        core="StockOption.sell_at_exercise",
     )
 
 
@@ -417,6 +462,9 @@ class StockPlan(SpecModel):
     espp_discount_pct: NonNegativePercent | None = spec_field(
         None, description="ESPP purchase discount.", unit="percent", not_yet_supported="Plan 27 PR B"
     )
+    options: list[StockOption] = spec_field(
+        default_factory=list, description="Stock options (ISO / NSO) to exercise.", core="StockPlan.options"
+    )
 
     @field_validator("vesting_schedule_pct", "signon_vesting_schedule_pct")
     @classmethod
@@ -460,7 +508,9 @@ class Job(SpecModel):
         None, description="(year, raise percent) schedule.", not_yet_supported="Plan 27 D3"
     )
     payroll: Payroll | None = spec_field(
-        None, description="Pre-tax payroll deductions (health premiums, FSA, ...).", not_yet_supported="Plan 27 D3"
+        None,
+        description="Pre-tax payroll deductions (the dependent-care FSA; the others are Plan 27 D3).",
+        core="Job.payroll",
     )
 
 
@@ -1485,8 +1535,14 @@ class Donation(SpecModel):
     amount_annual: NonNegativeMoney = spec_field(
         description="Amount given each time (every frequency_years).", unit="USD/year", core="Donation.annual_amount"
     )
-    donation_type: Literal["cash", "stock", "property", "other"] = spec_field(
-        "cash", description="What is given.", core="Donation.donation_type"
+    donation_type: Literal["cash", "stock", "property", "other", "qcd"] = spec_field(
+        "cash",
+        description="What is given: 'cash'; 'stock' (appreciated long-term shares from the person's brokerage "
+        "accounts, deducted at fair market value up to 30% of AGI with no capital gain; any shortfall in cash); "
+        "'qcd' (a qualified charitable distribution from the person's traditional IRAs from age 70½, up to the "
+        "year's limit: not income, counts toward the RMD, not deductible; cash before then); 'property' and "
+        "'other' are deducted like cash.",
+        core="Donation.donation_type",
     )
     tax_deductible: bool = spec_field(True, description="Deductible.", core="Donation.tax_deductible")
     frequency_years: int = spec_field(
@@ -1516,6 +1572,27 @@ class Child(SpecModel):
     cost_override_annual: NonNegativeMoney | None = spec_field(
         None, description="Per-child cost instead of the config bands.", unit="USD/year", not_yet_supported="Plan 27 D6"
     )
+    care_expenses_annual: NonNegativeMoney = spec_field(
+        0.0,
+        description="Dependent care (after-school care, day camp) paid while the child is under 13, on top of the "
+        "age-band cost, in start-year dollars. The childcare band's cost (under 6) already counts as care "
+        "expenses for the dependent care credit.",
+        unit="USD/year",
+        core="Child.care_expenses_annual",
+    )
+    interest_annual: NonNegativeMoney = spec_field(
+        0.0,
+        description="The child's own interest income (a custodial account, not part of the household's "
+        "balances), reported by the parents on Form 8814 (kiddie tax).",
+        unit="USD/year",
+        core="Child.interest_annual",
+    )
+    dividends_annual: NonNegativeMoney = spec_field(
+        0.0,
+        description="The child's own qualified dividends (same as interest_annual).",
+        unit="USD/year",
+        core="Child.dividends_annual",
+    )
 
 
 # --- Plan 27 / Plan 31 person-level policies ----------------------------------------------------
@@ -1538,14 +1615,64 @@ class SavingsPolicy(SpecModel):
 
 
 class SelfEmployment(SpecModel):
-    """Self-employment income (Plan 31): Schedule C profit, SE tax, QBI, estimated payments."""
+    """Self-employment income (Plan 31): a sole proprietorship built as ``Job(kind="self_employed")``.
 
-    NOT_YET_SUPPORTED = "Plan 31"
+    The net profit (gross receipts less expenses) is paid to the bank like wages, taxed as Schedule C income
+    with self-employment tax (Schedule SE, sharing the Social Security wage base with W-2 wages), half of it
+    deducted, the SEP / solo 401(k) contribution deducted, and the qualified business income deduction.
+    Withholding and estimated payments are not modeled yet (the tax is settled with the year, Plan 31 D3).
+    A ``kind: 401k`` account whose ``job`` is this entry's ``id`` is a solo 401(k).
+    """
 
-    business: str = spec_field(description="Business name.")
-    net_profit_annual: NonNegativeMoney = spec_field(description="Schedule C net profit.", unit="USD/year")
-    growth_pct: GrowthPct = spec_field(0.0, description="Yearly growth of profit.", unit="percent")
-    sep_ira_contrib_pct: NonNegativePercent = spec_field(0.0, description="SEP-IRA contribution.", unit="percent")
+    CORE_CLASS = "Job (kind='self_employed')"
+
+    id: Identifier | None = _id_field("business (a solo 401k account names it as its job)")
+    business: str = spec_field(description="Business name.", core="Job.company")
+    net_profit_annual: NonNegativeMoney | None = spec_field(
+        None,
+        description="Schedule C net profit (line 31). Give it, or gross_receipts_annual and expenses_annual.",
+        unit="USD/year",
+        core="Salary.base",
+    )
+    gross_receipts_annual: NonNegativeMoney | None = spec_field(
+        None, description="Gross receipts (Schedule C line 1).", unit="USD/year", core="Salary.base"
+    )
+    expenses_annual: NonNegativeMoney = spec_field(
+        0.0,
+        description="Business expenses (Schedule C line 28); they grow with the receipts.",
+        unit="USD/year",
+        core="Job.expenses_annual",
+    )
+    growth_pct: GrowthPct = spec_field(
+        0.0, description="Yearly growth of the receipts; 'economy' follows wage growth.", unit="percent"
+    )
+    sep_ira_contrib_pct: NonNegativePercent = spec_field(
+        0.0,
+        description="Employer plan rate of the SEP (or the solo 401(k)'s profit sharing), at most 25: the owner "
+        "contributes rate / (1 + rate) of net profit less half of SE tax (Pub. 560), within the year's limits.",
+        unit="percent",
+        core="Job.plan_contribution_percent",
+        le=25,
+    )
+    sep_account: Identifier | None = spec_field(
+        None,
+        description="Id of the traditional_ira receiving the SEP contribution (default: the person's first "
+        "traditional IRA, or a new one).",
+        core="Job.sep_account",
+    )
+    sstb: bool = spec_field(False, description="A specified service trade or business (§199A(d)(2)).", core="Job.sstb")
+
+    @model_validator(mode="after")
+    def _profit_or_receipts(self) -> "SelfEmployment":
+        if (self.net_profit_annual is None) == (self.gross_receipts_annual is None):
+            raise ValueError("give either net_profit_annual, or gross_receipts_annual (with expenses_annual)")
+        if self.net_profit_annual is not None and self.expenses_annual:
+            raise ValueError("expenses_annual goes with gross_receipts_annual, not net_profit_annual")
+        return self
+
+    @property
+    def receipts(self) -> float:
+        return self.net_profit_annual if self.net_profit_annual is not None else float(self.gross_receipts_annual or 0)
 
 
 # --- People --------------------------------------------------------------------------------------
@@ -1591,9 +1718,7 @@ class Person(SpecModel):
     healthcare: Healthcare | None = spec_field(None, description="Opt-in healthcare cost agents.")
     giving: list[Giving] = spec_field(default_factory=list, description="Charitable giving.")
     children: list[Child] = spec_field(default_factory=list, description="Child dependents.")
-    self_employment: SelfEmployment | None = spec_field(
-        None, description="Self-employment income.", not_yet_supported="Plan 31"
-    )
+    self_employment: SelfEmployment | None = spec_field(None, description="Self-employment income (Schedule C).")
     contribution_plans: list[ContributionPlan] | None = spec_field(
         None, description="Recurring contributions.", not_yet_supported="Plan 27 D4"
     )
