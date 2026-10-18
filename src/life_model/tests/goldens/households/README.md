@@ -22,6 +22,7 @@ the library, for 2024, 2025 and 2026. They are the external ground truth for the
 | `kiddie_tax_mfj` | (Plan 31) a child's interest and qualified dividends on the parents' return (Form 8814: line 3a share, Schedule 1 line 8z, the 10% tax on line 16) |
 | `appreciated_stock_gift` | (Plan 31) long-term appreciated shares given at fair market value, limited to 30% of AGI with a carryover and no gain; in 2026 the 0.5% floor and the §68 2/37 limit |
 | `qcd_retiree` | (Plan 31) a qualified charitable distribution counting toward the RMD (line 4a vs 4b), the §63(f) amount for a single 65+ filer |
+| `ira_deduction_phaseout` | (Plan 31) a traditional IRA contribution (a `contribute` event) by a worker covered by a 401(k): the deduction phased out by MAGI (Pub. 590-A Worksheet 1-2, rounded up to $10), the rest nondeductible basis |
 | `student_loan_phaseout` | (Plan 31) the student loan interest deduction inside its MAGI phase-out (the worksheet's three-decimal fraction) |
 
 ## Files

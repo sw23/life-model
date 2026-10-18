@@ -180,6 +180,10 @@ COMPENSATION_LIMIT = {2024: 345000, 2025: 350000, 2026: 360000}
 LIMIT_415C = {2024: 69000, 2025: 70000, 2026: 72000}
 #: §408(d)(8) qualified charitable distribution limit: Notices 2023-75, 2024-80, 2025-67.
 QCD_LIMIT = {2024: 105000, 2025: 108000, 2026: 111000}
+#: Traditional IRA deduction phase-out for a single active participant (§219(g)) and the IRA limit
+#: (§219(b)(5)(A)): Notices 2023-75, 2024-80, 2025-67.
+IRA_PHASEOUT_SINGLE = {2024: (77000, 87000), 2025: (79000, 89000), 2026: (81000, 91000)}
+IRA_LIMIT = {2024: 7000, 2025: 7000, 2026: 7500}
 
 
 # --------------------------------------------------------------------------------------------------
@@ -283,6 +287,8 @@ class Return:
     stock_gift: float = 0.0
     qcd: float = 0.0
     savers_contributions: list = field(default_factory=list)
+    #: A traditional IRA contribution by a single active participant in a workplace plan.
+    ira_contribution: float = 0.0
     lines: dict[str, float] = field(default_factory=dict)
     schedules: dict[str, dict[str, float]] = field(default_factory=dict)
     work: list[str] = field(default_factory=list)
@@ -478,6 +484,24 @@ def work_return(r: "Return") -> "Return":
     if se_half:
         r.line("S1:15", se_half, "Schedule SE line 13")
     pre_sli = l1z + l2b + l3b + l4b + l5b + l7 + l8  # before Social Security (none with a student loan here)
+    ira = 0.0
+    if r.ira_contribution:
+        start, end = IRA_PHASEOUT_SINGLE[y]
+        magi = pre_sli - se_half - sep
+        limit = IRA_LIMIT[y]
+        if magi >= end:
+            ira, how = 0.0, f"MAGI {money(magi)} at or over {money(end)}: not deductible"
+        elif magi <= start:
+            ira, how = min(r.ira_contribution, limit), "MAGI below the phase-out: fully deductible"
+        else:
+            raw = (end - magi) * limit / (end - start)
+            rounded = max(math.ceil(raw / 10) * 10, 200)
+            ira = min(r.ira_contribution, rounded)
+            how = (
+                f"Pub. 590-A Worksheet 1-2: ({money(end)} - MAGI {money(magi)}) x {limit / (end - start):.2f} = "
+                f"{money(raw)}, up to the next $10 (at least $200)"
+            )
+        ira = r.line("S1:20", ira, how)
     student = 0.0
     if r.student_loan_interest:
         if status == "mfs":
@@ -486,7 +510,7 @@ def work_return(r: "Return") -> "Return":
             start = STUDENT_LOAN[y][1 if mfj else 0]
             width = 30000 if mfj else 15000
             capped = min(r.student_loan_interest, 2500.0)
-            magi = pre_sli - se_half - sep
+            magi = pre_sli - se_half - sep - ira
             if magi <= start:
                 student = capped
                 how = (
@@ -503,8 +527,8 @@ def work_return(r: "Return") -> "Return":
         r.line("S1:21", student, how)
     s1_26 = r.line(
         "S1:26",
-        student + se_half + sep,
-        "Schedule 1 lines 11-25" + ("" if (se_half or sep) else ": student loan interest only"),
+        student + se_half + sep + ira,
+        "Schedule 1 lines 11-25" + ("" if (se_half or sep or ira) else ": student loan interest only"),
     )
     l10 = r.line("10", s1_26, "Schedule 1 line 26")
     # Social Security Benefits Worksheet (1040 instructions)
@@ -1260,6 +1284,19 @@ def plan31_households(year: int) -> dict[str, dict]:
             )
         ],
         "rmds_gross": {"lee": rmd_amount},
+    }
+    out["ira_deduction_phaseout"] = {
+        "description": "single filer with $82,000 of wages, covered by a workplace 401(k), contributing the IRA limit "
+        "to a traditional IRA: the deduction phases out by MAGI and the rest is nondeductible basis",
+        "returns": [
+            Return(
+                year,
+                "single",
+                w2=[W2("sam", "Example Analytics", 82000.0)],
+                ira_contribution=float(IRA_LIMIT[year]),
+                filer_ages=(35,),
+            )
+        ],
     }
     loan_payment = standard_payment(45000, 0.075, 10)
     out["student_loan_phaseout"] = {

@@ -41,6 +41,7 @@ HOUSEHOLDS = (
     "kiddie_tax_mfj",
     "appreciated_stock_gift",
     "qcd_retiree",
+    "ira_deduction_phaseout",
     "student_loan_phaseout",
 )
 #: Goldens that need a prior year (the minimum tax credit after an ISO exercise): 2025 and 2026 only.

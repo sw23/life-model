@@ -302,9 +302,18 @@ def _contribute(builder: "_Builder", person, account_id: str, amount: float) -> 
     if isinstance(account, DonorAdvisedFund):
         account.contribute(available)  # debits the bank itself
     elif hasattr(account, "contribute"):
-        # Tax-advantaged / 529: the account accepts at most its remaining room; debit what it took.
-        accepted = account.contribute(available)
-        person.deduct_from_bank_accounts(accepted)
+        # Tax-advantaged / 529: the account accepts at most its remaining room; debit what it took, bank by
+        # bank, posting each part as a transfer from that bank (Plan 31: the debit used to go unposted while
+        # the account posted new money from outside, so the ledger did not conserve).
+        remaining = available
+        for bank in person.bank_accounts:
+            if remaining <= 0:
+                break
+            accepted = account.contribute(min(remaining, bank.balance), from_account=bank)
+            if accepted <= 0:
+                break
+            bank.withdraw(accepted)
+            remaining -= accepted
     else:
         person.deduct_from_bank_accounts(available)
         account.deposit(available)
