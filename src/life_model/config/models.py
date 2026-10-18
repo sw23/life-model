@@ -106,6 +106,33 @@ class CharitableConfig(StrictModel):
     carryforward_years: int = Field(default=5, ge=0)
 
 
+class SaltCapStatuteConfig(StrictModel):
+    """How the SALT cap moves after the last published ``tax_years`` entry: statutory, not indexed to
+    inflation. OBBBA §70120 (IRC §164(b)(7)): the cap and the phase-down threshold grow 1% a year
+    through 2029; from 2030 the cap reverts to $10,000 with no phase-down."""
+
+    # vintage: statutory, source: OBBBA (P.L. 119-21) §70120, IRC §164(b)(7)
+    annual_increase_percent: float = Field(default=1.0, ge=0)
+    increase_through_year: int = 2029
+    reversion_year: int = 2030
+    reversion_cap: float = Field(default=10000, ge=0)
+
+
+class SaltCapYear(StrictModel):
+    """One year's SALT cap (§164(b)(6)/(7)); see ``FederalTaxConfig.salt_deduction_cap``."""
+
+    cap: float = Field(ge=0)
+    phaseout_threshold: float | None = Field(default=None, ge=0)
+
+
+class AdditionalStandardDeduction(StrictModel):
+    """IRC §63(f) additional standard deduction per condition (age 65+, blind). Recorded for Plan 31;
+    the engine does not apply it yet."""
+
+    married: int = Field(ge=0)
+    unmarried: int = Field(ge=0)
+
+
 class FederalTaxConfig(StrictModel):
     standard_deduction: StandardDeductionConfig
     tax_brackets: TaxBracketsConfig
@@ -119,7 +146,15 @@ class FederalTaxConfig(StrictModel):
     # Itemized-deduction limits (defaults let existing configs load without these keys).
     # vintage: 2026, source: IRC §163(h)(3) TCJA acquisition-debt limit; §164(b)(6) SALT cap (OBBBA).
     mortgage_interest_debt_limit: int = Field(default=750000, ge=0)
-    salt_deduction_cap: int = Field(default=40000, ge=0)
+    # SALT cap per return (§164(b)(6)/(7)). Simulated years read the year's values from ``tax_years``
+    # (``salt``): the cap, and from 2025 (OBBBA) its phase-down by ``salt_phaseout_rate`` percent of
+    # MAGI over ``salt_phaseout_threshold``, not below ``salt_cap_floor``. A separate return gets
+    # half of the cap, the threshold and the floor. None threshold: no phase-down.
+    salt_deduction_cap: float = Field(default=40000, ge=0)
+    salt_phaseout_threshold: float | None = Field(default=None, ge=0)
+    salt_phaseout_rate: float = Field(default=30.0, ge=0, le=100)
+    salt_cap_floor: float = Field(default=10000, ge=0)
+    salt_cap_statute: SaltCapStatuteConfig = Field(default_factory=SaltCapStatuteConfig)
     senior_deduction: SeniorDeductionConfig = Field(default_factory=SeniorDeductionConfig)
     charitable: CharitableConfig = Field(default_factory=CharitableConfig)
     # Estate transfer parameters (defaults let existing configs load without these keys).
@@ -663,6 +698,21 @@ class YearlyTaxParameters(StrictModel):
     #: money per plan). Optional so older tables still load; None keeps the static
     #: ``retirement.job_401k_contrib_limit.annual_additions_limit``.
     limit_415c: int | None = Field(default=None, ge=0)
+    # Plan 29 task 3: year-varying parameters that used to be static. Each is optional (None keeps
+    # the static value) so older tables and the frozen test fixture still load unchanged.
+    #: Long-term capital gains / qualified dividend brackets (§1(h); thresholds indexed).
+    capital_gains: TaxBracketsConfig | None = None
+    #: Child Tax Credit per child and the refundable (additional child tax credit) maximum per child.
+    ctc_per_child: float | None = Field(default=None, ge=0)
+    ctc_refundable_max: float | None = Field(default=None, ge=0)
+    #: SALT cap (and its OBBBA phase-down threshold).
+    salt: SaltCapYear | None = None
+    #: OBBBA senior deduction per person 65+ (0 outside 2025-2028; statutory, not indexed).
+    senior_deduction_amount: float | None = Field(default=None, ge=0)
+    #: Net investment income tax thresholds (statutory, never indexed).
+    niit: NIITConfig | None = None
+    #: §63(f) additional standard deduction (recorded for Plan 31; not applied yet).
+    additional_standard_deduction: AdditionalStandardDeduction | None = None
 
 
 class StochasticEconomyConfig(StrictModel):

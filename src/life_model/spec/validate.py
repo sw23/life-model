@@ -246,6 +246,7 @@ class _SpecChecker:
         self.check_events()
         self.check_unmarried_adults()
         self.check_growth()
+        self.check_actuals()
         return self.findings
 
     # --- the first month and birth months ---
@@ -281,6 +282,67 @@ class _SpecChecker:
                     "make age the completed years in the first simulated month.",
                     "birth_age_mismatch",
                 )
+
+    # --- actual records (Plan 29) ---
+
+    def check_actuals(self) -> None:
+        """``actuals``: line names exist on that year's forms, and every person/account id resolves."""
+        if not self.spec.actuals:
+            return
+        from .actuals import LINE_TABLE_YEARS, unknown_lines
+
+        ids = self.item_ids()
+        for year, records in self.spec.actuals.items():
+            base = f"actuals.{year}"
+            if year < self.start or year > self.end:
+                self.warn(
+                    base,
+                    f"actual records for {year} are outside the simulated years {self.start}-{self.end}",
+                    "reconcile a simulated year (start the spec at the year of the records), or run a backtest",
+                    "actuals_outside_run",
+                )
+            if not LINE_TABLE_YEARS[0] <= year <= LINE_TABLE_YEARS[-1]:
+                self.warn(
+                    base,
+                    f"no Form 1040 line table for {year}; reconcile reads it with the nearest year's line numbers",
+                    None,
+                    "actuals_line_table",
+                )
+            for path, line in unknown_lines(records, year):
+                self.error(
+                    f"{base}.{path}",
+                    f"{line!r} is not a line of the {year} forms",
+                    "use the official line number of that year (docs/reconciliation.md lists them)",
+                    "unknown_line",
+                )
+            for i, tax_return in enumerate(records.returns):
+                if tax_return.filer is not None and tax_return.filer not in self.people:
+                    self.error(
+                        f"{base}.returns[{i}].filer", f"unknown person {tax_return.filer!r}", None, "unknown_ref"
+                    )
+            for collection, items in (
+                ("w2", records.w2),
+                ("form_1099", records.form_1099),
+                ("paystub", records.paystub),
+            ):
+                for i, item in enumerate(items):
+                    if item.person is not None and item.person not in self.people:
+                        self.error(
+                            f"{base}.{collection}[{i}].person", f"unknown person {item.person!r}", None, "unknown_ref"
+                        )
+                    account = getattr(item, "account", None)
+                    if account is not None and account not in ids:
+                        self.error(
+                            f"{base}.{collection}[{i}].account", f"unknown account id {account!r}", None, "unknown_ref"
+                        )
+            for account in records.balances:
+                if account not in ids:
+                    self.error(
+                        f"{base}.balances.{account}",
+                        f"unknown account or debt id {account!r}",
+                        "give the account an 'id' in the spec and use it here",
+                        "unknown_ref",
+                    )
 
     # --- ids and references ---
 

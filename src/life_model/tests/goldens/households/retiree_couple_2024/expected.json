@@ -1,0 +1,90 @@
+{
+  "golden": "retiree_couple_2024",
+  "year": 2024,
+  "description": "retirees filing jointly (75 and 73): RMDs from two traditional IRAs, Social Security, savings interest, both 65+",
+  "method": "Worked by scripts/household_goldens.py from the year's Form 1040 and instructions (see worksheet.md); independent of the library.",
+  "actuals": {
+    "form_1040": {
+      "1a": 0.0,
+      "1z": 0.0,
+      "2a": 0.0,
+      "2b": 2000.0,
+      "3a": 0.0,
+      "3b": 0.0,
+      "4a": 78969.17,
+      "4b": 78969.17,
+      "5b": 0.0,
+      "7": 0.0,
+      "8": 0.0,
+      "6a": 53478.0,
+      "10": 0.0,
+      "6b": 45456.3,
+      "9": 126425.47,
+      "11": 126425.47,
+      "12": 32300.0,
+      "13": 0.0,
+      "14": 32300.0,
+      "15": 94125.47,
+      "16": 10831.0,
+      "17": 0.0,
+      "18": 10831.0,
+      "19": 0.0,
+      "20": 0.0,
+      "21": 0.0,
+      "22": 10831.0,
+      "23": 0.0,
+      "24": 10831.0,
+      "28": 0.0
+    },
+    "schedules": {
+      "1": {
+        "26": 0.0
+      },
+      "2": {
+        "21": 0.0
+      }
+    },
+    "form_1099": [
+      {
+        "form": "1099-R",
+        "person": "pat",
+        "account": "pat_ira",
+        "boxes": {
+          "1": 48780.49,
+          "2a": 48780.49
+        },
+        "code": "7"
+      },
+      {
+        "form": "1099-R",
+        "person": "lee",
+        "account": "lee_ira",
+        "boxes": {
+          "1": 30188.68,
+          "2a": 30188.68
+        },
+        "code": "7"
+      }
+    ]
+  },
+  "exact": {
+    "1040:16": 10831.06
+  },
+  "tolerance": {
+    "default": 0.01,
+    "1040:16": 3.5,
+    "1040:18": 3.5,
+    "1040:22": 3.5,
+    "1040:24": 3.5
+  },
+  "xfail": {
+    "1040:12": "Plan 31 task 1: the engine does not apply the IRC \u00a763(f) additional standard deduction for age 65+ ($1,550 per person on a joint return in 2024)",
+    "1040:14": "Plan 31 task 1: the engine does not apply the IRC \u00a763(f) additional standard deduction for age 65+ ($1,550 per person on a joint return in 2024)",
+    "1040:15": "Plan 31 task 1: the engine does not apply the IRC \u00a763(f) additional standard deduction for age 65+ ($1,550 per person on a joint return in 2024)",
+    "1040:16": "Plan 31 task 1: the engine does not apply the IRC \u00a763(f) additional standard deduction for age 65+ ($1,550 per person on a joint return in 2024)",
+    "1040:18": "Plan 31 task 1: the engine does not apply the IRC \u00a763(f) additional standard deduction for age 65+ ($1,550 per person on a joint return in 2024)",
+    "1040:22": "Plan 31 task 1: the engine does not apply the IRC \u00a763(f) additional standard deduction for age 65+ ($1,550 per person on a joint return in 2024)",
+    "1040:24": "Plan 31 task 1: the engine does not apply the IRC \u00a763(f) additional standard deduction for age 65+ ($1,550 per person on a joint return in 2024)",
+    "exact:1040:16": "Plan 31 task 1: the engine does not apply the IRC \u00a763(f) additional standard deduction for age 65+ ($1,550 per person on a joint return in 2024)"
+  }
+}

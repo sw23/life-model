@@ -33,6 +33,25 @@ def senior_deduction(
     return per_person * sum(1 for member in members if member.age_in(year) >= cfg.age)
 
 
+def salt_cap(filing_status: FilingStatus, magi: float, config: "FinancialConfig") -> float:
+    """The return's SALT deduction cap for the year (§164(b)(6)/(7)).
+
+    ``config`` is the year's view (``model.config_for_year``): its cap, and from 2025 (OBBBA) the
+    phase-down by ``salt_phaseout_rate`` percent of MAGI over ``salt_phaseout_threshold``, not below
+    ``salt_cap_floor``. A separate return gets half of the cap, the threshold and the floor (the
+    floor's halving is a reading of §164(b)(7)(B), which states the floor for the full limit only).
+    MAGI is AGI here (foreign-income exclusions are not modeled).
+    """
+    federal = config.tax.federal
+    share = 0.5 if filing_status == FilingStatus.MARRIED_FILING_SEPARATELY else 1.0
+    cap = federal.salt_deduction_cap * share
+    threshold = federal.salt_phaseout_threshold
+    if threshold is None:
+        return cap
+    reduced = cap - federal.salt_phaseout_rate / 100 * max(0.0, magi - threshold * share)
+    return max(min(cap, federal.salt_cap_floor * share), reduced)
+
+
 def charitable_cap(agi: float, config: "FinancialConfig") -> float:
     """Most cash charity a return can deduct this year (60% of AGI)."""
     return max(0.0, agi) * config.tax.federal.charitable.cash_agi_limit_percent / 100

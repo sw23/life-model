@@ -1,0 +1,153 @@
+# Household golden (synthetic, not real data). See ../README.md.
+spec_version: 1
+meta:
+  name: Retiree couple
+  description: 'Household golden (synthetic): two retirees taking required minimum distributions from
+    traditional IRAs, with Social Security, savings interest and Medicare.'
+  as_of: 2026-01
+  start_year: 2026
+  end_year: 2026
+  seed: 1
+  default_state: FL
+people:
+- id: pat
+  name: Pat
+  age: 75
+  retirement_age: 65
+  gender: male
+  spending:
+    amount_annual: 60000
+    growth_pct: 0
+  accounts:
+  - kind: bank
+    id: pat_checking
+    company: Community Bank
+    type: Checking
+    balance: 80000
+    interest_pct: 0.0
+    compounding: annual
+    primary: true
+  - kind: bank
+    id: pat_savings
+    company: Credit Union
+    type: Savings
+    balance: 50000
+    interest_pct: 4.0
+    compounding: annual
+  - kind: traditional_ira
+    id: pat_ira
+    balance: 1200000
+    growth_pct: 0
+  social_security:
+    claim_age: 67
+    earnings_history:
+      1978: 30000
+      1979: 30000
+      1980: 30000
+      1981: 30000
+      1982: 30000
+      1983: 30000
+      1984: 30000
+      1985: 30000
+      1986: 30000
+      1987: 30000
+      1988: 30000
+      1989: 30000
+      1990: 30000
+      1991: 30000
+      1992: 30000
+      1993: 30000
+      1994: 30000
+      1995: 30000
+      1996: 30000
+      1997: 30000
+      1998: 30000
+      1999: 30000
+      2000: 30000
+      2001: 30000
+      2002: 30000
+      2003: 30000
+      2004: 30000
+      2005: 30000
+      2006: 30000
+      2007: 30000
+      2008: 30000
+      2009: 30000
+      2010: 30000
+      2011: 30000
+      2012: 30000
+      2013: 30000
+      2014: 30000
+      2015: 30000
+  healthcare:
+    medicare: true
+- id: lee
+  name: Lee
+  age: 73
+  retirement_age: 65
+  gender: female
+  spending:
+    amount_annual: 0
+    growth_pct: 0
+  accounts:
+  - kind: bank
+    id: lee_checking
+    company: Credit Union
+    type: Checking
+    balance: 10000
+    interest_pct: 0.0
+    compounding: annual
+    primary: true
+  - kind: traditional_ira
+    id: lee_ira
+    balance: 800000
+    growth_pct: 0
+  social_security:
+    claim_age: 67
+    earnings_history:
+      1978: 18000
+      1979: 18000
+      1980: 18000
+      1981: 18000
+      1982: 18000
+      1983: 18000
+      1984: 18000
+      1985: 18000
+      1986: 18000
+      1987: 18000
+      1988: 18000
+      1989: 18000
+      1990: 18000
+      1991: 18000
+      1992: 18000
+      1993: 18000
+      1994: 18000
+      1995: 18000
+      1996: 18000
+      1997: 18000
+      1998: 18000
+      1999: 18000
+      2000: 18000
+      2001: 18000
+      2002: 18000
+      2003: 18000
+      2004: 18000
+      2005: 18000
+      2006: 18000
+      2007: 18000
+      2008: 18000
+      2009: 18000
+      2010: 18000
+      2011: 18000
+      2012: 18000
+      2013: 18000
+      2014: 18000
+      2015: 18000
+  healthcare:
+    medicare: true
+relationships:
+  marriages:
+  - spouses:
+    - pat
+    - lee
+    filing_status: joint

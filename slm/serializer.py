@@ -17,13 +17,27 @@ The household facts are rendered from the profile's :class:`life_model.spec.Hous
 (:meth:`HouseholdProfile.to_household_spec`), the same household the scoring environment builds;
 only the plan context the spec does not carry (scenario label, employer match, retirement spending
 ratio) is read from the profile itself.
+
+The English text rounds dollars and rates (that is what a reader wants). Beside it sits a lossless
+JSON channel: :func:`household_to_json` / :func:`household_from_json` round-trip a profile exactly
+(every float bit for bit), and :func:`household_json_line` embeds it in a prompt as one
+``Household JSON: {...}`` line that :mod:`slm.advise` prefers over regex parsing when present.
+:func:`household_spec_json` gives the profile's full ``HouseholdSpec`` as JSON, the input the
+``life_model`` one-call functions (``life_model.run``/``compare``/``explain``) and the
+``life-model`` command line take.
 """
 
+import json
 import re
 from dataclasses import dataclass
 from typing import Any
 
-from .schema import HouseholdProfile
+from .schema import SCHEMA_VERSION, HouseholdProfile
+
+#: Prefix of the one-line JSON channel embedded in prompt text (see :func:`household_json_line`).
+JSON_MARKER = "Household JSON:"
+#: ``format`` tag of the JSON channel document.
+JSON_FORMAT = "slm.household_profile"
 
 
 @dataclass(frozen=True)
@@ -254,3 +268,48 @@ def parse_household(text: str) -> dict[str, Any]:
         "initial_401k_roth": _optional_money(text, _ROTH_RE),
         "initial_brokerage": _optional_money(text, _BROKERAGE_RE),
     }
+
+
+# --- Lossless JSON channel ----------------------------------------------------------------------
+
+
+def household_to_json(profile: HouseholdProfile) -> str:
+    """The profile as canonical JSON (sorted keys, no whitespace): lossless, unlike the English text.
+
+    ``household_from_json(household_to_json(p)) == p`` for every profile; floats are written with
+    Python's shortest round-tripping repr, so no dollar or rate is rounded.
+    """
+    document = {"format": JSON_FORMAT, "schema_version": SCHEMA_VERSION, "profile": profile.model_dump(mode="json")}
+    return json.dumps(document, sort_keys=True, separators=(",", ":"))
+
+
+def household_from_json(text: str) -> HouseholdProfile:
+    """Inverse of :func:`household_to_json` (also accepts a bare profile object)."""
+    document = json.loads(text)
+    if isinstance(document, dict) and document.get("format") == JSON_FORMAT:
+        version = document.get("schema_version")
+        if version != SCHEMA_VERSION:
+            raise ValueError(f"household JSON schema_version {version} != {SCHEMA_VERSION}")
+        document = document["profile"]
+    return HouseholdProfile.model_validate(document)
+
+
+def household_json_line(profile: HouseholdProfile) -> str:
+    """``"Household JSON: {...}"``: the lossless channel as one line to append to a prompt."""
+    return f"{JSON_MARKER} {household_to_json(profile)}"
+
+
+def find_household_json(text: str) -> HouseholdProfile | None:
+    """The profile from a :func:`household_json_line` inside ``text``, or None when there is none."""
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith(JSON_MARKER):
+            return household_from_json(stripped[len(JSON_MARKER) :].strip())
+    return None
+
+
+def household_spec_json(profile: HouseholdProfile) -> str:
+    """The profile's ``HouseholdSpec`` as JSON (the input of ``life_model.run`` and ``life-model run``)."""
+    from life_model.spec import dumps
+
+    return dumps(profile.to_household_spec(), "json")

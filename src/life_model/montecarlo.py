@@ -13,7 +13,7 @@ results.
 Usage::
 
     def build(seed):
-        model = LifeModel(seed=seed, scenario="stochastic_economy")
+        model = LifeModel(seed=seed, scenario="stochastic")  # the packaged stochastic economy
         # ... construct the family, jobs, accounts ...
         return model
 
@@ -24,6 +24,9 @@ Usage::
 Trials are yearly: each keeps its model's yearly frame (``LifeModel``'s default ``collect="year"``;
 the engine steps monthly, so a 50-year trial runs 600 months). Build trial models with
 ``collect="month"`` only if you read the monthly rows from the models yourself.
+
+For a household spec, ``life_model.api.run_montecarlo(spec, n=1000, scenario="stochastic")`` (or
+``life-model montecarlo SPEC --scenario stochastic``) builds the factory for you.
 
 ``model_factory`` must be a picklable top-level callable so trials can run in worker processes.
 When it is not picklable, the runner transparently falls back to running trials sequentially in the

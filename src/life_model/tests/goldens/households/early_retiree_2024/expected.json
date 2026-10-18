@@ -1,0 +1,70 @@
+{
+  "golden": "early_retiree_2024",
+  "year": 2024,
+  "description": "early retiree (58, single): qualified dividends and a long-term gain straddling the 0%/15% brackets, savings interest",
+  "method": "Worked by scripts/household_goldens.py from the year's Form 1040 and instructions (see worksheet.md); independent of the library.",
+  "actuals": {
+    "form_1040": {
+      "1a": 0.0,
+      "1z": 0.0,
+      "2a": 0.0,
+      "2b": 400.0,
+      "3a": 18000.0,
+      "3b": 18000.0,
+      "4a": 0.0,
+      "4b": 0.0,
+      "5b": 0.0,
+      "7": 46752.78,
+      "8": 0.0,
+      "6a": 0.0,
+      "10": 0.0,
+      "6b": 0.0,
+      "9": 65152.78,
+      "11": 65152.78,
+      "12": 14600.0,
+      "13": 0.0,
+      "14": 14600.0,
+      "15": 50552.78,
+      "16": 529.17,
+      "17": 0.0,
+      "18": 529.17,
+      "19": 0.0,
+      "20": 0.0,
+      "21": 0.0,
+      "22": 529.17,
+      "23": 0.0,
+      "24": 529.17,
+      "28": 0.0
+    },
+    "schedules": {
+      "1": {
+        "26": 0.0
+      },
+      "2": {
+        "21": 0.0
+      }
+    },
+    "form_1099": [
+      {
+        "form": "1099-B",
+        "person": "sam",
+        "account": "sam_brokerage",
+        "boxes": {
+          "1d": 70129.17
+        },
+        "code": "long"
+      }
+    ]
+  },
+  "exact": {
+    "1040:16": 529.17
+  },
+  "tolerance": {
+    "default": 0.01,
+    "1040:16": 3.0,
+    "1040:18": 3.0,
+    "1040:22": 3.0,
+    "1040:24": 3.0
+  },
+  "xfail": {}
+}

@@ -211,6 +211,9 @@ class FinancialLifeEnv(gym.Env):
             "initial_401k_pretax": 0.0,
             "initial_401k_roth": 0.0,
             "initial_brokerage": 0.0,
+            # The core invariant checker (life_model.invariants) run at each simulated year end:
+            # "off" for training throughput; tests run episodes under "strict".
+            "checks": "off",
         }
 
         if config:
@@ -351,6 +354,7 @@ class FinancialLifeEnv(gym.Env):
         self.model = create_model(
             self.episode_spec, config=financial_config, seed=model_seed, collect_data=False, apply_economy=False
         )
+        self.model.checks = self.config["checks"]
         if overlay is not None:
             overlay.install(self.model.economy)
         # The household is generated, not user-written: skip the validator's per-reset cost (the

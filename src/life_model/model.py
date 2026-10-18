@@ -577,6 +577,7 @@ class LifeModel(mesa.Model):
         start: str | None = None,
         start_month: int | None = None,
         collect: str = "year",
+        checks: str = "off",
     ):
         """LifeModel Helper Class
 
@@ -606,6 +607,10 @@ class LifeModel(mesa.Model):
                 (keyword-only). Defaults to January.
             collect (str, optional): ``"year"`` (default) collects one row per simulated year;
                 ``"month"`` also collects a row per month (see :meth:`monthly_frame`). Keyword-only.
+            checks (str, optional): Run the invariant checker (:mod:`life_model.invariants`) at the
+                end of every simulated year: ``"strict"`` raises ``InvariantError`` on a violation,
+                ``"warn"`` emits ``InvariantWarning``, ``"off"`` (default) skips it. Violations are
+                kept on ``invariant_violations``. Keyword-only.
         """
         # Mesa 3.5 deprecates ``seed=`` in favor of ``rng=``; both seed ``self.random`` identically.
         super().__init__(rng=seed)
@@ -667,6 +672,12 @@ class LifeModel(mesa.Model):
         #: The same around each simulated month, keyed ``(year, month)``.
         self.month_balance_sheets: dict = {}
         self.simulated_years = []
+        # Invariant checker (Plan 29 D4): mode, the violations found, and per-year start snapshots.
+        from .invariants import validate_mode
+
+        self.checks = validate_mode(checks)
+        self.invariant_violations: list = []
+        self._invariant_snapshots: dict = {}
         self._stages = list(self.STAGES)
         self._year_opening = None
         self._year_ledger_start = 0
@@ -815,7 +826,8 @@ class LifeModel(mesa.Model):
             self.running = False
             return
 
-        track = self.datacollector is not None
+        checking = self.checks != "off"
+        track = self.datacollector is not None or checking
         if self.is_year_start:
             if self.period > 0:
                 self._reset_flow_stats()
@@ -825,6 +837,10 @@ class LifeModel(mesa.Model):
 
                 self._year_opening = household_balance_sheet(self)
                 self._year_ledger_start = len(self.ledger)
+            if checking:
+                from .invariants import year_start
+
+                year_start(self)
             self._run_stages(self.YEAR_START_STAGES)
         if track:
             from .ledger import household_balance_sheet
@@ -837,7 +853,7 @@ class LifeModel(mesa.Model):
         if year_end:
             self._run_stages(self.YEAR_END_STAGES)
             self._collect_year_end_stats()
-        elif track and self.collect == "month":
+        elif self.datacollector is not None and self.collect == "month":
             self._collect_month_end_stats()
 
         if track:
@@ -853,7 +869,7 @@ class LifeModel(mesa.Model):
                 ledger_start=month_ledger_start,
                 ledger_end=len(self.ledger),
             )
-            if self.collect == "month":
+            if self.collect == "month" and self.datacollector is not None:
                 self._monthly_rows.append(self._monthly_row())
             if year_end:
                 self.balance_sheets[self.year] = YearBalances(
@@ -864,9 +880,14 @@ class LifeModel(mesa.Model):
                     ledger_end=len(self.ledger),
                 )
                 # Collect after the stages so row Year=Y holds year-Y flows and balances.
-                for record in self.ledger.to_records(self._year_ledger_start):
-                    self.datacollector.add_table_row("Ledger", record)
-                self.datacollector.collect(self)
+                if self.datacollector is not None:
+                    for record in self.ledger.to_records(self._year_ledger_start):
+                        self.datacollector.add_table_row("Ledger", record)
+                    self.datacollector.collect(self)
+        if year_end and checking:
+            from .invariants import run_year_checks
+
+            run_year_checks(self, self.year)
 
         self._advance_month()
         self.running = not self.is_finished

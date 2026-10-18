@@ -3,6 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
+import math
 from importlib.resources import files
 from typing import TYPE_CHECKING, Any
 
@@ -22,6 +23,7 @@ from .models import (
     InsuranceConfig,
     PayrollConfig,
     RetirementConfig,
+    SaltCapYear,
     SocialSecurityConfig,
     TaxBracketsConfig,
     TaxConfig,
@@ -172,7 +174,23 @@ class FinancialConfig:
         params = table[chosen].model_copy(update={"year": year})
         if year > published_years[-1] and inflation_factor and inflation_factor != 1.0:
             params = self._project_tax_params(params, inflation_factor)
+        if year > published_years[-1] and params.salt is not None:
+            params = params.model_copy(update={"salt": self._statutory_salt(params.salt, published_years[-1], year)})
         return params
+
+    def _statutory_salt(self, last: "SaltCapYear", last_year: int, year: int) -> "SaltCapYear":
+        """The SALT cap of a year after the table: the statute's schedule, not inflation
+        (:class:`~life_model.config.models.SaltCapStatuteConfig`). The statute states no rounding for
+        the yearly increase, so the amounts are not rounded (TODO(verify) against IRS guidance)."""
+        rule = self._model.tax.federal.salt_cap_statute
+        if year >= rule.reversion_year:
+            return SaltCapYear(cap=rule.reversion_cap, phaseout_threshold=None)
+        steps = min(year, rule.increase_through_year) - last_year
+        if steps <= 0:
+            return last
+        growth = (1 + rule.annual_increase_percent / 100) ** steps
+        threshold = None if last.phaseout_threshold is None else round(last.phaseout_threshold * growth, 2)
+        return SaltCapYear(cap=round(last.cap * growth, 2), phaseout_threshold=threshold)
 
     def year_view(self, params: YearlyTaxParameters, inflation_factor: float = 1.0) -> "FinancialConfig":
         """A config for one simulated year: this config with ``params``' values swapped in.
@@ -189,7 +207,10 @@ class FinancialConfig:
         model = self._model
         federal = model.tax.federal
         capital_gains = federal.capital_gains
-        if inflation_factor and inflation_factor != 1.0:
+        if params.capital_gains is not None:
+            # The year's own table (already projected by ``tax_year`` past the last published year).
+            capital_gains = params.capital_gains
+        elif inflation_factor and inflation_factor != 1.0:
             capital_gains = TaxBracketsConfig(
                 **{
                     status: [self._scale_bracket(b, inflation_factor) for b in rows]
@@ -197,15 +218,31 @@ class FinancialConfig:
                     if rows is not None
                 }
             )
+        federal_updates: dict[str, Any] = {
+            "standard_deduction": params.standard_deduction,
+            "tax_brackets": params.tax_brackets,
+            "capital_gains": capital_gains,
+        }
+        if params.salt is not None:
+            federal_updates["salt_deduction_cap"] = params.salt.cap
+            federal_updates["salt_phaseout_threshold"] = params.salt.phaseout_threshold
+        if params.niit is not None:
+            federal_updates["niit"] = params.niit
+        if params.senior_deduction_amount is not None:
+            federal_updates["senior_deduction"] = federal.senior_deduction.model_copy(
+                update={"amount": params.senior_deduction_amount}
+            )
+        dependents = model.dependents
+        ctc = {
+            name: getattr(params, name)
+            for name in ("ctc_per_child", "ctc_refundable_max")
+            if getattr(params, name) is not None
+        }
+        if ctc:
+            dependents = dependents.model_copy(update=ctc)
         tax = model.tax.model_copy(
             update={
-                "federal": federal.model_copy(
-                    update={
-                        "standard_deduction": params.standard_deduction,
-                        "tax_brackets": params.tax_brackets,
-                        "capital_gains": capital_gains,
-                    }
-                ),
+                "federal": federal.model_copy(update=federal_updates),
                 "fica": model.tax.fica.model_copy(update={"social_security_max_income": params.ss_wage_base}),
             }
         )
@@ -234,7 +271,9 @@ class FinancialConfig:
         view = object.__new__(FinancialConfig)
         view.config_file = self.config_file
         view.scenario = self.scenario
-        view._model = model.model_copy(update={"tax": tax, "retirement": retirement, "accounts": accounts})
+        view._model = model.model_copy(
+            update={"tax": tax, "retirement": retirement, "accounts": accounts, "dependents": dependents}
+        )
         return view
 
     @staticmethod
@@ -287,6 +326,21 @@ class FinancialConfig:
         if data.get("limit_415c") is not None:
             # §415(d)(4)(B): the defined-contribution limit is adjusted in $1,000 increments.
             data["limit_415c"] = round_to(data["limit_415c"] * factor, 1000)
+        if data.get("capital_gains") is not None:
+            data["capital_gains"] = {
+                status: [scale_bracket(b) for b in rows] if rows is not None else None
+                for status, rows in data["capital_gains"].items()
+            }
+        # §24(i) (OBBBA): the credit and its refundable portion are indexed, rounded down to $100.
+        for name in ("ctc_per_child", "ctc_refundable_max"):
+            if data.get(name) is not None:
+                data[name] = math.floor(data[name] * factor / 100) * 100
+        # The SALT cap follows its statute (see ``tax_year``); NIIT thresholds and the senior deduction
+        # are statutory and unindexed; the §63(f) amounts are indexed in $50 steps.
+        if data.get("additional_standard_deduction") is not None:
+            data["additional_standard_deduction"] = {
+                k: round_to(v * factor, 50) for k, v in data["additional_standard_deduction"].items()
+            }
         # rmd_start_age is a structural (age) parameter, not a dollar amount — leave it.
         return YearlyTaxParameters(**data)
 
@@ -385,6 +439,13 @@ class FinancialConfig:
         (("retirement", "ira", "contribution_limit"), "limit_ira"),
         (("accounts", "hsa", "contribution_limit"), "limit_hsa_self"),
         (("accounts", "hsa", "contribution_limit_family"), "limit_hsa_family"),
+        (("tax", "federal", "capital_gains"), "capital_gains"),
+        (("tax", "federal", "niit"), "niit"),
+        (("tax", "federal", "salt_deduction_cap"), "salt.cap"),
+        (("tax", "federal", "salt_phaseout_threshold"), "salt.phaseout_threshold"),
+        (("tax", "federal", "senior_deduction", "amount"), "senior_deduction_amount"),
+        (("dependents", "ctc_per_child"), "ctc_per_child"),
+        (("dependents", "ctc_refundable_max"), "ctc_refundable_max"),
     )
 
     @classmethod
@@ -405,6 +466,11 @@ class FinancialConfig:
                 node = node[key]
             else:
                 for entry in merged.get("tax_years", {}).values():
+                    if "." in field:  # a field of a nested year entry (``salt.cap``)
+                        outer, inner = field.split(".", 1)
+                        if isinstance(entry.get(outer), dict):
+                            entry[outer] = {**entry[outer], inner: node}
+                        continue
                     if isinstance(node, dict) and isinstance(entry.get(field), dict):
                         entry[field] = cls._deep_merge(entry[field], node)
                     else:

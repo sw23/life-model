@@ -87,6 +87,11 @@ tax:
 LifeModel(scenario="high_tax")
 ```
 
+The packaged scenarios are `aggressive`, `boom`, `conservative`, `deflation`,
+`high_inflation`, `high_tax`, `low_tax`, `recession`, `stochastic` and
+`tax_reform`; `life_model.config.scenarios.list_scenarios()` (or
+`life-model examples`) lists them, user scenarios included.
+
 You can point life-model at your own scenario directory with
 `life_model.config.scenarios.set_scenario_directory(path)`; scenarios found there
 take precedence over the packaged ones.
@@ -131,8 +136,8 @@ The state taxable-income base starts from the unit's ordinary income and
 subtracts categories the pack exempts (pre-tax retirement distributions when
 `retirement_income_taxable: false`; the Social Security taxable portion unless
 `ss_taxable: true`) plus the state standard deduction. State income tax paid
-joins property tax in the federal SALT itemized deduction, subject to
-`tax.federal.salt_deduction_cap`. The `DEFAULT` pack applies a single flat
+joins property tax in the federal SALT itemized deduction, subject to the
+year's SALT cap (see below). The `DEFAULT` pack applies a single flat
 `tax_rate` to the federal AGI base.
 
 The packaged packs (CA, NY, TX, FL, WA, PA, IL, MA) are 2025-vintage and stamped
@@ -147,7 +152,14 @@ A multi-decade simulation should not apply a single frozen year's brackets to
 incomes decades later. The `tax_years` table in the YAML holds published values
 for 2022–2026 (standard deduction, brackets, Social Security wage base, 401k/IRA/
 HSA limits including the §415(c) annual-additions limit `limit_415c`, gift
-exclusion, RMD start age). Access them with:
+exclusion, RMD start age) and, since Plan 29, the long-term capital-gains brackets
+(`capital_gains`, with married-filing-separately set explicitly), the Child Tax Credit
+(`ctc_per_child`, `ctc_refundable_max`), the SALT cap (`salt: {cap,
+phaseout_threshold}`), the OBBBA senior deduction (`senior_deduction_amount`), the
+NIIT thresholds (`niit`) and the §63(f) additional standard deduction
+(`additional_standard_deduction`, recorded for Plan 31 and not applied yet). Each
+was verified against the year's Rev. Proc. or the statute; see
+[rebaseline-plan-29.md](rebaseline-plan-29.md). Access them with:
 
 ```python
 params = model.config.tax_year(2025)
@@ -180,12 +192,21 @@ sheets before extending the table.
 ### Parameters deliberately outside the projection path
 
 Some thresholds are written into the statute and have never been inflation-indexed.
-Sweeping them into `tax_years` would silently erase the real fiscal drag they
-create, so they live under `tax.federal` and stay fixed:
+Indexing them would silently erase the real fiscal drag they create, so the projection
+leaves them fixed even where the year table carries them:
 
-- `tax.federal.niit` — the §1411 surtax rate and its $200k/$250k MAGI thresholds.
+- `niit` — the §1411 surtax rate and its $200k/$250k ($125k separate) MAGI thresholds.
+- `senior_deduction_amount` — $6,000 per person 65+, 2025–2028 only (the sunset years are
+  `tax.federal.senior_deduction.first_year`/`last_year`).
 - `tax.federal.capital_loss_ordinary_offset` — the $3,000 annual capital-loss
   deduction against ordinary income, unchanged since 1978.
+
+The SALT cap follows its own statute past the table (`tax.federal.salt_cap_statute`):
+OBBBA §70120 raises the cap and the phase-down threshold 1% a year through 2029, and from
+2030 the cap is $10,000 with no phase-down. The cap is per return (a joint return caps the
+spouses' combined state and local taxes once), reduced by 30% of MAGI over the threshold
+but not below $10,000; a separate return gets half of each. The Child Tax Credit amounts
+are indexed (rounded down to $100, §24(i)); its $200k/$400k phase-out is not.
 
 ## Capital gains and dividends
 
@@ -272,6 +293,9 @@ economy:
 - **`stochastic`** — equity, bond, and inflation are drawn as correlated normals
   (the rest independently) from the model's seeded RNG, so runs are reproducible
   under a fixed `seed`. Distribution parameters live under `economy.stochastic`.
+  The packaged `stochastic` scenario (`LifeModel(scenario="stochastic")`,
+  `meta.scenario: stochastic` in a household spec, or `--scenario stochastic` on
+  the command line) switches the mode on with these default parameters.
 
 Each account/salary/spending/housing object still accepts an explicit rate that
 overrides the economy (constructor argument wins); pass `None` to defer to the
@@ -306,6 +330,11 @@ result.success_rate(lambda row: row["Bank Balance"] > 0)  # probability of not r
 result.percentiles("Bank Balance", [10, 50, 90])  # fan-chart frames
 result.fan_chart("Bank Balance")  # matplotlib fan chart
 ```
+
+For a household spec, the command line does this in one step:
+`life-model montecarlo SPEC --scenario stochastic --n 1000 --seed 42` (or
+`life_model.api.run_montecarlo(spec, n=1000, scenario="stochastic", seed=42)`);
+see [the command line reference](cli.md).
 
 Per-trial seeds are derived deterministically from the master `seed`, so a study
 is reproducible; `result.seeds[i]` rebuilds trial `i`. Pass `keep_agent_frames=True`

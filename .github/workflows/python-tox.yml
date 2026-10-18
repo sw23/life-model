@@ -150,4 +150,13 @@ jobs:
         # Run from a temp CWD to prove packaged data/config resolves without the repo.
         cd /tmp
         /tmp/smoke/bin/python -c "import life_model; print('imported', life_model.__version__)"
-        /tmp/smoke/bin/python -m life_model --years 5
+        # The console script from the wheel: the agent workflow end to end (copy, validate, run, explain).
+        /tmp/smoke/bin/life-model --version
+        /tmp/smoke/bin/life-model run --example single_renter --years 5
+        mkdir -p /tmp/smoke-run && cd /tmp/smoke-run
+        /tmp/smoke/bin/life-model examples --copy married_homeowners h.yaml
+        /tmp/smoke/bin/life-model validate h.yaml
+        /tmp/smoke/bin/life-model run h.yaml --out out --format json
+        test -s out/result.json
+        /tmp/smoke/bin/life-model explain h.yaml --year 2035
+        /tmp/smoke/bin/python -m life_model --version
