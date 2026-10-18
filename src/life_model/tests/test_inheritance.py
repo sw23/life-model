@@ -30,7 +30,7 @@ class TestInheritanceHierarchy(unittest.TestCase):
 
     def test_bank_account_inheritance(self):
         """Test that BankAccount properly inherits from FinancialAccount"""
-        bank = BankAccount(owner=self.person, company="Test Bank", type="Checking", balance=1000, interest_rate=0.1)
+        bank = BankAccount(owner=self.person, company="Test Bank", type="Checking", balance=1000, interest_pct=0.1)
 
         # Test inheritance
         self.assertIsInstance(bank, FinancialAccount)
@@ -44,10 +44,10 @@ class TestInheritanceHierarchy(unittest.TestCase):
 
     def test_job401k_inheritance(self):
         """Test that Job401kAccount properly inherits from RetirementAccount"""
-        salary = Salary(model=self.model, base=100000, yearly_increase=3.0)
+        salary = Salary(model=self.model, base_annual=100000, raise_pct=3.0)
         job = Job(owner=self.person, company="Tech Corp", role="Engineer", salary=salary)
 
-        account = Job401kAccount(job=job, pretax_balance=10000, roth_balance=5000, average_growth=7.0)
+        account = Job401kAccount(job=job, pretax_balance=10000, roth_balance=5000, growth_pct=7.0)
 
         # Test inheritance
         self.assertIsInstance(account, RetirementAccount)
@@ -63,7 +63,7 @@ class TestInheritanceHierarchy(unittest.TestCase):
 
     def test_hsa_inheritance(self):
         """Test that HSA properly inherits from FinancialAccount"""
-        hsa = HealthSavingsAccount(person=self.person, hsa_type=HSAType.INDIVIDUAL, balance=3000)
+        hsa = HealthSavingsAccount(owner=self.person, hsa_type=HSAType.INDIVIDUAL, balance=3000)
 
         # Test inheritance
         self.assertIsInstance(hsa, FinancialAccount)
@@ -75,11 +75,11 @@ class TestInheritanceHierarchy(unittest.TestCase):
 
     def test_investment_accounts_inheritance(self):
         """Test that investment accounts properly inherit from Investment"""
-        brokerage = BrokerageAccount(person=self.person, company="Vanguard", balance=50000, growth_rate=7.0)
+        brokerage = BrokerageAccount(owner=self.person, company="Vanguard", balance=50000, growth_pct=7.0)
 
-        traditional_ira = TraditionalIRA(person=self.person, balance=25000, growth_rate=6.5)
+        traditional_ira = TraditionalIRA(owner=self.person, balance=25000, growth_pct=6.5)
 
-        roth_ira = RothIRA(person=self.person, balance=15000, growth_rate=6.5)
+        roth_ira = RothIRA(owner=self.person, balance=15000, growth_pct=6.5)
 
         # Test inheritance
         self.assertIsInstance(brokerage, Investment)
@@ -130,8 +130,8 @@ class TestInheritanceHierarchy(unittest.TestCase):
         """Test that objects can be treated polymorphically through base classes"""
         # Create different types of financial accounts
         bank = BankAccount(owner=self.person, company="Bank", balance=1000)
-        hsa = HealthSavingsAccount(person=self.person, hsa_type=HSAType.INDIVIDUAL, balance=2000)
-        brokerage = BrokerageAccount(person=self.person, company="Broker", balance=5000)
+        hsa = HealthSavingsAccount(owner=self.person, hsa_type=HSAType.INDIVIDUAL, balance=2000)
+        brokerage = BrokerageAccount(owner=self.person, company="Broker", balance=5000)
 
         # Treat them all as FinancialAccount
         accounts = [bank, hsa, brokerage]

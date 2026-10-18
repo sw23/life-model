@@ -408,6 +408,7 @@ def _disability(person) -> None:
             job.retire()
     person.model.event_log.add(Event(f"{person.name} became disabled and stopped working"))
 
+
 def _convert_to_roth(builder: "_Builder", person, event: s.ConvertToRothEvent) -> None:
     from ..policies import convert_to_roth
 

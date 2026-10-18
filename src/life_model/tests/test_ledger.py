@@ -63,8 +63,8 @@ class TestLedgerEntries(unittest.TestCase):
     def test_paycheck_tax_and_spending_are_posted(self):
         model = LifeModel(start_year=2026, end_year=2026)
         person = _person(model, spending=30000)
-        bank = BankAccount(person, "Bank", balance=10000)
-        Job(person, "Acme", "Dev", Salary(model, base=100000, yearly_bonus=10))
+        bank = BankAccount(person, company="Bank", balance=10000)
+        Job(person, company="Acme", role="Dev", salary=Salary(model, base_annual=100000, bonus_pct=10))
         model.run()
         frame = model.ledger.to_frame()
         wage = frame[frame.kind == "wage"]
@@ -87,8 +87,8 @@ class TestLedgerEntries(unittest.TestCase):
     def test_settlement_draws_carry_their_cause(self):
         model = LifeModel(start_year=2026, end_year=2026)
         person = _person(model, spending=60000)
-        BankAccount(person, "Bank", balance=1000)
-        BrokerageAccount(person, "Broker", balance=200000)
+        BankAccount(person, company="Bank", balance=1000)
+        BrokerageAccount(person, company="Broker", balance=200000)
         model.run()
         sales = [e for e in model.ledger if e.kind == "sale"]
         # Plan 32: each month's bills sell what the bank can't cover; December also funds the taxes.
@@ -159,7 +159,7 @@ class TestConservationOnWholeHouseholds(unittest.TestCase):
     def test_unposted_money_is_caught(self):
         model = LifeModel(start_year=2026, end_year=2027)
         person = _person(model)
-        account = BankAccount(person, "Bank", balance=100)
+        account = BankAccount(person, company="Bank", balance=100)
 
         def windfall():
             account.balance += 500  # moved without posting
@@ -177,7 +177,7 @@ class TestConservationOnWholeHouseholds(unittest.TestCase):
     def test_accounts_opened_mid_run_post_their_opening_balance(self):
         model = LifeModel(start_year=2026, end_year=2027)
         person = _person(model)
-        BankAccount(person, "Bank", balance=100)
+        BankAccount(person, company="Bank", balance=100)
         LifeEvents(model, [LifeEvent(2027, "Open a brokerage account", BrokerageAccount, person, "Broker", 5000)])
         model.run()
         assert_conservation(model)
@@ -193,8 +193,8 @@ class TestMoneyConservationBugs(unittest.TestCase):
         model = LifeModel(start_year=2026, end_year=2030)
         person = _person(model, age=70, mortality_mode=MortalityMode.FIXED_AGE, death_age=72)
         heir = Person(person.family, "Heir", 40, 65, Spending(model, base_annual=0))
-        BankAccount(person, "Bank", balance=10000)
-        BankAccount(heir, "Bank", balance=10000)
+        BankAccount(person, company="Bank", balance=10000)
+        BankAccount(heir, company="Bank", balance=10000)
         SocialSecurity(person, claim_age=67, earnings_history=EARNINGS_HISTORY)
         model.run()
         benefits = [e for e in model.ledger if e.kind == "benefit" and e.source == "Social Security"]
@@ -209,8 +209,8 @@ class TestMoneyConservationBugs(unittest.TestCase):
         model = LifeModel(start_year=2026, end_year=2027)
         person = _person(model, age=80, mortality_mode=MortalityMode.FIXED_AGE, death_age=81, spending=50000)
         heir = Person(person.family, "Heir", 50, 65, Spending(model, base_annual=0))
-        BankAccount(person, "Bank", balance=1000)
-        BankAccount(heir, "Bank", balance=200000)
+        BankAccount(person, company="Bank", balance=1000)
+        BankAccount(heir, company="Bank", balance=200000)
         model.step_year()
         carried = person.debt
         self.assertGreater(carried, 40000)
@@ -227,7 +227,7 @@ class TestMoneyConservationBugs(unittest.TestCase):
         model = LifeModel(start_year=2026, end_year=2027)
         person = _person(model, age=80, mortality_mode=MortalityMode.FIXED_AGE, death_age=81)
         heir = Person(person.family, "Heir", 50, 65, Spending(model, base_annual=0))
-        BankAccount(heir, "Bank", balance=1000)
+        BankAccount(heir, company="Bank", balance=1000)
         LifeEvents(model, [LifeEvent(2026, "Gift", person.receive_cash, 25000, "a relative")])
         model.run()
         self.assertEqual(person.cash, 0)
@@ -251,7 +251,7 @@ class TestMoneyConservationBugs(unittest.TestCase):
         kid = Person(family, "Kid", 40, 65, Spending(model, base_annual=0))
         bob.get_married(sue)
         for person in (bob, sue, kid):
-            BankAccount(person, "Bank", balance=10000)
+            BankAccount(person, company="Bank", balance=10000)
         Pension(bob, company="Utility", vesting_years=1, benefit_annual=20000, survivor_pct=50)
         model.run()
         self.assertTrue(sue.is_deceased)
@@ -279,7 +279,7 @@ class TestMoneyConservationBugs(unittest.TestCase):
         )
         spouse = Person(family, "Spouse", 68, 65, Spending(model, base_annual=0))
         parent.get_married(spouse)
-        BankAccount(spouse, "Bank", balance=10000)
+        BankAccount(spouse, company="Bank", balance=10000)
         plan = Plan529(parent, beneficiary=parent.add_child("Kid", birth_year=2015), balance=30000)
         model.run()
         self.assertTrue(parent.is_deceased)
@@ -293,7 +293,7 @@ class TestMoneyConservationBugs(unittest.TestCase):
 
         model = LifeModel(start_year=2026, end_year=2030)
         loner = _person(model, age=80, mortality_mode=MortalityMode.FIXED_AGE, death_age=81)
-        account = BankAccount(loner, "Bank", balance=50000)
+        account = BankAccount(loner, company="Bank", balance=50000)
         Donation(loner, "Shelter", annual_amount=3000)
         model.run()
         frame = model.datacollector.get_model_vars_dataframe().set_index("Year")
@@ -323,8 +323,8 @@ class TestMoneyConservationBugs(unittest.TestCase):
         )
         spouse = Person(family, "Spouse", 68, 65, Spending(model, base_annual=0))
         insured.get_married(spouse)
-        BankAccount(insured, "Bank", balance=50000)
-        BankAccount(spouse, "Bank", balance=50000)
+        BankAccount(insured, company="Bank", balance=50000)
+        BankAccount(spouse, company="Bank", balance=50000)
         policy = LifeInsurance(insured, LifeInsuranceType.WHOLE, death_benefit=100000, premium_monthly=300)
         LifeEvents(
             model,
@@ -352,7 +352,7 @@ class TestMoneyConservationBugs(unittest.TestCase):
         # the difference off: the mortgage vanished and nobody paid.
         model = LifeModel(start_year=2026, end_year=2026)
         person = _person(model)
-        BankAccount(person, "Bank", balance=100000)
+        BankAccount(person, company="Bank", balance=100000)
         home = Home(
             person,
             "Condo",

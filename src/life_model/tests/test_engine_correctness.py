@@ -54,8 +54,8 @@ class TestDataCollectorTiming(unittest.TestCase):
         model = LifeModel(start_year=2020, end_year=2022)
         family = Family(model)
         person = Person(family, "Ann", age=40, retirement_age=70, spending=Spending(model, 0))
-        BankAccount(person, "Bank", balance=0, interest_rate=0)
-        Job(person, "Co", "Dev", Salary(model=model, base=40000))
+        BankAccount(person, company="Bank", balance=0, interest_pct=0)
+        Job(person, company="Co", role="Dev", salary=Salary(model=model, base_annual=40000))
 
         model.run()
 
@@ -101,7 +101,7 @@ class TestRunningFlag(unittest.TestCase):
         family = Family(model)
         spending = Spending(model, base_annual=10000, growth_pct=10)
         person = Person(family, "Bo", age=40, retirement_age=70, spending=spending)
-        BankAccount(person, "Bank", balance=1_000_000, interest_rate=0)
+        BankAccount(person, company="Bank", balance=1_000_000, interest_pct=0)
 
         spending.add_expense(5000)  # added before the sim runs
         model.step_year()  # year 1
@@ -119,8 +119,8 @@ class TestRetirementCrossing(unittest.TestCase):
         family = Family(model)
         # Plan 32: ages are exact. Born January 1956, Cy reaches 65.5 in July 2021.
         person = Person(family, "Cy", age=64, retirement_age=65.5, spending=Spending(model, 0))
-        BankAccount(person, "Bank", balance=100000, interest_rate=0)
-        job = Job(person, "Co", "Dev", Salary(model=model, base=50000))
+        BankAccount(person, company="Bank", balance=100000, interest_pct=0)
+        job = Job(person, company="Co", role="Dev", salary=Salary(model=model, base_annual=50000))
 
         model.step_year()  # age 64 -> below 65.5, still working
         self.assertEqual(person.age_in(2020), 64)
@@ -142,7 +142,7 @@ class TestMarriedHousing(unittest.TestCase):
         a = Person(family, "Dana", age=40, retirement_age=70, spending=Spending(model, 0))
         b = Person(family, "Evan", age=40, retirement_age=70, spending=Spending(model, 0))
         a.get_married(b)
-        bank = BankAccount(a, "Bank", balance=1_000_000, interest_rate=0)
+        bank = BankAccount(a, company="Bank", balance=1_000_000, interest_pct=0)
         home = _make_home(a)
 
         # Capture the year's housing figures before the step (no income -> no taxes).
@@ -177,7 +177,7 @@ class TestFamilyDebtPaidOnce(unittest.TestCase):
         a = Person(family, "Fay", age=40, retirement_age=70, spending=Spending(model, 0))
         b = Person(family, "Gil", age=40, retirement_age=70, spending=Spending(model, 0))
         a.get_married(b)
-        bank = BankAccount(a, "Bank", balance=100000, interest_rate=0)
+        bank = BankAccount(a, company="Bank", balance=100000, interest_pct=0)
         b.debt = 10000
         return model, a, b, bank
 
@@ -214,10 +214,10 @@ class TestMixedFilingUnits(unittest.TestCase):
         c = Person(family, "Spouse C", age=40, retirement_age=70, spending=Spending(model, 0))
         b.get_married(c)
         for p in (a, b, c):
-            BankAccount(p, "Bank", balance=500000, interest_rate=0)
-        Job(a, "Co", "Dev", Salary(model=model, base=60000))
-        Job(b, "Co", "Dev", Salary(model=model, base=70000))
-        Job(c, "Co", "Dev", Salary(model=model, base=80000))
+            BankAccount(p, company="Bank", balance=500000, interest_pct=0)
+        Job(a, company="Co", role="Dev", salary=Salary(model=model, base_annual=60000))
+        Job(b, company="Co", role="Dev", salary=Salary(model=model, base_annual=70000))
+        Job(c, company="Co", role="Dev", salary=Salary(model=model, base_annual=80000))
 
         # Two tax units: {A} single, {B, C} married-filing-jointly.
         units = TaxUnit.build_units(family)
@@ -274,9 +274,9 @@ class TestMoneyConservation(unittest.TestCase):
         a = Person(family, "Jo", age=40, retirement_age=70, spending=Spending(model, base_annual=20000))
         b = Person(family, "Kai", age=40, retirement_age=70, spending=Spending(model, base_annual=0))
         a.get_married(b)
-        bank = BankAccount(a, "Bank", balance=1_000_000, interest_rate=0)
+        bank = BankAccount(a, company="Bank", balance=1_000_000, interest_pct=0)
         _make_home(a, appreciation=5.0)
-        Job(a, "Co", "Dev", Salary(model=model, base=120000))
+        Job(a, company="Co", role="Dev", salary=Salary(model=model, base_annual=120000))
 
         for _ in model.get_year_range():
             bank_before = bank.balance
@@ -297,11 +297,11 @@ class TestConstructionOrderIndependence(unittest.TestCase):
         family = Family(model)
         person = Person(family, "Lee", age=40, retirement_age=70, spending=Spending(model, base_annual=15000))
         if bank_first:
-            BankAccount(person, "Bank", balance=200000, interest_rate=0)
-            Job(person, "Co", "Dev", Salary(model=model, base=90000))
+            BankAccount(person, company="Bank", balance=200000, interest_pct=0)
+            Job(person, company="Co", role="Dev", salary=Salary(model=model, base_annual=90000))
         else:
-            Job(person, "Co", "Dev", Salary(model=model, base=90000))
-            BankAccount(person, "Bank", balance=200000, interest_rate=0)
+            Job(person, company="Co", role="Dev", salary=Salary(model=model, base_annual=90000))
+            BankAccount(person, company="Bank", balance=200000, interest_pct=0)
         model.run()
         return model.datacollector.get_model_vars_dataframe()
 

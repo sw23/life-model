@@ -257,7 +257,7 @@ class TestAnnuityDistributionTaxes(unittest.TestCase):
     def _owner(self, age):
         model = LifeModel(start_year=2026, end_year=2026)
         person = Person(Family(model), "O", age=age, retirement_age=65, spending=Spending(model, 0))
-        BankAccount(person, "Bank", balance=0, interest_rate=0)
+        BankAccount(person, company="Bank", balance=0, interest_pct=0)
         annuity = Annuity(
             person, annuity_type=AnnuityType.DEFERRED, balance=50000, rate_pct=0, surrender_charge_years=0
         )
@@ -291,7 +291,7 @@ class TestJointAndSurvivor(unittest.TestCase):
             if death_age is not None:
                 kwargs = {"mortality_mode": MortalityMode.FIXED_AGE, "death_age": death_age}
             person = Person(family, name, age=age, retirement_age=60, spending=Spending(model, 0), **kwargs)
-            BankAccount(person, "Bank", balance=0, interest_rate=0)
+            BankAccount(person, company="Bank", balance=0, interest_pct=0)
             return person
 
         husband = make("H", 71, husband_death_age)
@@ -368,7 +368,7 @@ class TestAnnuityDeathTerms(unittest.TestCase):
         heir = Person(family, "H", age=41, retirement_age=70, spending=Spending(model, 0))
         owner.estate_beneficiary = heir
         for person in (owner, heir):
-            BankAccount(person, "Bank", balance=0, interest_rate=0)
+            BankAccount(person, company="Bank", balance=0, interest_pct=0)
         return model, owner, heir
 
     def test_period_certain_pays_the_heir_only_until_the_guarantee_ends(self):
@@ -408,7 +408,7 @@ class TestAnnuityReserveConservation(unittest.TestCase):
     def test_payouts_plus_reserve_equal_premium_plus_interest(self):
         model = LifeModel(start_year=2026, end_year=2045)
         person = Person(Family(model), "R", age=65, retirement_age=60, spending=Spending(model, 0))
-        BankAccount(person, "Bank", balance=0, interest_rate=0)
+        BankAccount(person, company="Bank", balance=0, interest_pct=0)
         annuity = Annuity(
             person,
             annuity_type=AnnuityType.IMMEDIATE,

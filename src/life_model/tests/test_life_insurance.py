@@ -602,9 +602,9 @@ class TestLifePremiumBillPath(unittest.TestCase):
 
         model = LifeModel(start_year=2026, end_year=2026)
         person = Person(Family(model), "R", age=66, retirement_age=60, spending=Spending(model, 0))
-        BankAccount(person, "Bank", balance=0, interest_rate=0)
-        job = Job(person, "Co", "Retired", Salary(model, base=0))
-        k401 = Job401kAccount(job=job, pretax_balance=200000, average_growth=0)
+        BankAccount(person, company="Bank", balance=0, interest_pct=0)
+        job = Job(person, company="Co", role="Retired", salary=Salary(model, base_annual=0))
+        k401 = Job401kAccount(job=job, pretax_balance=200000, growth_pct=0)
         policy = LifeInsurance(person, LifeInsuranceType.TERM, 250000, 100, 20, max_missed_payments=1)
 
         model.step_year()

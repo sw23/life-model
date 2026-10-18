@@ -27,7 +27,7 @@ from ..people.person import Person, Spending
 
 def _person(model):
     person = Person(Family(model), "P", 40, 65, Spending(model, 0))
-    BankAccount(person, "Bank", balance=1000)
+    BankAccount(person, company="Bank", balance=1000)
     return person
 
 

@@ -70,7 +70,7 @@ class TestAccountWithdrawDepositProperties(unittest.TestCase):
         amount=st.floats(min_value=0.0, max_value=2_000_000.0),
     )
     def test_withdraw_never_over_withdraws_or_goes_negative(self, balance, amount):
-        account = BrokerageAccount(_fresh_person(), "Broker", balance=balance, growth_rate=0)
+        account = BrokerageAccount(_fresh_person(), company="Broker", balance=balance, growth_pct=0)
         withdrawn = account.withdraw(amount)
         self.assertLessEqual(withdrawn, balance + 1e-9)
         self.assertLessEqual(withdrawn, amount + 1e-9)
@@ -79,7 +79,7 @@ class TestAccountWithdrawDepositProperties(unittest.TestCase):
     @settings(max_examples=200, deadline=None)
     @given(amount=st.floats(min_value=0.0, max_value=1_000_000.0))
     def test_deposit_then_withdraw_round_trips(self, amount):
-        account = BrokerageAccount(_fresh_person(), "Broker", balance=0, growth_rate=0)
+        account = BrokerageAccount(_fresh_person(), company="Broker", balance=0, growth_pct=0)
         account.deposit(amount)
         self.assertAlmostEqual(account.withdraw(amount), amount, delta=1e-6)
         self.assertAlmostEqual(account.balance, 0.0, delta=1e-6)

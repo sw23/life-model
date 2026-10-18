@@ -484,8 +484,8 @@ class TestPremiumSettlementRouting(unittest.TestCase):
         family = Family(model)
         john = Person(family=family, name="John", age=70, retirement_age=65, spending=Spending(model, base_annual=0))
         BankAccount(owner=john, company="Bank", balance=0)
-        job = Job(owner=john, company="MegaCorp", role="Retiree", salary=Salary(model, base=0))
-        Job401kAccount(job=job, pretax_balance=200000, roth_balance=0, average_growth=0)  # isolate the draw
+        job = Job(owner=john, company="MegaCorp", role="Retiree", salary=Salary(model, base_annual=0))
+        Job401kAccount(job=job, pretax_balance=200000, roth_balance=0, growth_pct=0)  # isolate the draw
         Insurance(
             owner=john,
             insurance_type=InsuranceType.AUTO,

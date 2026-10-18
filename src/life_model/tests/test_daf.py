@@ -19,7 +19,7 @@ class TestDAF(unittest.TestCase):
         self.family = Family(self.model)
         self.spending = Spending(self.model, base_annual=50000)
         self.person = Person(self.family, "Test Person", 30, 65, self.spending)
-        self.bank_account = BankAccount(self.person, "Test Bank", balance=100000)
+        self.bank_account = BankAccount(self.person, company="Test Bank", balance=100000)
 
     def test_daf_creation(self):
         """Test basic DAF creation"""

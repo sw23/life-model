@@ -38,8 +38,8 @@ def _parent_child_model(*, start_year=2026, end_year=2037, ira_balance=500000, e
         death_age=80,
     )
     child = Person(family, "Kid", age=41, retirement_age=100, spending=Spending(model, 0))
-    BankAccount(child, "C", balance=0, interest_rate=0)
-    TraditionalIRA(person=parent, balance=ira_balance, growth_rate=0)
+    BankAccount(child, company="C", balance=0, interest_pct=0)
+    TraditionalIRA(owner=parent, balance=ira_balance, growth_pct=0)
     return model, parent, child
 
 
@@ -130,9 +130,9 @@ class TestTenYearInheritance(unittest.TestCase):
             death_age=80,
         )
         child = Person(family, "Kid", age=41, retirement_age=100, spending=Spending(model, 0))
-        BankAccount(child, "C", balance=0, interest_rate=0)
-        job = Job(owner=parent, company="Co", role="Eng", salary=Salary(model=model, base=0))
-        Job401kAccount(job=job, pretax_balance=500000, average_growth=0)
+        BankAccount(child, company="C", balance=0, interest_pct=0)
+        job = Job(owner=parent, company="Co", role="Eng", salary=Salary(model=model, base_annual=0))
+        Job401kAccount(job=job, pretax_balance=500000, growth_pct=0)
         model.run()
 
         self.assertTrue(parent.is_deceased)

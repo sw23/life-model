@@ -62,16 +62,18 @@ def single_saver(model):
         people["a"] = Person(family, "Sam", age=34, retirement_age=62, spending=Spending(model, base_annual=45000))
 
     def job():
-        job = Job(people["a"], "Co", "Eng", Salary(model, base=140000, yearly_increase=3, yearly_bonus=10))
-        Job401kAccount(job=job, pretax_contrib_percent=10, match_tiers=[(100, 3), (50, 2)], pretax_balance=60000)
+        job = Job(
+            people["a"], company="Co", role="Eng", salary=Salary(model, base_annual=140000, raise_pct=3, bonus_pct=10)
+        )
+        Job401kAccount(job=job, pretax_contrib_pct=10, match_tiers=[(100, 3), (50, 2)], pretax_balance=60000)
         StockPlan(job, signon_value=40000, refresher_value=20000)
 
     steps = [
-        lambda: BankAccount(people["a"], "Bank", balance=25000, interest_rate=3.5),
+        lambda: BankAccount(people["a"], company="Bank", balance=25000, interest_pct=3.5),
         job,
-        lambda: BrokerageAccount(people["a"], "Broker", balance=80000),
+        lambda: BrokerageAccount(people["a"], company="Broker", balance=80000),
         lambda: RothIRA(people["a"], balance=30000),
-        lambda: HealthSavingsAccount(people["a"], HSAType.INDIVIDUAL, balance=5000),
+        lambda: HealthSavingsAccount(people["a"], hsa_type=HSAType.INDIVIDUAL, balance=5000),
         lambda: Apartment(people["a"], "Flat", rent_monthly=2200, rent_growth_pct=4),
         lambda: LifeInsurance(people["a"], LifeInsuranceType.TERM, 500000, 40, term_years=20),
         lambda: CarLoan(people["a"], original_amount=30000, term_years=5, rate_pct=6.5, name="Car"),
@@ -91,9 +93,11 @@ def married_homeowners(model):
             people[key] = Person(family, name, age=age, retirement_age=65, spending=Spending(model, base_annual=40000))
 
         def _accounts():
-            BankAccount(people[key], "Bank", balance=bank, interest_rate=1.0)
-            job = Job(people[key], f"{name} Co", "Role", Salary(model, base=salary, yearly_increase=2.5))
-            Job401kAccount(job=job, pretax_contrib_percent=8, match_tiers=[(50, 6)], pretax_balance=bank * 3)
+            BankAccount(people[key], company="Bank", balance=bank, interest_pct=1.0)
+            job = Job(
+                people[key], company=f"{name} Co", role="Role", salary=Salary(model, base_annual=salary, raise_pct=2.5)
+            )
+            Job401kAccount(job=job, pretax_contrib_pct=8, match_tiers=[(50, 6)], pretax_balance=bank * 3)
 
         return _person, _accounts
 
@@ -108,7 +112,7 @@ def married_homeowners(model):
         b_accounts,
         marry,
         lambda: _home(people["a"]),
-        lambda: BrokerageAccount(people["b"], "Broker", balance=150000),
+        lambda: BrokerageAccount(people["b"], company="Broker", balance=150000),
         lambda: Child(people["a"], "Kid", birth_year=2019),
         lambda: LifeInsurance(people["a"], LifeInsuranceType.TERM, 1_000_000, 70, term_years=20),
         lambda: LifeInsurance(people["b"], LifeInsuranceType.WHOLE, 250000, 150),
@@ -135,28 +139,28 @@ def retired_couple(model):
         people["a"].get_married(people["b"])
 
     def old_401k():
-        job = Job(people["a"], "Former", "Retired", Salary(model, base=0))
+        job = Job(people["a"], company="Former", role="Retired", salary=Salary(model, base_annual=0))
         job.retire()
         Job401kAccount(job=job, pretax_balance=600000, roth_balance=50000)
 
     steps = [
         marry,
-        lambda: BankAccount(people["a"], "Bank", balance=60000, interest_rate=2.0),
-        lambda: BankAccount(people["b"], "Bank", balance=20000, interest_rate=2.0),
+        lambda: BankAccount(people["a"], company="Bank", balance=60000, interest_pct=2.0),
+        lambda: BankAccount(people["b"], company="Bank", balance=20000, interest_pct=2.0),
         lambda: SocialSecurity(people["a"], claim_age=67, earnings_history=_HISTORY),
         lambda: SocialSecurity(people["b"], claim_age=67, earnings_history=[(y, 40000) for y in range(1990, 2025)]),
         lambda: Pension(people["a"], company="State", vesting_years=5, benefit_annual=18000, cola_pct=2.0),
         lambda: Annuity(people["b"], annuity_type=AnnuityType.IMMEDIATE, balance=150000, rate_pct=4.0),
         lambda: TraditionalIRA(people["b"], balance=250000),
         old_401k,
-        lambda: BrokerageAccount(people["a"], "Broker", balance=300000),
+        lambda: BrokerageAccount(people["a"], company="Broker", balance=300000),
         lambda: Medicare(people["a"]),
         lambda: Medicare(people["b"]),
         lambda: MedicalCosts(people["b"]),
         lambda: Donation(people["b"], "Church", 5000),
         # Part-time wages alongside benefits: provisional income must not depend on whether the job
         # or Social Security books first.
-        lambda: Job(people["b"], "Shop", "Clerk", Salary(model, base=30000)),
+        lambda: Job(people["b"], company="Shop", role="Clerk", salary=Salary(model, base_annual=30000)),
         lambda: LifeInsurance(people["b"], LifeInsuranceType.WHOLE, 100000, 300),
     ]
     return [build("a", "Pat", 74), build("b", "Lee", 71, retirement_age=76)], steps
@@ -171,13 +175,13 @@ def early_retiree(model):
         people["a"] = Person(family, "Jo", age=52, retirement_age=50, spending=Spending(model, base_annual=70000))
 
     def old_401k():
-        job = Job(people["a"], "Former", "Retired", Salary(model, base=0))
+        job = Job(people["a"], company="Former", role="Retired", salary=Salary(model, base_annual=0))
         job.retire()
         Job401kAccount(job=job, pretax_balance=900000, roth_balance=80000)
 
     steps = [
-        lambda: BankAccount(people["a"], "Bank", balance=30000, interest_rate=3.0),
-        lambda: BrokerageAccount(people["a"], "Broker", balance=250000),
+        lambda: BankAccount(people["a"], company="Bank", balance=30000, interest_pct=3.0),
+        lambda: BrokerageAccount(people["a"], company="Broker", balance=250000),
         lambda: RothIRA(people["a"], balance=120000),
         old_401k,
         lambda: _home(people["a"], price=400000, loan=150000),

@@ -164,3 +164,19 @@ charges; home inputs; PMI; dollar property tax and insurance), `test_spec_statem
 a spousal benefit of $1,500 beats a $600 own benefit; a 100/80/70% age schedule reproduces the entered
 totals; plus annuities in payout, pensions, health and disability policies, FRA, the earnings test),
 `test_spec_statement_insurance.py` and `test_deprecated_names.py`.
+
+### After merging 27a
+
+* **One deprecation mechanism.** `life_model.deprecated_names.deprecated_arguments` is the single helper
+  (27a's `life_model._compat.legacy_signature` is removed; its nine call sites use the new helper with the
+  same names and positional order). Every decorated constructor registers its old names, and
+  docs/constructor-cheatsheet.md lists them all ("Deprecated constructor names").
+* **Tests moved to canonical names** for 27a's classes too (`BankAccount`, `BrokerageAccount`, the IRAs,
+  HSA, 401(k), 529, `Job`, `Salary`, `StockPlan`), by the same mechanical rewrite; the tests that check the
+  aliases themselves (`test_plan27a_accounts.TestDeprecatedAliases`, `test_deprecated_names.py`) keep
+  the old names. No expected value changed. The core suite's warnings went from 3,867 to 117.
+* **Interactions** (`test_plan27_interactions.py`): a bank-sourced contribution plan takes only what the
+  month's spending categories leave (it runs after the month's bills), an age-schedule step frees cash
+  for it, a savings sweep keeps its floor for next year's categories, and net worth includes both
+  halves' new assets and liabilities (home equity line, whole-life cash value net of the policy loan, a
+  CD, a home at its current value).

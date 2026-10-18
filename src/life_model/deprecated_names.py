@@ -17,6 +17,31 @@ import warnings
 from collections.abc import Callable, Sequence
 from typing import Any
 
+#: Every constructor with deprecated argument names: ``{qualified class name: {old name: new name}}``
+#: (filled as the decorated classes are imported; :func:`deprecated_names` imports them all). Rendered
+#: into docs/constructor-cheatsheet.md.
+REGISTRY: dict[str, dict[str, str]] = {}
+#: The constructors whose arguments after the first ``keep_positional`` became keyword-only, with their
+#: former positional order (canonical names).
+POSITIONAL: dict[str, tuple[tuple[str, ...], int]] = {}
+
+
+def deprecated_names() -> dict[str, dict[str, str]]:
+    """The documented list of deprecated constructor names (imports every core module first)."""
+    import importlib
+    import pkgutil
+
+    import life_model
+
+    for info in pkgutil.walk_packages(life_model.__path__, "life_model."):
+        if ".tests" in info.name or info.name.endswith(("__main__", ".mcp")):
+            continue
+        try:
+            importlib.import_module(info.name)
+        except ImportError:  # optional extras
+            continue
+    return dict(sorted(REGISTRY.items()))
+
 
 def deprecated_arguments(
     renamed: dict[str, str] | None = None,
@@ -36,6 +61,11 @@ def deprecated_arguments(
     renamed = dict(renamed or {})
 
     def decorate(init: Callable) -> Callable:
+        owner = f"{init.__module__}.{init.__qualname__.rsplit('.', 1)[0]}"
+        REGISTRY[owner] = dict(renamed)
+        if positional:
+            POSITIONAL[owner] = (tuple(positional), keep_positional)
+
         @functools.wraps(init)
         def wrapper(self, *args: Any, **kwargs: Any):
             cls = type(self).__name__

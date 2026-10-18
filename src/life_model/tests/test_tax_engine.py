@@ -75,9 +75,9 @@ class TestFicaPerPerson(unittest.TestCase):
         model = LifeModel(start_year=2020, end_year=2020, config=_fixture_config())
         family = Family(model)
         person = Person(family, "Retired R", age=65, retirement_age=60, spending=Spending(model, base_annual=30000))
-        BankAccount(person, "Bank", balance=0, interest_rate=0)
-        job = Job(person, "Old Co", "Retiree", Salary(model=model, base=0))
-        Job401kAccount(job=job, pretax_balance=500000, average_growth=0)
+        BankAccount(person, company="Bank", balance=0, interest_pct=0)
+        job = Job(person, company="Old Co", role="Retiree", salary=Salary(model=model, base_annual=0))
+        Job401kAccount(job=job, pretax_balance=500000, growth_pct=0)
 
         model.step_year()
 
@@ -91,10 +91,10 @@ class TestFicaPerPerson(unittest.TestCase):
         model = LifeModel(start_year=2020, end_year=2020, config=_fixture_config())
         family = Family(model)
         person = Person(family, "Saver S", age=40, retirement_age=70, spending=Spending(model, base_annual=0))
-        BankAccount(person, "Bank", balance=0, interest_rate=0)
-        job = Job(person, "Co", "Dev", Salary(model=model, base=100000))
+        BankAccount(person, company="Bank", balance=0, interest_pct=0)
+        job = Job(person, company="Co", role="Dev", salary=Salary(model=model, base_annual=100000))
         # Defer 20% ($20k) pre-tax.
-        Job401kAccount(job=job, pretax_contrib_percent=20, average_growth=0)
+        Job401kAccount(job=job, pretax_contrib_pct=20, growth_pct=0)
 
         model.step_year()
 
@@ -111,9 +111,9 @@ class TestFicaPerPerson(unittest.TestCase):
         c = Person(family, "Spouse C", age=40, retirement_age=70, spending=Spending(model, base_annual=0))
         b.get_married(c)
         for p in (b, c):
-            BankAccount(p, "Bank", balance=100000, interest_rate=0)
-        Job(b, "Co", "Dev", Salary(model=model, base=70000))
-        Job(c, "Co", "Dev", Salary(model=model, base=80000))
+            BankAccount(p, company="Bank", balance=100000, interest_pct=0)
+        Job(b, company="Co", role="Dev", salary=Salary(model=model, base_annual=70000))
+        Job(c, company="Co", role="Dev", salary=Salary(model=model, base_annual=80000))
 
         model.step_year()
 
@@ -132,9 +132,9 @@ class TestWithdrawalSizing(unittest.TestCase):
         model = LifeModel(start_year=2020, end_year=2020, config=_fixture_config())
         family = Family(model)
         person = Person(family, "Retiree", age=65, retirement_age=60, spending=Spending(model, base_annual=50000))
-        BankAccount(person, "Bank", balance=0, interest_rate=0)
-        job = Job(person, "Old Co", "Retiree", Salary(model=model, base=0))
-        Job401kAccount(job=job, pretax_balance=1000000, average_growth=0)
+        BankAccount(person, company="Bank", balance=0, interest_pct=0)
+        job = Job(person, company="Old Co", role="Retiree", salary=Salary(model=model, base_annual=0))
+        Job401kAccount(job=job, pretax_balance=1000000, growth_pct=0)
 
         model.step_year()
 
@@ -155,8 +155,8 @@ class TestDeductionTiming(unittest.TestCase):
         model = LifeModel(start_year=2020, end_year=2020, config=_fixture_config())
         family = Family(model)
         person = Person(family, "Giver", age=40, retirement_age=70, spending=Spending(model, base_annual=0))
-        BankAccount(person, "Bank", balance=50000, interest_rate=0)
-        Job(person, "Co", "Dev", Salary(model=model, base=100000))
+        BankAccount(person, company="Bank", balance=50000, interest_pct=0)
+        Job(person, company="Co", role="Dev", salary=Salary(model=model, base_annual=100000))
         if donation_amount > 0:
             Donation(person, "Charity", annual_amount=donation_amount)
         model.step_year()
@@ -178,7 +178,7 @@ class TestDeductionTiming(unittest.TestCase):
         model = LifeModel(start_year=2020, end_year=2020, config=_fixture_config())
         family = Family(model)
         person = Person(family, "DAF Owner", age=40, retirement_age=70, spending=Spending(model, base_annual=0))
-        BankAccount(person, "Bank", balance=100000, interest_rate=0)
+        BankAccount(person, company="Bank", balance=100000, interest_pct=0)
         daf = DonorAdvisedFund(person, "Fund", balance=0)
 
         daf.deposit(10000)

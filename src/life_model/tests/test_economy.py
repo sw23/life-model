@@ -65,16 +65,16 @@ class TestEconomyConsumers(unittest.TestCase):
         model = LifeModel(start_year=2026, end_year=2027, config=_config(cash_yield=4.0))
         family = Family(model)
         person = Person(family, "A", 30, 65, Spending(model, base_annual=0))
-        bank = BankAccount(person, "Bank")  # no explicit rate -> economy
+        bank = BankAccount(person, company="Bank")  # no explicit rate -> economy
         self.assertEqual(bank.interest_rate, 4.0)
-        explicit = BankAccount(person, "Bank2", interest_rate=1.5)
+        explicit = BankAccount(person, company="Bank2", interest_pct=1.5)
         self.assertEqual(explicit.interest_rate, 1.5)  # override wins
 
     def test_brokerage_growth_defers_to_equity_return(self):
         model = LifeModel(start_year=2026, end_year=2027, config=_config(equity_return=9.0))
         family = Family(model)
         person = Person(family, "A", 30, 65, Spending(model, base_annual=0))
-        broker = BrokerageAccount(person, "B", balance=1000)
+        broker = BrokerageAccount(person, company="B", balance=1000)
         self.assertEqual(broker.growth_rate, 9.0)
         self.assertEqual(broker.calculate_growth(), 90.0)
 
@@ -83,7 +83,7 @@ class TestEconomyConsumers(unittest.TestCase):
         model = LifeModel(start_year=2026, end_year=2028, config=cfg)
         family = Family(model)
         person = Person(family, "A", 30, 65, Spending(model, base_annual=0))
-        broker = BrokerageAccount(person, "B", balance=1000)
+        broker = BrokerageAccount(person, company="B", balance=1000)
         model.step_year()  # 2026: +10% -> 1100
         self.assertAlmostEqual(broker.balance, 1100.0)
         model.step_year()  # 2027: -50% -> 550
@@ -91,10 +91,10 @@ class TestEconomyConsumers(unittest.TestCase):
 
     def test_salary_none_opts_into_wage_growth(self):
         model = LifeModel(start_year=2026, end_year=2027, config=_config(wage_growth=5.0))
-        salary = Salary(model=model, base=100000, yearly_increase=None)
+        salary = Salary(model=model, base_annual=100000, raise_pct=None)
         self.assertEqual(salary.yearly_increase, 5.0)
         # An explicit 0 is honored (not replaced by the economy default).
-        self.assertEqual(Salary(model=model, base=1, yearly_increase=0).yearly_increase, 0)
+        self.assertEqual(Salary(model=model, base_annual=1, raise_pct=0).yearly_increase, 0)
 
     def test_spending_none_opts_into_inflation(self):
         model = LifeModel(start_year=2026, end_year=2027, config=_config(inflation=2.5))
@@ -123,13 +123,13 @@ class TestGoldenFramePreservation(unittest.TestCase):
             spending = Spending(model, base_annual=20000, growth_pct=2.0)
         person = Person(family, "A", 30, 65, spending)
         if defer_to_economy:
-            BankAccount(person, "Bank")
-            BrokerageAccount(person, "B", balance=50000)
-            Job(person, "Co", "Dev", Salary(model=model, base=80000, yearly_increase=None))
+            BankAccount(person, company="Bank")
+            BrokerageAccount(person, company="B", balance=50000)
+            Job(person, company="Co", role="Dev", salary=Salary(model=model, base_annual=80000, raise_pct=None))
         else:
-            BankAccount(person, "Bank", interest_rate=0.0)
-            BrokerageAccount(person, "B", balance=50000, growth_rate=7.0)
-            Job(person, "Co", "Dev", Salary(model=model, base=80000, yearly_increase=2.0))
+            BankAccount(person, company="Bank", interest_pct=0.0)
+            BrokerageAccount(person, company="B", balance=50000, growth_pct=7.0)
+            Job(person, company="Co", role="Dev", salary=Salary(model=model, base_annual=80000, raise_pct=2.0))
         model.run()
         return model.datacollector.get_model_vars_dataframe()
 
@@ -146,7 +146,7 @@ class TestRealDollarReporting(unittest.TestCase):
         model = LifeModel(start_year=2026, end_year=2030, config=cfg)
         family = Family(model)
         person = Person(family, "A", 30, 65, Spending(model, base_annual=0))
-        BankAccount(person, "Bank", balance=10000, interest_rate=0.0)
+        BankAccount(person, company="Bank", balance=10000, interest_pct=0.0)
         model.run()
 
         nominal = model.datacollector.get_model_vars_dataframe()
@@ -162,7 +162,7 @@ class TestRealDollarReporting(unittest.TestCase):
         model = LifeModel(start_year=2026, end_year=2028, config=cfg)
         family = Family(model)
         person = Person(family, "A", 30, 65, Spending(model, base_annual=0))
-        BankAccount(person, "Bank", balance=1000, interest_rate=0.0)
+        BankAccount(person, company="Bank", balance=1000, interest_pct=0.0)
         model.run()
         styler = model.get_yearly_stat_df(columns=["Year", "Bank Balance"], real_dollars=True)
         self.assertIsNotNone(styler)
@@ -174,7 +174,7 @@ class TestRealDollarReporting(unittest.TestCase):
         model = LifeModel(start_year=2026, end_year=2028, config=_config(mode="fixed", inflation=0.0))
         family = Family(model)
         person = Person(family, "A", 30, 65, Spending(model, base_annual=0))
-        BankAccount(person, "Bank", balance=1000, interest_rate=0.0)
+        BankAccount(person, company="Bank", balance=1000, interest_pct=0.0)
         model.run()
         styler = model.get_yearly_stat_df()
         data = styler.data
@@ -192,7 +192,7 @@ class TestRealDollarReporting(unittest.TestCase):
         model = LifeModel(start_year=2026, end_year=2027, config=_config(mode="fixed", inflation=0.0))
         family = Family(model)
         person = Person(family, "A", 30, 65, Spending(model, base_annual=0))
-        BankAccount(person, "Bank", balance=1234, interest_rate=0.0)
+        BankAccount(person, company="Bank", balance=1234, interest_pct=0.0)
         model.run()
         rendered = model.get_yearly_stat_df(columns=["Year", "Bank Balance"]).to_html()
         self.assertIn("$1,234", rendered)

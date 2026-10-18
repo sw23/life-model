@@ -33,7 +33,7 @@ def _expenses(model, **overrides):
 def _person(model, bank_balance=0.0, married_to=None):
     family = Family(model)
     person = Person(family, "Owner", age=40, retirement_age=70, spending=Spending(model, 0))
-    BankAccount(person, "Bank", balance=bank_balance, interest_rate=0)
+    BankAccount(person, company="Bank", balance=bank_balance, interest_pct=0)
     return person
 
 

@@ -5,8 +5,8 @@
 
 from typing import ClassVar
 
-from .._compat import legacy_signature
 from ..base_classes import TaxAdvantagedAccount, TaxTreatment
+from ..deprecated_names import deprecated_arguments
 from ..ledger import FlowKind
 from ..limits import required_rmd_for_year
 from ..model import Event, EventKind, snap_money
@@ -25,9 +25,9 @@ class TraditionalIRA(TaxAdvantagedAccount):
     # month's pre_step (same ordering as Job401kAccount); growth stays in step.
     STEP_PRIORITY: ClassVar[dict[str, int]] = {"pre_step": -10, "step": -10}
 
-    @legacy_signature(
-        ("person", "balance", "growth_rate", "contribution_limit"),
+    @deprecated_arguments(
         {"person": "owner", "growth_rate": "growth_pct", "contribution_limit": "contribution_limit_annual"},
+        positional=("balance", "growth_pct", "contribution_limit_annual"),
     )
     def __init__(
         self,

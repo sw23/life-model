@@ -135,9 +135,9 @@ class TestChildCollege529(unittest.TestCase):
     def _college_child_model(self, plan_balance):
         model = LifeModel(start_year=2026, end_year=2026, config=_fixture_config())
         parent = Person(Family(model), "Parent", age=50, retirement_age=70, spending=Spending(model, base_annual=0))
-        BankAccount(parent, "Bank", balance=100000, interest_rate=0)
+        BankAccount(parent, company="Bank", balance=100000, interest_pct=0)
         child = Child(parent, "Kid", birth_year=2008)  # age 18 -> college band
-        plan = Plan529(owner=parent, beneficiary=child, balance=plan_balance, growth_rate=0)
+        plan = Plan529(owner=parent, beneficiary=child, balance=plan_balance, growth_pct=0)
         return model, parent, child, plan
 
     def test_funded_529_covers_tuition_tax_free(self):

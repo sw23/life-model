@@ -34,12 +34,14 @@ def _fixture_config() -> FinancialConfig:
 def _person(model: LifeModel, bank_balance: float = 0.0) -> Person:
     family = Family(model)
     person = Person(family, "P", age=40, retirement_age=70, spending=Spending(model, base_annual=0))
-    BankAccount(person, "Bank", balance=bank_balance, interest_rate=0)
+    BankAccount(person, company="Bank", balance=bank_balance, interest_pct=0)
     return person
 
 
 def _job(person: Person, base: float = 200000) -> Job:
-    return Job(person, "Tech Co", "Engineer", Salary(model=person.model, base=base, yearly_increase=0))
+    return Job(
+        person, company="Tech Co", role="Engineer", salary=Salary(model=person.model, base_annual=base, raise_pct=0)
+    )
 
 
 def _advance(model: LifeModel) -> None:
@@ -95,7 +97,7 @@ class TestVesting(unittest.TestCase):
         self.job = _job(self.person)
 
     def test_four_year_grant_vests_evenly_then_stops(self):
-        plan = StockPlan(self.job, signon_value=400000, growth_rate=0)
+        plan = StockPlan(self.job, signon_value=400000, growth_pct=0)
         vested = []
         for _ in range(5):
             _advance(self.model)
@@ -104,12 +106,12 @@ class TestVesting(unittest.TestCase):
         self.assertEqual(vested, [100000, 100000, 100000, 100000, 0])
 
     def test_grant_year_vests_nothing(self):
-        plan = StockPlan(self.job, signon_value=400000, growth_rate=0)
+        plan = StockPlan(self.job, signon_value=400000, growth_pct=0)
         plan.pre_step()  # still the grant year
         self.assertEqual(plan.stat_stock_vested, 0)
 
     def test_vest_is_ordinary_income_and_fica_wages(self):
-        plan = StockPlan(self.job, signon_value=400000, growth_rate=0)
+        plan = StockPlan(self.job, signon_value=400000, growth_pct=0)
         _advance(self.model)
         plan.pre_step()
         self.assertEqual(self.person.taxable_income, 100000)
@@ -118,7 +120,7 @@ class TestVesting(unittest.TestCase):
         self.assertEqual(totals[IncomeType.WAGES], 100000)
 
     def test_appreciation_revalues_the_vest(self):
-        plan = StockPlan(self.job, signon_value=400000, growth_rate=10)
+        plan = StockPlan(self.job, signon_value=400000, growth_pct=10)
         _advance(self.model)
         plan.pre_step()
         # One year of 10% appreciation on the whole award before the first slice vests.
@@ -128,13 +130,13 @@ class TestVesting(unittest.TestCase):
         self.assertAlmostEqual(plan.stat_stock_vested, 121000.0, places=6)
 
     def test_unvested_value_tracks_what_is_left(self):
-        plan = StockPlan(self.job, signon_value=400000, growth_rate=0)
+        plan = StockPlan(self.job, signon_value=400000, growth_pct=0)
         _advance(self.model)
         plan.pre_step()
         self.assertAlmostEqual(plan.stat_stock_unvested, 300000.0, places=6)
 
     def test_refreshers_overlap_with_the_signon_grant(self):
-        plan = StockPlan(self.job, signon_value=400000, refresher_value=200000, growth_rate=0)
+        plan = StockPlan(self.job, signon_value=400000, refresher_value=200000, growth_pct=0)
         vested = []
         for _ in range(5):
             _advance(self.model)
@@ -145,7 +147,7 @@ class TestVesting(unittest.TestCase):
         self.assertEqual(vested, [100000, 150000, 200000, 250000, 200000])
 
     def test_refresher_growth_compounds_from_the_first_refresher(self):
-        plan = StockPlan(self.job, refresher_value=100000, refresher_growth_percent=10, growth_rate=0)
+        plan = StockPlan(self.job, refresher_value=100000, refresher_growth_pct=10, growth_pct=0)
         _advance(self.model)
         plan.pre_step()  # first refresher, ungrown
         self.assertAlmostEqual(plan.grants[0].value_at_grant, 100000.0, places=6)
@@ -154,7 +156,7 @@ class TestVesting(unittest.TestCase):
         self.assertAlmostEqual(plan.grants[1].value_at_grant, 110000.0, places=6)
 
     def test_retirement_forfeits_unvested_grants(self):
-        plan = StockPlan(self.job, signon_value=400000, growth_rate=0)
+        plan = StockPlan(self.job, signon_value=400000, growth_pct=0)
         _advance(self.model)
         plan.pre_step()
         self.assertEqual(plan.stat_stock_vested, 100000)
@@ -205,9 +207,9 @@ class TestStockPlanWiring(unittest.TestCase):
         model = LifeModel(start_year=2020, end_year=2030, config=_fixture_config())
         person = _person(model)
         job = _job(person)
-        Job401kAccount(job=job, pretax_balance=0, average_growth=0, pretax_contrib_percent=10)
+        Job401kAccount(job=job, pretax_balance=0, growth_pct=0, pretax_contrib_pct=10)
         if equity > 0:
-            plan = StockPlan(job, signon_value=equity, growth_rate=0)
+            plan = StockPlan(job, signon_value=equity, growth_pct=0)
         else:
             plan = None
         model.year += 1
@@ -224,14 +226,14 @@ class TestDisposition(unittest.TestCase):
         self.job = _job(self.person)
 
     def test_sell_credits_the_bank_account(self):
-        plan = StockPlan(self.job, signon_value=400000, growth_rate=0, disposition="sell")
+        plan = StockPlan(self.job, signon_value=400000, growth_pct=0, disposition="sell")
         _advance(self.model)
         plan.pre_step()
         self.assertEqual(self.person.bank_account_balance, 100000)
 
     def test_hold_deposits_into_the_brokerage_account_at_vest_basis(self):
-        account = BrokerageAccount(self.person, "B", balance=0, growth_rate=0)
-        plan = StockPlan(self.job, signon_value=400000, growth_rate=0, disposition="hold")
+        account = BrokerageAccount(self.person, company="B", balance=0, growth_pct=0)
+        plan = StockPlan(self.job, signon_value=400000, growth_pct=0, disposition="hold")
         _advance(self.model)
         plan.pre_step()
 
@@ -242,8 +244,8 @@ class TestDisposition(unittest.TestCase):
         self.assertEqual(account.unrealized_gain, 0)
 
     def test_held_shares_are_long_term_once_a_year_passes(self):
-        account = BrokerageAccount(self.person, "B", balance=0, growth_rate=0)
-        plan = StockPlan(self.job, signon_value=400000, growth_rate=0, disposition="hold")
+        account = BrokerageAccount(self.person, company="B", balance=0, growth_pct=0)
+        plan = StockPlan(self.job, signon_value=400000, growth_pct=0, disposition="hold")
         _advance(self.model)
         plan.pre_step()
 
@@ -255,21 +257,21 @@ class TestDisposition(unittest.TestCase):
         self.assertEqual(short_term, 0)
 
     def test_hold_falls_back_to_cash_without_a_brokerage_account(self):
-        plan = StockPlan(self.job, signon_value=400000, growth_rate=0, disposition="hold")
+        plan = StockPlan(self.job, signon_value=400000, growth_pct=0, disposition="hold")
         _advance(self.model)
         plan.pre_step()
         self.assertEqual(self.person.bank_account_balance, 100000)
 
     def test_selling_and_holding_recognize_the_same_vest_income(self):
-        sell_plan = StockPlan(self.job, signon_value=400000, growth_rate=0, disposition="sell")
+        sell_plan = StockPlan(self.job, signon_value=400000, growth_pct=0, disposition="sell")
         _advance(self.model)
         sell_plan.pre_step()
         sell_income = self.person.taxable_income
 
         model = LifeModel(start_year=2020, end_year=2030, config=_fixture_config())
         person = _person(model)
-        BrokerageAccount(person, "B", balance=0, growth_rate=0)
-        hold_plan = StockPlan(_job(person), signon_value=400000, growth_rate=0, disposition="hold")
+        BrokerageAccount(person, company="B", balance=0, growth_pct=0)
+        hold_plan = StockPlan(_job(person), signon_value=400000, growth_pct=0, disposition="hold")
         model.year += 1
         hold_plan.pre_step()
 

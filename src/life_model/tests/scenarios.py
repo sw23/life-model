@@ -83,23 +83,25 @@ def married_homeowners(start_year: int = 2026, years: int = 45, *, seed: int | N
     john = Person(family, "John", 42, 58, Spending(model, base_annual=52000, growth_pct=None), state="CA")
     jane = Person(family, "Jane", 40, 62, Spending(model, base_annual=30000, growth_pct=None), state="CA")
     john.get_married(jane)
-    BankAccount(john, "Chase", balance=40000, interest_rate=2.0)
-    BankAccount(jane, "Ally", balance=25000, interest_rate=3.5)
-    BrokerageAccount(john, "Vanguard", balance=150000)
-    acme = Job(john, "Acme", "Engineer", Salary(model, base=165000, yearly_increase=None, yearly_bonus=8))
+    BankAccount(john, company="Chase", balance=40000, interest_pct=2.0)
+    BankAccount(jane, company="Ally", balance=25000, interest_pct=3.5)
+    BrokerageAccount(john, company="Vanguard", balance=150000)
+    acme = Job(
+        john, company="Acme", role="Engineer", salary=Salary(model, base_annual=165000, raise_pct=None, bonus_pct=8)
+    )
     Job401kAccount(
         acme,
         pretax_balance=220000,
-        pretax_contrib_percent=10,
+        pretax_contrib_pct=10,
         roth_balance=30000,
-        roth_contrib_percent=4,
+        roth_contrib_pct=4,
         match_tiers=[(100, 3), (50, 2)],
     )
-    clinic = Job(jane, "Clinic", "Nurse", Salary(model, base=92000, yearly_increase=None))
-    Job401kAccount(clinic, pretax_balance=90000, pretax_contrib_percent=6, match_tiers=[(50, 6)])
+    clinic = Job(jane, company="Clinic", role="Nurse", salary=Salary(model, base_annual=92000, raise_pct=None))
+    Job401kAccount(clinic, pretax_balance=90000, pretax_contrib_pct=6, match_tiers=[(50, 6)])
     TraditionalIRA(jane, balance=45000)
     RothIRA(john, balance=38000)
-    HealthSavingsAccount(jane, HSAType.FAMILY, balance=12000)
+    HealthSavingsAccount(jane, hsa_type=HSAType.FAMILY, balance=12000)
     _home(model, john, price=780000, principal=520000)
     CarLoan(john, original_amount=32000, term_years=5, rate_pct=6.5, name="SUV")
     ava = john.add_child("Ava", birth_year=start_year - 8)
@@ -120,15 +122,15 @@ def stochastic_retiree(seed: int, start_year: int = 2026, years: int = 40) -> Li
     ann = Person(
         family, "Ann", 66, 65, Spending(model, base_annual=58000, growth_pct=None), gender=GenderAtBirth.FEMALE
     )
-    BankAccount(ann, "Bank", balance=60000)
-    BrokerageAccount(ann, "Brokerage", balance=650000)
-    job = Job(ann, "Former employer", "Retired", Salary(model, base=0))
+    BankAccount(ann, company="Bank", balance=60000)
+    BrokerageAccount(ann, company="Brokerage", balance=650000)
+    job = Job(ann, company="Former employer", role="Retired", salary=Salary(model, base_annual=0))
     job.retired = True
     ann.retirement_triggered = True
     Job401kAccount(job, pretax_balance=480000)
     TraditionalIRA(ann, balance=150000)
     RothIRA(ann, balance=90000)
-    HealthSavingsAccount(ann, HSAType.INDIVIDUAL, balance=30000, employer_contribution=0)
+    HealthSavingsAccount(ann, hsa_type=HSAType.INDIVIDUAL, balance=30000, employer_contribution_annual=0)
     SocialSecurity(ann, claim_age=67, earnings_history=EARNINGS_HISTORY)
     MedicalCosts(ann)
     Medicare(ann)
@@ -167,15 +169,15 @@ def mortality_and_estate(seed: int = 7, start_year: int = 2026, years: int = 50)
     kid = Person(family, "Kim", 40, 65, Spending(model, base_annual=45000, growth_pct=None))
     bob.get_married(sue)
     for person, balance in ((bob, 80000), (sue, 40000), (kid, 30000)):
-        BankAccount(person, "Bank", balance=balance)
-    BrokerageAccount(bob, "Brokerage", balance=2_500_000)
-    BrokerageAccount(kid, "Kid brokerage", balance=50000)
-    old_job = Job(bob, "Utility", "Retired", Salary(model, base=0))
+        BankAccount(person, company="Bank", balance=balance)
+    BrokerageAccount(bob, company="Brokerage", balance=2_500_000)
+    BrokerageAccount(kid, company="Kid brokerage", balance=50000)
+    old_job = Job(bob, company="Utility", role="Retired", salary=Salary(model, base_annual=0))
     old_job.retired = True
     Job401kAccount(old_job, pretax_balance=900000, roth_balance=100000)
     TraditionalIRA(sue, balance=300000)
-    kid_job = Job(kid, "Studio", "Designer", Salary(model, base=110000, yearly_increase=None))
-    Job401kAccount(kid_job, pretax_contrib_percent=8, match_tiers=[(100, 4)])
+    kid_job = Job(kid, company="Studio", role="Designer", salary=Salary(model, base_annual=110000, raise_pct=None))
+    Job401kAccount(kid_job, pretax_contrib_pct=8, match_tiers=[(100, 4)])
     Pension(bob, company="Utility", vesting_years=5, benefit_annual=24000, cola_pct=2, survivor_pct=50)
     SocialSecurity(bob, claim_age=70, earnings_history=EARNINGS_HISTORY)
     SocialSecurity(sue, claim_age=67, earnings_history=EARNINGS_HISTORY[8:])
@@ -219,10 +221,12 @@ def renter_buys_home(seed: int = 3, start_year: int = 2026, years: int = 45) -> 
     model = LifeModel(start_year=start_year, end_year=start_year + years - 1, seed=seed)
     family = Family(model)
     max_ = Person(family, "Max", 29, 63, Spending(model, base_annual=38000, growth_pct=None))
-    BankAccount(max_, "Credit union", balance=22000, interest_rate=1.0)
-    BrokerageAccount(max_, "Robinhood", balance=60000)
-    job = Job(max_, "Startup", "Developer", Salary(model, base=125000, yearly_increase=None, yearly_bonus=5))
-    Job401kAccount(job, pretax_contrib_percent=6, roth_contrib_percent=4, match_tiers=[(100, 4)], match_vesting_years=3)
+    BankAccount(max_, company="Credit union", balance=22000, interest_pct=1.0)
+    BrokerageAccount(max_, company="Robinhood", balance=60000)
+    job = Job(
+        max_, company="Startup", role="Developer", salary=Salary(model, base_annual=125000, raise_pct=None, bonus_pct=5)
+    )
+    Job401kAccount(job, pretax_contrib_pct=6, roth_contrib_pct=4, match_tiers=[(100, 4)], match_vesting_years=3)
     StockPlan(job, signon_value=80000, refresher_value=30000, disposition="hold")
     Apartment(max_, "Downtown flat", rent_monthly=2200, rent_growth_pct=None)
     StudentLoan(
@@ -257,7 +261,11 @@ def renter_buys_home(seed: int = 3, start_year: int = 2026, years: int = 45) -> 
                 lambda: CarLoan(max_, original_amount=35000, term_years=6, rate_pct=7.0, name="Sedan"),
             ),
             LifeEvent(start_year + 12, "Lose job", job.retire),
-            LifeEvent(start_year + 13, "New job", lambda: Job(max_, "BigCo", "Lead", Salary(model, base=150000))),
+            LifeEvent(
+                start_year + 13,
+                "New job",
+                lambda: Job(max_, company="BigCo", role="Lead", salary=Salary(model, base_annual=150000)),
+            ),
             LifeEvent(start_year + 30, "Downsize", sell_home),
         ],
     )
@@ -294,16 +302,18 @@ def everything_stochastic(seed: int, start_year: int = 2026, years: int = 50) ->
     ana.get_married(raj)
     teen = ana.add_child("Teo", birth_year=start_year - 15)
     Plan529(ana, beneficiary=teen, balance=60000)
-    BankAccount(ana, "Bank", balance=50000)
-    BankAccount(raj, "Bank", balance=20000)
-    BrokerageAccount(raj, "Brokerage", balance=300000)
-    job = Job(ana, "Hospital", "Doctor", Salary(model, base=210000, yearly_increase=None, yearly_bonus=5))
-    Job401kAccount(job, pretax_balance=400000, pretax_contrib_percent=10, match_tiers=[(100, 4)])
+    BankAccount(ana, company="Bank", balance=50000)
+    BankAccount(raj, company="Bank", balance=20000)
+    BrokerageAccount(raj, company="Brokerage", balance=300000)
+    job = Job(
+        ana, company="Hospital", role="Doctor", salary=Salary(model, base_annual=210000, raise_pct=None, bonus_pct=5)
+    )
+    Job401kAccount(job, pretax_balance=400000, pretax_contrib_pct=10, match_tiers=[(100, 4)])
     StockPlan(job, signon_value=40000, refresher_value=20000, disposition="sell")
-    raj_job = Job(raj, "School", "Teacher", Salary(model, base=70000, yearly_increase=None))
-    Job401kAccount(raj_job, pretax_balance=150000, roth_contrib_percent=5)
+    raj_job = Job(raj, company="School", role="Teacher", salary=Salary(model, base_annual=70000, raise_pct=None))
+    Job401kAccount(raj_job, pretax_balance=150000, roth_contrib_pct=5)
     TraditionalIRA(raj, balance=80000)
-    HealthSavingsAccount(ana, HSAType.FAMILY, balance=20000)
+    HealthSavingsAccount(ana, hsa_type=HSAType.FAMILY, balance=20000)
     SocialSecurity(ana, claim_age=67, earnings_history=EARNINGS_HISTORY)
     SocialSecurity(raj, claim_age=65, earnings_history=EARNINGS_HISTORY[3:])
     _home(model, raj, price=650000, principal=300000)
@@ -341,9 +351,9 @@ def everything_stochastic(seed: int, start_year: int = 2026, years: int = 50) ->
         mortality_mode=MortalityMode.FIXED_AGE,
         death_age=80,
     )
-    BankAccount(loner, "Bank", balance=40000)
-    BrokerageAccount(loner, "Brokerage", balance=250000)
-    old_job = Job(loner, "Mill", "Retired", Salary(model, base=0))
+    BankAccount(loner, company="Bank", balance=40000)
+    BrokerageAccount(loner, company="Brokerage", balance=250000)
+    old_job = Job(loner, company="Mill", role="Retired", salary=Salary(model, base_annual=0))
     old_job.retired = True
     Job401kAccount(old_job, pretax_balance=200000)
     _home(model, loner, price=300000, principal=60000)

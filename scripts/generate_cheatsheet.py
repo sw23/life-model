@@ -346,7 +346,33 @@ def render() -> str:
         required, defaults = _signature_rows(cls)
         row = [f"`{name}` ({module})", _owner(cls), ", ".join(required) or "—", ", ".join(defaults) or "—"]
         lines.append("| " + " | ".join(_cell(c) for c in row) + " |")
+    lines += _deprecated_rows()
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _deprecated_rows() -> list[str]:
+    """The documented list of deprecated constructor names (Plan 27 D8; ``life_model.deprecated_names``)."""
+    from life_model.deprecated_names import POSITIONAL, deprecated_names
+
+    lines = [
+        "",
+        "## Deprecated constructor names (Plan 27 D8)",
+        "",
+        (
+            "These still work for one release with a `DeprecationWarning` naming the replacement. Constructors "
+            "listed with a keyword-only boundary also accept their former positional arguments (with a warning)."
+        ),
+        "",
+        "| Class | Old name -> canonical name | Keyword-only after |",
+        "|---|---|---|",
+    ]
+    for owner, renames in deprecated_names().items():
+        module, name = owner.rsplit(".", 1)
+        pairs = ", ".join(f"`{old}` -> `{new}`" for old, new in renames.items()) or "—"
+        boundary = POSITIONAL.get(owner)
+        after = "—" if boundary is None else ("every argument" if boundary[1] == 0 else f"the first {boundary[1]}")
+        lines.append(f"| `{name}` ({module.removeprefix('life_model.')}) | {_cell(pairs)} | {after} |")
+    return lines
 
 
 def main(argv: list[str] | None = None) -> int:

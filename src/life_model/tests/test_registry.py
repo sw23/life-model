@@ -34,14 +34,14 @@ class TestRegistry(unittest.TestCase):
         self.assertEqual(len(self.person.bank_accounts), 0)
 
         # Create a bank account
-        bank = BankAccount(owner=self.person, company="Test Bank", type="Checking", balance=10000, interest_rate=0.1)
+        bank = BankAccount(owner=self.person, company="Test Bank", type="Checking", balance=10000, interest_pct=0.1)
 
         # Check that the bank account was registered
         self.assertEqual(len(self.person.bank_accounts), 1)
         self.assertIn(bank, self.person.bank_accounts)
 
         # Create another bank account
-        bank2 = BankAccount(owner=self.person, company="Test Bank 2", type="Savings", balance=5000, interest_rate=0.5)
+        bank2 = BankAccount(owner=self.person, company="Test Bank 2", type="Savings", balance=5000, interest_pct=0.5)
 
         # Check that both are registered
         self.assertEqual(len(self.person.bank_accounts), 2)
@@ -54,7 +54,7 @@ class TestRegistry(unittest.TestCase):
         self.assertEqual(len(self.person.jobs), 0)
 
         # Create a job
-        salary = Salary(model=self.model, base=100000, yearly_increase=3.0)
+        salary = Salary(model=self.model, base_annual=100000, raise_pct=3.0)
         job = Job(owner=self.person, company="Tech Corp", role="Software Engineer", salary=salary)
 
         # Check that the job was registered
@@ -132,9 +132,9 @@ class TestRegistry(unittest.TestCase):
         person2 = Person(family=self.family, name="Test Person 2", age=25, retirement_age=65, spending=self.spending)
 
         # Create bank accounts for each person
-        bank1 = BankAccount(owner=self.person, company="Bank 1", type="Checking", balance=10000, interest_rate=0.1)
+        bank1 = BankAccount(owner=self.person, company="Bank 1", type="Checking", balance=10000, interest_pct=0.1)
 
-        bank2 = BankAccount(owner=person2, company="Bank 2", type="Checking", balance=5000, interest_rate=0.1)
+        bank2 = BankAccount(owner=person2, company="Bank 2", type="Checking", balance=5000, interest_pct=0.1)
 
         # Check that each person only sees their own accounts
         self.assertEqual(len(self.person.bank_accounts), 1)
@@ -148,9 +148,9 @@ class TestRegistry(unittest.TestCase):
     def test_registry_clear(self):
         """Test clearing registries for a person"""
         # Create some accounts
-        bank = BankAccount(owner=self.person, company="Test Bank", type="Checking", balance=10000, interest_rate=0.1)
+        bank = BankAccount(owner=self.person, company="Test Bank", type="Checking", balance=10000, interest_pct=0.1)
 
-        salary = Salary(model=self.model, base=100000, yearly_increase=3.0)
+        salary = Salary(model=self.model, base_annual=100000, raise_pct=3.0)
         job = Job(owner=self.person, company="Tech Corp", role="Software Engineer", salary=salary)
 
         # Verify they exist

@@ -41,10 +41,10 @@ class TestOctoberStart(unittest.TestCase):
     def setUp(self):
         self.model = LifeModel(start="2020-10", end_year=2021, config=FinancialConfig(config_file=TEST_CONFIG))
         self.person = Person(Family(self.model), "Oct", 40, 70, Spending(self.model, base_annual=0))
-        self.bank = BankAccount(self.person, "Bank", balance=50000, interest_rate=0)
-        self.brokerage = BrokerageAccount(self.person, "Broker", balance=100000, growth_rate=12)
+        self.bank = BankAccount(self.person, company="Bank", balance=50000, interest_pct=0)
+        self.brokerage = BrokerageAccount(self.person, company="Broker", balance=100000, growth_pct=12)
         Apartment(self.person, "Flat", rent_monthly=2000, rent_growth_pct=0)
-        self.job = Job(self.person, "Co", "Dev", Salary(self.model, base=120000))
+        self.job = Job(self.person, company="Co", role="Dev", salary=Salary(self.model, base_annual=120000))
         self.model.step_year()
 
     def test_three_months_of_salary_rent_and_growth(self):
@@ -150,8 +150,8 @@ class TestSequenceOfReturns(unittest.TestCase):
         config.apply_scenario("crash", {"economy": {"mode": "path", "equity_return": 0.0, "paths": paths}})
         model = LifeModel(start_year=2026, end_year=2026, config=config)
         person = Person(Family(model), "Ret", 70, 65, Spending(model, base_annual=60000))
-        BankAccount(person, "Bank", balance=0, interest_rate=0)
-        BrokerageAccount(person, "Broker", balance=1_000_000)
+        BankAccount(person, company="Bank", balance=0, interest_pct=0)
+        BrokerageAccount(person, company="Broker", balance=1_000_000)
         return model
 
     def test_an_early_crash_ends_the_year_lower(self):
@@ -171,8 +171,8 @@ class TestFiftyNineAndAHalf(unittest.TestCase):
     def test_born_july_1966_reaches_fifty_nine_and_a_half_in_january_2026(self):
         model = LifeModel(start="2025-12", end_year=2026)
         person = Person(Family(model), "Jo", None, 70, Spending(model, 0), birth="1966-07")
-        BankAccount(person, "Bank", balance=5000, interest_rate=0)  # pays the year's taxes
-        ira = TraditionalIRA(person, balance=10000, growth_rate=0)
+        BankAccount(person, company="Bank", balance=5000, interest_pct=0)  # pays the year's taxes
+        ira = TraditionalIRA(person, balance=10000, growth_pct=0)
         self.assertEqual(person.get_period_at_age(59.5), (2026, 1))
         self.assertFalse(ira.is_useable)  # December 2025: 59 and 5 months
         person.withdraw_from_traditional_iras(1000)

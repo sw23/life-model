@@ -122,3 +122,35 @@ The owner argument links the object to its owner (a `Person`, a `Job`, or the `m
 | `SavingsPolicy` (life_model.policies) |  | `*cash_floor` | `*sweep_to=None` |
 | `RothConversionPolicy` (life_model.policies) |  | — | `*fill_bracket_pct=None`, `*amount_annual=None`, `*source=None`, `*target=None`, `*until_age=None` |
 | `Child` (life_model.dependents.child) | `person` | `person`, `name`, `birth_year` | `*care_expenses_annual=0.0`, `*interest_annual=0.0`, `*dividends_annual=0.0`, `*cost_annual=None`, `*college_cost_annual=None` |
+
+## Deprecated constructor names (Plan 27 D8)
+
+These still work for one release with a `DeprecationWarning` naming the replacement. Constructors listed with a keyword-only boundary also accept their former positional arguments (with a warning).
+
+| Class | Old name -> canonical name | Keyword-only after |
+|---|---|---|
+| `BankAccount` (account.bank) | `interest_rate` -> `interest_pct` | the first 1 |
+| `BrokerageAccount` (account.brokerage) | `person` -> `owner`, `growth_rate` -> `growth_pct`, `dividend_yield` -> `dividend_yield_pct` | the first 1 |
+| `HealthSavingsAccount` (account.hsa) | `person` -> `owner`, `contribution_limit` -> `contribution_limit_annual`, `employer_contribution` -> `employer_contribution_annual`, `growth_rate` -> `growth_pct` | the first 1 |
+| `Job401kAccount` (account.job401k) | `pretax_contrib_percent` -> `pretax_contrib_pct`, `roth_contrib_percent` -> `roth_contrib_pct`, `average_growth` -> `growth_pct`, `person` -> `owner` | the first 1 |
+| `Pension` (account.pension) | `person` -> `owner`, `benefit_amount` -> `benefit_annual`, `cola_percent` -> `cola_pct`, `survivor_percent` -> `survivor_pct`, `benefit_multiplier` -> `benefit_multiplier_pct`, `final_salary` -> `final_salary_annual` | the first 1 |
+| `RothIRA` (account.roth_IRA) | `person` -> `owner`, `growth_rate` -> `growth_pct`, `contribution_limit` -> `contribution_limit_annual` | the first 1 |
+| `TraditionalIRA` (account.traditional_IRA) | `person` -> `owner`, `growth_rate` -> `growth_pct`, `contribution_limit` -> `contribution_limit_annual` | the first 1 |
+| `Loan` (base_classes) | `person` -> `owner`, `loan_amount` -> `original_amount`, `yearly_interest_rate` -> `rate_pct`, `length_years` -> `term_years`, `principal` -> `current_balance`, `monthly_payment` -> `payment_monthly` | — |
+| `CarLoan` (debt.car_loan) | `person` -> `owner`, `loan_amount` -> `original_amount`, `yearly_interest_rate` -> `rate_pct`, `length_years` -> `term_years`, `principal` -> `current_balance`, `monthly_payment` -> `payment_monthly` | the first 1 |
+| `CreditCard` (debt.credit_card) | `person` -> `owner`, `card_name` -> `name`, `current_balance` -> `balance`, `yearly_interest_rate` -> `rate_pct`, `minimum_payment_percent` -> `minimum_payment_pct`, `fixed_payment` -> `payment_monthly` | the first 1 |
+| `RevolvingDebt` (debt.credit_card) | `person` -> `owner`, `yearly_interest_rate` -> `rate_pct`, `minimum_payment_percent` -> `minimum_payment_pct`, `fixed_payment` -> `payment_monthly` | the first 1 |
+| `StudentLoan` (debt.student_loan) | `person` -> `owner`, `loan_amount` -> `original_amount`, `yearly_interest_rate` -> `rate_pct`, `length_years` -> `term_years`, `principal` -> `current_balance`, `monthly_payment` -> `payment_monthly` | the first 1 |
+| `Plan529` (dependents.plan529) | `growth_rate` -> `growth_pct`, `annual_contribution_limit` -> `contribution_limit_annual` | the first 1 |
+| `Apartment` (housing.apartment) | `person` -> `owner`, `monthly_rent` -> `rent_monthly`, `yearly_increase` -> `rent_growth_pct` | — |
+| `Home` (housing.home) | `person` -> `owner`, `value_yearly_increase` -> `value_growth_pct` | — |
+| `HomeExpenses` (housing.home) | `property_tax_percent` -> `property_tax_pct`, `home_insurance_percent` -> `insurance_pct`, `maintenance_amount` -> `maintenance_annual`, `maintenance_increase` -> `maintenance_growth_pct`, `improvement_amount` -> `improvement_annual`, `improvement_increase` -> `improvement_growth_pct`, `hoa_amount` -> `hoa_annual`, `hoa_increase` -> `hoa_growth_pct` | — |
+| `Mortgage` (housing.home) | `loan_amount` -> `original_amount`, `yearly_interest_rate` -> `rate_pct`, `length_years` -> `term_years`, `principal` -> `current_balance`, `monthly_payment` -> `payment_monthly`, `start_date` -> `start_year` | every argument |
+| `Annuity` (insurance.annuity) | `person` -> `owner`, `initial_balance` -> `balance`, `interest_rate` -> `rate_pct`, `monthly_payout` -> `payout_monthly`, `surrender_charge_rate` -> `surrender_charge_pct`, `survivor_percent` -> `survivor_pct`, `cola_percent` -> `cola_pct` | the first 1 |
+| `Insurance` (insurance.general_insurance) | `person` -> `owner`, `annual_premium` -> `premium_annual`, `premium_increase_rate` -> `premium_increase_pct` | — |
+| `LifeInsurance` (insurance.life_insurance) | `person` -> `owner`, `monthly_premium` -> `premium_monthly`, `cash_value_growth_rate` -> `cash_value_growth_pct`, `loan_interest_rate` -> `loan_interest_pct` | — |
+| `SocialSecurity` (insurance.social_security) | `person` -> `owner`, `withdrawal_start_age` -> `claim_age`, `income_history` -> `earnings_history` | — |
+| `Spending` (people.person) | `base` -> `base_annual`, `yearly_increase` -> `growth_pct` | — |
+| `Job` (work.job) | — | the first 1 |
+| `Salary` (work.job) | `base` -> `base_annual`, `yearly_increase` -> `raise_pct`, `yearly_bonus` -> `bonus_pct` | the first 1 |
+| `StockPlan` (work.stock) | `refresher_growth_percent` -> `refresher_growth_pct`, `growth_rate` -> `growth_pct` | — |

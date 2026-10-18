@@ -26,7 +26,7 @@ class TestApartment(unittest.TestCase):
         model = LifeModel(start_year=2020, end_year=2020)
         family = Family(model)
         person = Person(family, "Renter", age=30, retirement_age=70, spending=Spending(model, 0))
-        bank = BankAccount(person, "Bank", balance=100000, interest_rate=0)
+        bank = BankAccount(person, company="Bank", balance=100000, interest_pct=0)
         Apartment(owner=person, name="Downtown", rent_monthly=1500, rent_growth_pct=0.0)
         model.run()
         self.assertEqual(bank.balance, 100000 - 18000)
@@ -35,7 +35,7 @@ class TestApartment(unittest.TestCase):
         model = LifeModel(start_year=2020, end_year=2021)
         family = Family(model)
         person = Person(family, "Renter", age=30, retirement_age=70, spending=Spending(model, 0))
-        BankAccount(person, "Bank", balance=1000000, interest_rate=0)
+        BankAccount(person, company="Bank", balance=1000000, interest_pct=0)
         apartment = Apartment(owner=person, name="Downtown", rent_monthly=1000, rent_growth_pct=10.0)
         model.run()
         # Rent escalates 10% per year after each year's rent is paid.

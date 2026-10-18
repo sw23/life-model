@@ -25,7 +25,7 @@ from ..work.job import Job, Salary
 def _make_person(model, bank_balance=500000):
     family = Family(model)
     person = Person(family, "Deb", age=40, retirement_age=70, spending=Spending(model, 0))
-    BankAccount(person, "Bank", balance=bank_balance, interest_rate=0)
+    BankAccount(person, company="Bank", balance=bank_balance, interest_pct=0)
     return person
 
 
@@ -164,7 +164,7 @@ class TestStudentLoanFeatures(unittest.TestCase):
         def taxes_with_loan(add_loan):
             model = LifeModel(start_year=2020, end_year=2020)
             person = _make_person(model)
-            Job(person, "Co", "Dev", Salary(model=model, base=120000))
+            Job(person, company="Co", role="Dev", salary=Salary(model=model, base_annual=120000))
             if add_loan:
                 # High-rate, large balance so interest paid exceeds the $2,500 cap.
                 StudentLoan(

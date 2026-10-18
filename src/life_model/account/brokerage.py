@@ -6,8 +6,8 @@ import html
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from .._compat import legacy_signature
 from ..base_classes import Investment
+from ..deprecated_names import deprecated_arguments
 from ..ledger import FlowKind
 from ..people.person import Person
 from ..tax.income import IncomeType
@@ -87,9 +87,9 @@ class BrokerageAccount(Investment):
     long-term gain.
     """
 
-    @legacy_signature(
-        ("person", "company", "balance", "growth_rate"),
+    @deprecated_arguments(
         {"person": "owner", "growth_rate": "growth_pct", "dividend_yield": "dividend_yield_pct"},
+        positional=("company", "balance", "growth_pct"),
     )
     def __init__(
         self,

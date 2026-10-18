@@ -30,12 +30,12 @@ def _run_model() -> weakref.ref:
         retirement_age=65,
         spending=Spending(model=model, base_annual=30000, growth_pct=2),
     )
-    BankAccount(owner=person, company="Bank", type="Checking", balance=20000, interest_rate=0.5)
+    BankAccount(owner=person, company="Bank", type="Checking", balance=20000, interest_pct=0.5)
     Job(
         owner=person,
         company="Company",
         role="Employee",
-        salary=Salary(model=model, base=80000, yearly_increase=3, yearly_bonus=1),
+        salary=Salary(model=model, base_annual=80000, raise_pct=3, bonus_pct=1),
     )
     model.run()
     return weakref.ref(model)

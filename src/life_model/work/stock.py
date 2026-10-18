@@ -17,7 +17,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, ClassVar
 
-from .._compat import legacy_signature
+from ..deprecated_names import deprecated_arguments
 from ..ledger import FlowKind
 from ..model import LifeModelAgent
 
@@ -252,7 +252,7 @@ class StockPlan(LifeModelAgent):
     # year, in the first month of the year (quarterly vesting is a later plan's).
     STEP_PRIORITY: ClassVar[dict[str, int]] = {"pre_step": 5}
 
-    @legacy_signature(("job",), {"refresher_growth_percent": "refresher_growth_pct", "growth_rate": "growth_pct"})
+    @deprecated_arguments({"refresher_growth_percent": "refresher_growth_pct", "growth_rate": "growth_pct"})
     def __init__(
         self,
         job: "Job",

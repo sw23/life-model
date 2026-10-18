@@ -35,11 +35,11 @@ class TestTaxCalculationService(unittest.TestCase):
         self.person.filing_status = FilingStatus.SINGLE
 
         # Add a bank account
-        self.bank = BankAccount(self.person, "Test Bank", balance=10000)
+        self.bank = BankAccount(self.person, company="Test Bank", balance=10000)
 
         # Add a job with 401k
-        self.salary = Salary(self.model, base=100000)
-        self.job = Job(self.person, "Test Corp", "Engineer", self.salary)
+        self.salary = Salary(self.model, base_annual=100000)
+        self.job = Job(self.person, company="Test Corp", role="Engineer", salary=self.salary)
         self.job401k = Job401kAccount(self.job, pretax_balance=50000, roth_balance=25000)
         self.job.retirement_account = self.job401k
 
@@ -106,11 +106,11 @@ class TestPaymentService(unittest.TestCase):
         self.person = Person(self.family, "Jane", 35, 67, self.spending)
 
         # Add a bank account
-        self.bank = BankAccount(self.person, "Test Bank", balance=5000)
+        self.bank = BankAccount(self.person, company="Test Bank", balance=5000)
 
         # Add a job with 401k
-        self.salary = Salary(self.model, base=100000)
-        self.job = Job(self.person, "Test Corp", "Engineer", self.salary)
+        self.salary = Salary(self.model, base_annual=100000)
+        self.job = Job(self.person, company="Test Corp", role="Engineer", salary=self.salary)
         self.job401k = Job401kAccount(self.job, pretax_balance=30000, roth_balance=15000)
         self.job.retirement_account = self.job401k
 
@@ -122,7 +122,7 @@ class TestPaymentService(unittest.TestCase):
 
         self.bank.balance = 0
         self.job401k.roth_balance = 0
-        brokerage = BrokerageAccount(self.person, "Broker", balance=10000, growth_rate=0)
+        brokerage = BrokerageAccount(self.person, company="Broker", balance=10000, growth_pct=0)
 
         unpaid = self.payment_service.pay_bills_with_prioritization(4000)
 
@@ -135,7 +135,7 @@ class TestPaymentService(unittest.TestCase):
 
         self.bank.balance = 0
         self.job401k.roth_balance = 1000
-        roth_ira = RothIRA(self.person, balance=5000, growth_rate=0)
+        roth_ira = RothIRA(self.person, balance=5000, growth_pct=0)
 
         unpaid = self.payment_service.pay_bills_with_prioritization(3000)
 
@@ -198,10 +198,10 @@ class TestServiceIntegration(unittest.TestCase):
         self.person = Person(self.family, "Integration Test", 40, 67, self.spending)
 
         # Add accounts
-        self.bank = BankAccount(self.person, "Test Bank", balance=15000)
+        self.bank = BankAccount(self.person, company="Test Bank", balance=15000)
 
-        self.salary = Salary(self.model, base=80000)
-        self.job = Job(self.person, "Test Corp", "Manager", self.salary)
+        self.salary = Salary(self.model, base_annual=80000)
+        self.job = Job(self.person, company="Test Corp", role="Manager", salary=self.salary)
         self.job401k = Job401kAccount(self.job, pretax_balance=100000, roth_balance=50000)
         self.job.retirement_account = self.job401k
 

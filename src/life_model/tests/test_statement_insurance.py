@@ -50,7 +50,7 @@ def _model(start="2026-01", end_year=2030, checks="off", config=None):
 def _person(model, *, birth="1966-01", bank=200000.0, spending=None, family=None, name="P", retirement_age=70):
     spending = spending if spending is not None else Spending(model, 0)
     person = Person(family or Family(model), name, None, retirement_age, spending, birth=birth)
-    BankAccount(person, "Bank", balance=bank, interest_rate=0)
+    BankAccount(person, company="Bank", balance=bank, interest_pct=0)
     return person
 
 
@@ -295,7 +295,7 @@ class TestHealthAndDisability(unittest.TestCase):
     def test_disability_benefit_replaces_pay(self):
         model = _model(end_year=2027, checks="strict")
         person = _person(model, birth="1981-01")
-        Job(person, "Co", "Eng", Salary(model, base=120000))
+        Job(person, company="Co", role="Eng", salary=Salary(model, base_annual=120000))
         policy = Insurance(
             person,
             InsuranceType.DISABILITY,
@@ -383,7 +383,7 @@ class TestSocialSecurityStatement(unittest.TestCase):
         # The live config: the fixture's wage index lacks the 1992 base the 2027 exempt amount projects from.
         model = _model(end_year=2031, config=FinancialConfig())
         person = _person(model, birth="1964-01", retirement_age=63)
-        Job(person, "Co", "Eng", Salary(model, base=44480))
+        Job(person, company="Co", role="Eng", salary=Salary(model, base_annual=44480))
         ss = SocialSecurity(person, 62, pia_override_monthly=2000, earnings_test=True)
         model.step_year()
         # 2026 lower exempt amount $24,480: $20,000 over, $10,000 withheld from 2027's checks.

@@ -22,7 +22,7 @@ class TestJob401k(unittest.TestCase):
         self.person = Person(
             family=Family(self.model), name="Sam", age=40, retirement_age=65, spending=Spending(self.model, 0)
         )
-        self.job = Job(owner=self.person, company="Co", role="Dev", salary=Salary(model=self.model, base=0))
+        self.job = Job(owner=self.person, company="Co", role="Dev", salary=Salary(model=self.model, base_annual=0))
 
     def _account(self, **kwargs):
         return Job401kAccount(job=self.job, **kwargs)
@@ -96,11 +96,11 @@ class TestJob401kLimits(unittest.TestCase):
         """Plan 06 item 7: two jobs can't each defer the full elective limit."""
         model = LifeModel(end_year=2020, start_year=2020, config=self._fixture_config())
         person = Person(Family(model), "P", 40, 65, Spending(model, base_annual=0))
-        BankAccount(person, "Bank", balance=0)
-        job1 = Job(person, "Co1", "Dev", Salary(model, base=100000))
-        Job401kAccount(job1, pretax_contrib_percent=15, average_growth=0)
-        job2 = Job(person, "Co2", "Dev", Salary(model, base=100000))
-        Job401kAccount(job2, pretax_contrib_percent=15, average_growth=0)
+        BankAccount(person, company="Bank", balance=0)
+        job1 = Job(person, company="Co1", role="Dev", salary=Salary(model, base_annual=100000))
+        Job401kAccount(job1, pretax_contrib_pct=15, growth_pct=0)
+        job2 = Job(person, company="Co2", role="Dev", salary=Salary(model, base_annual=100000))
+        Job401kAccount(job2, pretax_contrib_pct=15, growth_pct=0)
 
         model.step_year()
 
@@ -113,11 +113,11 @@ class TestJob401kLimits(unittest.TestCase):
     def test_employer_match_capped_by_415c(self):
         model = LifeModel(end_year=2020, start_year=2020, config=self._fixture_config())
         person = Person(Family(model), "P", 40, 65, Spending(model, base_annual=0))
-        BankAccount(person, "Bank", balance=0)
-        job = Job(person, "Co", "Dev", Salary(model, base=100000))
+        BankAccount(person, company="Bank", balance=0)
+        job = Job(person, company="Co", role="Dev", salary=Salary(model, base_annual=100000))
         # Elective 20% of $100k = $20k (the fixture 402(g) base). A 300% match would be $60k, but
         # the fixture 415(c) annual-additions limit of $60k caps the match at $60k - $20k.
-        Job401kAccount(job, pretax_contrib_percent=20, company_match_percent=300, average_growth=0)
+        Job401kAccount(job, pretax_contrib_pct=20, company_match_percent=300, growth_pct=0)
 
         model.step_year()
 
@@ -127,8 +127,8 @@ class TestJob401kLimits(unittest.TestCase):
     def test_required_minimum_distribution_in_pre_step(self):
         model = LifeModel(end_year=2020, start_year=2020)
         person = Person(Family(model), "P", 75, 60, Spending(model, base_annual=0))
-        job = Job(person, "Co", "Retiree", Salary(model, base=0))
-        k401 = Job401kAccount(job, pretax_balance=100000, average_growth=0)
+        job = Job(person, company="Co", role="Retiree", salary=Salary(model, base_annual=0))
+        k401 = Job401kAccount(job, pretax_balance=100000, growth_pct=0)
         k401.on_year_start()  # Plan 32: the year's RMD is set at the year start, paid in twelfths
         run_months(model, k401.pre_step)
         self.assertGreater(k401.stat_required_min_distrib, 0)

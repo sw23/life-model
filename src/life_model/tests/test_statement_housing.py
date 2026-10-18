@@ -41,7 +41,7 @@ def _model(start="2026-01", end_year=2030, checks="off"):
 
 def _person(model, bank=500000.0, spending=0.0, name="Owner"):
     person = Person(Family(model), name, age=40, retirement_age=70, spending=Spending(model, spending))
-    BankAccount(person, "Bank", balance=bank, interest_rate=0)
+    BankAccount(person, company="Bank", balance=bank, interest_pct=0)
     return person
 
 

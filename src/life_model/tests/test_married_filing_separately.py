@@ -61,7 +61,7 @@ class TestSeparateReturnsInSimulation(unittest.TestCase):
         if separately:
             a.filing_status = b.filing_status = FilingStatus.MARRIED_FILING_SEPARATELY
         for person in (a, b):
-            BankAccount(person, "Bank", balance=100000, interest_rate=0)
+            BankAccount(person, company="Bank", balance=100000, interest_pct=0)
         return model, a, b
 
     def test_each_spouse_is_its_own_unit(self):
@@ -77,7 +77,12 @@ class TestSeparateReturnsInSimulation(unittest.TestCase):
         for separately in (False, True):
             model, a, b = self._couple(separately=separately)
             for person in (a, b):
-                Job(person, "Co", "Dev", Salary(model=model, base=90000, yearly_increase=0, yearly_bonus=0))
+                Job(
+                    person,
+                    company="Co",
+                    role="Dev",
+                    salary=Salary(model=model, base_annual=90000, raise_pct=0, bonus_pct=0),
+                )
             model.step_year()
             totals[separately] = sum(p.stat_taxes_paid_federal for p in (a, b))
         self.assertAlmostEqual(totals[True], totals[False], places=2)
@@ -98,7 +103,7 @@ class TestSeparateReturnsInSimulation(unittest.TestCase):
 
         def federal_tax(separately: bool, with_loan: bool) -> float:
             model, a, b = self._couple(separately=separately)
-            Job(a, "Co", "Dev", Salary(model=model, base=60000, yearly_increase=0, yearly_bonus=0))
+            Job(a, company="Co", role="Dev", salary=Salary(model=model, base_annual=60000, raise_pct=0, bonus_pct=0))
             if with_loan:
                 StudentLoan(
                     a,
@@ -126,7 +131,7 @@ class TestSeparateReturnBenefitsAndMedicare(unittest.TestCase):
         b = Person(family, "B", age=70, retirement_age=60, spending=Spending(model, 0))
         a.get_married(b)
         a.filing_status = b.filing_status = FilingStatus.MARRIED_FILING_SEPARATELY
-        BankAccount(a, "Bank", balance=0)
+        BankAccount(a, company="Bank", balance=0)
         ss = SocialSecurity(owner=a, claim_age=67)
         # Zero base amount: provisional 0.5 x 20,000 = 10,000 -> 85% inclusion caps at 0.85 x 10,000.
         self.assertAlmostEqual(ss._taxable_benefit_portion(20000), 8500.0, places=2)

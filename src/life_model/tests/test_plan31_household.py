@@ -40,19 +40,21 @@ def _model(start=2024, end=None, **kwargs):
 def _person(model, name="Alex", age=40, family=None, bank=1_000_000, spending=0):
     person = Person(family or Family(model), name, age=age, retirement_age=67, spending=Spending(model, spending))
     if bank is not None:
-        BankAccount(person, "Bank", balance=bank, interest_rate=0)
+        BankAccount(person, company="Bank", balance=bank, interest_pct=0)
     return person
 
 
 def _job(person, salary, **kwargs):
-    return Job(person, "Example Analytics", "Analyst", Salary(person.model, base=salary), **kwargs)
+    return Job(
+        person, company="Example Analytics", role="Analyst", salary=Salary(person.model, base_annual=salary), **kwargs
+    )
 
 
 class TestQualifiedCharitableDistribution(unittest.TestCase):
     def test_qcd_counts_toward_the_rmd_and_is_not_income(self):
         model = _model(2024, checks="strict")
         lee = _person(model, "Lee", 75)
-        ira = TraditionalIRA(lee, balance=500000, growth_rate=0)
+        ira = TraditionalIRA(lee, balance=500000, growth_pct=0)
         Donation(lee, "Food Bank", annual_amount=10000, donation_type=DonationType.QCD)
         model.step_year()
         rmd = 500000 / 24.6
@@ -67,7 +69,7 @@ class TestQualifiedCharitableDistribution(unittest.TestCase):
         model = _model(2024)
         pat = _person(model, "Pat", 65)
         _job(pat, 50000)
-        TraditionalIRA(pat, balance=100000, growth_rate=0)
+        TraditionalIRA(pat, balance=100000, growth_pct=0)
         donation = Donation(pat, "Food Bank", annual_amount=1000, donation_type=DonationType.QCD)
         model.step_year()
         self.assertEqual(donation.cash_given_this_year, 1000)
@@ -79,7 +81,7 @@ class TestAppreciatedStockGift(unittest.TestCase):
         model = _model(2024, checks="strict")
         pat = _person(model, "Pat")
         _job(pat, 100000)
-        brokerage = BrokerageAccount(pat, "Example Brokerage", balance=0, growth_rate=0, dividend_yield=0)
+        brokerage = BrokerageAccount(pat, company="Example Brokerage", balance=0, growth_pct=0, dividend_yield_pct=0)
         brokerage.deposit_with_basis(50000, 10000, acquired_year=2015)
         Donation(pat, "Food Bank", annual_amount=40000, donation_type=DonationType.STOCK)
         model.step_year()
@@ -100,8 +102,8 @@ class TestIRAPhaseouts(unittest.TestCase):
         model = _model(2024)
         alex = _person(model)
         job = _job(alex, 82000)
-        Job401kAccount(job, pretax_contrib_percent=0)  # eligible to defer: an active participant
-        ira = TraditionalIRA(alex, balance=0, growth_rate=0)
+        Job401kAccount(job, pretax_contrib_pct=0)  # eligible to defer: an active participant
+        ira = TraditionalIRA(alex, balance=0, growth_pct=0)
         ira.contribute(7000)
         model.step_year()
         r = model.tax_returns[2024]
@@ -112,7 +114,7 @@ class TestIRAPhaseouts(unittest.TestCase):
         model = _model(2024)
         alex = _person(model)
         _job(alex, 200000)
-        ira = TraditionalIRA(alex, balance=0, growth_rate=0)
+        ira = TraditionalIRA(alex, balance=0, growth_pct=0)
         ira.contribute(7000)
         model.step_year()
         self.assertAlmostEqual(model.tax_returns[2024].adjustments["ira_deduction"], 7000)
@@ -122,7 +124,7 @@ class TestIRAPhaseouts(unittest.TestCase):
         model = _model(2024, checks="strict")
         alex = _person(model, bank=10000)
         _job(alex, 153500)
-        roth = RothIRA(alex, balance=0, growth_rate=0)
+        roth = RothIRA(alex, balance=0, growth_pct=0)
         roth.contribute(7000)
         model.step_year()
         self.assertAlmostEqual(roth.balance, 3500)
@@ -177,12 +179,12 @@ class TestSelfEmployment(unittest.TestCase):
     def test_self_employed_year_is_settled_and_conserves_money(self):
         model = _model(2024, 2026, checks="strict")
         casey = _person(model, "Casey", 45, bank=50000, spending=60000)
-        sep = TraditionalIRA(casey, balance=0, growth_rate=0)
+        sep = TraditionalIRA(casey, balance=0, growth_pct=0)
         Job(
             casey,
-            "Example Consulting LLC",
-            "Owner",
-            Salary(model, base=150000),
+            company="Example Consulting LLC",
+            role="Owner",
+            salary=Salary(model, base_annual=150000),
             kind="self_employed",
             sep_account=sep,
             plan_contribution_percent=25,
@@ -201,7 +203,13 @@ class TestSelfEmployment(unittest.TestCase):
         model = _model(2025)
         sam = _person(model, "Sam")
         _job(sam, 150000)
-        Job(sam, "Example Consulting LLC", "Owner", Salary(model, base=100000), kind="self_employed")
+        Job(
+            sam,
+            company="Example Consulting LLC",
+            role="Owner",
+            salary=Salary(model, base_annual=100000),
+            kind="self_employed",
+        )
         model.step_year()
         line = model.tax_returns[2025].fica[0]
         self.assertAlmostEqual(line.self_employment_tax, 26100 * 0.124 + 92350 * 0.029, places=2)
@@ -210,9 +218,16 @@ class TestSelfEmployment(unittest.TestCase):
         model = _model(2024)
         sam = _person(model, "Sam")
         with self.assertRaises(ValueError):
-            Job(sam, "Co", "Analyst", Salary(model, base=1), expenses_annual=10)
+            Job(sam, company="Co", role="Analyst", salary=Salary(model, base_annual=1), expenses_annual=10)
         with self.assertRaises(ValueError):
-            Job(sam, "Co", "Owner", Salary(model, base=1), kind="self_employed", payroll=PayrollDeductions(1000))
+            Job(
+                sam,
+                company="Co",
+                role="Owner",
+                salary=Salary(model, base_annual=1),
+                kind="self_employed",
+                payroll=PayrollDeductions(1000),
+            )
 
 
 class TestDependentCareFSA(unittest.TestCase):
@@ -236,9 +251,9 @@ class TestIncentiveStockOptions(unittest.TestCase):
     def test_amt_in_the_exercise_year_and_the_credit_after(self):
         model = _model(2024, 2025, checks="strict")
         morgan = _person(model, "Morgan", bank=400000, spending=60000)
-        BrokerageAccount(morgan, "Example Brokerage", balance=10000, growth_rate=0, dividend_yield=0)
+        BrokerageAccount(morgan, company="Example Brokerage", balance=10000, growth_pct=0, dividend_yield_pct=0)
         job = _job(morgan, 200000)
-        StockPlan(job, growth_rate=0, options=[StockOption("iso", 2024, exercise_cost=50000, value=450000)])
+        StockPlan(job, growth_pct=0, options=[StockOption("iso", 2024, exercise_cost=50000, value=450000)])
         model.run()
         first, second = model.tax_returns[2024], model.tax_returns[2025]
         self.assertGreater(first.amt, 100000)
@@ -251,9 +266,9 @@ class TestIncentiveStockOptions(unittest.TestCase):
     def test_nso_spread_is_wages(self):
         model = _model(2024)
         sam = _person(model, "Sam")
-        BrokerageAccount(sam, "Example Brokerage", balance=0, growth_rate=0)
+        BrokerageAccount(sam, company="Example Brokerage", balance=0, growth_pct=0)
         job = _job(sam, 100000)
-        StockPlan(job, growth_rate=0, options=[StockOption("nso", 2024, exercise_cost=10000, value=30000)])
+        StockPlan(job, growth_pct=0, options=[StockOption("nso", 2024, exercise_cost=10000, value=30000)])
         model.step_year()
         r = model.tax_returns[2024]
         self.assertAlmostEqual(r.wages, 120000)
@@ -408,13 +423,13 @@ class TestSolo401k(unittest.TestCase):
         casey = _person(model, "Casey", 45, bank=50000, spending=40000)
         job = Job(
             casey,
-            "Example Consulting LLC",
-            "Owner",
-            Salary(model, base=200000),
+            company="Example Consulting LLC",
+            role="Owner",
+            salary=Salary(model, base_annual=200000),
             kind="self_employed",
             plan_contribution_percent=25,
         )
-        account = Job401kAccount(job, pretax_contrib_percent=20, average_growth=0)
+        account = Job401kAccount(job, pretax_contrib_pct=20, growth_pct=0)
         SocialSecurity(casey, claim_age=67, earnings_history=[])
         model.step_year()
         # Net earnings 184,700; SE tax = 12.4% x 168,600 + 2.9% x 184,700 = 26,262.70; half 13,131.35.
@@ -435,12 +450,12 @@ class TestMonthlyTiming(unittest.TestCase):
     def test_profit_monthly_and_sep_with_the_december_payment(self):
         model = _model(2024)
         casey = _person(model, "Casey", 45, bank=50000)
-        sep = TraditionalIRA(casey, balance=0, growth_rate=0)
+        sep = TraditionalIRA(casey, balance=0, growth_pct=0)
         Job(
             casey,
-            "Example Consulting LLC",
-            "Owner",
-            Salary(model, base=120000),
+            company="Example Consulting LLC",
+            role="Owner",
+            salary=Salary(model, base_annual=120000),
             kind="self_employed",
             sep_account=sep,
             plan_contribution_percent=25,
@@ -467,7 +482,7 @@ class TestTaxYearAges(unittest.TestCase):
         # Born October 1961: 64 in January 2026, 65 by December 31 -> the $2,050 additional amount.
         model = LifeModel(start_year=2026, end_year=2026)
         pat = Person(Family(model), "Pat", None, 67, Spending(model, 0), birth="1961-10")
-        BankAccount(pat, "Bank", balance=100000, interest_rate=0)
+        BankAccount(pat, company="Bank", balance=100000, interest_pct=0)
         _job(pat, 50000)
         model.step_year()
         self.assertEqual(model.tax_returns[2026].additional_standard_deduction, 2050)

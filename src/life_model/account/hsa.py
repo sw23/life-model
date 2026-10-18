@@ -4,8 +4,8 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 from enum import Enum
 
-from .._compat import legacy_signature
 from ..base_classes import TaxAdvantagedAccount, TaxTreatment
+from ..deprecated_names import deprecated_arguments
 from ..ledger import FlowKind
 from ..people.person import Person
 
@@ -23,14 +23,14 @@ class HealthSavingsAccount(TaxAdvantagedAccount):
     tax_treatment = TaxTreatment.HSA
     is_rmd_eligible = False
 
-    @legacy_signature(
-        ("person", "hsa_type", "balance", "contribution_limit", "employer_contribution"),
+    @deprecated_arguments(
         {
             "person": "owner",
             "contribution_limit": "contribution_limit_annual",
             "employer_contribution": "employer_contribution_annual",
             "growth_rate": "growth_pct",
         },
+        positional=("hsa_type", "balance", "contribution_limit_annual", "employer_contribution_annual"),
     )
     def __init__(
         self,
