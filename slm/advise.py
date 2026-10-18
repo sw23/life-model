@@ -32,8 +32,9 @@ from life_model.people.person import GenderAtBirth
 from .adviser import AdviserModel, Messages
 from .prompts import format_decision_answer, parse_decision
 from .rationales import build_rationale
+from .schema import HouseholdProfile
 from .scoring import argmax_candidate, label_decision, score_household
-from .serializer import parse_household
+from .serializer import find_household_json, parse_household
 from .strategies import NO_LEVER, STRATEGY_BY_NAME
 
 _MENU_MARKER = "Decision menu"
@@ -58,6 +59,13 @@ class ToolLoopConfig:
     # simulator's label instead (the simulator-grounded correction).
     dominance_margin: float = 0.0
     trust_simulation: bool = True
+    # Opt-in (off by default, so trained behaviour and committed reports are unchanged): before the
+    # draft, show the wrapped model a deterministic baseline projection of the household from the
+    # one-call functions (``life_model.run`` on the profile's HouseholdSpec). Scoring itself stays on
+    # the RL environment: the decision levers (contribution routing, claiming age, drawdown) and the
+    # plan context (employer match, retirement spending ratio) are environment policies the spec
+    # cannot express yet, so scoring through ``life_model.compare`` would change every score.
+    simulator_context: bool = False
 
 
 def _user_text(messages: Messages) -> str:
@@ -65,7 +73,14 @@ def _user_text(messages: Messages) -> str:
 
 
 def _household_from_text(text: str) -> dict:
-    """Reconstruct a scoring-ready household config from rendered household text."""
+    """Reconstruct a scoring-ready household config from rendered household text.
+
+    A lossless ``Household JSON:`` line (:func:`slm.serializer.household_json_line`) wins when the
+    prompt carries one; otherwise the English text is parsed (the path every committed dataset and
+    report uses, since their prompts carry no JSON line)."""
+    embedded = find_household_json(text)
+    if embedded is not None:
+        return embedded.to_household()
     parsed = parse_household(text)
     household: dict = {
         "person_start_age": parsed["person_start_age"],
@@ -87,6 +102,35 @@ def _household_from_text(text: str) -> dict:
     if parsed["economy_scenario"] is not None:
         household["economy_scenario"] = parsed["economy_scenario"]
     return household
+
+
+def household_profile_from_text(text: str) -> HouseholdProfile:
+    """The :class:`~slm.schema.HouseholdProfile` a prompt describes (its JSON line, else its text)."""
+    embedded = find_household_json(text)
+    if embedded is not None:
+        return embedded
+    return HouseholdProfile(**parse_household(text))
+
+
+def baseline_context_message(text: str) -> dict[str, str]:
+    """A user message with the household's deterministic baseline projection, from ``life_model.run``
+    on the profile's spec (seeded from the text, so it is stable): final net worth, run totals and
+    any years the household could not pay its bills."""
+    from life_model import api
+
+    profile = household_profile_from_text(text)
+    seed = zlib.crc32(text.encode()) & 0x7FFFFFFF
+    result = api.run(profile.to_household_spec(), seed=seed, checks="off")
+    summary = api.summarize(result, yearly=False)
+    totals = ", ".join(f"{name.lower()} ${value:,.0f}" for name, value in summary.get("totals", {}).items())
+    shortfalls = summary.get("shortfall_years") or []
+    lines = [
+        f"Baseline projection with no plan change ({summary['years'][0]}-{summary['years'][-1]}, one seeded run):",
+        f"- final net worth ${summary.get('final_net_worth', 0.0):,.0f}",
+        f"- totals: {totals}",
+        f"- years with unpaid bills: {', '.join(map(str, shortfalls)) if shortfalls else 'none'}",
+    ]
+    return {"role": "user", "content": "\n".join(lines)}
 
 
 class ToolLoopAdviser:
@@ -126,6 +170,8 @@ class ToolLoopAdviser:
 
         # Draft, then revise up to the iteration budget, feeding the scoreboard back each round.
         convo: list[dict[str, str]] = list(messages)
+        if self.config.simulator_context:
+            convo.append(baseline_context_message(user))
         decision = parse_decision(self.model.generate(convo))
         for _ in range(self.config.max_iters):
             board = self._scoreboard_message(scored)
