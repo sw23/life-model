@@ -410,7 +410,13 @@ class Job(LifeModelAgent):
             elective_room=self.owner.remaining_401k_elective_room() + booked.elective if account is not None else 0.0,
         )
         pretax, roth, employer = plan.elective_pretax, plan.elective_roth, plan.employer
-        cash = sum(a.balance for a in self.owner.usable_bank_accounts) + booked.elective + booked.match + profit - booked.gross
+        cash = (
+            sum(a.balance for a in self.owner.usable_bank_accounts)
+            + booked.elective
+            + booked.match
+            + profit
+            - booked.gross
+        )
         total = pretax + roth + employer
         if total > cash > 0:
             scale = cash / total

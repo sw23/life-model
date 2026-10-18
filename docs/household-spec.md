@@ -258,7 +258,7 @@ Builds: `PayrollDeductions`.
 | `fsa_annual` | number | USD/year | `0.0` | `PayrollDeductions.fsa_annual` | Health FSA election (pre-tax, up to the year's §125(i) limit; it pays medical bills the spending already carries, so take-home cash is unchanged). |
 | `dependent_care_fsa_annual` | number | USD/year | `0.0` | `PayrollDeductions.dependent_care_fsa_annual` | Dependent-care FSA election (W-2 box 10): excluded from wages and FICA up to the Form 2441 limit ($5,000; $7,500 from 2026), and it reduces the expenses the dependent care credit can use. |
 | `hsa_employee_annual` | number | USD/year | `0.0` | `PayrollDeductions.hsa_employee_annual` | Employee HSA contributions through payroll (pre-tax §125, W-2 box 12 W) into the person's first HSA, within the HSA limit. |
-| `hsa_employer_annual` | number | USD/year | `0.0` | `PayrollDeductions.hsa_employer_annual` | Employer HSA contributions (never wages), paid a twelfth a month while the job pays. |
+| `hsa_employer_annual` | number | USD/year | `0.0` | `PayrollDeductions.hsa_employer_annual` | Employer HSA contributions (never wages), paid a twelfth a month while the job pays. The preferred place for employer HSA money: leave the HSA account's employer_contribution_annual unset (both set is a validation error). |
 | `commuter_monthly` | number | USD/month | `0.0` | `PayrollDeductions.commuter_monthly` | Transit / parking through payroll, excluded from wages and FICA up to the year's §132(f) monthly limit. |
 
 ## BankAccount
@@ -419,7 +419,7 @@ Builds: `HealthSavingsAccount`.
 | `coverage` | `"individual"` \\| `"family"` |  | `"individual"` | `HealthSavingsAccount.hsa_type` | HDHP coverage tier (sets the limit). |
 | `balance` | number | USD | `0.0` | `HealthSavingsAccount.balance` | Balance. |
 | `growth_pct` | number \\| `"economy"` | percent (typically > 1) | `"economy"` | `HealthSavingsAccount.growth_rate` | Annual return; 'economy' follows the equity return. |
-| `employer_contribution_annual` | number (optional) | USD/year | — | `HealthSavingsAccount.employer_contribution` | Employer contribution per year, at each year start while the person has an active job (prefer the job's payroll.hsa_employer_annual, paid per paycheck). Defaults to the configured amount. |
+| `employer_contribution_annual` | number (optional) | USD/year | — | `HealthSavingsAccount.employer_contribution` | Employer contribution per year, deposited at each year start while the person has an active job. Prefer the job's payroll.hsa_employer_annual (paid per paycheck, as on the pay stub) and leave this unset: unset adds only the configured accounts.hsa.default_employer_contribution, which is 0 in the packaged defaults, so nothing is counted twice. Giving both is a validation error (hsa_employer_twice). |
 | `contribution_limit_annual` | number (optional) | USD/year | — | `HealthSavingsAccount.contribution_limit` | Override of the annual contribution limit. |
 | `basis` | number (optional) | USD | — | `HealthSavingsAccount.basis` | Contribution basis (informational: HSA distributions are tax-free for medical costs). |
 | `allocation_pct` | map[`"equity"` \\| `"bond"` \\| `"cash"` → number] (optional) | percent | — | `Investment.allocation` | Asset allocation in percent by asset class (equity, bond, cash; sums to 100), e.g. {equity: 70, bond: 30}: the account grows at the blend of the economy's returns, rebalanced yearly. A numeric growth_pct overrides it. |

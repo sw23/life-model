@@ -290,8 +290,10 @@ class _SpecChecker:
             ss = p.social_security
             if ss is not None and ss.pia_override_monthly is not None and ss.earnings_history is None and works:
                 birth_year = self._birth(p)[0]
-                fra = full_retirement_age(birth_year, self.config) if ss.fra_from_birth_year else (
-                    self.config.social_security.normal_retirement_age
+                fra = (
+                    full_retirement_age(birth_year, self.config)
+                    if ss.fra_from_birth_year
+                    else (self.config.social_security.normal_retirement_age)
                 )
                 if p.retirement_age < fra:
                     self.warn(
@@ -349,7 +351,13 @@ class _SpecChecker:
         dep = self.config.dependents
         bands = [
             ("childcare", 0, Child.CHILDCARE_END_AGE - 1, dep.childcare_annual_cost, "cost_override_annual"),
-            ("school age", Child.CHILDCARE_END_AGE, dep.adult_age - 1, dep.school_age_annual_cost, "cost_override_annual"),
+            (
+                "school age",
+                Child.CHILDCARE_END_AGE,
+                dep.adult_age - 1,
+                dep.school_age_annual_cost,
+                "cost_override_annual",
+            ),
             (
                 "college",
                 dep.college_start_age,
@@ -375,7 +383,9 @@ class _SpecChecker:
                     self.warn(
                         path,
                         f"{child.name} gets the configured child costs by default, in start-year dollars and on top "
-                        f"of {person.name}'s spending (spending excludes modeled child costs): " + "; ".join(parts) + ".",
+                        f"of {person.name}'s spending (spending excludes modeled child costs): "
+                        + "; ".join(parts)
+                        + ".",
                         "if spending.amount_annual already includes the child, set cost_override_annual: 0 (or the "
                         "child's own yearly cost); set college_cost_annual to the planned yearly cost (0 for no "
                         "college); or keep the defaults on purpose (meta.accepted_warnings: [default_child_costs]).",
@@ -588,7 +598,9 @@ class _SpecChecker:
             banks = [a for a in p.accounts if a.kind == "bank"]
             spouse = self.people.get(spouse_at_start.get(p.id, ""))
             joint_banks = [
-                a for a in (spouse.accounts if spouse is not None else []) if a.kind == "bank" and a.joint and not a.reserve
+                a
+                for a in (spouse.accounts if spouse is not None else [])
+                if a.kind == "bank" and a.joint and not a.reserve
             ]
             for j, account in enumerate(p.accounts):
                 if getattr(account, "joint", False) and p.id not in spouse_at_start:

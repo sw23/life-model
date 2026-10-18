@@ -233,8 +233,9 @@ def prepare_spec(
 # --------------------------------------------------------------------------------------------------
 
 
-def validate(spec: SpecLike, *, scenario: str | None = None) -> "list[Finding]":
+def validate(spec: SpecLike, *, scenario: str | None = None, include_accepted: bool = False) -> "list[Finding]":
     """Every validator finding for ``spec`` (schema errors included; never raises for a bad spec).
+    Warnings whose code is in ``meta.accepted_warnings`` are left out unless ``include_accepted``.
 
     Returns:
         list[Finding]: ``level`` ``"error"`` or ``"warning"``, ``path``, ``message``, ``fix``,
@@ -248,7 +249,7 @@ def validate(spec: SpecLike, *, scenario: str | None = None) -> "list[Finding]":
             loaded = _replace_meta(loaded, scenario=scenario)
     except SpecValidationError as error:
         return list(error.findings)
-    return _scenario_findings(loaded) + list(validate_spec(loaded))
+    return _scenario_findings(loaded) + list(validate_spec(loaded, include_accepted=include_accepted))
 
 
 def build(
@@ -778,7 +779,8 @@ def _deltas(base: dict, changed: dict) -> dict[str, Any]:
         "shortfall_years": len(changed.get("shortfall_years", [])) - len(base.get("shortfall_years", [])),
         **{
             key: {
-                dollars: changed[key][dollars]["amount"] - base[key][dollars]["amount"] for dollars in ("nominal", "real")
+                dollars: changed[key][dollars]["amount"] - base[key][dollars]["amount"]
+                for dollars in ("nominal", "real")
             }
             for key in ("net_worth_peak", "lowest_cash", "lowest_cash_retired")
             if key in base and key in changed
@@ -837,7 +839,13 @@ def compare(
     mc = None
     if montecarlo:
         mc_seed = seed
-        mc_kwargs = {"n": montecarlo, "seed": mc_seed, "workers": workers, "checks": checks, "real_dollars": real_dollars}
+        mc_kwargs = {
+            "n": montecarlo,
+            "seed": mc_seed,
+            "workers": workers,
+            "checks": checks,
+            "real_dollars": real_dollars,
+        }
         mc_base = montecarlo_summary(run_montecarlo(base_spec, **mc_kwargs))
         mc_changed = montecarlo_summary(run_montecarlo(changed_spec, **mc_kwargs))
         mc = {

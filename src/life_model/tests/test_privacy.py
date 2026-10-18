@@ -23,7 +23,23 @@ PACKAGE = Path(__file__).resolve().parents[1]
 
 #: Synthetic people (example specs, fixtures, the example notebook).
 SYNTHETIC_PEOPLE = frozenset(
-    {"Alex", "Ann", "Casey", "Jane", "John", "Junior", "Kit", "Lee", "Morgan", "Pat", "Riley", "Robin", "Sam"}
+    {
+        "Alex",
+        "Ann",
+        "Casey",
+        "Dana",
+        "Jane",
+        "John",
+        "Junior",
+        "Kai",
+        "Kit",
+        "Lee",
+        "Morgan",
+        "Pat",
+        "Riley",
+        "Robin",
+        "Sam",
+    }
 )
 #: Synthetic organizations.
 SYNTHETIC_ORGS = frozenset(

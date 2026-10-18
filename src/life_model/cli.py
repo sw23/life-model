@@ -270,15 +270,22 @@ def _validate_add(parser: argparse.ArgumentParser) -> None:
 def _validate(args: argparse.Namespace) -> tuple[dict, str]:
     from .spec import ERROR
 
-    findings = api.validate(_spec_source(args), scenario=args.scenario)
+    source = _spec_source(args)
+    findings = api.validate(source, scenario=args.scenario)
+    everything = api.validate(source, scenario=args.scenario, include_accepted=True)
+    accepted = [f for f in everything if f not in findings]
     errors = [f for f in findings if f.level == ERROR]
     payload = {
         "valid": not errors,
         "error_count": len(errors),
         "warning_count": len(findings) - len(errors),
         "findings": [api.finding_dict(f) for f in findings],
+        "accepted": [api.finding_dict(f) for f in accepted],
     }
     text = "\n".join(str(f) for f in findings) or "no findings"
+    if accepted:
+        codes = sorted({f.code for f in accepted})
+        text += f"\n({len(accepted)} warning(s) accepted in meta.accepted_warnings: {', '.join(codes)})"
     if errors:
         raise CommandFailed(f"{len(errors)} validation error(s)", EXIT_INVALID, payload, text)
     return payload, text

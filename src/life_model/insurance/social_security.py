@@ -579,8 +579,10 @@ class SocialSecurity(LifeModelAgent):
         for year in range(max(self.model.start_year, last_year + 1), fra_year):
             if year in known:
                 continue
-            amount = last_amount * get_avg_wage_index(year, config, economy=economy) / get_avg_wage_index(
-                last_year, config, economy=economy
+            amount = (
+                last_amount
+                * get_avg_wage_index(year, config, economy=economy)
+                / get_avg_wage_index(last_year, config, economy=economy)
             )
             cap = self.model.config_for_year(year).tax.fica.social_security_max_income
             history.append(Income(year, min(amount, cap)))

@@ -249,7 +249,10 @@ class LifeInsurance(LifeModelAgent):
         """Check if term life policy has expired (at its last anniversary month, with ``issue_month``)."""
         if self.policy_type == LifeInsuranceType.TERM and self.term_years:
             if self.issue_month is not None:
-                return (self.model.year, self.model.month) >= (self.policy_start_year + self.term_years, self.issue_month)
+                return (self.model.year, self.model.month) >= (
+                    self.policy_start_year + self.term_years,
+                    self.issue_month,
+                )
             return self.policy_years_active >= self.term_years
         return False
 

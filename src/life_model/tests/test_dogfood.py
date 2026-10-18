@@ -251,11 +251,19 @@ class TestContributionPlanWindows(unittest.TestCase):
         by_year = self._contributions(self._family(plan), "taxable")
         self.assertEqual(sorted(by_year), [2027, 2028, 2029])
         self.assertAlmostEqual(by_year[2027], 600, places=2)
-        by_year = self._contributions(self._family({"account": "taxable", "amount_annual": 1200, "until_age": 42}), "taxable")
+        by_year = self._contributions(
+            self._family({"account": "taxable", "amount_annual": 1200, "until_age": 42}), "taxable"
+        )
         self.assertEqual(sorted(by_year), [2026, 2027])  # Alex (born 1986-01) turns 42 in January 2028
         events = [
             {"at": {"year": 2028, "month": 4}, "person": "alex", "action": "stop_contribution", "account": "taxable"},
-            {"at": 2031, "person": "alex", "action": "change_contribution", "account": "taxable", "amount_annual": 2400},
+            {
+                "at": 2031,
+                "person": "alex",
+                "action": "change_contribution",
+                "account": "taxable",
+                "amount_annual": 2400,
+            },
         ]
         by_year = self._contributions(self._family({"account": "taxable", "amount_annual": 1200}, events), "taxable")
         self.assertAlmostEqual(by_year[2028], 300, places=2)  # January-March
@@ -347,7 +355,9 @@ class TestChildAges(unittest.TestCase):
         college = frame[(frame["sink"].fillna("").str.contains("dependents")) & (frame["year"] == 2035)]
         months = sorted(college["month"].unique())
         self.assertEqual(len(months), 12)
-        self.assertGreater(college[college["month"] == 6]["amount"].sum(), 2 * college[college["month"] == 5]["amount"].sum())
+        self.assertGreater(
+            college[college["month"] == 6]["amount"].sum(), 2 * college[college["month"] == 5]["amount"].sum()
+        )
 
 
 class TestStartingStateAndInputs(unittest.TestCase):
@@ -391,7 +401,9 @@ class TestStartingStateAndInputs(unittest.TestCase):
         for flag in (False, True):
             data["people"][0]["accounts"][1]["bonus_is_plan_pay"] = flag
             ledger = _quiet_build(data).run().ledger
-            deferrals.append(ledger[(ledger["year"] == 2026) & (ledger["cause"] == "pre-tax 401k deferral")]["amount"].sum())
+            deferrals.append(
+                ledger[(ledger["year"] == 2026) & (ledger["cause"] == "pre-tax 401k deferral")]["amount"].sum()
+            )
         self.assertAlmostEqual(deferrals[0], 8000, places=0)
         self.assertAlmostEqual(deferrals[1], 8800, places=0)
 
@@ -501,17 +513,113 @@ class TestStatementTiming(unittest.TestCase):
     def test_cd_interest_accrued_before_the_start(self):
         data = minimal()
         cd = {"kind": "fixed_income", "id": "cd", "instrument": "cd", "face": 10000, "rate_pct": 4.25}
-        data["people"][0]["accounts"].append({**cd, "maturity": "2026-05", "purchased": "2025-11", "accrued_interest": 71})
+        data["people"][0]["accounts"].append(
+            {**cd, "maturity": "2026-05", "purchased": "2025-11", "accrued_interest": 71}
+        )
         result = life_model.run(data, seed=1, checks="strict")
         returns = result.tax_returns.for_year(2026)
         model = _quiet_build(data)
         holding = model.household.items["cd"]
         self.assertAlmostEqual(holding.balance, 10071)
         no_accrued = {**data}
-        no_accrued["people"] = [{**data["people"][0], "accounts": [data["people"][0]["accounts"][0], {**cd, "maturity": "2026-05", "purchased": "2025-11"}]}]
+        no_accrued["people"] = [
+            {
+                **data["people"][0],
+                "accounts": [data["people"][0]["accounts"][0], {**cd, "maturity": "2026-05", "purchased": "2025-11"}],
+            }
+        ]
         base = life_model.run(no_accrued, seed=1).tax_returns.for_year(2026)
         interest = returns[0].summary_row()["taxable_interest"] - base[0].summary_row()["taxable_interest"]
-        self.assertAlmostEqual(interest, 71 * (1 + 0.0425 / 12) ** 4, delta=1.0)  # taxed at maturity, with its own interest
+        self.assertAlmostEqual(
+            interest, 71 * (1 + 0.0425 / 12) ** 4, delta=1.0
+        )  # taxed at maturity, with its own interest
+
+
+FIXTURE = Path(__file__).parent / "fixtures" / "dogfood_household.yaml"
+#: The warnings the dogfood household keeps on purpose for the strict runs (each is asserted separately).
+KEPT = ["cash_not_invested", "default_child_costs", "no_health_coverage", "ss_estimate_assumes_work"]
+
+
+def _dogfood(**meta) -> dict:
+    data = yaml.safe_load(FIXTURE.read_text(encoding="utf-8"))
+    data["meta"].update(meta)
+    return data
+
+
+class TestDogfoodHousehold(unittest.TestCase):
+    """The dogfood household re-run with the fixes (docs/rebaseline-dogfood.md)."""
+
+    @classmethod
+    def setUpClass(cls):
+        spec = _dogfood(accepted_warnings=KEPT)
+        cls.nominal = life_model.run(spec, seed=1, checks="strict")
+        cls.real = life_model.run(spec, seed=1, checks="strict", real_dollars=True)
+
+    def test_validator_prints_the_new_warnings(self):
+        findings = life_model.validate(_dogfood())
+        self.assertEqual([f for f in findings if f.level == "error"], [])
+        codes = [f.code for f in findings]
+        self.assertEqual(sorted(set(codes)), KEPT)
+        self.assertEqual(codes.count("no_health_coverage"), 2)  # Dana at 62, Sam at 60
+        child = next(f for f in findings if f.code == "default_child_costs")
+        self.assertIn("college $28,000/yr (ages 18-21, 2035-2038)", child.message)
+        ss = next(f for f in findings if f.code == "ss_estimate_assumes_work")
+        self.assertTrue(ss.path.startswith("people[0]"))  # Dana: no earnings record; Sam has one
+        code, out, _ = _invoke("validate", str(FIXTURE))
+        self.assertEqual(code, 0)
+        for kept in KEPT:
+            self.assertIn(kept, out)
+
+    def test_no_conservation_failures_nominal_or_real(self):
+        for result in (self.nominal, self.real):
+            self.assertEqual([r.year for r in result.conservation() if not r.ok()], [])
+            summary = api.summarize(result)
+            self.assertEqual(summary["conservation_failures"], [])
+            self.assertEqual(summary["shortfall_years"], [])
+        self.assertEqual(api.summarize(self.real)["net_worth_peak"], api.summarize(self.nominal)["net_worth_peak"])
+
+    def test_the_529_stops_when_college_starts(self):
+        ledger = self.nominal.ledger
+        account = self.nominal._model.household.items["kai_529"]
+        label = f"Plan529:{account.unique_id}"
+        rows = ledger[(ledger["to_account"] == label) & (ledger["kind"] == "contribution")]
+        by_year = rows.groupby("year")["amount"].sum().round(2)
+        self.assertEqual(by_year[2034], 2400)
+        self.assertAlmostEqual(by_year[2035], 1000, places=2)  # January-May: Kai turns 18 in June 2035
+        self.assertEqual(int(by_year.index.max()), 2035)
+        self.assertIn("from Dana's Plan529", self.nominal.explain(2035))
+
+    def test_after_school_care_stops_at_the_13th_birthday(self):
+        ledger = self.nominal.ledger
+        care = ledger[ledger["sink"].fillna("").str.contains("dependent care")]
+        months_2030 = sorted(int(m) for m in care[care["year"] == 2030]["month"].unique())
+        self.assertEqual(months_2030, [1, 2, 3, 4, 5])
+        self.assertNotIn(2031, set(care["year"]))
+
+    def test_sams_social_security_responds_to_early_retirement(self):
+        def pia(result) -> float:
+            return result._model.household.people["sam"].social_security._pia_by_year[2054]
+
+        changed = api.apply_change(_dogfood(accepted_warnings=KEPT), {"people": {"sam": {"retirement_age": 55}}})
+        early = life_model.run(changed, seed=1, checks="strict")
+        self.assertLess(pia(early), pia(self.nominal))
+        # Dana's statement estimate has no earnings record, so hers does not move (the validator warned).
+        changed = api.apply_change(_dogfood(accepted_warnings=KEPT), {"people": {"dana": {"retirement_age": 55}}})
+        dana_early = life_model.run(changed, seed=1, checks="strict")
+        dana = dana_early._model.household.people["dana"].social_security
+        base = self.nominal._model.household.people["dana"].social_security
+        self.assertEqual(dana._pia_by_year[2051], base._pia_by_year[2051])
+
+    def test_starting_state_and_statement_details(self):
+        events = self.nominal.events
+        self.assertFalse((events["kind"] == "married").any())  # married in 2015: starting state
+        model = self.nominal._model
+        sam = model.household.people["sam"]
+        self.assertIs(sam.primary_bank_account, model.household.items["joint_checking"])
+        self.assertEqual(sam.bank_accounts, [])
+        car = model.household.items["sam_car"]
+        self.assertEqual(car.schedule, "statement")
+        self.assertEqual(model.household.items["dana_student"].loan_type.name, "UNKNOWN")
 
 
 if __name__ == "__main__":

@@ -431,7 +431,9 @@ class Payroll(SpecModel):
     )
     hsa_employer_annual: NonNegativeMoney = spec_field(
         0.0,
-        description="Employer HSA contributions (never wages), paid a twelfth a month while the job pays.",
+        description="Employer HSA contributions (never wages), paid a twelfth a month while the job pays. The "
+        "preferred place for employer HSA money: leave the HSA account's employer_contribution_annual unset (both "
+        "set is a validation error).",
         unit="USD/year",
         core="PayrollDeductions.hsa_employer_annual",
     )
@@ -1102,8 +1104,10 @@ class HealthSavingsAccount(SpecModel):
     )
     employer_contribution_annual: NonNegativeMoney | None = spec_field(
         None,
-        description="Employer contribution per year, at each year start while the person has an active job "
-        "(prefer the job's payroll.hsa_employer_annual, paid per paycheck). Defaults to the configured amount.",
+        description="Employer contribution per year, deposited at each year start while the person has an active "
+        "job. Prefer the job's payroll.hsa_employer_annual (paid per paycheck, as on the pay stub) and leave this "
+        "unset: unset adds only the configured accounts.hsa.default_employer_contribution, which is 0 in the "
+        "packaged defaults, so nothing is counted twice. Giving both is a validation error (hsa_employer_twice).",
         unit="USD/year",
         core="HealthSavingsAccount.employer_contribution",
     )
@@ -2698,7 +2702,9 @@ class ChangeContributionEvent(EventBase):
         None, description="For a 401k: which bucket (default pretax)."
     )
     amount_annual: NonNegativeMoney | None = spec_field(None, description="New dollars per year.", unit="USD/year")
-    pay_pct: NonNegativePercent | None = spec_field(None, description="New percent of gross pay.", unit="percent", le=100)
+    pay_pct: NonNegativePercent | None = spec_field(
+        None, description="New percent of gross pay.", unit="percent", le=100
+    )
     max_out: bool = spec_field(False, description="Contribute the account's annual limit.")
 
     @model_validator(mode="after")

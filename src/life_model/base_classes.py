@@ -58,7 +58,7 @@ class FinancialAccount(LifeModelAgent, ABC):
         self.beneficiary = beneficiary
         #: The co-owner of a joint account (a spouse), or None. Bank and brokerage accounts take it
         #: (``joint_owner=``); see :meth:`income_owners` and ``Person.die``.
-        self.joint_owner: "Person | None" = None
+        self.joint_owner: Person | None = None
         self.stat_balance_history = []
         if self.IN_NET_WORTH:
             self.model.ledger.post_opening(self, self._balance)

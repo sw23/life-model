@@ -170,12 +170,14 @@ def _child_bands_section() -> list[str]:
     lines = [
         "### Child cost bands\n",
         "<!-- Generated from the packaged config (dependents in financial_defaults.yaml). -->\n",
-        "What a child costs unless the spec says otherwise, in start-year dollars a year, grown with inflation "
-        "and charged a twelfth a month by the child's exact age (`birth_month`; January when unset). These "
-        "costs come **on top of** the person's `spending.amount_annual`, which excludes modeled child costs: "
-        "when the household budget already includes the child, set `cost_override_annual: 0` (and "
-        "`college_cost_annual` to the planned amount, 0 for none). The validator warns about every band a "
-        "child gets by default.\n",
+        (
+            "What a child costs unless the spec says otherwise, in start-year dollars a year, grown with inflation "
+            "and charged a twelfth a month by the child's exact age (`birth_month`; January when unset). These "
+            "costs come **on top of** the person's `spending.amount_annual`, which excludes modeled child costs: "
+            "when the household budget already includes the child, set `cost_override_annual: 0` (and "
+            "`college_cost_annual` to the planned amount, 0 for none). The validator warns about every band a "
+            "child gets by default.\n"
+        ),
         "| Band | Ages | Default cost (USD/year) | Note |",
         "|---|---|---|---|",
     ]

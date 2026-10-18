@@ -115,8 +115,10 @@ def silent_defaults() -> list[tuple[str, str, str]]:
     """(setting, default, what it means) rows, values read from the code and packaged config."""
     from life_model.config.financial_config import FinancialConfig
     from life_model.people.tax_unit import DEFAULT_WITHDRAWAL_ORDER
+    from life_model.spec.docs import child_cost_bands
 
     config = FinancialConfig()
+    child_bands = child_cost_bands()
     economy = config.economy
     state = config.tax.state
     card = config.debt.credit_card
@@ -244,11 +246,67 @@ def silent_defaults() -> list[tuple[str, str, str]]:
             ),
         ),
         (
+            "`SocialSecurity(pia_override_monthly=)`",
+            "used as is",
+            (
+                "An SSA statement's estimate assumes work at the latest earnings until full retirement age. Alone, "
+                "the override ignores an earlier retirement (the spec validator warns); with the statement's "
+                "`earnings_history` it is scaled for the years not worked."
+            ),
+        ),
+        (
             "healthcare",
             "off",
             (
                 "No medical costs, Medicare premiums or long-term care unless `MedicalCosts` / `Medicare` / "
-                "`LongTermCare` agents (spec: `healthcare`) are built."
+                "`LongTermCare` agents (spec: `healthcare`) are built. Payroll health premiums stop with the job, "
+                "so an early retiree has no coverage cost before Medicare unless a `health` policy is given (the "
+                "spec validator warns)."
+            ),
+        ),
+        (
+            "`Child(cost_annual=None, college_cost_annual=None)`",
+            ", ".join(f"{band} ${amount:,.0f}/yr (ages {ages})" for band, ages, amount, _ in child_bands),
+            (
+                "Every child costs the configured bands (start-year dollars, inflation-grown) **on top of** the "
+                "person's spending, which excludes modeled child costs (the spec validator warns per child). Set "
+                "`cost_override_annual: 0` when the budget already includes the child, `college_cost_annual` for "
+                "college (0: none)."
+            ),
+        ),
+        (
+            "`Person.savings_policy`",
+            "None (no sweep)",
+            (
+                "Surplus income stays in the bank at the bank's yield for the whole run: over decades it piles up "
+                "as low-yield cash. `SavingsPolicy(cash_floor=, sweep_to=)` (spec: `savings_policy`) invests cash "
+                "above a floor every year (the spec validator warns on a long run without one)."
+            ),
+        ),
+        (
+            "`HealthSavingsAccount(employer_contribution_annual=None)`",
+            f"`accounts.hsa.default_employer_contribution` = {config.accounts.hsa.default_employer_contribution:g}",
+            (
+                "Paid at each year start while the owner works, on top of any payroll `hsa_employer_annual`. Enter "
+                "employer HSA money in one place: `PayrollDeductions(hsa_employer_annual=)` (the spec validator "
+                "rejects both)."
+            ),
+        ),
+        (
+            "`ContributionPlan(end=None)`",
+            "never ends",
+            (
+                "A plan contributes until changed or removed. The spec builder ends a 529 plan for a child the "
+                "month before the child's college months (set `end` to keep contributing); `end` / `until_age` / "
+                "a `stop_contribution` event end others."
+            ),
+        ),
+        (
+            "`Job401kAccount(bonus_is_plan_pay=False)`",
+            "False",
+            (
+                "Plan pay is base salary: neither the deferral percentages nor the match apply to the bonus. Many "
+                "plans define compensation to include bonuses; set it from the plan's definition."
             ),
         ),
         (
