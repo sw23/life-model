@@ -41,6 +41,8 @@ class Person(LifeModelAgent):
             "stat_ss_income",
             "stat_capital_gains",
             "stat_itemized_deductions",
+            "stat_tax_credits",
+            "stat_tax_penalties",
         }
     )
 

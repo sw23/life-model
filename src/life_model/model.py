@@ -160,6 +160,8 @@ class LifeModel(mesa.Model):
         MoneyStat("stat_stock_vested", "Stock Vested"),  # Value of stock compensation vesting in a year
         MoneyStat("stat_stock_unvested", "Stock Unvested"),  # Value of unvested stock grants at year end
         MoneyStat("stat_itemized_deductions", "Itemized Deductions"),  # Itemized deductions claimed (0 = standard)
+        MoneyStat("stat_tax_credits", "Credits"),  # Tax credits (child tax credit, ...) claimed in a year
+        MoneyStat("stat_tax_penalties", "Penalties"),  # Additional taxes (early-withdrawal penalties); in Federal Taxes
     ]
 
     #: The ordered stages one ``step()`` (one simulated year) runs over every agent:

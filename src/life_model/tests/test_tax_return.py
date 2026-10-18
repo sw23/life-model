@@ -209,6 +209,71 @@ class TestReturnsOnWholeHouseholds(unittest.TestCase):
         assert_return_reconciles(self, tax_return)
 
 
+class TestTaxStatsOnEveryMember(unittest.TestCase):
+    """Task 2: a joint return's tax stats are split across the spouses (payroll and penalties are
+    each spouse's own; income taxes and credits pro rata by income); model totals are unchanged."""
+
+    def _couple(self):
+        model = LifeModel(start_year=2026, end_year=2026)
+        family = Family(model)
+        a = Person(family, "A", 45, 65, Spending(model, base=0), state="CA")
+        b = Person(family, "B", 44, 65, Spending(model, base=0), state="CA")
+        a.get_married(b)
+        for person in (a, b):
+            BankAccount(person, "Bank", balance=500000)
+        a.income.add_wages(150000, 150000)
+        b.income.add_wages(50000, 50000)
+        b.income.add(IncomeType.PRETAX_DISTRIBUTION, 10000, source="401k")
+        b.income.add_penalty(1000)
+        a.add_child("Kid", birth_year=2020)
+        model.step()
+        return model, a, b
+
+    def test_payroll_and_penalties_are_each_members_own(self):
+        _, a, b = self._couple()
+        tax_return = a.tax_returns[2026]
+        self.assertAlmostEqual(a.stat_taxes_paid_ss, 150000 * 0.062, places=2)
+        self.assertAlmostEqual(b.stat_taxes_paid_ss, 50000 * 0.062, places=2)
+        self.assertEqual(a.stat_tax_penalties, 0)
+        self.assertEqual(b.stat_tax_penalties, 1000)
+        self.assertAlmostEqual(a.stat_tax_penalties + b.stat_tax_penalties, tax_return.total_penalties)
+
+    def test_income_taxes_split_by_income_and_sum_to_the_return(self):
+        model, a, b = self._couple()
+        tax_return = a.tax_returns[2026]
+        share_a = 150000 / 210000
+        income_federal = tax_return.ordinary_tax + tax_return.preferential_tax
+        self.assertAlmostEqual(a.stat_taxes_paid_federal, share_a * income_federal, places=6)
+        self.assertAlmostEqual(a.stat_taxes_paid_state, share_a * tax_return.state_tax, places=6)
+        self.assertAlmostEqual(a.stat_tax_credits, share_a * tax_return.total_credits, places=6)
+        for stat, line in (
+            ("stat_taxes_paid", tax_return.total_tax),
+            (
+                "stat_taxes_paid_federal",
+                tax_return.ordinary_tax + tax_return.preferential_tax + tax_return.total_penalties,
+            ),
+            ("stat_taxes_paid_state", tax_return.state_tax),
+            ("stat_taxes_paid_medicare", tax_return.medicare_tax),
+            ("stat_tax_credits", tax_return.total_credits),
+        ):
+            with self.subTest(stat):
+                self.assertAlmostEqual(getattr(a, stat) + getattr(b, stat), line, places=6)
+        frame = model.datacollector.get_model_vars_dataframe()
+        self.assertAlmostEqual(frame["Taxes"].iloc[0], tax_return.total_tax, places=6)
+        self.assertAlmostEqual(frame["Credits"].iloc[0], tax_return.total_credits, places=6)
+        self.assertAlmostEqual(frame["Penalties"].iloc[0], 1000, places=6)
+
+    def test_model_totals_equal_the_returns_in_a_long_run(self):
+        model = married_homeowners()
+        model.run()
+        frame = model.datacollector.get_model_vars_dataframe().set_index("Year")
+        by_year: dict[int, float] = {}
+        for (year, _), tax_return in model.tax_returns.items():
+            by_year[year] = by_year.get(year, 0.0) + tax_return.total_tax
+        for year, total in by_year.items():
+            self.assertAlmostEqual(frame.loc[year, "Taxes"], total, places=4)
+
+
 class TestFieldDocs(unittest.TestCase):
     def test_every_field_is_documented(self):
         from dataclasses import fields

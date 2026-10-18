@@ -830,8 +830,11 @@ class TaxUnit:
         self.members[0].debt += shortfall
 
         self._record_stats(taxes, spending_by_member, housing_by_member, interest_by_member, tax_return)
-        # Which deduction the return took: the itemized amount, or 0 when it took the standard one.
-        self.members[0].stat_itemized_deductions = itemized_claimed
+        # Which deduction the return took: the itemized amount (split like the income taxes), or 0
+        # when it took the standard one.
+        shares = self._member_shares() if len(self.members) > 1 else {self.members[0].unique_id: 1.0}
+        for member in self.members:
+            member.stat_itemized_deductions = itemized_claimed * shares[member.unique_id]
 
     def _size_gross_withdrawal(self, bills: float) -> float:
         """Pure fixed-point solve for the pre-tax withdrawal needed to cover bills + taxes.
@@ -851,6 +854,17 @@ class TaxUnit:
             gross = needed
         return gross
 
+    def _member_shares(self) -> dict[int, float]:
+        """Each member's share of the unit's income taxes: their own ordinary plus preferential income
+        over the unit's (negative contributions count as 0). Equal shares when nobody has income."""
+        weights = {
+            m.unique_id: max(0.0, m.income.ordinary_taxable + m.income.preferential_income) for m in self.members
+        }
+        total = sum(weights.values())
+        if total <= 0:
+            return {m.unique_id: 1.0 / len(self.members) for m in self.members}
+        return {uid: weight / total for uid, weight in weights.items()}
+
     def _record_stats(
         self,
         taxes: TaxesDue,
@@ -859,33 +873,53 @@ class TaxUnit:
         interest_by_member: dict[int, float],
         tax_return: "TaxReturn | None" = None,
     ):
+        """Record the year's settlement stats on every member.
+
+        Tax stats are on **every member**: payroll taxes (Social Security, Medicare) and penalties
+        are each member's own; the unit's income taxes (federal, state, NIIT), credits and claimed
+        itemized deductions are split pro rata by each member's share of the return's income
+        (:meth:`_member_shares`). The shares sum to 1, so model-level totals equal the return's.
+        A one-person unit gets the return's figures unchanged.
+        """
         for member in self.members:
             member.stat_money_spent = spending_by_member[member.unique_id]
             member.stat_housing_costs = housing_by_member[member.unique_id]
             member.stat_interest_paid = interest_by_member[member.unique_id]
             member.stat_bank_balance = member.bank_account_balance
             member.stat_brokerage_balance = member.brokerage_balance
-            # Clear tax stats on every member; the unit's taxes are attributed to the head only
-            # (below) so the model's per-agent sum counts them exactly once.
-            member.stat_taxes_paid = 0.0
-            member.stat_taxes_paid_federal = 0.0
-            member.stat_taxes_paid_state = 0.0
-            member.stat_taxes_paid_ss = 0.0
-            member.stat_taxes_paid_medicare = 0.0
-            member.stat_taxes_paid_niit = 0.0
-            member.stat_capital_gains = 0.0
-            member.stat_itemized_deductions = 0.0
-
-        for member in self.members:
             totals = member.income.totals_by_type()
             member.stat_capital_gains = (
                 totals[IncomeType.SHORT_TERM_CAPITAL_GAIN] + totals[IncomeType.LONG_TERM_CAPITAL_GAIN]
             )
 
-        head = self.members[0]
-        head.stat_taxes_paid = taxes.total
-        head.stat_taxes_paid_federal = taxes.federal
-        head.stat_taxes_paid_state = taxes.state
-        head.stat_taxes_paid_ss = taxes.ss
-        head.stat_taxes_paid_medicare = taxes.medicare
-        head.stat_taxes_paid_niit = taxes.niit
+        if len(self.members) == 1:
+            head = self.members[0]
+            head.stat_taxes_paid = taxes.total
+            head.stat_taxes_paid_federal = taxes.federal
+            head.stat_taxes_paid_state = taxes.state
+            head.stat_taxes_paid_ss = taxes.ss
+            head.stat_taxes_paid_medicare = taxes.medicare
+            head.stat_taxes_paid_niit = taxes.niit
+            head.stat_tax_credits = taxes.credits
+            head.stat_tax_penalties = taxes.penalties
+            return
+
+        shares = self._member_shares()
+        income_federal = taxes.federal - taxes.penalties
+        for index, member in enumerate(self.members):
+            share = shares[member.unique_id]
+            penalties = member.income.penalties
+            federal = share * income_federal + penalties
+            state = share * taxes.state
+            niit = share * taxes.niit
+            credits = share * taxes.credits
+            ss = taxes.ss_by_worker[index]
+            medicare = taxes.medicare_by_worker[index]
+            member.stat_taxes_paid_federal = federal
+            member.stat_taxes_paid_state = state
+            member.stat_taxes_paid_ss = ss
+            member.stat_taxes_paid_medicare = medicare
+            member.stat_taxes_paid_niit = niit
+            member.stat_tax_credits = credits
+            member.stat_tax_penalties = penalties
+            member.stat_taxes_paid = federal + state + ss + medicare + niit - credits

@@ -183,6 +183,8 @@ def compute_taxes(
             base + additional_medicare * wages / combined_wages
             for base, wages in zip(medicare_by_worker, wage_incomes, strict=True)
         ]
+    if len(medicare_by_worker) == 1:
+        medicare_by_worker = [tax_medicare]
 
     taxes = TaxesDue(tax_federal, tax_state, tax_ss, tax_medicare, credits=credits, niit=tax_niit)
     taxes.total_income = total_income
