@@ -353,7 +353,7 @@ def _contribute(builder: "_Builder", person, account_id: str, amount: float) -> 
     from ..charity.daf import DonorAdvisedFund
 
     account = builder.built.items[account_id]
-    available = min(amount, person.bank_account_balance)
+    available = min(amount, sum(a.balance for a in person.usable_bank_accounts))
     if available <= 0:
         return
     if isinstance(account, DonorAdvisedFund):
@@ -363,7 +363,7 @@ def _contribute(builder: "_Builder", person, account_id: str, amount: float) -> 
         # bank, posting each part as a transfer from that bank (Plan 31: the debit used to go unposted while
         # the account posted new money from outside, so the ledger did not conserve).
         remaining = available
-        for bank in person.bank_accounts:
+        for bank in person.usable_bank_accounts:
             if remaining <= 0:
                 break
             accepted = account.contribute(min(remaining, bank.balance), from_account=bank)

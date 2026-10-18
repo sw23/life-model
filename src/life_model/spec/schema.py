@@ -354,12 +354,17 @@ class SpendingCategory(SpecModel):
 
 
 class Spending(SpecModel):
-    """A person's living spending (everything except housing, debts, taxes and modeled costs)."""
+    """A person's living spending: everything except housing, debts, taxes, insurance premiums, payroll
+    deductions and the costs the model adds itself (children's cost bands and care, healthcare, events). It is
+    per person and adds across the household (two spouses with 30,000 each spend 60,000 together)."""
 
     CORE_CLASS = "Spending"
 
     amount_annual: NonNegativeMoney = spec_field(
-        description="Base living spending per year.", unit="USD/year", core="Spending.base"
+        description="Base living spending per year (this person's share of the household budget: the amounts of "
+        "all people add up). Excludes modeled child costs (see Child).",
+        unit="USD/year",
+        core="Spending.base",
     )
     growth_pct: GrowthPct = spec_field(
         0.0,
@@ -703,6 +708,16 @@ class BankAccount(SpecModel):
         "other source.",
         core="BankAccount.reserve",
     )
+    joint: bool = spec_field(
+        False,
+        description="Owned jointly with this person's spouse (a marriage in relationships in effect at the start). "
+        "List the account once, under either spouse. Either spouse's income can be paid in: the spouse's lands "
+        "here when they have no bank account of their own, or always when this account is primary (primary for "
+        "both). Either spouse can pay from it (a spouse needs no bank account of their own), its interest is split "
+        "half and half between their returns (it matters filing separately), and it passes to the survivor at a "
+        "death, outside the estate.",
+        core="BankAccount.joint_owner",
+    )
 
 
 class FixedIncomeAccount(SpecModel):
@@ -835,6 +850,14 @@ class BrokerageAccount(SpecModel):
     )
     reinvest_dividends: bool = spec_field(
         True, description="False pays dividends to the bank instead.", core="BrokerageAccount.reinvest_dividends"
+    )
+    joint: bool = spec_field(
+        False,
+        description="Owned jointly with this person's spouse (a marriage in relationships in effect at the start); "
+        "list it once, under either spouse (that spouse's waterfall sells it). Dividends and realized gains are "
+        "split half and half between the spouses' returns, and at a death it passes to the survivor outside the "
+        "estate with the decedent's half of the basis stepped up.",
+        core="BrokerageAccount.joint_owner",
     )
 
     @model_validator(mode="after")
@@ -2443,7 +2466,14 @@ class Person(SpecModel):
     death_age: Age | None = spec_field(
         None, description="Age of death for mortality 'fixed_age'.", unit="age", core="Person.death_age"
     )
-    spending: Spending = spec_field(description="Living spending.")
+    spending: Spending | None = spec_field(
+        None,
+        description="This person's living spending. Spending is per person and adds across the household: the "
+        "household's budget is the sum of every person's amount_annual, so give the whole household budget on one "
+        "spouse (and leave the other spouse's spending out, or 0) or split it between them, never the full "
+        "budget on each. Required for a person without a spouse (relationships.marriages) whose spending holds "
+        "the budget; a spouse who leaves it out spends nothing of their own.",
+    )
     jobs: list[Job] = spec_field(default_factory=list, description="Jobs (W-2).")
     accounts: list[Account] = spec_field(default_factory=list, description="Accounts, discriminated by 'kind'.")
     debts: list[Debt] = spec_field(default_factory=list, description="Debts (car, student, credit_card, heloc).")

@@ -130,7 +130,7 @@ Builds: `Person`.
 | `state` | string (optional) |  | — | `Person.state` | Two-letter state of residence (defaults to meta.default_state). |
 | `mortality` | `"immortal"` \\| `"stochastic"` \\| `"fixed_age"` |  | `"immortal"` | `Person.mortality_mode` | How death is decided each year. |
 | `death_age` | integer (optional) | age | — | `Person.death_age` | Age of death for mortality 'fixed_age'. |
-| `spending` | [Spending](#spending) |  | **required** |  | Living spending. |
+| `spending` | [Spending](#spending) (optional) |  | — |  | This person's living spending. Spending is per person and adds across the household: the household's budget is the sum of every person's amount_annual, so give the whole household budget on one spouse (and leave the other spouse's spending out, or 0) or split it between them, never the full budget on each. Required for a person without a spouse (relationships.marriages) whose spending holds the budget; a spouse who leaves it out spends nothing of their own. |
 | `jobs` | list[[Job](#job)] |  | [] |  | Jobs (W-2). |
 | `accounts` | list[one of: [BankAccount](#bankaccount), [FixedIncomeAccount](#fixedincomeaccount), [BrokerageAccount](#brokerageaccount), [Job401k](#job401k), [TraditionalIRA](#traditionalira), [RothIRA](#rothira), [HealthSavingsAccount](#healthsavingsaccount), [Plan529](#plan529), [InheritedPretaxAccount](#inheritedpretaxaccount), [Pension](#pension), [Annuity](#annuity), [DonorAdvisedFund](#donoradvisedfund), [Trust](#trust)] |  | [] |  | Accounts, discriminated by 'kind'. |
 | `debts` | list[one of: [CarLoan](#carloan), [StudentLoan](#studentloan), [CreditCard](#creditcard), [HomeEquityLine](#homeequityline)] |  | [] |  | Debts (car, student, credit_card, heloc). |
@@ -147,13 +147,13 @@ Builds: `Person`.
 
 ## Spending
 
-A person's living spending (everything except housing, debts, taxes and modeled costs).
+A person's living spending: everything except housing, debts, taxes, insurance premiums, payroll deductions and the costs the model adds itself (children's cost bands and care, healthcare, events). It is per person and adds across the household (two spouses with 30,000 each spend 60,000 together).
 
 Builds: `Spending`.
 
 | Field | Type | Unit | Default | Maps to | Description |
 |---|---|---|---|---|---|
-| `amount_annual` | number | USD/year | **required** | `Spending.base` | Base living spending per year. |
+| `amount_annual` | number | USD/year | **required** | `Spending.base` | Base living spending per year (this person's share of the household budget: the amounts of all people add up). Excludes modeled child costs (see Child). |
 | `growth_pct` | number \\| `"economy"` | percent (typically > 1) | `0.0` | `Spending.yearly_increase` | Yearly increase; 'economy' follows inflation. The core default 0 means spending never rises (the validator warns). |
 | `categories` | map[string → [SpendingCategory](#spendingcategory)] (optional) |  | — | `Spending.categories` | Categorized spending lines on top of amount_annual (then the uncategorized remainder), each paid with the month's bills under its name. |
 | `schedule` | list[list[number, number]] (optional) |  | — | `Spending.schedule` | (age, percent of prior spending) steps: in the month the person reaches each age, the base and every category become that percent of what they were, e.g. a retirement spending smile [[75, 80], [85, 87.5]] (80% from 75, 70% of the original from 85). Ages already reached at the start count as applied. |
@@ -278,6 +278,7 @@ Builds: `BankAccount`.
 | `primary` | boolean |  | `False` |  | Receives income and pays bills first. Exactly one per person when they have several bank accounts; otherwise the first in canonical order is primary. |
 | `compounding` | `"monthly"` \\| `"annual"` (optional) |  | — | `BankAccount.compounding` | How interest_pct compounds: 'monthly' (an APR) or 'annual' (enter an APY). Defaults to the configured convention. |
 | `reserve` | boolean |  | `False` | `BankAccount.reserve` | An emergency reserve: income is not deposited here and the waterfall draws it only after every other source. |
+| `joint` | boolean |  | `False` | `BankAccount.joint_owner` | Owned jointly with this person's spouse (a marriage in relationships in effect at the start). List the account once, under either spouse. Either spouse's income can be paid in: the spouse's lands here when they have no bank account of their own, or always when this account is primary (primary for both). Either spouse can pay from it (a spouse needs no bank account of their own), its interest is split half and half between their returns (it matters filing separately), and it passes to the survivor at a death, outside the estate. |
 
 ## FixedIncomeAccount
 
@@ -320,6 +321,7 @@ Builds: `BrokerageAccount`.
 | `allocation_pct` | map[`"equity"` \\| `"bond"` \\| `"cash"` → number] (optional) | percent | — | `Investment.allocation` | Asset allocation in percent by asset class (equity, bond, cash; sums to 100), e.g. {equity: 70, bond: 30}: the account grows at the blend of the economy's returns, rebalanced yearly. A numeric growth_pct overrides it. |
 | `expense_ratio_pct` | number (optional) | percent | — | `Investment.expense_ratio_pct` | Fund expense ratio (percent a year), netted out of the return. |
 | `reinvest_dividends` | boolean |  | `True` | `BrokerageAccount.reinvest_dividends` | False pays dividends to the bank instead. |
+| `joint` | boolean |  | `False` | `BrokerageAccount.joint_owner` | Owned jointly with this person's spouse (a marriage in relationships in effect at the start); list it once, under either spouse (that spouse's waterfall sells it). Dividends and realized gains are split half and half between the spouses' returns, and at a death it passes to the survivor outside the estate with the decedent's half of the basis stepped up. |
 
 ## TaxLot
 

@@ -75,7 +75,7 @@ class PaymentService:
 
     def _pay_from_bank_accounts(self, amount: float) -> float:
         """Pay from bank accounts first (most liquid). Returns the unpaid remainder."""
-        return self._pay_from(self.person.bank_accounts, self.person.deduct_from_bank_accounts, amount)
+        return self._pay_from(self.person.usable_bank_accounts, self.person.deduct_from_bank_accounts, amount)
 
     def _pay_from_brokerage_accounts(self, amount: float) -> float:
         """Sell brokerage holdings into the bank, then pay from the bank. Returns the unpaid remainder.
@@ -86,7 +86,7 @@ class PaymentService:
         would create money.
         """
         self.person.withdraw_from_brokerage_accounts(amount)
-        return self._pay_from(self.person.bank_accounts, self.person.deduct_from_bank_accounts, amount)
+        return self._pay_from(self.person.usable_bank_accounts, self.person.deduct_from_bank_accounts, amount)
 
     def _pay_from_roth_401ks(self, amount: float) -> float:
         """Pay from Roth 401k balances. Returns the unpaid remainder."""

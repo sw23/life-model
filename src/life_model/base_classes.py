@@ -56,6 +56,9 @@ class FinancialAccount(LifeModelAgent, ABC):
         self.person = person
         self._balance = float(balance)
         self.beneficiary = beneficiary
+        #: The co-owner of a joint account (a spouse), or None. Bank and brokerage accounts take it
+        #: (``joint_owner=``); see :meth:`income_owners` and ``Person.die``.
+        self.joint_owner: "Person | None" = None
         self.stat_balance_history = []
         if self.IN_NET_WORTH:
             self.model.ledger.post_opening(self, self._balance)
@@ -68,6 +71,19 @@ class FinancialAccount(LifeModelAgent, ABC):
     @owner.setter
     def owner(self, value: "Person") -> None:
         self.person = value
+
+    def income_owners(self) -> "list[tuple[Person, float]]":
+        """Who reports this account's income, with their shares: the owner, or both owners half and half
+        for a joint account while both are alive (it matters on separate returns)."""
+        joint = self.joint_owner
+        if joint is not None and not joint.is_deceased and not self.person.is_deceased:
+            return [(self.person, 0.5), (joint, 0.5)]
+        return [(self.person, 1.0)]
+
+    def add_income(self, income_type, amount: float, *, source: str) -> None:
+        """Book ``amount`` of this account's income on its owners' ledgers (split for a joint account)."""
+        for person, share in self.income_owners():
+            person.income.add(income_type, amount * share, source=source)
 
     @property
     def balance(self) -> float:

@@ -40,16 +40,16 @@ Each spec entry, the core class the builder constructs, the fields you must give
 | Meta | `LifeModel` | `name`, `start_year` | — |
 | Economy | `config.economy` | — | — |
 | StochasticEconomy | `config.economy.stochastic` | — | — |
-| Person | `Person` | `id`, `name`, `age`, `retirement_age`, `spending` | `gender='other'`, `mortality='immortal'` |
+| Person | `Person` | `id`, `name`, `age`, `retirement_age` | `gender='other'`, `mortality='immortal'` |
 | Spending | `Spending` | `amount_annual` | `growth_pct=0.0` |
 | Job | `Job + Salary` | `company`, `salary_annual` | `role='Employee'`, `raise_pct=0.0`, `bonus_pct=0.0`, `signon_bonus=0.0` |
 | StockPlan | `StockPlan` | — | `signon_value=0.0`, `refresher_value=0.0`, `refresher_start_year=1`, `refresher_growth_pct=0.0`, `disposition='sell'`, `growth_pct='economy'`, `espp_purchase_months=[6, 12]`, `espp_lookback=False`, `espp_disposition='sell'` |
 | StockGrant | `StockGrant` | `grant_year`, `value`, `vesting_schedule_pct` | — |
 | StockOption (`kind: iso`) | `StockOption` | `exercise_year`, `exercise_cost`, `value` | `sell_at_exercise=False` |
 | Payroll | `PayrollDeductions` | — | `health_premium_monthly=0.0`, `dental_vision_monthly=0.0`, `fsa_annual=0.0`, `dependent_care_fsa_annual=0.0`, `hsa_employee_annual=0.0`, `hsa_employer_annual=0.0`, `commuter_monthly=0.0` |
-| BankAccount (`kind: bank`) | `BankAccount` | — | `company='Bank'`, `type='Checking'`, `balance=0.0`, `interest_pct='economy'`, `primary=False`, `reserve=False` |
+| BankAccount (`kind: bank`) | `BankAccount` | — | `company='Bank'`, `type='Checking'`, `balance=0.0`, `interest_pct='economy'`, `primary=False`, `reserve=False`, `joint=False` |
 | FixedIncomeAccount (`kind: fixed_income`) | `FixedIncomeHolding` | `instrument`, `face`, `rate_pct` | `tax_exempt=False`, `early_withdrawal_penalty_months=0`, `reserve=True`, `accrued_interest=0.0` |
-| BrokerageAccount (`kind: brokerage`) | `BrokerageAccount` | — | `company='Brokerage'`, `growth_pct='economy'`, `reinvest_dividends=True` |
+| BrokerageAccount (`kind: brokerage`) | `BrokerageAccount` | — | `company='Brokerage'`, `growth_pct='economy'`, `reinvest_dividends=True`, `joint=False` |
 | Job401k (`kind: 401k`) | `Job401kAccount` | — | `pretax_balance=0.0`, `roth_balance=0.0`, `pretax_contrib_pct=0.0`, `roth_contrib_pct=0.0`, `growth_pct='economy'`, `bonus_is_plan_pay=False`, `match_vesting_years=0`, `company_match_pct=0.0`, `after_tax_contrib_pct=0.0`, `in_plan_roth_conversion=False` |
 | TraditionalIRA (`kind: traditional_ira`) | `TraditionalIRA` | — | `balance=0.0`, `growth_pct='economy'` |
 | RothIRA (`kind: roth_ira`) | `RothIRA` | — | `balance=0.0`, `growth_pct='economy'` |
@@ -94,10 +94,10 @@ The owner argument links the object to its owner (a `Person`, a `Job`, or the `m
 | `Bonus` (life_model.work.job) |  | — | `target_pct=0.0`, `fixed_annual=0.0`, `range_pct=None`, `signon=0.0` |
 | `PayrollDeductions` (life_model.work.payroll) |  | — | `dependent_care_fsa_annual=0.0`, `health_premium_monthly=0.0`, `dental_vision_monthly=0.0`, `fsa_annual=0.0`, `hsa_employee_annual=0.0`, `hsa_employer_annual=0.0`, `commuter_monthly=0.0` |
 | `ESPP` (life_model.work.stock) |  | `contribution_pct` | `discount_pct=15.0`, `purchase_months=(6, 12)`, `lookback=False`, `disposition='sell'` |
-| `BankAccount` (life_model.account.bank) | `owner` | `owner` | `*company='Bank'`, `*type='Bank'`, `*balance=0`, `*interest_pct=None`, `*compounding=None`, `*reserve=False` |
+| `BankAccount` (life_model.account.bank) | `owner` | `owner` | `*company='Bank'`, `*type='Bank'`, `*balance=0`, `*interest_pct=None`, `*compounding=None`, `*reserve=False`, `*joint_owner=None`, `*joint_primary=False` |
 | `FixedIncomeHolding` (life_model.account.fixed_income) | `owner` | `owner`, `*kind`, `*face`, `*rate_pct` | `*maturity=None`, `*purchased=None`, `*state_tax_exempt=None`, `*tax_exempt=False`, `*early_withdrawal_penalty_months=0`, `*reserve=True`, `*name=None`, `*reinvest=None`, `*accrued_interest=0.0`, `*cost_basis=None`, `*growth_pct=None` |
 | `Job401kAccount` (life_model.account.job401k) | `job` | — | `job=None`, `*owner=None`, `*pretax_balance=0`, `*roth_balance=0`, `*after_tax_balance=0`, `*pretax_contrib_pct=0`, `*roth_contrib_pct=0`, `*after_tax_contrib_pct=0`, `*growth_pct=None`, `*company_match_percent=0`, `*match_tiers=None`, `*bonus_is_plan_pay=False`, `*match_vesting_years=0`, `*match_true_up=True`, `*roth_basis=None`, `*after_tax_basis=None`, `*in_plan_roth_conversion=False`, `*allocation=None`, `*expense_ratio_pct=0.0` |
-| `BrokerageAccount` (life_model.account.brokerage) | `owner` | `owner` | `*company='Brokerage'`, `*balance=0`, `*lots=None`, `*growth_pct=None`, `*dividend_yield_pct=None`, `*reinvest_dividends=True`, `*allocation=None`, `*expense_ratio_pct=0.0` |
+| `BrokerageAccount` (life_model.account.brokerage) | `owner` | `owner` | `*company='Brokerage'`, `*balance=0`, `*lots=None`, `*growth_pct=None`, `*dividend_yield_pct=None`, `*reinvest_dividends=True`, `*allocation=None`, `*expense_ratio_pct=0.0`, `*joint_owner=None` |
 | `TraditionalIRA` (life_model.account.traditional_IRA) | `owner` | `owner` | `*balance=0`, `*growth_pct=None`, `*contribution_limit_annual=None`, `*nondeductible_basis=0.0`, `*allocation=None`, `*expense_ratio_pct=0.0` |
 | `RothIRA` (life_model.account.roth_IRA) | `owner` | `owner` | `*balance=0`, `*growth_pct=None`, `*contribution_limit_annual=None`, `*contribution_basis=None`, `*conversion_basis=0.0`, `*allocation=None`, `*expense_ratio_pct=0.0` |
 | `HealthSavingsAccount` (life_model.account.hsa) | `owner` | `owner` | `*hsa_type=HSAType.INDIVIDUAL`, `*balance=0`, `*contribution_limit_annual=None`, `*employer_contribution_annual=None`, `*growth_pct=None`, `*basis=None`, `*allocation=None`, `*expense_ratio_pct=0.0` |

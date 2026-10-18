@@ -576,7 +576,7 @@ def _gross_pay_this_month(person: "Person") -> float:
 def _available_cash(person: "Person") -> float:
     """Cash a bank-sourced contribution may use: the owner's spendable bank balance (in December less the
     year's estimated tax, which is paid at the year end)."""
-    cash = person.spendable_bank_balance
+    cash = person.usable_bank_balance
     model = person.model
     if model.month == 12:
         from .people.tax_unit import TaxUnit
@@ -614,7 +614,7 @@ def _move_from_bank(person: "Person", account, amount: float, *, cause: str) -> 
     from .base_classes import TaxAdvantagedAccount
 
     moved = 0.0
-    banks = [b for b in person.bank_accounts if not b.reserve and b is not account and b.balance > 0]
+    banks = [b for b in person.usable_bank_accounts if not b.reserve and b is not account and b.balance > 0]
     for bank in banks:
         want = min(amount - moved, bank.balance)
         if want <= 0.005:
@@ -646,7 +646,7 @@ def _move_from_bank(person: "Person", account, amount: float, *, cause: str) -> 
 
 def sweep(person: "Person", policy: SavingsPolicy) -> float:
     """Move ``person``'s cash above ``policy.cash_floor`` to ``policy.sweep_to``. Returns the amount moved."""
-    surplus = person.spendable_bank_balance - policy.cash_floor
+    surplus = person.usable_bank_balance - policy.cash_floor
     if surplus < 1.0:
         return 0.0
     moved = move_from_bank(person, policy.sweep_to, surplus, cause="savings sweep")

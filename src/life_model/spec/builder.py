@@ -386,6 +386,15 @@ class _Builder:
     def person(self, pid: str):
         return self.built.people[pid]
 
+    def start_spouse(self, person_spec: s.Person):
+        """The person's spouse by a marriage in effect at the start (a joint account's co-owner)."""
+        start = self.model.start_year
+        for marriage in self.spec.relationships.marriages:
+            if person_spec.id in marriage.spouses and (marriage.year is None or marriage.year <= start):
+                other = next(pid for pid in marriage.spouses if pid != person_spec.id)
+                return self.built.people[other]
+        raise ValueError(f"{person_spec.id}: a joint account needs a marriage in effect at the start")
+
     def job_agent(self, person_spec: s.Person, job_id: str | None):
         if job_id is None:
             return None
@@ -406,13 +415,18 @@ class _Builder:
         from ..people.person import Person, Spending
         from ..people.types import GenderAtBirth, MortalityMode
 
-        spending = Spending(
-            model=self.model,
-            base_annual=p.spending.amount_annual,
-            growth_pct=_growth(p.spending.growth_pct),
-            categories=_spending_lines(p.spending.categories),
-            schedule=[tuple(step) for step in p.spending.schedule] if p.spending.schedule else None,
-        )
+        if p.spending is None:
+            # A spouse whose partner's spending holds the household budget spends nothing of their own.
+            spending = Spending(model=self.model, base_annual=0.0, growth_pct=None)
+            spending.spec_omitted = True  # provenance for the extractor
+        else:
+            spending = Spending(
+                model=self.model,
+                base_annual=p.spending.amount_annual,
+                growth_pct=_growth(p.spending.growth_pct),
+                categories=_spending_lines(p.spending.categories),
+                schedule=[tuple(step) for step in p.spending.schedule] if p.spending.schedule else None,
+            )
         person = Person(
             family=self.family,
             name=p.name,
@@ -550,6 +564,7 @@ class _Builder:
             invest["allocation"] = dict(account.allocation_pct)
         if getattr(account, "expense_ratio_pct", None) is not None:
             invest["expense_ratio_pct"] = account.expense_ratio_pct
+        joint_owner = self.start_spouse(person_spec) if getattr(account, "joint", False) else None
         if kind == "bank":
             from ..account.bank import BankAccount
 
@@ -561,6 +576,8 @@ class _Builder:
                 interest_pct=_growth(account.interest_pct),
                 compounding=account.compounding,
                 reserve=account.reserve,
+                joint_owner=joint_owner,
+                joint_primary=account.primary and joint_owner is not None,
             )
         if kind == "fixed_income":
             from ..account.fixed_income import FixedIncomeHolding
@@ -632,6 +649,7 @@ class _Builder:
                 growth_pct=_growth(account.growth_pct),
                 dividend_yield_pct=account.dividend_yield_pct,
                 reinvest_dividends=account.reinvest_dividends,
+                joint_owner=joint_owner,
                 **invest,
             )
         if kind == "traditional_ira":

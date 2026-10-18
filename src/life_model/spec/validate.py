@@ -582,10 +582,32 @@ class _SpecChecker:
         bank_added_later = {
             e.person for e in self.spec.events if isinstance(e, s.AddAccountEvent) and e.account.kind == "bank"
         }
+        spouse_at_start = self.start_spouses()
         for i, p in enumerate(self.spec.people):
             path = f"people[{i}]"
             banks = [a for a in p.accounts if a.kind == "bank"]
-            if not banks:
+            spouse = self.people.get(spouse_at_start.get(p.id, ""))
+            joint_banks = [
+                a for a in (spouse.accounts if spouse is not None else []) if a.kind == "bank" and a.joint and not a.reserve
+            ]
+            for j, account in enumerate(p.accounts):
+                if getattr(account, "joint", False) and p.id not in spouse_at_start:
+                    self.error(
+                        f"{path}.accounts[{j}].joint",
+                        f"a joint account needs {p.name}'s spouse: a marriage in relationships.marriages in effect at "
+                        f"the start ({self.start} or earlier).",
+                        "add the marriage, or remove joint and list the account under its owner.",
+                        "joint_without_spouse",
+                    )
+            if joint_banks and any(a.primary for a in joint_banks) and any(a.primary for a in banks):
+                self.error(
+                    f"{path}.accounts",
+                    f"{p.name} has a primary bank account and also shares a primary joint account with their spouse "
+                    "(primary for both): income can go to only one.",
+                    "mark only one of them primary.",
+                )
+            # Without banks of their own, a spouse's joint account receives this person's income and pays their bills.
+            if not banks and not joint_banks:
                 hint = (
                     " (an add_account event opens one later, but income before then is lost)"
                     if p.id in bank_added_later
@@ -594,10 +616,11 @@ class _SpecChecker:
                 self.error(
                     f"{path}.accounts",
                     f"{p.name} has no bank account{hint}; income would go to an untracked cash bucket.",
-                    "add {kind: bank, balance: ...}.",
+                    "add {kind: bank, balance: ...} (0 for an account the statements do not show), or, for a married "
+                    "couple sharing a joint account, mark the spouse's account joint: true.",
                     "no_bank_account",
                 )
-            if banks and all(a.reserve for a in banks):
+            if banks and all(a.reserve for a in banks) and not joint_banks:
                 self.error(
                     f"{path}.accounts",
                     f"{p.name}'s only bank accounts are emergency reserves; income needs a spending account.",
@@ -648,7 +671,19 @@ class _SpecChecker:
                         f"set social_security.claim_age to {min_claim} or later.",
                         "ss_claim_too_early",
                     )
-            if p.spending.growth_pct == 0:
+            if p.spending is None:
+                spouses = {
+                    q for m in self.spec.relationships.marriages if p.id in m.spouses for q in m.spouses if q != p.id
+                }
+                if not any(q in self.people and self.people[q].spending is not None for q in spouses):
+                    self.error(
+                        f"{path}.spending",
+                        f"{p.name} has no spending and no spouse whose spending holds the household budget.",
+                        "add spending: {amount_annual: ..., growth_pct: economy} (the household's living spending; "
+                        "a married couple may put the whole budget on one spouse).",
+                        "missing_spending",
+                    )
+            elif p.spending.growth_pct == 0:
                 self.warn(
                     f"{path}.spending.growth_pct",
                     "spending grows 0%/yr (the core default), so it shrinks in real terms.",
@@ -876,6 +911,18 @@ class _SpecChecker:
                 self.error(f"{ppath}.source", f"{p.name} has no W-2 job to deduct the HSA contribution from.")
             if plan.max_out and kind not in limited:
                 self.error(f"{ppath}.max_out", f"a {kind} account has no annual limit to max out.")
+            last = None
+            if plan.until_age is not None:
+                last = (self._year_at(p, plan.until_age), "until_age")
+            elif plan.end is not None:
+                last = (int(str(plan.end).split("-")[0]), "end")
+            if last is not None and last[0] < self.start:
+                self.warn(
+                    f"{ppath}.{last[1]}",
+                    f"the plan ends in {last[0]}, before the start year {self.start}: it never contributes.",
+                    "remove the plan, or fix its end / until_age.",
+                    "contribution_plan_never_runs",
+                )
         policy = p.savings_policy
         if policy is not None:
             account = accounts.get(policy.sweep_to)
@@ -1058,6 +1105,16 @@ class _SpecChecker:
 
     # --- marriages and events ---
 
+    def start_spouses(self) -> dict[str, str]:
+        """Person id -> spouse id for the marriages in effect at the start."""
+        out: dict[str, str] = {}
+        for marriage in self.spec.relationships.marriages:
+            if marriage.year is None or marriage.year <= self.start:
+                a, b = marriage.spouses
+                out.setdefault(a, b)
+                out.setdefault(b, a)
+        return out
+
     def check_marriages(self) -> None:
         married: dict[str, str] = {}
         for i, marriage in enumerate(self.spec.relationships.marriages):
@@ -1169,6 +1226,22 @@ class _SpecChecker:
                         f"one-time contributions to a {target[2].kind} account are not supported.",
                         "use the 401k's contribution percentages, or a brokerage/IRA/HSA/529/bank account.",
                     )
+            if isinstance(event, s.StopContributionEvent | s.ChangeContributionEvent):
+                target = item_ids.get(event.account)
+                if target is None or target[1] != "accounts" or target[0] != event.person:
+                    self.error(
+                        f"{path}.account",
+                        f"unknown account {event.account!r} (one of the event person's account ids)",
+                        code="unknown_reference",
+                    )
+                else:
+                    kind = target[2].kind
+                    if event.bucket is not None and kind != "401k":
+                        self.error(f"{path}.bucket", "bucket is for 401k accounts.")
+                    if kind in ("pension", "annuity", "inherited_pretax", "trust", "daf"):
+                        self.error(f"{path}.account", f"recurring contributions to a {kind} account are not supported.")
+                    if kind == "401k" and target[2].job is None and isinstance(event, s.ChangeContributionEvent):
+                        self.error(f"{path}.account", "a 401k without a job takes no contributions.")
             if isinstance(event, s.ConvertToRothEvent) and event.person in self.people:
                 self.check_conversion_refs(
                     self._person_accounts(self.people[event.person]), event.source, event.target, path
@@ -1369,7 +1442,7 @@ def validate_model(model) -> list[Finding]:
                 None,
                 "unknown_state",
             )
-        if not person.bank_accounts:
+        if not person.usable_bank_accounts:
             add(
                 ERROR,
                 f"{path}.bank_accounts",

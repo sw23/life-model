@@ -236,7 +236,9 @@ class _Extractor:
             **self.policies(person),
         )
 
-    def spending(self, spending) -> s.Spending:
+    def spending(self, spending) -> s.Spending | None:
+        if getattr(spending, "spec_omitted", False) and spending.base == 0 and not spending.categories:
+            return None
         categories = None
         if spending.categories:
             categories = {
@@ -476,6 +478,7 @@ class _Extractor:
                     if self.spec_built
                     else (index == 0 and len(banks) > 1),
                     reserve=bank.reserve,
+                    joint=getattr(bank, "joint_owner", None) is not None,
                 )
             )
         for holding in person.fixed_income_holdings:
@@ -562,6 +565,7 @@ class _Extractor:
                     growth_pct=_growth(account._growth_rate_override),
                     dividend_yield_pct=account._dividend_yield_override,
                     reinvest_dividends=account.reinvest_dividends,
+                    joint=getattr(account, "joint_owner", None) is not None,
                     **_invest(account),
                 )
             )

@@ -396,5 +396,86 @@ class TestStartingStateAndInputs(unittest.TestCase):
         self.assertAlmostEqual(deferrals[1], 8800, places=0)
 
 
+def _joint_couple(*, filing_status: str = "joint", alex_dies_at: int | None = None) -> dict:
+    data = minimal()
+    data["meta"].update({"end_year": 2034, "accepted_warnings": ["cash_not_invested"]})
+    alex = data["people"][0]
+    alex["accounts"] = [
+        {"kind": "bank", "id": "joint_checking", "balance": 20000, "interest_pct": 2, "primary": True, "joint": True},
+        {
+            "kind": "brokerage",
+            "id": "joint_brokerage",
+            "joint": True,
+            "dividend_yield_pct": 2,
+            "lots": [{"value": 50000, "cost_basis": 20000, "acquired_year": 2015}],
+        },
+    ]
+    if alex_dies_at is not None:
+        alex.update({"mortality": "fixed_age", "death_age": alex_dies_at})
+    sam = {**minimal()["people"][0], "id": "sam", "name": "Sam", "accounts": []}
+    sam["jobs"] = [{**sam["jobs"][0], "id": "sam_job", "salary_annual": 60000}]
+    del sam["spending"]  # the household budget is on Alex
+    data["people"].append(sam)
+    data["relationships"] = {"marriages": [{"spouses": ["alex", "sam"], "filing_status": filing_status}]}
+    return data
+
+
+class TestJointAccounts(unittest.TestCase):
+    """Friction 9 (and 3): joint bank and brokerage accounts between spouses; spending on one spouse."""
+
+    def test_validates_without_a_bank_for_the_second_spouse(self):
+        self.assertEqual(life_model.validate(_joint_couple()), [])
+        lonely = _joint_couple()
+        lonely["relationships"] = {}
+        codes = {f.code for f in life_model.validate(lonely) if f.level == "error"}
+        self.assertIn("joint_without_spouse", codes)
+        self.assertIn("no_bank_account", codes)
+        self.assertIn("missing_spending", codes)
+
+    def test_both_paychecks_land_in_the_joint_account(self):
+        result = life_model.run(_joint_couple(), seed=1, checks="strict")
+        model = result._model
+        account = model.household.items["joint_checking"]
+        sam = model.household.people["sam"]
+        self.assertIs(sam.primary_bank_account, account)
+        ledger = result.ledger
+        label = f"BankAccount:{account.unique_id}"
+        wages = ledger[(ledger["kind"] == "wage") & (ledger["year"] == 2026)]
+        self.assertEqual(set(wages["to_account"]), {label})
+        self.assertEqual(api.summarize(result)["conservation_failures"], [])
+        self.assertEqual(api.shortfall_years(result), [])
+
+    def test_separate_returns_split_the_joint_income(self):
+        result = life_model.run(_joint_couple(filing_status="separate"), seed=1, checks="strict")
+        rows = [r.summary_row() for r in result.tax_returns.for_year(2027)]
+        self.assertEqual(len(rows), 2)
+        for key in ("taxable_interest", "qualified_dividends"):
+            self.assertGreater(rows[0][key], 0)
+            self.assertAlmostEqual(rows[0][key], rows[1][key], places=6)
+        self.assertEqual(api.shortfall_years(result), [])
+
+    def test_a_death_passes_joint_accounts_to_the_survivor(self):
+        result = life_model.run(_joint_couple(alex_dies_at=43), seed=1, checks="strict")
+        model = result._model
+        sam = model.household.people["sam"]
+        bank, brokerage = model.household.items["joint_checking"], model.household.items["joint_brokerage"]
+        self.assertIs(bank.person, sam)
+        self.assertIsNone(bank.joint_owner)
+        self.assertIn(bank, sam.bank_accounts)
+        self.assertIn(brokerage, sam.brokerage_accounts)
+        events = result.events
+        passed = events[events["message"].str.contains("joint", na=False)]
+        self.assertEqual(len(passed), 2)
+        self.assertEqual([r.year for r in result.conservation() if not r.ok()], [])
+
+    def test_half_basis_step_up(self):
+        model = _quiet_build(_joint_couple())
+        brokerage = model.household.items["joint_brokerage"]
+        before = [(lot.value, lot.cost_basis) for lot in brokerage.lots]
+        model.household.people["alex"].die()
+        after = [(lot.value, lot.cost_basis) for lot in brokerage.lots]
+        self.assertEqual(after, [(value, basis + (value - basis) / 2) for value, basis in before])
+
+
 if __name__ == "__main__":
     unittest.main()
