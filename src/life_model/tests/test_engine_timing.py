@@ -26,6 +26,8 @@ from ..people.family import Family
 from ..people.person import Person, Spending
 from ..people.tax_unit import DEFAULT_WITHDRAWAL_ORDER, TaxUnit
 from ..tax.federal import FilingStatus
+from ..tax.income import IncomeLedger, IncomeType
+from ..tax.state import state_income_tax_for_unit
 from ..work.job import Job, Salary
 
 TEST_CONFIG = str(Path(__file__).parent / "fixtures" / "test_config.yaml")
@@ -452,6 +454,92 @@ class TestMidYearPurchaseUsesHouseholdWaterfall(unittest.TestCase):
         self.assertGreater(person.stat_taxes_paid, 0)
         self.assertEqual(person.debt, 0)
         self.assertGreater(home.home_value, 0)
+
+
+class TestBankInterestIsIncome(unittest.TestCase):
+    """Item 5 / D5: bank interest is ordinary (NIIT) income on the owner's ledger."""
+
+    def _taxes(self, rate):
+        model = _model(end_year=2027)
+        person = _worker(model, spending=10000, bank=0)
+        BankAccount(person, "Savings", balance=1_000_000, interest_rate=rate)
+        model.run()
+        return _frame(model)["Taxes"].tolist()
+
+    def test_interest_raises_taxes(self):
+        taxed, untaxed = self._taxes(5), self._taxes(0)
+        for with_interest, without in zip(taxed, untaxed):
+            # ~$51k of interest on top of $100k of wages: at least the 22% bracket's worth.
+            self.assertGreater(with_interest - without, 0.22 * 50000)
+
+    def test_interest_is_posted_to_the_ledger_as_interest(self):
+        model = _model()
+        person = _worker(model, salary=0, bank=0)
+        account = BankAccount(person, "Savings", balance=10000, interest_rate=5, compounding="annual")
+        account.step()
+        totals = person.income.totals_by_type()
+        self.assertAlmostEqual(totals[IncomeType.INTEREST], 500, places=6)
+        self.assertAlmostEqual(person.income.net_investment_income, 500, places=6)
+        self.assertAlmostEqual(account.balance, 10500, places=6)
+
+    def test_compounding_convention(self):
+        model = _model()
+        person = _worker(model, salary=0, bank=0)
+        annual = BankAccount(person, "A", balance=1000, interest_rate=5, compounding="annual")
+        monthly = BankAccount(person, "M", balance=1000, interest_rate=5, compounding="monthly")
+        default = BankAccount(person, "D", balance=1000, interest_rate=5)
+        for account in (annual, monthly, default):
+            account.step()
+        self.assertAlmostEqual(annual.balance, 1050, places=6)
+        # interest_rate is an APR compounded monthly: APY = (1 + 0.05/12)^12 - 1 = 5.116%.
+        self.assertAlmostEqual(monthly.balance, 1000 * (1 + 0.05 / 12) ** 12, places=6)
+        self.assertEqual(default.balance, monthly.balance)  # config default: monthly
+        with self.assertRaises(ValueError):
+            BankAccount(person, "X", compounding="daily")
+
+    def test_interest_accrues_before_settlement_and_is_reported_at_year_end(self):
+        model = _model(end_year=2026)
+        person = _worker(model, salary=0, spending=10000, bank=0)
+        account = BankAccount(person, "Savings", balance=100000, interest_rate=5, compounding="annual")
+        model.run()
+        taxes = person.stat_taxes_paid
+        self.assertAlmostEqual(account.balance, 100000 + 5000 - 10000 - taxes, places=2)
+        self.assertAlmostEqual(account.stat_useable_balance, account.balance, places=6)
+
+
+class TestTaxExemptInterestTypes(unittest.TestCase):
+    """D5: interest types for Plan 27's fixed income: municipal (federally exempt) and Treasury
+    (state-exempt)."""
+
+    def test_municipal_interest_is_outside_ordinary_income_and_niit(self):
+        ledger = IncomeLedger()
+        ledger.add(IncomeType.TAX_EXEMPT_INTEREST, 1000)
+        ledger.add(IncomeType.INTEREST, 200)
+        self.assertEqual(ledger.ordinary_taxable, 200)
+        self.assertEqual(ledger.net_investment_income, 200)
+        self.assertEqual(ledger.tax_exempt_interest, 1000)
+
+    def test_treasury_interest_is_federally_taxable_and_state_exempt(self):
+        ledger = IncomeLedger()
+        ledger.add(IncomeType.TREASURY_INTEREST, 1000)
+        self.assertEqual(ledger.ordinary_taxable, 1000)
+        self.assertEqual(ledger.net_investment_income, 1000)
+
+        # Structural check (with == without), so the live config's real CA pack is fine here.
+        config = FinancialConfig()
+        wages_only = IncomeLedger()
+        wages_only.add_wages(100000, 100000)
+        with_treasury = IncomeLedger()
+        with_treasury.add_wages(100000, 100000)
+        with_treasury.add(IncomeType.TREASURY_INTEREST, 50000)
+        for state, legacy_base in (("CA", None), (None, 100000)):
+            base = wages_only.totals_by_type(), with_treasury.totals_by_type()
+            plain = state_income_tax_for_unit(base[0], FilingStatus.SINGLE, state, legacy_base or 0, config)
+            treasury = state_income_tax_for_unit(
+                base[1], FilingStatus.SINGLE, state, (legacy_base or 0) + 50000, config
+            )
+            self.assertGreater(plain, 0)
+            self.assertAlmostEqual(plain, treasury, places=6, msg=state)
 
 
 if __name__ == "__main__":

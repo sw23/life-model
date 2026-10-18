@@ -44,3 +44,13 @@ No existing test's expected value changed. New behaviour pinned in `TestHousehol
 `TestRothBasisBeforePretax` and `TestMidYearPurchaseUsesHouseholdWaterfall`. Probe 4 (married
 homeowners, 401k, brokerage) now sells $0 of brokerage in every year (before: $3.7k–$34k a year
 with $140k–$382k sitting in the bank).
+
+## Task 4 / D5 — bank interest is income
+
+No existing test's expected value changed (the default economy's cash yield is 0%, so only
+accounts with an explicit `interest_rate` earn interest). Bank interest now accrues in the `step`
+stage at priority -10 (before settlement, like investment growth) instead of at priority 0 after
+the usual-construction-order settlement, so an account with a non-zero rate earns interest on its
+balance before the year's bills are paid rather than after; the interest is posted to the ledger
+as `IncomeType.INTEREST` and taxed. Probe 5: $1M at 5% now pays $16.4k–$18.0k more tax a year
+than at 0% (before: identical taxes).

@@ -29,7 +29,14 @@ class IncomeType(Enum):
     PRETAX_DISTRIBUTION = "pretax_distribution"  # 401k/IRA withdrawals & RMDs: ordinary income, no FICA.
     SS_BENEFIT = "ss_benefit"  # Social Security benefits: taxed under provisional-income rules (future).
     PENSION = "pension"  # Defined-benefit pension income: ordinary, no FICA (retirees pay no payroll tax).
-    INTEREST = "interest"  # Interest income: ordinary, no FICA.
+    INTEREST = "interest"  # Interest income (bank accounts, corporate bonds): ordinary, no FICA.
+    # US Treasury interest: federally taxable ordinary income, but exempt from state income tax
+    # (31 U.S.C. §3124), so every state pack excludes it.
+    TREASURY_INTEREST = "treasury_interest"
+    # Tax-exempt (municipal bond) interest: excluded from federal ordinary income and the §1411
+    # base, but counted in Social Security provisional income (IRC §86(b)(2)(B)). Treated as exempt
+    # from state tax too (in-state bonds).
+    TAX_EXEMPT_INTEREST = "tax_exempt_interest"
     ORDINARY = "ordinary"  # Generic ordinary income: no FICA.
     # Gains on assets held one year or less are taxed at ordinary rates; the separate member exists
     # so reporting and loss-character tracking can tell them apart from other ordinary income.
@@ -44,6 +51,10 @@ class IncomeType(Enum):
 #: Short-term gains are deliberately absent — they are taxed at ordinary rates.
 PREFERENTIAL_TYPES = frozenset({IncomeType.LONG_TERM_CAPITAL_GAIN, IncomeType.QUALIFIED_DIVIDEND})
 
+#: Income types that are not part of either income-tax base (ordinary or preferential). They are
+#: still recorded, because some rules look at them (Social Security provisional income).
+NON_TAXABLE_TYPES = frozenset({IncomeType.TAX_EXEMPT_INTEREST})
+
 #: Income types that make up net investment income for the §1411 surtax: interest, dividends, and
 #: capital gains. Defined by inclusion rather than by subtracting excluded categories, so a new
 #: income type is outside the NIIT base until it is deliberately added here. Wages, Social Security,
@@ -51,6 +62,7 @@ PREFERENTIAL_TYPES = frozenset({IncomeType.LONG_TERM_CAPITAL_GAIN, IncomeType.QU
 NET_INVESTMENT_TYPES = frozenset(
     {
         IncomeType.INTEREST,
+        IncomeType.TREASURY_INTEREST,
         IncomeType.QUALIFIED_DIVIDEND,
         IncomeType.SHORT_TERM_CAPITAL_GAIN,
         IncomeType.LONG_TERM_CAPITAL_GAIN,
@@ -122,7 +134,11 @@ class IncomeLedger:
         own rate schedule and is reported by :attr:`preferential_income`. Callers that want the full
         income tax base must add the two together.
         """
-        return sum(e.amount for e in self.entries if e.income_type not in PREFERENTIAL_TYPES)
+        return sum(
+            e.amount
+            for e in self.entries
+            if e.income_type not in PREFERENTIAL_TYPES and e.income_type not in NON_TAXABLE_TYPES
+        )
 
     @property
     def preferential_income(self) -> float:
@@ -137,6 +153,11 @@ class IncomeLedger:
     def net_investment_income(self) -> float:
         """Net investment income for the §1411 surtax base (never negative)."""
         return max(0.0, sum(e.amount for e in self.entries if e.income_type in NET_INVESTMENT_TYPES))
+
+    @property
+    def tax_exempt_interest(self) -> float:
+        """Tax-exempt (municipal) interest received this year (outside both tax bases)."""
+        return sum(e.amount for e in self.entries if e.income_type == IncomeType.TAX_EXEMPT_INTEREST)
 
     @property
     def fica_wages(self) -> float:
