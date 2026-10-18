@@ -356,7 +356,10 @@ def payments_for(person, year: int) -> TaxPayments:
 
 
 def _day_rate(day: datetime.date, rates) -> float:
-    quarter = (day.month - 1) // 3 + 1
+    """The daily rate on ``day`` by Form 2210's penalty worksheet rate periods (April 16-June 30, July-September,
+    October-December, January 1-April 15): the period's first quarter's rate, so April 1-15 keeps the first
+    quarter's (the printed 2024 and 2025 worksheets), over the days of that calendar year."""
+    quarter = 1 if day.month == 4 and day.day <= 15 else (day.month - 1) // 3 + 1
     days_in_year = 366 if (day.year % 4 == 0 and (day.year % 100 != 0 or day.year % 400 == 0)) else 365
     return rates.rate_for(day.year, quarter) / 100 / days_in_year
 
