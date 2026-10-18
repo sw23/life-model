@@ -467,6 +467,8 @@ def schedule_lines(r: "TaxReturn") -> dict[str, dict[str, float]]:
             "27": excess,
             "29": r.excess_advance_ptc_repayment,
         }
+        if excess > 0 and r.ptc_repayment_limit >= 0:
+            schedules["8962"]["28"] = r.ptc_repayment_limit
     if r.required_annual_payment or r.estimated_tax_penalty:
         schedules["2210"] = {
             "4": r.tax_for_estimates,
@@ -897,8 +899,9 @@ def reconcile(
         # Without withholding or estimated payments the year's taxes are a December lump: the payment lines have
         # nothing to match (the validator suggests payroll.withholding / estimated_payments).
         lump = sim_return is None or not sim_return.settled_in_april
+        paid_in_year = any(actual_return.form_1040.get(k) for k in ("25a", "25b", "25c", "25d", "26"))
         for line, amount in actual_return.form_1040.items():
-            unmatched = line in _PAYMENT_LINES and lump
+            unmatched = line in _PAYMENT_LINES and lump and paid_in_year
             cause = "timing" if unmatched else "unmodeled_line" if line not in sim_1040 else None
             note = (
                 "taxes settle as a December lump: set payroll.withholding (and estimated_payments) to model the "

@@ -209,6 +209,7 @@ year was settled with. `total_income - total_adjustments = agi`; `agi - deductio
 | `ptc_household_income` | `float` | Household income (Form 8962 line 3). |
 | `ptc_enrollment_premiums` | `float` | Enrollment premiums for the coverage months (Form 1095-A column A). |
 | `ptc_slcsp_premiums` | `float` | Second-lowest-cost silver plan premiums for the coverage months (Form 1095-A column B). |
+| `ptc_repayment_limit` | `float` | Repayment limitation on excess advance payments (Form 8962 line 28; -1: no limit). |
 
 ## Cash-flow ledger
 

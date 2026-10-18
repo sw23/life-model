@@ -137,6 +137,8 @@ def premium_tax_credit(
         "advance": advance,
         "net": net,
         "repayment": repayment,
+        # Form 8962 line 28 (-1: no limit).
+        "repayment_limit": -1.0 if limit is None else limit,
     }
 
 

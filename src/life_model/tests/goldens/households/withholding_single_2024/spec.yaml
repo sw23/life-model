@@ -1,0 +1,46 @@
+# Household golden (synthetic, not real data). See ../README.md.
+spec_version: 1
+meta:
+  name: Withholding with a refund or balance due
+  description: 'Household golden (synthetic): a single W-2 earner with a 5% 401(k) deferral and a default Form W-4:
+    federal, Social Security and Medicare tax withheld from each paycheck, the balance settled in April.'
+  as_of: 2024-01
+  start_year: 2024
+  end_year: 2024
+  seed: 1
+  default_state: TX
+people:
+- id: alex
+  name: Alex
+  age: 35
+  retirement_age: 67
+  spending:
+    amount_annual: 30000
+    growth_pct: 0
+  jobs:
+  - id: alex_job
+    company: Example Analytics
+    salary_annual: 85000
+    payroll:
+      withholding: w4_default
+  accounts:
+  - kind: bank
+    id: alex_checking
+    company: Community Bank
+    type: Checking
+    balance: 20000
+    interest_pct: 0.0
+    compounding: annual
+    primary: true
+  - kind: bank
+    id: alex_savings
+    company: Credit Union
+    type: Savings
+    balance: 25000
+    interest_pct: 4.0
+    compounding: annual
+  - kind: 401k
+    id: alex_401k
+    job: alex_job
+    pretax_contrib_pct: 5
+    growth_pct: 0

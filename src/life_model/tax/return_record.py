@@ -248,6 +248,7 @@ class TaxReturn:
     ptc_household_income: float = 0.0
     ptc_enrollment_premiums: float = 0.0
     ptc_slcsp_premiums: float = 0.0
+    ptc_repayment_limit: float = -1.0
 
     # ------------------------------------------------------------------
     # Serialization helpers
@@ -440,6 +441,7 @@ FIELD_DOCS: dict[str, str] = {
     "ptc_household_income": "Household income (Form 8962 line 3).",
     "ptc_enrollment_premiums": "Enrollment premiums for the coverage months (Form 1095-A column A).",
     "ptc_slcsp_premiums": "Second-lowest-cost silver plan premiums for the coverage months (Form 1095-A column B).",
+    "ptc_repayment_limit": "Repayment limitation on excess advance payments (Form 8962 line 28; -1: no limit).",
 }
 
 
@@ -471,6 +473,7 @@ _NOT_MONEY = frozenset(
         "settled_in_april",
         "ptc_fpl_percent",
         "ptc_applicable_figure",
+        "ptc_repayment_limit",
     }
 )
 
@@ -709,4 +712,5 @@ def build_tax_return(unit: "TaxUnit", taxes: "TaxesDue", payments: "dict | None"
         ptc_household_income=ptc.get("household_income", 0.0),
         ptc_enrollment_premiums=ptc.get("enrollment_premiums", 0.0),
         ptc_slcsp_premiums=ptc.get("slcsp_premiums", 0.0),
+        ptc_repayment_limit=ptc.get("repayment_limit", -1.0),
     )

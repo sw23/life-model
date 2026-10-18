@@ -43,9 +43,20 @@ HOUSEHOLDS = (
     "qcd_retiree",
     "ira_deduction_phaseout",
     "student_loan_phaseout",
+    # Plan 31 tasks 6-7: payments, the premium tax credit, filing statuses
+    "withholding_single",
+    "estimated_payments_penalty",
+    "aca_ptc_early_retirees",
+    "qss_widow",
+    "hoh_dependent_parent",
 )
-#: Goldens that need a prior year (the minimum tax credit after an ISO exercise): 2025 and 2026 only.
-FOLLOW_ON = ("iso_amt_credit",)
+#: Goldens that need a prior year (the minimum tax credit after an ISO exercise), or whose state rules are
+#: packed for 2025 and 2026 only (part-year residency, one golden per Plan 31 state pack): 2025 and 2026.
+FOLLOW_ON = (
+    "iso_amt_credit",
+    "part_year_mover",
+    *(f"state_{code}" for code in ("oh", "ga", "nc", "mi", "nj", "va", "az", "tn", "in", "mo", "md")),
+)
 
 
 def goldens() -> list[Path]:
