@@ -91,10 +91,10 @@ class TestPension(unittest.TestCase):
     def test_no_cola_before_eligibility(self):
         # A pension not yet in pay does not accrue COLA.
         model = LifeModel(start_year=2020, end_year=2021)
-        person = Person(family=Family(model), name="Pat", age=63, retirement_age=65, spending=Spending(model, 0))
+        person = Person(family=Family(model), name="Pat", age=64, retirement_age=65, spending=Spending(model, 0))
         BankAccount(person, "Bank", balance=0, interest_rate=0)
         pension = Pension(person, "MegaCorp", vesting_years=5, benefit_amount=10000, cola_percent=2.0)
-        model.run()  # ages 64, 65 -> becomes eligible in the final year only
+        model.run()  # ages 64 (2020), 65 (2021) -> becomes eligible in the final year only
         # Benefit was level while not in pay; COLA only compounds once benefits have started.
         self.assertAlmostEqual(pension.benefit_amount, 10200, places=2)
 

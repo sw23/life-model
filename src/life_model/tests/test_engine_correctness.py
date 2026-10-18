@@ -117,7 +117,7 @@ class TestRetirementCrossing(unittest.TestCase):
     def test_non_integer_retirement_age_triggers(self):
         model = LifeModel(start_year=2020, end_year=2030)
         family = Family(model)
-        person = Person(family, "Cy", age=64, retirement_age=65.5, spending=Spending(model, 0))
+        person = Person(family, "Cy", age=65, retirement_age=65.5, spending=Spending(model, 0))
         BankAccount(person, "Bank", balance=100000, interest_rate=0)
         job = Job(person, "Co", "Dev", Salary(model=model, base=50000))
 

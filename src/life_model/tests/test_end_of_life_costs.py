@@ -46,13 +46,13 @@ class TestEndOfLifeCosts(unittest.TestCase):
         parent = Person(
             family=family,
             name="Parent",
-            age=79,
+            age=80,
             retirement_age=65,
             spending=Spending(model, base=0),
             mortality_mode=MortalityMode.FIXED_AGE,
             death_age=80,
         )
-        child = Person(family=family, name="Child", age=50, retirement_age=65, spending=Spending(model, base=0))
+        child = Person(family=family, name="Child", age=51, retirement_age=65, spending=Spending(model, base=0))
         BankAccount(owner=parent, company="Bank", balance=balance)
         BankAccount(owner=child, company="Bank", balance=0)
         if with_medical:

@@ -66,7 +66,9 @@ class Person(LifeModelAgent):
         Args:
             family (Family): Family of which the person is a part.
             name (str): Person's name.
-            age (int): Person's age.
+            age (int): Person's age *during the year the person is created* (for a person built
+                before the run, the first simulated year): the collected ``Age`` for that year
+                equals this value, and the person turns ``age + 1`` the following year.
             retirement_age (float): Person's retirement age.
             spending (Spending): Person's spending habits.
             gender (GenderAtBirth, optional): Gender at birth, used for the mortality table. Defaults
@@ -82,6 +84,9 @@ class Person(LifeModelAgent):
         self.family = family
         self.name = name
         self.age = age
+        # The simulated year ``age`` applies to. ``pre_step`` advances ``age`` only when the model
+        # has moved past this year, so a person is ``age`` for the whole of their first year.
+        self._age_year = self.model.year
         self.retirement_age = retirement_age
         self.spending = spending
         self.state = state
@@ -895,7 +900,10 @@ class Person(LifeModelAgent):
         return Child(self, name, birth_year)
 
     def get_year_at_age(self, age: int) -> int:
-        """Gets the year at a given age.
+        """Gets the simulated year during which the person is ``age``.
+
+        ``get_year_at_age(a) == start_year + (a - constructor_age)`` for a person built before the
+        run, and the answer does not change as the simulation advances.
 
         Args:
             age (int): Age of the person.
@@ -903,12 +911,20 @@ class Person(LifeModelAgent):
         Returns:
             int: Year at the given age.
         """
-        return self.model.year + (age - self.age)
+        return self._age_year + (age - self.age)
+
+    def age_in(self, year: int) -> int:
+        """The person's age during ``year`` (the inverse of :meth:`get_year_at_age`)."""
+        return self.age + (year - self._age_year)
 
     def pre_step(self):
         if self.is_deceased:
             return
-        self.age += 1
+        # Advance to this year's age. The constructor age already is the creation year's age, so
+        # nothing happens in that year (D1: no off-by-one between ``age`` and the calendar).
+        if self.model.year > self._age_year:
+            self.age += self.model.year - self._age_year
+            self._age_year = self.model.year
         # A surviving spouse files jointly for the year of the death, then switches to single the
         # following year (qualifying-widow treatment is a documented simplification, not modeled).
         if self._widowed_year is not None and self.model.year > self._widowed_year:

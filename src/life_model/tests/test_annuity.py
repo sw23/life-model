@@ -295,8 +295,8 @@ class TestJointAndSurvivor(unittest.TestCase):
             BankAccount(person, "Bank", balance=0, interest_rate=0)
             return person
 
-        husband = make("H", 70, husband_death_age)
-        wife = make("W", 68, wife_death_age)
+        husband = make("H", 71, husband_death_age)
+        wife = make("W", 69, wife_death_age)
         husband.get_married(wife)
         return model, husband, wife
 
@@ -325,7 +325,7 @@ class TestJointAndSurvivor(unittest.TestCase):
             annuity.annuitize()
 
     def test_survivor_receives_the_survivor_share_then_payments_stop(self):
-        # Husband 70 dies at 72 (2027); wife 68 dies at 72 (2030).
+        # Husband is 71 in 2026 and dies at 72 (2027); wife is 69 in 2026 and dies at 72 (2029).
         model, husband, wife = self._couple(husband_death_age=72, wife_death_age=72, end_year=2032)
         annuity = Annuity(
             husband,
@@ -360,13 +360,13 @@ class TestAnnuityDeathTerms(unittest.TestCase):
         owner = Person(
             family,
             "O",
-            age=death_age - 2,
+            age=death_age - 1,
             retirement_age=60,
             spending=Spending(model, 0),
             mortality_mode=MortalityMode.FIXED_AGE,
             death_age=death_age,
         )
-        heir = Person(family, "H", age=40, retirement_age=70, spending=Spending(model, 0))
+        heir = Person(family, "H", age=41, retirement_age=70, spending=Spending(model, 0))
         owner.estate_beneficiary = heir
         for person in (owner, heir):
             BankAccount(person, "Bank", balance=0, interest_rate=0)
