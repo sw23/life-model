@@ -45,7 +45,7 @@ class TestDonation(unittest.TestCase):
         donation = Donation(self.person, "Annual Charity", 5000)
 
         # Run one step
-        self.model.step()
+        self.model.step_year()
 
         # Check that donation was made
         self.assertEqual(donation.stat_charitable_donations, 5000)
@@ -59,15 +59,15 @@ class TestDonation(unittest.TestCase):
         donation = Donation(self.person, "Every 2 Years", annual_amount=10000, frequency_years=2, start_year=2025)
 
         # Year 1 (2025) - should donate
-        self.model.step()
+        self.model.step_year()
         self.assertEqual(donation.stat_total_donated, 10000)
 
         # Year 2 (2026) - should NOT donate
-        self.model.step()
+        self.model.step_year()
         self.assertEqual(donation.stat_total_donated, 10000)
 
         # Year 3 (2027) - should donate again
-        self.model.step()
+        self.model.step_year()
         self.assertEqual(donation.stat_total_donated, 20000)
 
     def test_donation_with_insufficient_funds(self):
@@ -81,7 +81,7 @@ class TestDonation(unittest.TestCase):
         self.bank_account.balance = 3000
         donation = Donation(self.person, "Big Charity", 5000)
 
-        self.model.step()
+        self.model.step_year()
 
         # The donation takes all $3000 available (partial), leaving nothing for spending.
         self.assertEqual(donation.stat_charitable_donations, 3000)
@@ -96,7 +96,7 @@ class TestDonation(unittest.TestCase):
         self.bank_account.balance = 60000
         donation = Donation(self.person, "After Bills Charity", 5000)
 
-        self.model.step()
+        self.model.step_year()
 
         # Spending happens first, then donation from remaining funds
         self.assertEqual(donation.stat_charitable_donations, 5000)
@@ -108,23 +108,23 @@ class TestDonation(unittest.TestCase):
         donation = Donation(self.person, "Limited Charity", annual_amount=3000, start_year=2027, end_year=2028)
 
         # 2025 - before start, no donation
-        self.model.step()
+        self.model.step_year()
         self.assertEqual(donation.stat_total_donated, 0)
 
         # 2026 - before start, no donation
-        self.model.step()
+        self.model.step_year()
         self.assertEqual(donation.stat_total_donated, 0)
 
         # 2027 - within range, donate
-        self.model.step()
+        self.model.step_year()
         self.assertEqual(donation.stat_total_donated, 3000)
 
         # 2028 - within range, donate
-        self.model.step()
+        self.model.step_year()
         self.assertEqual(donation.stat_total_donated, 6000)
 
         # 2029 - after end, no donation
-        self.model.step()
+        self.model.step_year()
         self.assertEqual(donation.stat_total_donated, 6000)
 
     def test_tax_deduction_amount(self):
@@ -135,14 +135,14 @@ class TestDonation(unittest.TestCase):
         self.assertEqual(donation.get_tax_deduction_amount(), 0)
 
         # After donation
-        self.model.step()
+        self.model.step_year()
         self.assertEqual(donation.get_tax_deduction_amount(), 8000)
 
     def test_non_tax_deductible_donation(self):
         """Test non-tax-deductible donations"""
         donation = Donation(self.person, "Non-Deductible", 5000, tax_deductible=False)
 
-        self.model.step()
+        self.model.step_year()
 
         # Donation should be made
         self.assertEqual(donation.stat_charitable_donations, 5000)
@@ -157,7 +157,7 @@ class TestDonation(unittest.TestCase):
         donation3 = Donation(self.person, "Charity C", 1000)
 
         initial_balance = self.bank_account.balance
-        self.model.step()
+        self.model.step_year()
 
         # All donations should be made
         self.assertEqual(donation1.stat_charitable_donations, 3000)
@@ -177,11 +177,11 @@ class TestDonation(unittest.TestCase):
         donation = Donation(self.person, "Annual Reset", 4000)
 
         # Year 1
-        self.model.step()
+        self.model.step_year()
         self.assertEqual(donation.stat_charitable_donations, 4000)
 
         # Year 2 - stat should be recalculated
-        self.model.step()
+        self.model.step_year()
         self.assertEqual(donation.stat_charitable_donations, 4000)
 
         # Total should accumulate
@@ -196,7 +196,7 @@ class TestDonation(unittest.TestCase):
         self.assertEqual(self.person.charitable_deductions, 0)
 
         # After donations
-        self.model.step()
+        self.model.step_year()
         self.assertEqual(self.person.charitable_deductions, 5000)
 
     def test_different_donation_types(self):

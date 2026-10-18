@@ -469,7 +469,7 @@ class TestPremiumSettlementRouting(unittest.TestCase):
             coverage_amount=100000,
             deductible=500,
         )
-        model.step()
+        model.step_year()
         # base spending 10000 + 1500 premium settle as this year's money spent.
         self.assertEqual(john.stat_money_spent, 11500)
 
@@ -492,7 +492,7 @@ class TestPremiumSettlementRouting(unittest.TestCase):
             coverage_amount=100000,
             deductible=500,
         )
-        model.step()
+        model.step_year()
         # The premium (and its tax) was funded by a pre-tax 401k withdrawal, not left as debt.
         self.assertLess(john.all_retirement_accounts[0].pretax_balance, 200000)
         self.assertEqual(john.debt, 0)

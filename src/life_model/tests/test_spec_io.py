@@ -177,7 +177,7 @@ class TestExamples(unittest.TestCase):
             with self.subTest(example=name):
                 model = build_model(load_example(name))
                 for _ in range(5):
-                    model.step()
+                    model.step_year()
                 after = spec_from_model(model)
                 self.assertEqual(after.meta.start_year, 2031)
                 self.assertEqual([f for f in validate_spec(after) if f.level == "error"], [])

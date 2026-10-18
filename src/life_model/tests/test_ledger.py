@@ -76,7 +76,8 @@ class TestLedgerEntries(unittest.TestCase):
         taxes = frame[frame.kind.isin(["tax", "penalty"])].amount.sum()
         self.assertAlmostEqual(taxes, person.tax_returns[2026].total_tax, places=6)
         self.assertEqual(frame.year.unique().tolist(), [2026])
-        self.assertTrue(frame.month.isna().all())
+        # Every entry carries the month it was posted in (Plan 32: the engine is monthly).
+        self.assertTrue(frame.month.between(1, 12).all())
         self.assertEqual(model.ledger.names[f"BankAccount:{bank.unique_id}"], "Pat's BankAccount (Bank)")
         # The DataCollector table exposes the same rows.
         table = model.datacollector.get_table_dataframe("Ledger")
@@ -118,6 +119,7 @@ class TestConservationOnWholeHouseholds(unittest.TestCase):
         model.run()
         self.assertEqual(len(model.balance_sheets), years)
         assert_conservation(model)
+        assert_conservation(model, monthly=True)
         self.assertFalse(check_conservation(model))
 
     def test_married_homeowners_45_years(self):
@@ -204,10 +206,10 @@ class TestMoneyConservationBugs(unittest.TestCase):
         heir = Person(person.family, "Heir", 50, 65, Spending(model, base=0))
         BankAccount(person, "Bank", balance=1000)
         BankAccount(heir, "Bank", balance=200000)
-        model.step()
+        model.step_year()
         carried = person.debt
         self.assertGreater(carried, 40000)
-        model.step()
+        model.step_year()
         self.assertTrue(person.is_deceased)
         self.assertEqual(person.debt, 0)
         # The heir's settlement repaid the inherited debt (with a year of interest).

@@ -30,8 +30,8 @@ independently (:func:`household_balance_sheet`), the year's change in net worth 
 year's net external flow. :mod:`life_model.checks` asserts it; any difference is money the
 simulation created or destroyed without saying so.
 
-**Time.** Entries carry ``year`` and ``stage`` and a ``month`` field that is ``None`` while the engine
-steps a year at a time (a monthly engine fills it in).
+**Time.** Entries carry the ``year`` and ``month`` they were posted in and the ``stage`` that posted
+them.
 """
 
 from collections.abc import Iterator
@@ -114,7 +114,7 @@ class LedgerEntry:
     #: Position in the ledger (0-based, strictly increasing).
     seq: int
     year: int
-    #: Month within the year (1-12) once the engine is monthly; ``None`` for the annual engine.
+    #: Month within the year (1-12) the entry was posted in.
     month: int | None
     #: The model stage that posted it (``pre_step``, ``events``, ``step``, ``post_step``), or None.
     stage: str | None
@@ -262,7 +262,7 @@ class CashFlowLedger:
         entry = LedgerEntry(
             seq=len(self.entries),
             year=self.model.year,
-            month=None,
+            month=getattr(self.model, "month", None),
             stage=getattr(self.model, "current_stage", None),
             kind=kind.value if isinstance(kind, FlowKind) else str(kind),
             amount=float(amount),

@@ -64,7 +64,7 @@ def assert_liquid_conserved(test: unittest.TestCase, model: LifeModel, persons) 
     """
     for _ in model.get_year_range():
         before = _liquid_assets(persons)
-        model.step()
+        model.step_year()
         row = model.datacollector.get_model_vars_dataframe().iloc[-1]
         after = _liquid_assets(persons)
         expected = (

@@ -185,8 +185,8 @@ class TestFieldMapping(unittest.TestCase):
             },
         ]
         built = build(data, config=fixture_config())
-        built.model.step()
-        built.model.step()
+        built.model.step_year()
+        built.model.step_year()
         self.assertEqual(built.items["level"].monthly_premium, 50)
         self.assertEqual(built.items["level"].premium_increase_type, PremiumIncreaseType.LEVEL)
         self.assertEqual(built.items["banded"].premium_increase_type, PremiumIncreaseType.AGE_BANDED)
@@ -471,9 +471,9 @@ class TestEventActions(unittest.TestCase):
         # A year takes effect in that year: the person is alive through 2059 and dies in 2060.
         model = built.model
         while model.year < 2060:
-            model.step()
+            model.step_year()
         self.assertFalse(alex.is_deceased)
-        model.step()
+        model.step_year()
         self.assertTrue(alex.is_deceased)
 
     def test_die_and_an_ordinary_event_at_the_same_age_land_in_the_same_year(self):
@@ -490,7 +490,7 @@ class TestEventActions(unittest.TestCase):
         died_in = None
         while built.model.year <= built.model.end_year and died_in is None:
             year = built.model.year
-            built.model.step()
+            built.model.step_year()
             if alex.is_deceased:
                 died_in = year
         self.assertEqual(died_in, expense.year)
@@ -524,7 +524,7 @@ class TestEventActions(unittest.TestCase):
             (plan.match_tiers, plan.match_vesting_years, plan.company_match_percent), (((100, 3), (50, 2)), 2, 0)
         )
         self.assertEqual(built.people["alex"].bank_accounts[0].compound_rate, 1)
-        built.model.step()
+        built.model.step_year()
         self.assertAlmostEqual(built.items["job"].stat_retirement_match, 80000 * 0.04)  # 3% + 1% of pay
 
     def test_past_dated_events_never_reach_life_events(self):
@@ -548,7 +548,7 @@ class TestEventActions(unittest.TestCase):
         incomes = {}
         for _ in range(5):
             year = model.year
-            model.step()
+            model.step_year()
             incomes[year] = model.household.people["alex"].stat_ss_income
         self.assertEqual([y for y, v in incomes.items() if v > 0], [2029, 2030])
 

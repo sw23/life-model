@@ -78,7 +78,7 @@ class TestSeparateReturnsInSimulation(unittest.TestCase):
             model, a, b = self._couple(separately=separately)
             for person in (a, b):
                 Job(person, "Co", "Dev", Salary(model=model, base=90000, yearly_increase=0, yearly_bonus=0))
-            model.step()
+            model.step_year()
             totals[separately] = sum(p.stat_taxes_paid_federal for p in (a, b))
         self.assertAlmostEqual(totals[True], totals[False], places=2)
 
@@ -101,7 +101,7 @@ class TestSeparateReturnsInSimulation(unittest.TestCase):
             Job(a, "Co", "Dev", Salary(model=model, base=60000, yearly_increase=0, yearly_bonus=0))
             if with_loan:
                 StudentLoan(a, StudentLoanType.FEDERAL_UNSUBSIDIZED, 40000, 6.0, 10, "U")
-            model.step()
+            model.step_year()
             return a.stat_taxes_paid_federal + b.stat_taxes_paid_federal
 
         # Jointly, the interest deduction lowers tax; separately (IRC §221(e)(2)) it does not.

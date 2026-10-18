@@ -79,8 +79,8 @@ class TestAgeSemantics(unittest.TestCase):
         person = _worker(model)
         self.assertEqual(person.get_year_at_age(42), 2028)
         self.assertEqual(person.get_year_at_age(40), 2026)
-        model.step()
-        model.step()
+        model.step_year()
+        model.step_year()
         # Stable as the simulation advances (no drift once ages start incrementing).
         self.assertEqual(person.get_year_at_age(42), 2028)
 
@@ -104,12 +104,12 @@ class TestAgeSemantics(unittest.TestCase):
     def test_person_created_mid_run_keeps_constructor_age_that_year(self):
         model = _model()
         _worker(model)
-        model.step()  # 2026
+        model.step_year()  # 2026
         late = _worker(model, name="Late", age=30)  # built between steps: 30 during 2027
         model.add_agent_stat("Age", "age")
-        model.step()  # 2027
+        model.step_year()  # 2027
         self.assertEqual(late.age, 30)
-        model.step()  # 2028
+        model.step_year()  # 2028
         self.assertEqual(late.age, 31)
 
 
@@ -274,7 +274,7 @@ class TestCreatedYear(unittest.TestCase):
         Job(person, "Co", "Eng", salary)
         rent = Apartment(person, "Flat", monthly_rent=1000, yearly_increase=10)
         self.assertEqual((salary.created_year, salary.created_in_stage), (2026, None))
-        model.step()
+        model.step_year()
         self.assertAlmostEqual(salary.base, 110000, places=6)
         self.assertAlmostEqual(rent.monthly_rent, 1100, places=6)
 

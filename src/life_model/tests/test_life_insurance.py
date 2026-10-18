@@ -180,7 +180,7 @@ class TestLifeInsurance(unittest.TestCase):
 
         # Fast-forward to policy expiration
         for _ in range(5):
-            self.model.step()
+            self.model.step_year()
 
         self.assertTrue(policy.is_term_expired)
         policy.step()
@@ -607,7 +607,7 @@ class TestLifePremiumBillPath(unittest.TestCase):
         k401 = Job401kAccount(job=job, pretax_balance=200000, average_growth=0)
         policy = LifeInsurance(person, LifeInsuranceType.TERM, 250000, 100, 20, max_missed_payments=1)
 
-        model.step()
+        model.step_year()
 
         self.assertTrue(policy.is_active)
         self.assertEqual(policy.consecutive_missed_payments, 0)

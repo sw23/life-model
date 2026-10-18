@@ -71,7 +71,7 @@ OBS_SPEC = [
     ("emergency_fund_years", 0.0, 10.0),  # bank balance / spending
     ("income_to_spending", 0.0, 10.0),
     # --- tax position (for the upcoming simulated year; the ledger itself is settled and
-    #     cleared inside model.step(), so the decision-relevant quantity is the projection) ---
+    #     cleared inside model.step_year(), so the decision-relevant quantity is the projection) ---
     ("projected_taxable_income", 0.0, 10.0),  # projected wages + RMD (real $M)
     ("bracket_headroom", 0.0, 10.0),  # $ to the next federal bracket edge / $100k (real)
     ("marginal_rate", 0.0, 1.0),  # marginal federal rate at the projected income
@@ -116,7 +116,7 @@ class FinancialLifeEnv(gym.Env):
 
     **Tax semantics:** actions execute through the model's real money path. A
     taxable withdrawal (pre-tax 401k, traditional IRA) records ordinary income on the person's
-    ledger, and the tax unit settles all taxes once per simulated year inside ``model.step()`` —
+    ledger, and the tax unit settles all taxes once per simulated year inside ``model.step_year()`` —
     so the tax on a withdrawal bites at year-end settlement within the same ``step()`` call, not
     at the instant of withdrawal. That is the simulator's actual semantics, and it is what makes
     pre-tax and Roth withdrawals genuinely different to the agent.
@@ -483,7 +483,7 @@ class FinancialLifeEnv(gym.Env):
         # observable to the reward (post-death net worth reads ~0 once assets dissolve).
         net_worth_before_step = self._after_tax_net_worth()
         raw_net_worth_before_step = self._calculate_net_worth()
-        self.model.step()
+        self.model.step_year()
         self.current_step += 1
         if not self.person.is_deceased:
             self._apply_retirement_spending()
@@ -631,7 +631,7 @@ class FinancialLifeEnv(gym.Env):
         net_worth = self._calculate_net_worth()
 
         # Tax position for the upcoming year. The income ledger is settled and cleared inside
-        # model.step(), so at decision time the honest quantity is the projection: wages the
+        # model.step_year(), so at decision time the honest quantity is the projection: wages the
         # jobs will deposit plus the RMD the 401k will force. (Documented deviation from "income
         # so far": intra-year state is never observable at the env's decision boundary.)
         next_age = person.age + 1

@@ -100,7 +100,7 @@ class TestJob401kLimits(unittest.TestCase):
         job2 = Job(person, "Co2", "Dev", Salary(model, base=100000))
         Job401kAccount(job2, pretax_contrib_percent=15, average_growth=0)
 
-        model.step()
+        model.step_year()
 
         # Fixture 402(g) base is $20k: job 1 defers $15k, job 2 only the remaining $5k.
         self.assertAlmostEqual(job1.retirement_account.pretax_balance, 15000, places=2)
@@ -115,7 +115,7 @@ class TestJob401kLimits(unittest.TestCase):
         # the fixture 415(c) annual-additions limit of $60k caps the match at $60k - $20k.
         Job401kAccount(job, pretax_contrib_percent=20, company_match_percent=300, average_growth=0)
 
-        model.step()
+        model.step_year()
 
         self.assertAlmostEqual(job.stat_retirement_contrib, 20000, places=2)
         self.assertAlmostEqual(job.stat_retirement_match, 40000, places=2)

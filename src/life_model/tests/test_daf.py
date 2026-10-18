@@ -74,7 +74,7 @@ class TestDAF(unittest.TestCase):
         daf = DonorAdvisedFund(self.person, "Growth DAF", balance=100000, growth_rate=7.0)
 
         # Step should apply growth
-        self.model.step()
+        self.model.step_year()
 
         # Order of operations in step():
         # 1. Growth applied: 100,000 * 0.07 = 7,000 -> balance = 107,000
@@ -97,7 +97,7 @@ class TestDAF(unittest.TestCase):
         )
 
         initial_balance = daf.balance
-        self.model.step()
+        self.model.step_year()
 
         # Order of operations:
         # 1. Growth applied: 100,000 * 0.07 = 7,000 -> balance = 107,000
@@ -120,7 +120,7 @@ class TestDAF(unittest.TestCase):
             management_fee=0,  # No fees to isolate distribution
         )
 
-        self.model.step()
+        self.model.step_year()
 
         # Should distribute 5% to charity
         expected_distribution = 5000
@@ -168,7 +168,7 @@ class TestDAF(unittest.TestCase):
         self.assertEqual(daf.balance, 10000)
 
         # After model step, stat is reset but total is accumulated
-        self.model.step()
+        self.model.step_year()
 
         # The reset happens in pre_step, so current year contribution is 0
         # (unless we contribute again during this step)
@@ -182,7 +182,7 @@ class TestDAF(unittest.TestCase):
         daf = DonorAdvisedFund(self.person, "Dist DAF", balance=100000, distribution_rate=5.0)
 
         # Run a step - will distribute but no new contribution
-        self.model.step()
+        self.model.step_year()
 
         # Distribution should happen
         self.assertGreater(daf.stat_charitable_donations, 0)
@@ -197,12 +197,12 @@ class TestDAF(unittest.TestCase):
         )
 
         # Year 1
-        self.model.step()
+        self.model.step_year()
         year1_balance = daf.balance
         year1_donated = daf.stat_total_donated
 
         # Year 2
-        self.model.step()
+        self.model.step_year()
         year2_balance = daf.balance
         year2_donated = daf.stat_total_donated
 
@@ -220,7 +220,7 @@ class TestDAF(unittest.TestCase):
         daf.contribute(10000)
 
         # Year 1 - step will reset and process
-        self.model.step()
+        self.model.step_year()
         year1_contribution_stat = daf.stat_contributions_this_year
         year1_donation_stat = daf.stat_charitable_donations
 
@@ -231,7 +231,7 @@ class TestDAF(unittest.TestCase):
         self.assertGreater(year1_donation_stat, 0)
 
         # Year 2
-        self.model.step()
+        self.model.step_year()
         year2_donation_stat = daf.stat_charitable_donations
 
         # Annual donation stat should be recalculated
@@ -256,7 +256,7 @@ class TestDAF(unittest.TestCase):
         """Test DAF that doesn't auto-distribute"""
         daf = DonorAdvisedFund(self.person, "No Auto Dist", balance=100000, distribution_rate=0, growth_rate=7.0)
 
-        self.model.step()
+        self.model.step_year()
 
         # Should have no distributions
         self.assertEqual(daf.stat_charitable_donations, 0)

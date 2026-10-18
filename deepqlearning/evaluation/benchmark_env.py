@@ -70,7 +70,7 @@ def bench_model_only(collect_data: bool, num_models: int) -> float:
     for i in range(num_models):
         model = _build_model(collect_data, seed=i)
         for _ in model.get_year_range():
-            model.step()
+            model.step_year()
             steps += 1
     elapsed = time.perf_counter() - start
     return steps / elapsed

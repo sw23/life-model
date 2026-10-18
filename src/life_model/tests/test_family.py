@@ -78,7 +78,7 @@ class TestFamilyStepSettlesJointTaxes(unittest.TestCase):
         Job(a, "Co", "Dev", Salary(model=model, base=50000))
         Job(b, "Co", "Dev", Salary(model=model, base=50000))
 
-        model.step()
+        model.step_year()
 
         # Combined $100k, MFJ standard deduction $20k -> $80k taxable, all in the 10% bracket.
         total_federal = sum(p.stat_taxes_paid_federal for p in (a, b))

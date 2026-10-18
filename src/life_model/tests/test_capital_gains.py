@@ -508,7 +508,7 @@ class TestRothVersusBrokerageOverThirtyYears(unittest.TestCase):
                 account.contribute(6000)  # the fixture IRA limit
             else:
                 account.deposit(6000)
-            model.step()
+            model.step_year()
         taxes = sum(model.datacollector.get_model_vars_dataframe()["Taxes"])
         return model, person, account, taxes
 

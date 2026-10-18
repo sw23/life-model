@@ -335,18 +335,18 @@ class TestJointAndSurvivor(unittest.TestCase):
             payout_type=AnnuityPayoutType.JOINT_AND_SURVIVOR,
             survivor_percent=50,
         )
-        model.step()  # 2026: annuitized, full payments
+        model.step_year()  # 2026: annuitized, full payments
         full_monthly = annuity.monthly_payout
         self.assertAlmostEqual(annuity.stat_payouts_received, 12 * full_monthly, places=6)
-        model.step()  # 2027: husband reaches 72 and dies
+        model.step_year()  # 2027: husband reaches 72 and dies
         self.assertTrue(husband.is_deceased)
         self.assertIs(annuity.person, wife)
         self.assertTrue(annuity.survivor_phase)
         before = annuity.stat_payouts_received
-        model.step()  # 2028: the survivor share
+        model.step_year()  # 2028: the survivor share
         self.assertAlmostEqual(annuity.stat_payouts_received - before, 12 * full_monthly * 0.5, places=6)
         while not wife.is_deceased:
-            model.step()
+            model.step_year()
         self.assertFalse(annuity.is_active)
 
 
@@ -383,7 +383,7 @@ class TestAnnuityDeathTerms(unittest.TestCase):
             period_certain_years=5,
         )
         while annuity.is_active and model.year <= model.end_year:
-            model.step()
+            model.step_year()
         self.assertTrue(owner.is_deceased)
         self.assertIs(annuity.person, heir)
         self.assertEqual(annuity.remaining_period_certain_payments, 0)
@@ -394,9 +394,9 @@ class TestAnnuityDeathTerms(unittest.TestCase):
     def test_accumulation_phase_value_paid_to_heir_with_gain_taxed(self):
         model, owner, heir = self._owner_with_heir(death_age=61, end_year=2027)
         annuity = Annuity(owner, AnnuityType.DEFERRED, initial_balance=80000, interest_rate=5.0, payout_start_age=70)
-        model.step()  # 2026: grows 5%
+        model.step_year()  # 2026: grows 5%
         value = annuity.balance
-        model.step()  # 2027: owner reaches 61 and dies
+        model.step_year()  # 2027: owner reaches 61 and dies
         self.assertTrue(owner.is_deceased)
         self.assertFalse(annuity.is_active)
         self.assertEqual(annuity.balance, 0.0)

@@ -71,7 +71,7 @@ class TestPension(unittest.TestCase):
         person = Person(family=Family(model), name="Pat", age=66, retirement_age=65, spending=Spending(model, 0))
         BankAccount(person, "Bank", balance=0, interest_rate=0)
         Pension(person, "MegaCorp", vesting_years=5, benefit_amount=30000)
-        model.step()
+        model.step_year()
         df = model.datacollector.get_model_vars_dataframe()
         self.assertEqual(dict(zip(df["Year"], df["Pension Income"]))[2020], 30000)
 

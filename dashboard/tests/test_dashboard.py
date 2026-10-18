@@ -180,7 +180,7 @@ def test_model_stops_at_end_year():
     assert not model.running
     # Stepping past the end is a no-op.
     years_before = list(model.simulated_years)
-    model.step()
+    model.step_year()
     assert model.simulated_years == years_before
 
 

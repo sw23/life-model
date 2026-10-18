@@ -79,7 +79,7 @@ class TestFicaPerPerson(unittest.TestCase):
         job = Job(person, "Old Co", "Retiree", Salary(model=model, base=0))
         Job401kAccount(job=job, pretax_balance=500000, average_growth=0)
 
-        model.step()
+        model.step_year()
 
         # The distribution funded the year's spending as ordinary income, but no payroll tax.
         self.assertGreater(person.stat_taxes_paid_federal, 0)
@@ -96,7 +96,7 @@ class TestFicaPerPerson(unittest.TestCase):
         # Defer 20% ($20k) pre-tax.
         Job401kAccount(job=job, pretax_contrib_percent=20, average_growth=0)
 
-        model.step()
+        model.step_year()
 
         # FICA base is the full $100k gross (SS at 6.2%), not the $80k after deferral.
         self.assertAlmostEqual(person.stat_taxes_paid_ss, 100000 * 0.062, places=2)
@@ -115,7 +115,7 @@ class TestFicaPerPerson(unittest.TestCase):
         Job(b, "Co", "Dev", Salary(model=model, base=70000))
         Job(c, "Co", "Dev", Salary(model=model, base=80000))
 
-        model.step()
+        model.step_year()
 
         # Combined SS = 6.2% of both full salaries (neither capped): 150000 * 0.062.
         total_ss = sum(p.stat_taxes_paid_ss for p in (b, c))
@@ -136,7 +136,7 @@ class TestWithdrawalSizing(unittest.TestCase):
         job = Job(person, "Old Co", "Retiree", Salary(model=model, base=0))
         Job401kAccount(job=job, pretax_balance=1000000, average_growth=0)
 
-        model.step()
+        model.step_year()
 
         # The $50k spending was fully covered from the 401k and created no debt.
         self.assertEqual(person.stat_money_spent, 50000)
@@ -159,7 +159,7 @@ class TestDeductionTiming(unittest.TestCase):
         Job(person, "Co", "Dev", Salary(model=model, base=100000))
         if donation_amount > 0:
             Donation(person, "Charity", annual_amount=donation_amount)
-        model.step()
+        model.step_year()
         return person.stat_taxes_paid_federal
 
     def test_recurring_donation_reduces_federal_tax(self):
