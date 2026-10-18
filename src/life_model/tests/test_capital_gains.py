@@ -34,7 +34,7 @@ def _fixture_config() -> FinancialConfig:
 
 def _person(model: LifeModel, bank_balance: float = 0.0, spending: float = 0.0) -> Person:
     family = Family(model)
-    person = Person(family, "P", age=40, retirement_age=70, spending=Spending(model, base=spending))
+    person = Person(family, "P", age=40, retirement_age=70, spending=Spending(model, base_annual=spending))
     BankAccount(person, "Bank", balance=bank_balance, interest_rate=0)
     return person
 
@@ -512,7 +512,7 @@ class TestRothVersusBrokerageOverThirtyYears(unittest.TestCase):
         from ..work.job import Job, Salary
 
         model = LifeModel(start_year=2020, end_year=2050, config=_fixture_config())
-        person = Person(Family(model), "Saver", age=35, retirement_age=65, spending=Spending(model, base=60000))
+        person = Person(Family(model), "Saver", age=35, retirement_age=65, spending=Spending(model, base_annual=60000))
         BankAccount(person, "Bank", balance=50000, interest_rate=0)
         Job(person, "Co", "Dev", Salary(model, base=120000, yearly_increase=0, yearly_bonus=0))
         if use_roth:

@@ -100,7 +100,14 @@ class TestSeparateReturnsInSimulation(unittest.TestCase):
             model, a, b = self._couple(separately=separately)
             Job(a, "Co", "Dev", Salary(model=model, base=60000, yearly_increase=0, yearly_bonus=0))
             if with_loan:
-                StudentLoan(a, StudentLoanType.FEDERAL_UNSUBSIDIZED, 40000, 6.0, 10, "U")
+                StudentLoan(
+                    a,
+                    loan_type=StudentLoanType.FEDERAL_UNSUBSIDIZED,
+                    original_amount=40000,
+                    rate_pct=6.0,
+                    term_years=10,
+                    school_name="U",
+                )
             model.step_year()
             return a.stat_taxes_paid_federal + b.stat_taxes_paid_federal
 
@@ -120,7 +127,7 @@ class TestSeparateReturnBenefitsAndMedicare(unittest.TestCase):
         a.get_married(b)
         a.filing_status = b.filing_status = FilingStatus.MARRIED_FILING_SEPARATELY
         BankAccount(a, "Bank", balance=0)
-        ss = SocialSecurity(person=a, withdrawal_start_age=67)
+        ss = SocialSecurity(owner=a, claim_age=67)
         # Zero base amount: provisional 0.5 x 20,000 = 10,000 -> 85% inclusion caps at 0.85 x 10,000.
         self.assertAlmostEqual(ss._taxable_benefit_portion(20000), 8500.0, places=2)
 

@@ -26,10 +26,13 @@ Every spec flow names its period: `*_annual` (per year) or `*_monthly` (per mont
 `premium_annual`. Balances, prices, face values and one-time amounts (`balance`, `purchase_price`,
 `death_benefit`, `amount` on a one-time expense) are plain dollars.
 
-The core constructors mix periods, which is one reason to prefer the spec:
-`Apartment(monthly_rent=)`, `LifeInsurance(monthly_premium=)` and `Mortgage` payments are monthly;
-`Salary(base=)`, `Spending(base=)`, `Insurance(annual_premium=)` and `HomeExpenses(hoa_amount=,
-maintenance_amount=)` are annual (the builder multiplies `hoa_monthly` by 12).
+Since Plan 27 (D8) the core constructors for housing, debts, insurance, Social Security and spending
+use the spec's names too: `Apartment(rent_monthly=)`, `LifeInsurance(premium_monthly=)` and the loans'
+`payment_monthly=` are monthly; `Spending(base_annual=)`, `Insurance(premium_annual=)` and
+`HomeExpenses(hoa_annual=, maintenance_annual=)` are annual (the spec's `hoa_monthly` is multiplied by
+12). The old names (`monthly_rent`, `monthly_premium`, `base`, `annual_premium`, `hoa_amount`, ...) and
+positional arguments after the owner of a loan, annuity or pension still work for one release with a
+`DeprecationWarning` naming the replacement. `Salary(base=)` is annual.
 
 The engine steps one **month** at a time (see [Time](#time) below): annual amounts are paid a
 twelfth a month, monthly ones (rent, loan payments) once a month, and loans amortize one period per
@@ -77,10 +80,18 @@ Defaults differ between the spec and the core: the spec's spending `growth_pct` 
   `end_year` defaults to `start_year + 50`; `state` falls back to `meta.default_state`; no
   `social_security` block means no Social Security benefit).
 - **Core rate arguments**: follow the economy (above) or a config default (a credit card's
-  `yearly_interest_rate=None` is `debt.credit_card.default_interest_rate`, 18%).
-- **Loans in progress**: `principal=None` means a brand-new loan (balance = original amount);
-  `monthly_payment=None` means the computed amortizing payment. The spec's `balance` is the
-  current principal.
+  `rate_pct=None` is `debt.credit_card.default_interest_rate`, 18%).
+- **Loans in progress** (Plan 27 D1/D7): enter what the statement shows. `origination="YYYY-MM"` (or
+  `payments_made`) with the original amount and term gives today's balance and payment; or give
+  `current_balance` (spec: `balance`) with `remaining_months` (or the payment). Any three of balance /
+  months remaining / payment determine the fourth; inputs that contradict each other raise
+  `LoanTermsError` (a spec validation error) naming the field. The first payment is in the month after
+  origination (a loan originated 2024-03 has made 21 payments by January 2026). A balance below the
+  original schedule is a prepaid loan: it keeps the contract payment and pays off early. Without any of
+  these, `current_balance=None` means a brand-new loan and `payment_monthly=None` the computed
+  amortizing payment. Terms are in months (`term_months`; `term_years` is sugar). A mortgage's
+  `escrow_monthly` is subtracted from a statement payment that includes it (the home's expenses pay the
+  tax and insurance).
 - **`seed=None`**: draw a fresh seed (reported as `RunResult.seed`); deterministic households give
   the same numbers either way.
 
@@ -146,7 +157,7 @@ simulated month of the year (January). In a household spec, `at: {year: 2030, mo
   `EconomyModel.monthly_rate(name, year, month)` a month's (percent for the month). Path tables
   take `"YYYY-MM"` keys for single months; stochastic mode draws each month (`vol / sqrt(12)`, an
   optional AR(1) term per series in `economy.stochastic.autocorrelation`).
-* Annual amounts (a salary's `base`, `Spending(base=)`, a pension's `benefit_amount`) are paid a
+* Annual amounts (a salary's `base`, `Spending(base_annual=)`, a pension's `benefit_annual`) are paid a
   twelfth a month.
 
 ## Ages
@@ -177,16 +188,16 @@ children's ages for the credits. The qualified charitable distribution's 70½ is
 | Jobs | A twelfth of base salary (the bonus in `Salary(bonus_month=)`, default March); 401k deferral per paycheck against the year's 402(g) room; the match per paycheck, capped by 415(c) | December match true-up (`Job401kAccount(match_true_up=True)`); the raise at year end |
 | Self-employment (`Job(kind="self_employed")`) | A twelfth of the net profit (receipts less expenses; the bonus month adds its bonus), no withholding | The owner's SEP / solo 401(k) contribution with December's payment, on the year's profit; self-employment tax and QBI with the year's return |
 | Dependent-care FSA (`payroll.dependent_care_fsa_annual`) | A twelfth of the election out of each paycheck (wages and FICA wages) | The Form 2441 exclusion and any taxable excess at settlement |
-| Spending | A twelfth of base; one-time expenses in the month they are added | The base escalates at year end |
-| Housing | A twelfth of property tax, insurance, upkeep, HOA and PMI; one mortgage payment; rent | Home appreciation and the expense and rent escalators at year end |
-| Loans and cards | One payment each (amortization one period per month) | Deferment interest capitalizes at year end; a RAP payment is set from the last return's AGI |
+| Spending | A twelfth of base and of each annual category (monthly categories in full); one-time expenses in the month they are added; a schedule step in the month the age is reached; part of it charged to a card with `spending_charge_pct` | The base and categories escalate at year end |
+| Housing | A twelfth of property tax (a percent of the market or assessed value, or a dollar bill), insurance, upkeep, HOA and PMI (until 80% of the original value by balance, 78% by the original schedule, or the term's midpoint); one mortgage payment; rent | Home appreciation, the assessed value (capped), and the expense and rent escalators at year end |
+| Loans and cards | One payment each (amortization one period per month) plus any `extra_principal_monthly`; a home equity line's interest-only payment | Deferment interest capitalizes at year end (and repayment starts after `deferment_until`); a RAP payment is set from the last return's AGI |
 | Investments | Growth at the month's rate (401k, IRAs, HSA, brokerage, 529, trusts, annuities) | A DAF's growth, fee and grant at year end; the HSA employer contribution at year start |
 | Brokerage dividends | Quarterly (March, June, September, December), or monthly (`accounts.brokerage.dividend_frequency`) | |
 | Bank interest | Monthly | |
-| Social Security, pensions, annuities | One payment a month (from the claim or eligibility month) | Pension COLA and service credit at year end; Social Security's PIA (with COLAs) is set once a year |
+| Social Security, pensions, annuities | One payment a month (from the claim or eligibility month; a spousal benefit once both spouses claim; earnings-test withholding takes whole checks); a pension's lump sum in its start month | Pension COLA and service credit at year end; Social Security's PIA (with COLAs) is set once a year (and again at FRA after withheld months); the earnings test at year end |
 | RMDs | A twelfth of the year's RMD | The amount is set at year start from the prior year-end balance, less any qualified charitable distribution made then (owner 70½ by exact age) |
 | Inherited IRAs (10-year rule) | Growth | The year's even-spread distribution at year start |
-| Healthcare | Medical costs, Medicare premiums (from 65), long-term-care costs while in care | LTC: the episode hazard is drawn at year start, the insurance claim filed at year end |
+| Healthcare | Medical costs (capped by a health policy's deductible, coinsurance and out-of-pocket maximum over the calendar year), Medicare premiums (from 65), long-term-care costs while in care; disability benefits after the elimination period | LTC: the episode hazard is drawn at year start, the insurance claim filed at year end |
 | Children | A twelfth of the age band's yearly cost and of `care_expenses_annual` (529 draws for college, keeping the year's first $4,000 for the AOTC) | The child's `interest_annual` / `dividends_annual` on the parents' return (Form 8814) |
 | Insurance premiums, donations (cash, appreciated shares in kind), stock vests and option exercises | | In the first month of the year; policy updates (term expiry, re-pricing, cash value) at year end |
 | Bills | Paid through the household waterfall each month; unpaid bills carried as debt with a month of interest | |

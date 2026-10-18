@@ -349,7 +349,7 @@ class TestPlan529BasisAndWithdrawals(unittest.TestCase):
             name="Owner",
             age=45,
             retirement_age=65,
-            spending=Spending(self.model, base=1000),
+            spending=Spending(self.model, base_annual=1000),
         )
         self.bank = BankAccount(owner=self.owner, company="Bank", balance=0)
 

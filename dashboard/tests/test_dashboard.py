@@ -316,7 +316,7 @@ def _legacy_single_person_model(prefix, **kwargs):
         name=prefix.capitalize(),
         age=d["age"],
         retirement_age=d["retirement_age"],
-        spending=Spending(model=model, base=d["spending"], yearly_increase=shared["spending_increase"]),
+        spending=Spending(model=model, base_annual=d["spending"], growth_pct=shared["spending_increase"]),
         state=shared.get("state"),
     )
     BankAccount(
@@ -349,27 +349,27 @@ def _legacy_single_person_model(prefix, **kwargs):
     if shared["home_enabled"]:
         price = shared["home_price"]
         Home(
-            person=person,
+            owner=person,
             name="Home",
             purchase_price=price,
-            value_yearly_increase=None,
+            value_growth_pct=None,
             down_payment=price * 0.20,
             mortgage=Mortgage(
-                loan_amount=price * 0.8,
-                start_date=model.start_year,
-                length_years=int(shared["mortgage_term"]),
-                yearly_interest_rate=shared["mortgage_rate"],
+                original_amount=price * 0.8,
+                start_year=model.start_year,
+                term_years=int(shared["mortgage_term"]),
+                rate_pct=shared["mortgage_rate"],
             ),
             expenses=HomeExpenses(
                 model=model,
-                property_tax_percent=1.0,
-                home_insurance_percent=0.5,
-                maintenance_amount=3000,
-                maintenance_increase=2.0,
-                improvement_amount=0,
-                improvement_increase=0.0,
-                hoa_amount=0,
-                hoa_increase=0.0,
+                property_tax_pct=1.0,
+                insurance_pct=0.5,
+                maintenance_annual=3000,
+                maintenance_growth_pct=2.0,
+                improvement_annual=0,
+                improvement_growth_pct=0.0,
+                hoa_annual=0,
+                hoa_growth_pct=0.0,
             ),
             purchase=False,
         )

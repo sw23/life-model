@@ -54,22 +54,22 @@ def _stochastic_config() -> FinancialConfig:
 
 def _home(model: LifeModel, owner: Person, *, price: float, principal: float, purchase: bool = False) -> Home:
     return Home(
-        person=owner,
+        owner=owner,
         name=f"{owner.name}'s house",
         purchase_price=price,
-        value_yearly_increase=None,
+        value_growth_pct=None,
         down_payment=price - principal,
-        mortgage=Mortgage(loan_amount=principal, start_date=model.year, length_years=30, yearly_interest_rate=6.0),
+        mortgage=Mortgage(original_amount=principal, start_year=model.year, term_years=30, rate_pct=6.0),
         expenses=HomeExpenses(
             model,
-            property_tax_percent=1.1,
-            home_insurance_percent=0.4,
-            maintenance_amount=2500,
-            maintenance_increase=3,
-            improvement_amount=1000,
-            improvement_increase=3,
-            hoa_amount=600,
-            hoa_increase=2,
+            property_tax_pct=1.1,
+            insurance_pct=0.4,
+            maintenance_annual=2500,
+            maintenance_growth_pct=3,
+            improvement_annual=1000,
+            improvement_growth_pct=3,
+            hoa_annual=600,
+            hoa_growth_pct=2,
         ),
         purchase=purchase,
     )
@@ -80,8 +80,8 @@ def married_homeowners(start_year: int = 2026, years: int = 45, *, seed: int | N
     IRAs, an HSA, Social Security, and a car loan; one retires early and draws on savings."""
     model = LifeModel(start_year=start_year, end_year=start_year + years - 1, seed=seed)
     family = Family(model)
-    john = Person(family, "John", 42, 58, Spending(model, base=52000, yearly_increase=None), state="CA")
-    jane = Person(family, "Jane", 40, 62, Spending(model, base=30000, yearly_increase=None), state="CA")
+    john = Person(family, "John", 42, 58, Spending(model, base_annual=52000, growth_pct=None), state="CA")
+    jane = Person(family, "Jane", 40, 62, Spending(model, base_annual=30000, growth_pct=None), state="CA")
     john.get_married(jane)
     BankAccount(john, "Chase", balance=40000, interest_rate=2.0)
     BankAccount(jane, "Ally", balance=25000, interest_rate=3.5)
@@ -101,12 +101,12 @@ def married_homeowners(start_year: int = 2026, years: int = 45, *, seed: int | N
     RothIRA(john, balance=38000)
     HealthSavingsAccount(jane, HSAType.FAMILY, balance=12000)
     _home(model, john, price=780000, principal=520000)
-    CarLoan(john, loan_amount=32000, length_years=5, yearly_interest_rate=6.5, name="SUV")
+    CarLoan(john, original_amount=32000, term_years=5, rate_pct=6.5, name="SUV")
     ava = john.add_child("Ava", birth_year=start_year - 8)
     Plan529(john, beneficiary=ava, balance=40000)
     jane.add_child("Ben", birth_year=start_year - 5)
-    SocialSecurity(john, withdrawal_start_age=67, income_history=EARNINGS_HISTORY)
-    SocialSecurity(jane, withdrawal_start_age=67, income_history=EARNINGS_HISTORY[5:])
+    SocialSecurity(john, claim_age=67, earnings_history=EARNINGS_HISTORY)
+    SocialSecurity(jane, claim_age=67, earnings_history=EARNINGS_HISTORY[5:])
     if start_year + 6 <= model.end_year:
         LifeEvents(model, [LifeEvent(start_year + 6, "Kitchen remodel", john.spending.add_expense, 45000)])
     return model
@@ -117,7 +117,9 @@ def stochastic_retiree(seed: int, start_year: int = 2026, years: int = 40) -> Li
     a brokerage account sold to fund spending, healthcare costs, Medicare and long-term care."""
     model = LifeModel(start_year=start_year, end_year=start_year + years - 1, seed=seed, config=_stochastic_config())
     family = Family(model)
-    ann = Person(family, "Ann", 66, 65, Spending(model, base=58000, yearly_increase=None), gender=GenderAtBirth.FEMALE)
+    ann = Person(
+        family, "Ann", 66, 65, Spending(model, base_annual=58000, growth_pct=None), gender=GenderAtBirth.FEMALE
+    )
     BankAccount(ann, "Bank", balance=60000)
     BrokerageAccount(ann, "Brokerage", balance=650000)
     job = Job(ann, "Former employer", "Retired", Salary(model, base=0))
@@ -127,11 +129,11 @@ def stochastic_retiree(seed: int, start_year: int = 2026, years: int = 40) -> Li
     TraditionalIRA(ann, balance=150000)
     RothIRA(ann, balance=90000)
     HealthSavingsAccount(ann, HSAType.INDIVIDUAL, balance=30000, employer_contribution=0)
-    SocialSecurity(ann, withdrawal_start_age=67, income_history=EARNINGS_HISTORY)
+    SocialSecurity(ann, claim_age=67, earnings_history=EARNINGS_HISTORY)
     MedicalCosts(ann)
     Medicare(ann)
     LongTermCare(ann)
-    Insurance(ann, InsuranceType.LONG_TERM_CARE, "LTC Co", annual_premium=3200, coverage_amount=90000)
+    Insurance(ann, InsuranceType.LONG_TERM_CARE, "LTC Co", premium_annual=3200, coverage_amount=90000)
     Donation(ann, "Food bank", annual_amount=2000)
     return model
 
@@ -147,7 +149,7 @@ def mortality_and_estate(seed: int = 7, start_year: int = 2026, years: int = 50)
         "Bob",
         70,
         65,
-        Spending(model, base=70000, yearly_increase=None),
+        Spending(model, base_annual=70000, growth_pct=None),
         mortality_mode=MortalityMode.FIXED_AGE,
         death_age=78,
         gender=GenderAtBirth.MALE,
@@ -157,12 +159,12 @@ def mortality_and_estate(seed: int = 7, start_year: int = 2026, years: int = 50)
         "Sue",
         68,
         65,
-        Spending(model, base=20000, yearly_increase=None),
+        Spending(model, base_annual=20000, growth_pct=None),
         mortality_mode=MortalityMode.FIXED_AGE,
         death_age=90,
         gender=GenderAtBirth.FEMALE,
     )
-    kid = Person(family, "Kim", 40, 65, Spending(model, base=45000, yearly_increase=None))
+    kid = Person(family, "Kim", 40, 65, Spending(model, base_annual=45000, growth_pct=None))
     bob.get_married(sue)
     for person, balance in ((bob, 80000), (sue, 40000), (kid, 30000)):
         BankAccount(person, "Bank", balance=balance)
@@ -174,22 +176,22 @@ def mortality_and_estate(seed: int = 7, start_year: int = 2026, years: int = 50)
     TraditionalIRA(sue, balance=300000)
     kid_job = Job(kid, "Studio", "Designer", Salary(model, base=110000, yearly_increase=None))
     Job401kAccount(kid_job, pretax_contrib_percent=8, match_tiers=[(100, 4)])
-    Pension(bob, "Utility", vesting_years=5, benefit_amount=24000, cola_percent=2, survivor_percent=50)
-    SocialSecurity(bob, withdrawal_start_age=70, income_history=EARNINGS_HISTORY)
-    SocialSecurity(sue, withdrawal_start_age=67, income_history=EARNINGS_HISTORY[8:])
-    LifeInsurance(bob, LifeInsuranceType.WHOLE, death_benefit=400000, monthly_premium=450)
-    LifeInsurance(sue, LifeInsuranceType.TERM, death_benefit=250000, monthly_premium=90, term_years=15)
+    Pension(bob, company="Utility", vesting_years=5, benefit_annual=24000, cola_pct=2, survivor_pct=50)
+    SocialSecurity(bob, claim_age=70, earnings_history=EARNINGS_HISTORY)
+    SocialSecurity(sue, claim_age=67, earnings_history=EARNINGS_HISTORY[8:])
+    LifeInsurance(bob, LifeInsuranceType.WHOLE, death_benefit=400000, premium_monthly=450)
+    LifeInsurance(sue, LifeInsuranceType.TERM, death_benefit=250000, premium_monthly=90, term_years=15)
     Annuity(
         bob,
-        AnnuityType.IMMEDIATE,
-        initial_balance=300000,
+        annuity_type=AnnuityType.IMMEDIATE,
+        balance=300000,
         payout_type=AnnuityPayoutType.JOINT_AND_SURVIVOR,
-        survivor_percent=50,
+        survivor_pct=50,
     )
     Annuity(
         sue,
-        AnnuityType.DEFERRED,
-        initial_balance=150000,
+        annuity_type=AnnuityType.DEFERRED,
+        balance=150000,
         payout_type=AnnuityPayoutType.LIFE_WITH_PERIOD_CERTAIN,
         payout_start_age=75,
         period_certain_years=20,
@@ -216,23 +218,23 @@ def renter_buys_home(seed: int = 3, start_year: int = 2026, years: int = 45) -> 
     vested RSUs in a brokerage account and later sells the home."""
     model = LifeModel(start_year=start_year, end_year=start_year + years - 1, seed=seed)
     family = Family(model)
-    max_ = Person(family, "Max", 29, 63, Spending(model, base=38000, yearly_increase=None))
+    max_ = Person(family, "Max", 29, 63, Spending(model, base_annual=38000, growth_pct=None))
     BankAccount(max_, "Credit union", balance=22000, interest_rate=1.0)
     BrokerageAccount(max_, "Robinhood", balance=60000)
     job = Job(max_, "Startup", "Developer", Salary(model, base=125000, yearly_increase=None, yearly_bonus=5))
     Job401kAccount(job, pretax_contrib_percent=6, roth_contrib_percent=4, match_tiers=[(100, 4)], match_vesting_years=3)
     StockPlan(job, signon_value=80000, refresher_value=30000, disposition="hold")
-    Apartment(max_, "Downtown flat", monthly_rent=2200, yearly_increase=None)
+    Apartment(max_, "Downtown flat", rent_monthly=2200, rent_growth_pct=None)
     StudentLoan(
         max_,
-        StudentLoanType.FEDERAL_UNSUBSIDIZED,
-        loan_amount=55000,
-        yearly_interest_rate=5.5,
-        length_years=10,
+        loan_type=StudentLoanType.FEDERAL_UNSUBSIDIZED,
+        original_amount=55000,
+        rate_pct=5.5,
+        term_years=10,
         school_name="State U",
     )
-    CreditCard(max_, "Visa", credit_limit=20000, current_balance=6000)
-    SocialSecurity(max_, withdrawal_start_age=67, income_history=EARNINGS_HISTORY[22:])
+    CreditCard(max_, name="Visa", credit_limit=20000, balance=6000)
+    SocialSecurity(max_, claim_age=67, earnings_history=EARNINGS_HISTORY[22:])
 
     def buy_home():
         for apartment in list(max_.apartments):
@@ -242,14 +244,18 @@ def renter_buys_home(seed: int = 3, start_year: int = 2026, years: int = 45) -> 
     def sell_home():
         for home in list(max_.homes):
             home.sell()
-        Apartment(max_, "Retirement condo", monthly_rent=2600, yearly_increase=None)
+        Apartment(max_, "Retirement condo", rent_monthly=2600, rent_growth_pct=None)
 
     LifeEvents(
         model,
         [
             LifeEvent(start_year + 4, "Buy a house", buy_home),
             LifeEvent(start_year + 5, "Baby", max_.add_child, "Leo"),
-            LifeEvent(start_year + 7, "New car", lambda: CarLoan(max_, 35000, 6, 7.0, "Sedan")),
+            LifeEvent(
+                start_year + 7,
+                "New car",
+                lambda: CarLoan(max_, original_amount=35000, term_years=6, rate_pct=7.0, name="Sedan"),
+            ),
             LifeEvent(start_year + 12, "Lose job", job.retire),
             LifeEvent(start_year + 13, "New job", lambda: Job(max_, "BigCo", "Lead", Salary(model, base=150000))),
             LifeEvent(start_year + 30, "Downsize", sell_home),
@@ -272,7 +278,7 @@ def everything_stochastic(seed: int, start_year: int = 2026, years: int = 50) ->
         "Ana",
         52,
         62,
-        Spending(model, base=48000, yearly_increase=None),
+        Spending(model, base_annual=48000, growth_pct=None),
         mortality_mode=MortalityMode.STOCHASTIC,
         gender=GenderAtBirth.FEMALE,
     )
@@ -281,7 +287,7 @@ def everything_stochastic(seed: int, start_year: int = 2026, years: int = 50) ->
         "Raj",
         55,
         64,
-        Spending(model, base=36000, yearly_increase=None),
+        Spending(model, base_annual=36000, growth_pct=None),
         mortality_mode=MortalityMode.STOCHASTIC,
         gender=GenderAtBirth.MALE,
     )
@@ -298,25 +304,25 @@ def everything_stochastic(seed: int, start_year: int = 2026, years: int = 50) ->
     Job401kAccount(raj_job, pretax_balance=150000, roth_contrib_percent=5)
     TraditionalIRA(raj, balance=80000)
     HealthSavingsAccount(ana, HSAType.FAMILY, balance=20000)
-    SocialSecurity(ana, withdrawal_start_age=67, income_history=EARNINGS_HISTORY)
-    SocialSecurity(raj, withdrawal_start_age=65, income_history=EARNINGS_HISTORY[3:])
+    SocialSecurity(ana, claim_age=67, earnings_history=EARNINGS_HISTORY)
+    SocialSecurity(raj, claim_age=65, earnings_history=EARNINGS_HISTORY[3:])
     _home(model, raj, price=650000, principal=300000)
-    policy = LifeInsurance(raj, LifeInsuranceType.WHOLE, death_benefit=300000, monthly_premium=350)
-    annuity = Annuity(ana, AnnuityType.FIXED, initial_balance=100000)
-    card = CreditCard(ana, "Amex", credit_limit=30000, current_balance=2000)
+    policy = LifeInsurance(raj, LifeInsuranceType.WHOLE, death_benefit=300000, premium_monthly=350)
+    annuity = Annuity(ana, annuity_type=AnnuityType.FIXED, balance=100000)
+    card = CreditCard(ana, name="Amex", credit_limit=30000, balance=2000)
     from ..debt.student_loan import StudentLoanRepaymentPlan
 
     StudentLoan(
         raj,
-        StudentLoanType.FEDERAL_UNSUBSIDIZED,
-        loan_amount=40000,
-        yearly_interest_rate=6.0,
-        length_years=10,
+        loan_type=StudentLoanType.FEDERAL_UNSUBSIDIZED,
+        original_amount=40000,
+        rate_pct=6.0,
+        term_years=10,
         school_name="Night school",
         repayment_plan=StudentLoanRepaymentPlan.REPAYMENT_ASSISTANCE_PLAN,
     )
     car_insurance = Insurance(
-        ana, InsuranceType.AUTO, "AutoCo", annual_premium=1800, coverage_amount=40000, deductible=1000
+        ana, InsuranceType.AUTO, "AutoCo", premium_annual=1800, coverage_amount=40000, deductible=1000
     )
     Donation(ana, "Shelter", annual_amount=3000)
     daf = DonorAdvisedFund(ana, "Giving fund", balance=0)
@@ -331,7 +337,7 @@ def everything_stochastic(seed: int, start_year: int = 2026, years: int = 50) ->
         "Lou",
         74,
         65,
-        Spending(model, base=30000, yearly_increase=None),
+        Spending(model, base_annual=30000, growth_pct=None),
         mortality_mode=MortalityMode.FIXED_AGE,
         death_age=80,
     )
@@ -341,8 +347,8 @@ def everything_stochastic(seed: int, start_year: int = 2026, years: int = 50) ->
     old_job.retired = True
     Job401kAccount(old_job, pretax_balance=200000)
     _home(model, loner, price=300000, principal=60000)
-    CarLoan(loner, loan_amount=15000, length_years=5, yearly_interest_rate=7, name="Truck")
-    SocialSecurity(loner, withdrawal_start_age=70, income_history=EARNINGS_HISTORY)
+    CarLoan(loner, original_amount=15000, term_years=5, rate_pct=7, name="Truck")
+    SocialSecurity(loner, claim_age=70, earnings_history=EARNINGS_HISTORY)
 
     LifeEvents(
         model,

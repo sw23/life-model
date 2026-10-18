@@ -27,7 +27,7 @@ def _build_trial(seed: int) -> LifeModel:
     )
     model = LifeModel(start_year=2026, end_year=2035, config=cfg, seed=seed)
     family = Family(model)
-    person = Person(family, "A", 30, 65, Spending(model, base=0))
+    person = Person(family, "A", 30, 65, Spending(model, base_annual=0))
     BankAccount(person, "Bank", balance=10000)
     return model
 

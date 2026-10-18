@@ -64,9 +64,9 @@ class TestExistingLifePolicy(unittest.TestCase):
             person,
             LifeInsuranceType.WHOLE,
             death_benefit=250000,
-            monthly_premium=200,
-            cash_value_growth_rate=4.0,
-            loan_interest_rate=6.0,
+            premium_monthly=200,
+            cash_value_growth_pct=4.0,
+            loan_interest_pct=6.0,
             issue_year=2012,
             cash_value=20000,
             loan_balance=5000,
@@ -112,8 +112,8 @@ class TestExistingAnnuity(unittest.TestCase):
         person = _person(model, birth="1956-01")
         annuity = Annuity(
             person,
-            AnnuityType.IMMEDIATE,
-            monthly_payout=1500,
+            annuity_type=AnnuityType.IMMEDIATE,
+            payout_monthly=1500,
             basis=180000,
             purchase_year=2021,
             in_payout=True,
@@ -129,7 +129,9 @@ class TestExistingAnnuity(unittest.TestCase):
     def test_qualified_contract_is_fully_taxable(self):
         model = _model(end_year=2027)
         person = _person(model, birth="1955-01")
-        annuity = Annuity(person, AnnuityType.IMMEDIATE, monthly_payout=1000, qualified=True, in_payout=True)
+        annuity = Annuity(
+            person, annuity_type=AnnuityType.IMMEDIATE, payout_monthly=1000, qualified=True, in_payout=True
+        )
         for _ in range(11):  # (the income ledger is cleared at the year end)
             model.step()
         self.assertAlmostEqual(annuity.stat_taxable_payouts, 11000, places=6)
@@ -139,7 +141,12 @@ class TestExistingAnnuity(unittest.TestCase):
     def test_purchase_year_runs_the_surrender_clock(self):
         model = _model()
         annuity = Annuity(
-            _person(model), AnnuityType.FIXED, 100000, surrender_charge_years=7, basis=80000, purchase_year=2020
+            _person(model),
+            annuity_type=AnnuityType.FIXED,
+            balance=100000,
+            surrender_charge_years=7,
+            basis=80000,
+            purchase_year=2020,
         )
         self.assertEqual(annuity.years_since_purchase, 6)
         self.assertTrue(annuity.is_in_surrender_period)
@@ -149,10 +156,10 @@ class TestExistingAnnuity(unittest.TestCase):
         model = _model(end_year=2027)
         annuity = Annuity(
             _person(model, birth="1955-01"),
-            AnnuityType.IMMEDIATE,
-            monthly_payout=1000,
+            annuity_type=AnnuityType.IMMEDIATE,
+            payout_monthly=1000,
             in_payout=True,
-            cola_percent=2,
+            cola_pct=2,
         )
         model.step_year()
         self.assertAlmostEqual(annuity.monthly_payout, 1020, places=6)
@@ -165,10 +172,10 @@ class TestPensionFromStatement(unittest.TestCase):
         history = {2019: 80000, 2020: 90000, 2021: 100000, 2022: 95000, 2023: 110000, 2024: 120000, 2025: 115000}
         pension = Pension(
             person,
-            "Co",
+            company="Co",
             vesting_years=5,
             years_of_service=20,
-            benefit_multiplier=1.5,
+            benefit_multiplier_pct=1.5,
             salary_history=history,
             final_average_years=3,
         )
@@ -180,7 +187,13 @@ class TestPensionFromStatement(unittest.TestCase):
         model = _model(end_year=2027)
         person = _person(model, birth="1966-01")
         pension = Pension(
-            person, "Co", 5, 24000, start_age=60, normal_retirement_age=65, early_reduction_pct_per_year=6
+            person,
+            company="Co",
+            vesting_years=5,
+            benefit_annual=24000,
+            start_age=60,
+            normal_retirement_age=65,
+            early_reduction_pct_per_year=6,
         )
         model.step_year()
         # Starts at 60, five years early: 30% less.
@@ -192,7 +205,15 @@ class TestPensionFromStatement(unittest.TestCase):
         retiree = _person(model, birth="1961-01", family=family)
         spouse = _person(model, birth="1963-01", family=family, name="S")
         retiree.get_married(spouse)
-        fixed = Pension(retiree, "Co", 5, 30000, start_age=65, survivor_percent=50, survivor_reduction=10)
+        fixed = Pension(
+            retiree,
+            company="Co",
+            vesting_years=5,
+            benefit_annual=30000,
+            start_age=65,
+            survivor_pct=50,
+            survivor_reduction=10,
+        )
         model.step_year()
         self.assertAlmostEqual(fixed.stat_pension_income, 27000, places=6)
 
@@ -202,14 +223,23 @@ class TestPensionFromStatement(unittest.TestCase):
         retiree = _person(model, birth="1961-01", family=family)
         spouse = _person(model, birth="1963-01", family=family, name="S")
         retiree.get_married(spouse)
-        pension = Pension(retiree, "Co", 5, 30000, survivor_percent=100, survivor_reduction="actuarial")
+        pension = Pension(
+            retiree,
+            company="Co",
+            vesting_years=5,
+            benefit_annual=30000,
+            survivor_pct=100,
+            survivor_reduction="actuarial",
+        )
         self.assertLess(pension.survivor_factor(), 1.0)
         self.assertGreater(pension.survivor_factor(), 0.7)
 
     def test_employee_basis_recovered_by_the_simplified_method(self):
         model = _model(end_year=2027)
         person = _person(model, birth="1961-01")
-        pension = Pension(person, "Co", 5, 24000, start_age=65, employee_basis=26000)
+        pension = Pension(
+            person, company="Co", vesting_years=5, benefit_annual=24000, start_age=65, employee_basis=26000
+        )
         for _ in range(11):  # (the income ledger is cleared at the year end)
             model.step()
         # Age 65 at the start: 260 payments (Pub. 575 Table 1), $100 a month tax-free.
@@ -222,7 +252,14 @@ class TestPensionFromStatement(unittest.TestCase):
         person = _person(model, birth="1961-01")
         ira = TraditionalIRA(person, balance=0)
         pension = Pension(
-            person, "Co", 5, 24000, start_age=65, lump_sum=True, lump_sum_amount=300000, rollover_account=ira
+            person,
+            company="Co",
+            vesting_years=5,
+            benefit_annual=24000,
+            start_age=65,
+            lump_sum=True,
+            lump_sum_amount=300000,
+            rollover_account=ira,
         )
         model.step_year()
         self.assertTrue(pension.paid_out)
@@ -301,8 +338,8 @@ class TestSocialSecurityStatement(unittest.TestCase):
         high = _person(model, birth="1960-01", family=family, name="High")
         low = _person(model, birth="1960-01", family=family, name="Low")
         high.get_married(low)
-        SocialSecurity(high, 67, pia_override=3000)
-        low_ss = SocialSecurity(low, 67, pia_override=600, spousal_benefit=True)
+        SocialSecurity(high, 67, pia_override_monthly=3000)
+        low_ss = SocialSecurity(low, 67, pia_override_monthly=600, spousal_benefit=True)
         model.step()
         own = low_ss.get_pia()
         self.assertAlmostEqual(own, 600, places=2)
@@ -316,8 +353,8 @@ class TestSocialSecurityStatement(unittest.TestCase):
         high = _person(model, birth="1960-01", family=family, name="High")
         low = _person(model, birth="1965-01", family=family, name="Low")
         high.get_married(low)
-        SocialSecurity(high, 67, pia_override=3000)
-        low_ss = SocialSecurity(low, 62, pia_override=600, spousal_benefit=True)
+        SocialSecurity(high, 67, pia_override_monthly=3000)
+        low_ss = SocialSecurity(low, 62, pia_override_monthly=600, spousal_benefit=True)
         model.step()
         # 62 in January 2027, FRA 67: own 600 x 70%, spousal excess 900 x 65% (60 months early).
         self.assertAlmostEqual(low_ss.monthly_benefit(), 420 + 585, places=2)
@@ -325,7 +362,7 @@ class TestSocialSecurityStatement(unittest.TestCase):
     def test_pia_override_after_62_gets_only_colas(self):
         model = _model(end_year=2027)
         person = _person(model, birth="1960-01")
-        ss = SocialSecurity(person, 67, pia_override=2000)
+        ss = SocialSecurity(person, 67, pia_override_monthly=2000)
         self.assertEqual(ss.primary_insurance_amount(2026), 2000)
         model.step_year()
         # 2027 adds the COLA for 2026: the realized inflation of the fixed economy (3%), to the dime.
@@ -334,10 +371,10 @@ class TestSocialSecurityStatement(unittest.TestCase):
     def test_fra_from_birth_year_changes_the_delayed_credit(self):
         model = _model()
         person = _person(model, birth="1957-01")
-        configured = SocialSecurity(person, 67, pia_override=2000)
+        configured = SocialSecurity(person, 67, pia_override_monthly=2000)
         self.assertAlmostEqual(configured.get_pia(), 2000, places=2)
         by_birth = SocialSecurity(
-            _person(model, birth="1957-01", name="Q"), 67, pia_override=2000, fra_from_birth_year=True
+            _person(model, birth="1957-01", name="Q"), 67, pia_override_monthly=2000, fra_from_birth_year=True
         )
         # FRA 66 and 6 months: six months of 8%/yr delayed credits (4%).
         self.assertAlmostEqual(by_birth.get_pia(), 2080, places=2)
@@ -347,7 +384,7 @@ class TestSocialSecurityStatement(unittest.TestCase):
         model = _model(end_year=2031, config=FinancialConfig())
         person = _person(model, birth="1964-01", retirement_age=63)
         Job(person, "Co", "Eng", Salary(model, base=44480))
-        ss = SocialSecurity(person, 62, pia_override=2000, earnings_test=True)
+        ss = SocialSecurity(person, 62, pia_override_monthly=2000, earnings_test=True)
         model.step_year()
         # 2026 lower exempt amount $24,480: $20,000 over, $10,000 withheld from 2027's checks.
         self.assertAlmostEqual(ss.withholding_due, 10000, places=6)

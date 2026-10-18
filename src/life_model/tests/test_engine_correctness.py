@@ -24,23 +24,23 @@ from ..work.job import Job, Salary
 
 
 def _make_home(person, purchase_price=400000, mortgage_rate=4.5, appreciation=0.0):
-    mortgage = Mortgage(loan_amount=300000, start_date=2020, length_years=30, yearly_interest_rate=mortgage_rate)
+    mortgage = Mortgage(original_amount=300000, start_year=2020, term_years=30, rate_pct=mortgage_rate)
     expenses = HomeExpenses(
         model=person.model,
-        property_tax_percent=1.0,
-        home_insurance_percent=0.0,
-        maintenance_amount=1000,
-        maintenance_increase=0.0,
-        improvement_amount=0,
-        improvement_increase=0.0,
-        hoa_amount=0,
-        hoa_increase=0.0,
+        property_tax_pct=1.0,
+        insurance_pct=0.0,
+        maintenance_annual=1000,
+        maintenance_growth_pct=0.0,
+        improvement_annual=0,
+        improvement_growth_pct=0.0,
+        hoa_annual=0,
+        hoa_growth_pct=0.0,
     )
     return Home(
-        person=person,
+        owner=person,
         name="Test House",
         purchase_price=purchase_price,
-        value_yearly_increase=appreciation,
+        value_growth_pct=appreciation,
         down_payment=100000,
         mortgage=mortgage,
         expenses=expenses,
@@ -99,7 +99,7 @@ class TestRunningFlag(unittest.TestCase):
     def test_one_time_expense_spent_and_increase_deferred(self):
         model = LifeModel(start_year=2020, end_year=2022)
         family = Family(model)
-        spending = Spending(model, base=10000, yearly_increase=10)
+        spending = Spending(model, base_annual=10000, growth_pct=10)
         person = Person(family, "Bo", age=40, retirement_age=70, spending=spending)
         BankAccount(person, "Bank", balance=1_000_000, interest_rate=0)
 
@@ -271,8 +271,8 @@ class TestMoneyConservation(unittest.TestCase):
     def test_bank_conservation_year_by_year(self):
         model = LifeModel(start_year=2020, end_year=2025)
         family = Family(model)
-        a = Person(family, "Jo", age=40, retirement_age=70, spending=Spending(model, base=20000))
-        b = Person(family, "Kai", age=40, retirement_age=70, spending=Spending(model, base=0))
+        a = Person(family, "Jo", age=40, retirement_age=70, spending=Spending(model, base_annual=20000))
+        b = Person(family, "Kai", age=40, retirement_age=70, spending=Spending(model, base_annual=0))
         a.get_married(b)
         bank = BankAccount(a, "Bank", balance=1_000_000, interest_rate=0)
         _make_home(a, appreciation=5.0)
@@ -295,7 +295,7 @@ class TestConstructionOrderIndependence(unittest.TestCase):
     def _build_and_run(bank_first: bool):
         model = LifeModel(start_year=2020, end_year=2025, seed=42)
         family = Family(model)
-        person = Person(family, "Lee", age=40, retirement_age=70, spending=Spending(model, base=15000))
+        person = Person(family, "Lee", age=40, retirement_age=70, spending=Spending(model, base_annual=15000))
         if bank_first:
             BankAccount(person, "Bank", balance=200000, interest_rate=0)
             Job(person, "Co", "Dev", Salary(model=model, base=90000))

@@ -91,7 +91,7 @@ class TestChildCosts(unittest.TestCase):
 
     def test_childcare_band_cost_charged_in_year_one(self):
         model = self._model()
-        parent = Person(Family(model), "Parent", age=30, retirement_age=70, spending=Spending(model, base=0))
+        parent = Person(Family(model), "Parent", age=30, retirement_age=70, spending=Spending(model, base_annual=0))
         child = Child(parent, "Kid", birth_year=2026)  # age 0 -> childcare band
         model.step_year()  # year 2026
         # Childcare band cost (10000) charged to the parent's spending as a one-time expense.
@@ -100,14 +100,14 @@ class TestChildCosts(unittest.TestCase):
 
     def test_school_band_cost(self):
         model = self._model()
-        parent = Person(Family(model), "Parent", age=40, retirement_age=70, spending=Spending(model, base=0))
+        parent = Person(Family(model), "Parent", age=40, retirement_age=70, spending=Spending(model, base_annual=0))
         child = Child(parent, "Kid", birth_year=2016)  # age 10 -> school band
         model.step_year()
         self.assertEqual(child.stat_dependent_costs, 5000)
 
     def test_adult_child_incurs_no_cost(self):
         model = self._model()
-        parent = Person(Family(model), "Parent", age=50, retirement_age=70, spending=Spending(model, base=0))
+        parent = Person(Family(model), "Parent", age=50, retirement_age=70, spending=Spending(model, base_annual=0))
         child = Child(parent, "Adult", birth_year=2000)  # age 26 -> past college band
         model.step_year()
         self.assertEqual(child.stat_dependent_costs, 0)
@@ -117,7 +117,7 @@ class TestChildCosts(unittest.TestCase):
         cfg = _fixture_config()
         cfg.apply_scenario("_infl", {"economy": {"mode": "fixed", "inflation": 3.0}})
         model = LifeModel(start_year=2026, end_year=2030, config=cfg)
-        parent = Person(Family(model), "Parent", age=40, retirement_age=70, spending=Spending(model, base=0))
+        parent = Person(Family(model), "Parent", age=40, retirement_age=70, spending=Spending(model, base_annual=0))
         child = Child(parent, "Kid", birth_year=2016)  # school band throughout
         model.step_year()  # 2026: cumulative inflation factor 1.0
         first = child.stat_dependent_costs
@@ -134,7 +134,7 @@ class TestChildCollege529(unittest.TestCase):
 
     def _college_child_model(self, plan_balance):
         model = LifeModel(start_year=2026, end_year=2026, config=_fixture_config())
-        parent = Person(Family(model), "Parent", age=50, retirement_age=70, spending=Spending(model, base=0))
+        parent = Person(Family(model), "Parent", age=50, retirement_age=70, spending=Spending(model, base_annual=0))
         BankAccount(parent, "Bank", balance=100000, interest_rate=0)
         child = Child(parent, "Kid", birth_year=2008)  # age 18 -> college band
         plan = Plan529(owner=parent, beneficiary=child, balance=plan_balance, growth_rate=0)

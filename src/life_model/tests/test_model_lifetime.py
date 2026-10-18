@@ -28,7 +28,7 @@ def _run_model() -> weakref.ref:
         name="Ephemeral",
         age=40,
         retirement_age=65,
-        spending=Spending(model=model, base=30000, yearly_increase=2),
+        spending=Spending(model=model, base_annual=30000, growth_pct=2),
     )
     BankAccount(owner=person, company="Bank", type="Checking", balance=20000, interest_rate=0.5)
     Job(

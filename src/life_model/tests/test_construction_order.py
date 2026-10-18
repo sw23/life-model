@@ -47,7 +47,7 @@ _HISTORY = [(year, 70000) for year in range(1985, 2025)]
 
 def _home(person, price=500000, loan=400000):
     model = person.model
-    mortgage = Mortgage(loan_amount=loan, start_date=2022, length_years=30, yearly_interest_rate=6.0)
+    mortgage = Mortgage(original_amount=loan, start_year=2022, term_years=30, rate_pct=6.0)
     expenses = HomeExpenses(model, 1.1, 0.4, 3000, 3.0, 1000, 3.0, 0, 0.0)
     Home(person, "Home", price, None, price - loan, mortgage, expenses)
 
@@ -59,7 +59,7 @@ def single_saver(model):
     people = {}
 
     def person():
-        people["a"] = Person(family, "Sam", age=34, retirement_age=62, spending=Spending(model, base=45000))
+        people["a"] = Person(family, "Sam", age=34, retirement_age=62, spending=Spending(model, base_annual=45000))
 
     def job():
         job = Job(people["a"], "Co", "Eng", Salary(model, base=140000, yearly_increase=3, yearly_bonus=10))
@@ -72,9 +72,9 @@ def single_saver(model):
         lambda: BrokerageAccount(people["a"], "Broker", balance=80000),
         lambda: RothIRA(people["a"], balance=30000),
         lambda: HealthSavingsAccount(people["a"], HSAType.INDIVIDUAL, balance=5000),
-        lambda: Apartment(people["a"], "Flat", monthly_rent=2200, yearly_increase=4),
+        lambda: Apartment(people["a"], "Flat", rent_monthly=2200, rent_growth_pct=4),
         lambda: LifeInsurance(people["a"], LifeInsuranceType.TERM, 500000, 40, term_years=20),
-        lambda: CarLoan(people["a"], 30000, 5, 6.5, "Car"),
+        lambda: CarLoan(people["a"], original_amount=30000, term_years=5, rate_pct=6.5, name="Car"),
         lambda: Donation(people["a"], "Food bank", 2000),
         lambda: LifeEvents(model, [LifeEvent(2029, "New car", people["a"].spending.add_expense, 35000)]),
     ]
@@ -88,7 +88,7 @@ def married_homeowners(model):
 
     def build(key, name, age, salary, bank):
         def _person():
-            people[key] = Person(family, name, age=age, retirement_age=65, spending=Spending(model, base=40000))
+            people[key] = Person(family, name, age=age, retirement_age=65, spending=Spending(model, base_annual=40000))
 
         def _accounts():
             BankAccount(people[key], "Bank", balance=bank, interest_rate=1.0)
@@ -126,7 +126,7 @@ def retired_couple(model):
     def build(key, name, age, retirement_age=62):
         def _person():
             people[key] = Person(
-                family, name, age=age, retirement_age=retirement_age, spending=Spending(model, base=45000)
+                family, name, age=age, retirement_age=retirement_age, spending=Spending(model, base_annual=45000)
             )
 
         return _person
@@ -143,12 +143,10 @@ def retired_couple(model):
         marry,
         lambda: BankAccount(people["a"], "Bank", balance=60000, interest_rate=2.0),
         lambda: BankAccount(people["b"], "Bank", balance=20000, interest_rate=2.0),
-        lambda: SocialSecurity(people["a"], withdrawal_start_age=67, income_history=_HISTORY),
-        lambda: SocialSecurity(
-            people["b"], withdrawal_start_age=67, income_history=[(y, 40000) for y in range(1990, 2025)]
-        ),
-        lambda: Pension(people["a"], "State", vesting_years=5, benefit_amount=18000, cola_percent=2.0),
-        lambda: Annuity(people["b"], AnnuityType.IMMEDIATE, initial_balance=150000, interest_rate=4.0),
+        lambda: SocialSecurity(people["a"], claim_age=67, earnings_history=_HISTORY),
+        lambda: SocialSecurity(people["b"], claim_age=67, earnings_history=[(y, 40000) for y in range(1990, 2025)]),
+        lambda: Pension(people["a"], company="State", vesting_years=5, benefit_annual=18000, cola_pct=2.0),
+        lambda: Annuity(people["b"], annuity_type=AnnuityType.IMMEDIATE, balance=150000, rate_pct=4.0),
         lambda: TraditionalIRA(people["b"], balance=250000),
         old_401k,
         lambda: BrokerageAccount(people["a"], "Broker", balance=300000),
@@ -170,7 +168,7 @@ def early_retiree(model):
     people = {}
 
     def person():
-        people["a"] = Person(family, "Jo", age=52, retirement_age=50, spending=Spending(model, base=70000))
+        people["a"] = Person(family, "Jo", age=52, retirement_age=50, spending=Spending(model, base_annual=70000))
 
     def old_401k():
         job = Job(people["a"], "Former", "Retired", Salary(model, base=0))
@@ -184,7 +182,7 @@ def early_retiree(model):
         old_401k,
         lambda: _home(people["a"], price=400000, loan=150000),
         lambda: MedicalCosts(people["a"]),
-        lambda: Annuity(people["a"], AnnuityType.FIXED, initial_balance=50000, interest_rate=4.0),
+        lambda: Annuity(people["a"], annuity_type=AnnuityType.FIXED, balance=50000, rate_pct=4.0),
     ]
     return [person], steps
 

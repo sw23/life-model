@@ -17,7 +17,9 @@ from ..people.person import Person, Spending
 
 def _make_person(model, age, base_spending=0, balance=1_000_000):
     family = Family(model)
-    person = Person(family=family, name="P", age=age, retirement_age=65, spending=Spending(model, base=base_spending))
+    person = Person(
+        family=family, name="P", age=age, retirement_age=65, spending=Spending(model, base_annual=base_spending)
+    )
     BankAccount(owner=person, company="Bank", balance=balance)
     return person
 

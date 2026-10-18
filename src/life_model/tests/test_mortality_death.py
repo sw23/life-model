@@ -20,23 +20,23 @@ from ..work.job import Job, Salary
 
 
 def _make_home(person, purchase_price=400000, loan_amount=300000, rate=4.5):
-    mortgage = Mortgage(loan_amount=loan_amount, start_date=2026, length_years=30, yearly_interest_rate=rate)
+    mortgage = Mortgage(original_amount=loan_amount, start_year=2026, term_years=30, rate_pct=rate)
     expenses = HomeExpenses(
         model=person.model,
-        property_tax_percent=1.0,
-        home_insurance_percent=0.0,
-        maintenance_amount=0,
-        maintenance_increase=0.0,
-        improvement_amount=0,
-        improvement_increase=0.0,
-        hoa_amount=0,
-        hoa_increase=0.0,
+        property_tax_pct=1.0,
+        insurance_pct=0.0,
+        maintenance_annual=0,
+        maintenance_growth_pct=0.0,
+        improvement_annual=0,
+        improvement_growth_pct=0.0,
+        hoa_annual=0,
+        hoa_growth_pct=0.0,
     )
     return Home(
-        person=person,
+        owner=person,
         name="Test House",
         purchase_price=purchase_price,
-        value_yearly_increase=0.0,
+        value_growth_pct=0.0,
         down_payment=100000,
         mortgage=mortgage,
         expenses=expenses,
@@ -122,10 +122,10 @@ class TestEstateTransferToSpouse(unittest.TestCase):
         BankAccount(breadwinner, "B1", balance=20000, interest_rate=0)
         BankAccount(spouse, "B2", balance=5000, interest_rate=0)
         LifeInsurance(
-            person=breadwinner,
+            owner=breadwinner,
             policy_type=LifeInsuranceType.TERM,
             death_benefit=500000,
-            monthly_premium=0,
+            premium_monthly=0,
             term_years=30,
         )
         model.run()
@@ -402,10 +402,10 @@ class TestPerAccountBeneficiary(unittest.TestCase):
         BankAccount(spouse, "B2", balance=0, interest_rate=0)
         BankAccount(child, "C", balance=0, interest_rate=0)
         LifeInsurance(
-            person=breadwinner,
+            owner=breadwinner,
             policy_type=LifeInsuranceType.TERM,
             death_benefit=250000,
-            monthly_premium=0,
+            premium_monthly=0,
             term_years=30,
             beneficiary=child,
         )
@@ -432,7 +432,7 @@ class TestPensionSurvivorAtDeath(unittest.TestCase):
         spouse = Person(family, "Spouse", age=75, retirement_age=50, spending=Spending(model, 0))
         breadwinner.get_married(spouse)
         BankAccount(spouse, "B2", balance=0, interest_rate=0)
-        Pension(breadwinner, "MegaCorp", vesting_years=5, benefit_amount=40000, survivor_percent=survivor_percent)
+        Pension(breadwinner, company="MegaCorp", vesting_years=5, benefit_annual=40000, survivor_pct=survivor_percent)
         return model, breadwinner, spouse
 
     def test_survivor_pension_continues_at_reduced_amount(self):
@@ -496,7 +496,7 @@ class TestPensionSurvivorAtDeath(unittest.TestCase):
         widow = Person(family, "Widow", age=50, retirement_age=65, spending=Spending(model, 0))
         retiree.get_married(widow)
         BankAccount(widow, "WB", balance=0, interest_rate=0)
-        Pension(retiree, "MegaCorp", vesting_years=5, benefit_amount=40000, survivor_percent=50)
+        Pension(retiree, company="MegaCorp", vesting_years=5, benefit_annual=40000, survivor_pct=50)
         model.run()
 
         self.assertTrue(retiree.is_deceased)
@@ -527,7 +527,7 @@ class TestPensionSurvivorAtDeath(unittest.TestCase):
         )
         child = Person(family, "Kid", age=40, retirement_age=100, spending=Spending(model, 0))
         BankAccount(child, "C", balance=0, interest_rate=0)
-        Pension(parent, "MegaCorp", vesting_years=5, benefit_amount=40000, survivor_percent=50)
+        Pension(parent, company="MegaCorp", vesting_years=5, benefit_annual=40000, survivor_pct=50)
         model.run()
         self.assertEqual(len(child.pensions), 0)
 

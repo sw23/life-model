@@ -260,8 +260,8 @@ def _python_household():
     """
     model = LifeModel(start_year=2026, end_year=2030)
     family = Family(model)
-    kim = Person(family, "Kim", age=41, retirement_age=60, spending=Spending(model, base=24000))
-    ray = Person(family, "Ray", age=43, retirement_age=62, spending=Spending(model, base=20000))
+    kim = Person(family, "Kim", age=41, retirement_age=60, spending=Spending(model, base_annual=24000))
+    ray = Person(family, "Ray", age=43, retirement_age=62, spending=Spending(model, base_annual=20000))
     BankAccount(kim, "Big Bank", balance=10000)
     BankAccount(kim, "Treasury Direct", type="Bonds", balance=50000, interest_rate=4.0)
     BankAccount(ray, "Big Bank", balance=8000)
@@ -275,8 +275,8 @@ class TestModelValidation(unittest.TestCase):
     def test_core_refuses_past_dated_life_events(self):
         model = LifeModel(start_year=2026, end_year=2030)
         family = Family(model)
-        kim = Person(family, "Kim", age=41, retirement_age=60, spending=Spending(model, base=1))
-        ray = Person(family, "Ray", age=43, retirement_age=62, spending=Spending(model, base=1))
+        kim = Person(family, "Kim", age=41, retirement_age=60, spending=Spending(model, base_annual=1))
+        ray = Person(family, "Ray", age=43, retirement_age=62, spending=Spending(model, base_annual=1))
         with self.assertRaises(ValueError):
             LifeEvents(model, [LifeEvent(2024, "Kim and Ray get married", kim.get_married, ray)])
 
@@ -293,7 +293,7 @@ class TestModelValidation(unittest.TestCase):
     def test_model_errors(self):
         model = LifeModel(start_year=2026)
         family = Family(model)
-        person = Person(family, "Solo", age=70, retirement_age=65, spending=Spending(model, base=1), state="ZZ")
+        person = Person(family, "Solo", age=70, retirement_age=65, spending=Spending(model, base_annual=1), state="ZZ")
         Job(person, "Co", "Dev", Salary(model, base=1, yearly_increase=0.03))
         Apartment(person, "Flat", 1000)
         found = codes(model.validate())
@@ -308,7 +308,7 @@ class TestModelValidation(unittest.TestCase):
 
         model = LifeModel(start_year=2026)
         person = Person(
-            Family(model), "M", age=30, retirement_age=65, spending=Spending(model, base=1, yearly_increase=2)
+            Family(model), "M", age=30, retirement_age=65, spending=Spending(model, base_annual=1, growth_pct=2)
         )
         BankAccount(person, "Bank", balance=5)
         job = Job(person, "Co", "Dev", Salary(model, base=1, yearly_increase=2))
@@ -319,7 +319,7 @@ class TestModelValidation(unittest.TestCase):
 
     def test_negative_balance(self):
         model = LifeModel(start_year=2026)
-        person = Person(Family(model), "Neg", age=30, retirement_age=65, spending=Spending(model, base=1))
+        person = Person(Family(model), "Neg", age=30, retirement_age=65, spending=Spending(model, base_annual=1))
         BankAccount(person, "Bank", balance=-5)
         self.assertIn("negative_balance", codes(model.validate(), ERROR))
 

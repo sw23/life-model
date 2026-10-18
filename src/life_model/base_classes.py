@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 from enum import Enum
 from typing import TYPE_CHECKING, ClassVar, Optional
 
+from .deprecated_names import deprecated_arguments
 from .economy import annual_to_monthly
 from .ledger import FlowKind
 from .limits import federal_retirement_age
@@ -104,6 +105,17 @@ class FinancialAccount(LifeModelAgent, ABC):
         self.record_balance_history()
 
 
+#: Deprecated loan argument names (Plan 27 D8) and their canonical replacements.
+LOAN_RENAMES = {
+    "person": "owner",
+    "loan_amount": "original_amount",
+    "yearly_interest_rate": "rate_pct",
+    "length_years": "term_years",
+    "principal": "current_balance",
+    "monthly_payment": "payment_monthly",
+}
+
+
 class Loan(LifeModelAgent, ABC):
     """Abstract base class for amortizing loans.
 
@@ -116,38 +128,39 @@ class Loan(LifeModelAgent, ABC):
     once) remains for direct callers. Concrete subclasses supply only rate/term/identification and
     register themselves; they do not re-implement payment math.
 
-    Terms are in months (Plan 27 D7): ``term_months`` is canonical and ``length_years`` is sugar for
-    ``term_months / 12``. A loan already in progress is entered the way its statement shows it — an
-    ``origination`` month (or ``payments_made``), the ``remaining_months``, the current balance
-    (``principal``) and the payment — and :func:`~life_model.debt.terms.resolve_loan_terms` fills in
+    Terms are in months (Plan 27 D7): ``term_months`` is canonical and ``term_years`` is sugar for
+    ``term_months / 12`` (the ``length_years`` attribute). A loan already in progress is entered the way
+    its statement shows it — an ``origination`` month (or ``payments_made``), the ``remaining_months``,
+    the ``current_balance`` and the payment — and :func:`~life_model.debt.terms.resolve_loan_terms` fills in
     the rest and rejects inputs that contradict each other. ``extra_principal_monthly`` is paid with
     every scheduled payment.
     """
 
+    @deprecated_arguments(LOAN_RENAMES)
     def __init__(
         self,
-        person: "Person",
-        loan_amount: float | None = None,
-        yearly_interest_rate: float | None = None,
-        length_years: int | None = None,
-        principal: float | None = None,
-        monthly_payment: float | None = None,
+        owner: "Person",
         *,
+        original_amount: float | None = None,
+        rate_pct: float | None = None,
+        term_years: float | None = None,
+        current_balance: float | None = None,
+        payment_monthly: float | None = None,
         term_months: int | None = None,
         origination=None,
         payments_made: int | None = None,
         remaining_months: int | None = None,
         extra_principal_monthly: float = 0.0,
     ):
-        super().__init__(person.model)
-        self.person = person
+        super().__init__(owner.model)
+        self.person = owner
         self._set_terms(
             as_of=(self.model.year, self.model.month),
-            loan_amount=loan_amount,
-            yearly_interest_rate=yearly_interest_rate,
-            length_years=length_years,
-            principal=principal,
-            monthly_payment=monthly_payment,
+            loan_amount=original_amount,
+            yearly_interest_rate=rate_pct,
+            length_years=term_years,
+            principal=current_balance,
+            monthly_payment=payment_monthly,
             term_months=term_months,
             origination=origination,
             payments_made=payments_made,
@@ -170,12 +183,8 @@ class Loan(LifeModelAgent, ABC):
         # A loan taken out mid-run financed something outside the balance sheet (a car, tuition).
         self.model.ledger.post_opening(self, self.principal, liability=True)
 
-    #: How resolution errors name the arguments (subclasses and the spec builder may rename).
-    TERM_NAMES: ClassVar[dict[str, str]] = {
-        "original_amount": "loan_amount",
-        "current_balance": "principal",
-        "rate_pct": "yearly_interest_rate",
-    }
+    #: How resolution errors name the arguments (the constructor's names).
+    TERM_NAMES: ClassVar[dict[str, str]] = {"monthly_payment": "payment_monthly"}
 
     def _set_terms(
         self,

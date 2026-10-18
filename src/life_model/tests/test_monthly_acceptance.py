@@ -40,10 +40,10 @@ class TestOctoberStart(unittest.TestCase):
 
     def setUp(self):
         self.model = LifeModel(start="2020-10", end_year=2021, config=FinancialConfig(config_file=TEST_CONFIG))
-        self.person = Person(Family(self.model), "Oct", 40, 70, Spending(self.model, base=0))
+        self.person = Person(Family(self.model), "Oct", 40, 70, Spending(self.model, base_annual=0))
         self.bank = BankAccount(self.person, "Bank", balance=50000, interest_rate=0)
         self.brokerage = BrokerageAccount(self.person, "Broker", balance=100000, growth_rate=12)
-        Apartment(self.person, "Flat", monthly_rent=2000, yearly_increase=0)
+        Apartment(self.person, "Flat", rent_monthly=2000, rent_growth_pct=0)
         self.job = Job(self.person, "Co", "Dev", Salary(self.model, base=120000))
         self.model.step_year()
 
@@ -149,7 +149,7 @@ class TestSequenceOfReturns(unittest.TestCase):
         config = FinancialConfig()
         config.apply_scenario("crash", {"economy": {"mode": "path", "equity_return": 0.0, "paths": paths}})
         model = LifeModel(start_year=2026, end_year=2026, config=config)
-        person = Person(Family(model), "Ret", 70, 65, Spending(model, base=60000))
+        person = Person(Family(model), "Ret", 70, 65, Spending(model, base_annual=60000))
         BankAccount(person, "Bank", balance=0, interest_rate=0)
         BrokerageAccount(person, "Broker", balance=1_000_000)
         return model

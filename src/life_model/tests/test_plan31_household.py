@@ -137,7 +137,14 @@ class TestStudentLoanPerReturn(unittest.TestCase):
         a.get_married(b)
         for person in (a, b):
             _job(person, 40000)
-            StudentLoan(person, StudentLoanType.FEDERAL_UNSUBSIDIZED, 50000, 8.0, 10, "State University")
+            StudentLoan(
+                person,
+                loan_type=StudentLoanType.FEDERAL_UNSUBSIDIZED,
+                original_amount=50000,
+                rate_pct=8.0,
+                term_years=10,
+                school_name="State University",
+            )
         model.step_year()
         r = model.tax_returns[2024]
         self.assertEqual(r.filing_status, FilingStatus.MARRIED_FILING_JOINTLY.name)
@@ -148,7 +155,7 @@ class TestLongTermCarePremiums(unittest.TestCase):
     def test_premiums_count_up_to_the_age_limit(self):
         model = _model(2024)
         pat = _person(model, "Pat", 72)
-        Insurance(pat, InsuranceType.LONG_TERM_CARE, "Example Mutual", annual_premium=8000, coverage_amount=100000)
+        Insurance(pat, InsuranceType.LONG_TERM_CARE, "Example Mutual", premium_annual=8000, coverage_amount=100000)
         model.step_year()
         # Over 70: $5,880 (Rev. Proc. 2023-34 §3.28); no income, so no 7.5% floor.
         self.assertAlmostEqual(model.tax_returns[2024].itemized_components["medical"], 5880)
@@ -408,7 +415,7 @@ class TestSolo401k(unittest.TestCase):
             plan_contribution_percent=25,
         )
         account = Job401kAccount(job, pretax_contrib_percent=20, average_growth=0)
-        SocialSecurity(casey, withdrawal_start_age=67, income_history=[])
+        SocialSecurity(casey, claim_age=67, earnings_history=[])
         model.step_year()
         # Net earnings 184,700; SE tax = 12.4% x 168,600 + 2.9% x 184,700 = 26,262.70; half 13,131.35.
         # Compensation 186,868.65: deferral 20% capped at 402(g) $23,000; employer 20% = 37,373.73;

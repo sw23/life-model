@@ -33,7 +33,7 @@ def _fixture_config() -> FinancialConfig:
 
 def _person(model: LifeModel, bank_balance: float = 0.0) -> Person:
     family = Family(model)
-    person = Person(family, "P", age=40, retirement_age=70, spending=Spending(model, base=0))
+    person = Person(family, "P", age=40, retirement_age=70, spending=Spending(model, base_annual=0))
     BankAccount(person, "Bank", balance=bank_balance, interest_rate=0)
     return person
 

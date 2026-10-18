@@ -53,7 +53,9 @@ def _model(start_year=2026, end_year=2030) -> LifeModel:
 
 def _worker(model, family=None, *, name="A", age=40, salary=100000, spending=50000, bank=100000, retirement_age=65):
     family = family or Family(model)
-    person = Person(family, name, age=age, retirement_age=retirement_age, spending=Spending(model, base=spending))
+    person = Person(
+        family, name, age=age, retirement_age=retirement_age, spending=Spending(model, base_annual=spending)
+    )
     BankAccount(person, "Bank", balance=bank, interest_rate=0)
     if salary:
         Job(person, "Co", "Eng", Salary(model, base=salary))
@@ -123,23 +125,23 @@ def _frame(model):
 def _buy_home(person, price=300000, down=60000):
     """Life-event callable: buy a home now (down payment + closing costs leave the household)."""
     model = person.model
-    mortgage = Mortgage(loan_amount=price - down, start_date=model.year, length_years=30, yearly_interest_rate=6.0)
+    mortgage = Mortgage(original_amount=price - down, start_year=model.year, term_years=30, rate_pct=6.0)
     expenses = HomeExpenses(
         model=model,
-        property_tax_percent=1.0,
-        home_insurance_percent=0.0,
-        maintenance_amount=2000,
-        maintenance_increase=10.0,
-        improvement_amount=0,
-        improvement_increase=0.0,
-        hoa_amount=0,
-        hoa_increase=0.0,
+        property_tax_pct=1.0,
+        insurance_pct=0.0,
+        maintenance_annual=2000,
+        maintenance_growth_pct=10.0,
+        improvement_annual=0,
+        improvement_growth_pct=0.0,
+        hoa_annual=0,
+        hoa_growth_pct=0.0,
     )
     return Home(
-        person=person,
+        owner=person,
         name="New House",
         purchase_price=price,
-        value_yearly_increase=5.0,
+        value_growth_pct=5.0,
         down_payment=down,
         mortgage=mortgage,
         expenses=expenses,
@@ -276,7 +278,7 @@ class TestCreatedYear(unittest.TestCase):
         person = _worker(model, salary=0)
         salary = Salary(model, base=100000, yearly_increase=10)
         Job(person, "Co", "Eng", salary)
-        rent = Apartment(person, "Flat", monthly_rent=1000, yearly_increase=10)
+        rent = Apartment(person, "Flat", rent_monthly=1000, rent_growth_pct=10)
         self.assertEqual((salary.created_year, salary.created_in_stage), (2026, None))
         model.step_year()
         self.assertAlmostEqual(salary.base, 110000, places=6)
@@ -288,8 +290,8 @@ class TestCreatedYear(unittest.TestCase):
         built = {}
 
         def sign_lease():
-            built["rent"] = Apartment(person, "Flat", monthly_rent=1000, yearly_increase=10)
-            built["spending"] = Spending(model, base=1000, yearly_increase=10)
+            built["rent"] = Apartment(person, "Flat", rent_monthly=1000, rent_growth_pct=10)
+            built["spending"] = Spending(model, base_annual=1000, growth_pct=10)
 
         LifeEvents(model, [LifeEvent(2027, "lease", sign_lease)])
         model.run()
@@ -340,7 +342,7 @@ def _probe4_household(*, spouse_first=False, years=3):
     family = Family(model)
 
     def build_a():
-        a = Person(family, "A", age=40, retirement_age=65, spending=Spending(model, base=60000))
+        a = Person(family, "A", age=40, retirement_age=65, spending=Spending(model, base_annual=60000))
         BankAccount(a, "Bank", balance=30000, interest_rate=0)
         BrokerageAccount(a, "Fid", balance=300000, growth_rate=6, dividend_yield=0)
         job = Job(a, "Co", "Eng", Salary(model, base=180000, yearly_bonus=10))
@@ -348,7 +350,7 @@ def _probe4_household(*, spouse_first=False, years=3):
         return a
 
     def build_b():
-        b = Person(family, "B", age=38, retirement_age=65, spending=Spending(model, base=20000))
+        b = Person(family, "B", age=38, retirement_age=65, spending=Spending(model, base_annual=20000))
         BankAccount(b, "Bank", balance=20000, interest_rate=0)
         Job(b, "Co2", "Mgr", Salary(model, base=120000))
         return b
@@ -360,17 +362,17 @@ def _probe4_household(*, spouse_first=False, years=3):
         a = build_a()
         b = build_b()
     a.get_married(b)
-    mortgage = Mortgage(loan_amount=480000, start_date=2024, length_years=30, yearly_interest_rate=6.5)
+    mortgage = Mortgage(original_amount=480000, start_year=2024, term_years=30, rate_pct=6.5)
     expenses = HomeExpenses(
         model=model,
-        property_tax_percent=1.2,
-        home_insurance_percent=0.5,
-        maintenance_amount=3000,
-        maintenance_increase=2,
-        improvement_amount=0,
-        improvement_increase=0,
-        hoa_amount=0,
-        hoa_increase=0,
+        property_tax_pct=1.2,
+        insurance_pct=0.5,
+        maintenance_annual=3000,
+        maintenance_growth_pct=2,
+        improvement_annual=0,
+        improvement_growth_pct=0,
+        hoa_annual=0,
+        hoa_growth_pct=0,
     )
     Home(a, "Home", 600000, 3.0, 120000, mortgage, expenses)
     return model
@@ -568,7 +570,7 @@ def _retiree(model, family=None, *, name="R", age=70, bank=0, spending=0, retire
         model, family, name=name, age=age, salary=0, spending=spending, bank=bank, retirement_age=retirement_age
     )
     history = [(year, 60000) for year in range(1980, 2020)]
-    SocialSecurity(person=person, withdrawal_start_age=67, income_history=history)
+    SocialSecurity(owner=person, claim_age=67, earnings_history=history)
     return person
 
 
@@ -723,7 +725,7 @@ class TestAnnuityDefaults(unittest.TestCase):
     def test_fixed_annuity_accumulates(self):
         model = _model(end_year=2028)
         person = _worker(model)
-        annuity = Annuity(person, AnnuityType.FIXED, initial_balance=100000, interest_rate=4)
+        annuity = Annuity(person, annuity_type=AnnuityType.FIXED, balance=100000, rate_pct=4)
         model.run()
         self.assertFalse(annuity.is_annuitized)
         self.assertIsNone(annuity.payout_start_age)
@@ -732,15 +734,15 @@ class TestAnnuityDefaults(unittest.TestCase):
     def test_accumulation_contract_can_still_be_annuitized_on_election(self):
         model = _model(end_year=2026)
         person = _worker(model, age=66)
-        annuity = Annuity(person, AnnuityType.FIXED, initial_balance=100000, interest_rate=4)
+        annuity = Annuity(person, annuity_type=AnnuityType.FIXED, balance=100000, rate_pct=4)
         self.assertTrue(annuity.annuitize())
         self.assertEqual(annuity.payout_start_age, 66)
 
     def test_immediate_and_deferred_keep_their_payout_ages(self):
         model = _model(end_year=2026)
         person = _worker(model, age=50)
-        immediate = Annuity(person, AnnuityType.IMMEDIATE, initial_balance=100000)
-        deferred = Annuity(person, AnnuityType.DEFERRED, initial_balance=100000)
+        immediate = Annuity(person, annuity_type=AnnuityType.IMMEDIATE, balance=100000)
+        deferred = Annuity(person, annuity_type=AnnuityType.DEFERRED, balance=100000)
         self.assertEqual(immediate.payout_start_age, 50)
         self.assertEqual(deferred.payout_start_age, model.config.insurance.annuity.default_payout_start_age)
         model.run()
@@ -752,8 +754,8 @@ class TestAnnuityDefaults(unittest.TestCase):
         config.model.economy.equity_return = 9.0
         model = LifeModel(start_year=2026, end_year=2026, config=config)
         person = _worker(model)
-        market = Annuity(person, AnnuityType.VARIABLE, initial_balance=100000)
-        stated = Annuity(person, AnnuityType.VARIABLE, initial_balance=100000, interest_rate=3)
+        market = Annuity(person, annuity_type=AnnuityType.VARIABLE, balance=100000)
+        stated = Annuity(person, annuity_type=AnnuityType.VARIABLE, balance=100000, rate_pct=3)
         model.run()
         self.assertAlmostEqual(market.balance, 109000, places=6)
         self.assertAlmostEqual(stated.balance, 103000, places=6)
@@ -766,7 +768,7 @@ class TestPensionServiceAccrues(unittest.TestCase):
         model = _model(end_year=2030)
         person = _worker(model, age=60, salary=0, retirement_age=63)
         Job(person, "MegaCorp", "Eng", Salary(model, base=80000))
-        pension = Pension(person, "MegaCorp", vesting_years=5, benefit_amount=20000, years_of_service=2)
+        pension = Pension(person, company="MegaCorp", vesting_years=5, benefit_annual=20000, years_of_service=2)
         model.run()
         # Paid 2026-2029 (retires during 2029, the year they are 63): 2 + 4 = 6 years. Vested (5)
         # at the start of 2029, so the benefit starts that year; nothing was paid before.
@@ -781,7 +783,12 @@ class TestPensionServiceAccrues(unittest.TestCase):
         person = _worker(model, age=50, salary=0)
         Job(person, "MegaCorp", "Eng", Salary(model, base=100000, yearly_increase=10))
         pension = Pension(
-            person, "MegaCorp", vesting_years=5, years_of_service=10, benefit_multiplier=1.5, final_salary=90000
+            person,
+            company="MegaCorp",
+            vesting_years=5,
+            years_of_service=10,
+            benefit_multiplier_pct=1.5,
+            final_salary_annual=90000,
         )
         model.run()
         # 12 years of service at the 2027 salary of $110,000.
@@ -790,7 +797,7 @@ class TestPensionServiceAccrues(unittest.TestCase):
     def test_no_service_without_the_sponsor(self):
         model = _model(end_year=2027)
         person = _worker(model, age=50)  # works at "Co", not the sponsor
-        pension = Pension(person, "MegaCorp", vesting_years=5, benefit_amount=20000, years_of_service=1)
+        pension = Pension(person, company="MegaCorp", vesting_years=5, benefit_annual=20000, years_of_service=1)
         model.run()
         self.assertEqual(pension.years_of_service, 1)
 
@@ -814,7 +821,7 @@ class TestSmallFixes(unittest.TestCase):
             "Parent",
             age=80,
             retirement_age=65,
-            spending=Spending(model, base=0),
+            spending=Spending(model, base_annual=0),
             mortality_mode=MortalityMode.FIXED_AGE,
             death_age=80,
         )

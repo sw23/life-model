@@ -19,16 +19,16 @@ class TestCarLoan(unittest.TestCase):
 
         # Create a car loan for testing
         self.car_loan = CarLoan(
-            person=self.mock_person,
-            loan_amount=30000.0,
-            length_years=5,
-            yearly_interest_rate=6.0,
+            owner=self.mock_person,
+            original_amount=30000.0,
+            term_years=5,
+            rate_pct=6.0,
             name="Honda Civic 2023",
         )
 
     def test_init_default_values(self):
         """Test CarLoan initialization with default values."""
-        car_loan = CarLoan(self.mock_person, 25000.0, 4, 5.5, "Toyota Camry")
+        car_loan = CarLoan(self.mock_person, original_amount=25000.0, term_years=4, rate_pct=5.5, name="Toyota Camry")
 
         self.assertEqual(car_loan.person, self.mock_person)
         self.assertEqual(car_loan.loan_amount, 25000.0)
@@ -44,7 +44,13 @@ class TestCarLoan(unittest.TestCase):
         custom_payment = 600.0
 
         car_loan = CarLoan(
-            self.mock_person, 30000.0, 5, 6.0, "Custom Car", principal=custom_principal, monthly_payment=custom_payment
+            self.mock_person,
+            original_amount=30000.0,
+            term_years=5,
+            rate_pct=6.0,
+            name="Custom Car",
+            current_balance=custom_principal,
+            payment_monthly=custom_payment,
         )
 
         self.assertEqual(car_loan.principal, custom_principal)
@@ -57,7 +63,9 @@ class TestCarLoan(unittest.TestCase):
         years = 4
         rate = 6.0
 
-        car_loan = CarLoan(self.mock_person, loan_amount, years, rate, "Test Car")
+        car_loan = CarLoan(
+            self.mock_person, original_amount=loan_amount, term_years=years, rate_pct=rate, name="Test Car"
+        )
 
         # Calculate expected payment manually
         # Formula: P * (r * (1 + r)^n) / ((1 + r)^n - 1)
@@ -71,7 +79,9 @@ class TestCarLoan(unittest.TestCase):
 
     def test_monthly_payment_calculation_zero_interest(self):
         """Test monthly payment calculation with zero interest rate."""
-        car_loan = CarLoan(self.mock_person, 24000.0, 4, 0.0, "Zero Interest Car")
+        car_loan = CarLoan(
+            self.mock_person, original_amount=24000.0, term_years=4, rate_pct=0.0, name="Zero Interest Car"
+        )
 
         # With 0% interest, payment should be loan_amount / num_payments
         expected_payment = 24000.0 / (4 * 12)  # 500.0
@@ -187,7 +197,13 @@ class TestCarLoan(unittest.TestCase):
 
     def test_repr_html_escaping(self):
         """Test HTML representation with special characters."""
-        car_loan = CarLoan(self.mock_person, 25000.0, 4, 5.0, 'Car & Truck <script>alert("XSS")</script>')
+        car_loan = CarLoan(
+            self.mock_person,
+            original_amount=25000.0,
+            term_years=4,
+            rate_pct=5.0,
+            name='Car & Truck <script>alert("XSS")</script>',
+        )
         html = car_loan._repr_html_()
 
         # Check that dangerous characters are escaped
@@ -217,7 +233,9 @@ class TestCarLoan(unittest.TestCase):
 
     def test_edge_case_very_short_loan(self):
         """Test edge case with very short loan term."""
-        short_loan = CarLoan(self.mock_person, 12000.0, 1, 12.0, "Short Term Car")
+        short_loan = CarLoan(
+            self.mock_person, original_amount=12000.0, term_years=1, rate_pct=12.0, name="Short Term Car"
+        )
 
         # Should still calculate a valid monthly payment
         self.assertGreater(short_loan.monthly_payment, 0)
@@ -225,7 +243,9 @@ class TestCarLoan(unittest.TestCase):
 
     def test_edge_case_high_interest_rate(self):
         """Test edge case with high interest rate."""
-        high_rate_loan = CarLoan(self.mock_person, 20000.0, 5, 25.0, "High Rate Car")
+        high_rate_loan = CarLoan(
+            self.mock_person, original_amount=20000.0, term_years=5, rate_pct=25.0, name="High Rate Car"
+        )
 
         # Should still calculate a valid payment, but it will be high
         self.assertGreater(high_rate_loan.monthly_payment, 0)

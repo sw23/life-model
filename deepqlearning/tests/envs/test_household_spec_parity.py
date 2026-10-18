@@ -66,7 +66,7 @@ def _legacy_populate(env: FinancialLifeEnv):
             age=household["person_start_age"],
             retirement_age=household["person_retirement_age"],
             spending=Spending(
-                model=model, base=household["initial_spending"], yearly_increase=config["spending_growth"]
+                model=model, base_annual=household["initial_spending"], growth_pct=config["spending_growth"]
             ),
             gender=household["person_gender"],
             mortality_mode=MortalityMode.STOCHASTIC,
@@ -116,7 +116,7 @@ def _legacy_populate(env: FinancialLifeEnv):
                 wage = salary * get_avg_wage_index(year, model.config, economy=model.economy) / awi_now
                 cap = model.config_for_year(year).tax.fica.social_security_max_income
                 history.append((year, round(min(wage, cap), 2)))
-            SocialSecurity(person, withdrawal_start_age=int(min(max(int(claim), low), high)), income_history=history)
+            SocialSecurity(person, claim_age=int(min(max(int(claim), low), high)), earnings_history=history)
         return SimpleNamespace(family=family, people={AGENT_ID: person}, items=items)
 
     return populate

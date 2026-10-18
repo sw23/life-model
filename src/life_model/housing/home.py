@@ -6,7 +6,8 @@
 import html
 from typing import ClassVar
 
-from ..base_classes import Loan
+from ..base_classes import LOAN_RENAMES, Loan
+from ..deprecated_names import deprecated_arguments
 from ..ledger import FlowKind
 from ..model import Event, EventKind, LifeModel, LifeModelAgent
 from ..people.person import Person
@@ -23,12 +24,13 @@ class Home(LifeModelAgent):
     # Appreciation at year end, after the year's taxes (0) read the year's property tax.
     STEP_PRIORITY: ClassVar[dict[str, int]] = {"on_year_end": 10}
 
+    @deprecated_arguments({"person": "owner", "value_yearly_increase": "value_growth_pct"})
     def __init__(
         self,
-        person: Person,
+        owner: Person,
         name: str,
         purchase_price: float,
-        value_yearly_increase: float | None,
+        value_growth_pct: float | None,
         down_payment: float,
         mortgage: "Mortgage",
         expenses: "HomeExpenses",
@@ -44,11 +46,12 @@ class Home(LifeModelAgent):
         """Home
 
         Args:
-            person (Person): Primary resident or person that pays the bills.
+            owner (Person): Primary resident or person that pays the bills (``person=`` is deprecated).
             name (string): Name of the house or neighborhood.
             purchase_price (float): Purchase price of the home (its "original value" for PMI).
-            value_yearly_increase (float): Percentage of yearly home value appreciation. Pass None to
-                appreciate with the economy's home-appreciation rate each year.
+            value_growth_pct (float): Percentage of yearly home value appreciation. Pass None to
+                appreciate with the economy's home-appreciation rate each year (``value_yearly_increase=``
+                is deprecated).
             down_payment (float): Amount of down payment.
             mortgage (Mortgage): Mortgage associated with the home.
             expenses (HomeExpenses): Home expenses associated with the home.
@@ -69,11 +72,12 @@ class Home(LifeModelAgent):
             closing_cost_percent (float, optional): Closing costs on a purchase, percent of the price
                 (configured default when None).
         """
+        person = owner
         super().__init__(person.model)
         self.person = person
         self.name = name
         self.purchase_price = purchase_price
-        self._value_yearly_increase_override = value_yearly_increase
+        self._value_yearly_increase_override = value_growth_pct
         self.down_payment = down_payment
         self.mortgage = mortgage
         self.expenses = expenses
@@ -414,17 +418,29 @@ class HomeExpenses(LifeModelAgent):
     # Escalators at year end, after the year's taxes (0).
     STEP_PRIORITY: ClassVar[dict[str, int]] = {"on_year_end": 10}
 
+    @deprecated_arguments(
+        {
+            "property_tax_percent": "property_tax_pct",
+            "home_insurance_percent": "insurance_pct",
+            "maintenance_amount": "maintenance_annual",
+            "maintenance_increase": "maintenance_growth_pct",
+            "improvement_amount": "improvement_annual",
+            "improvement_increase": "improvement_growth_pct",
+            "hoa_amount": "hoa_annual",
+            "hoa_increase": "hoa_growth_pct",
+        }
+    )
     def __init__(
         self,
         model: LifeModel,
-        property_tax_percent: float = 0.0,
-        home_insurance_percent: float = 0.0,
-        maintenance_amount: float = 0.0,
-        maintenance_increase: float | None = 0.0,
-        improvement_amount: float = 0.0,
-        improvement_increase: float | None = 0.0,
-        hoa_amount: float = 0.0,
-        hoa_increase: float | None = 0.0,
+        property_tax_pct: float = 0.0,
+        insurance_pct: float = 0.0,
+        maintenance_annual: float = 0.0,
+        maintenance_growth_pct: float | None = 0.0,
+        improvement_annual: float = 0.0,
+        improvement_growth_pct: float | None = 0.0,
+        hoa_annual: float = 0.0,
+        hoa_growth_pct: float | None = 0.0,
         *,
         property_tax_annual: float | None = None,
         property_tax_growth_pct: float | None = None,
@@ -437,39 +453,43 @@ class HomeExpenses(LifeModelAgent):
         """Home Expenses
 
         Args:
-            property_tax_percent (float): Property tax percentage paid yearly, of the assessed value
-                when given, else of the home value.
-            home_insurance_percent (float): Yearly home insurance cost as percentage of home value.
-            maintenance_amount (float): Yearly cost of home maintenance.
-            maintenance_increase (float): Yearly percentage increase of maintenance costs (None: inflation).
-            improvement_amount (float): Yearly cost of improvements.
-            improvement_increase (float): Yearly percentage increase of improvment costs (None: inflation).
-            hoa_amount (float): Yearly HOA dues.
-            hoa_increase (float): Yearly percentage incresae of HOA dues (None: inflation).
+            property_tax_pct (float): Property tax percentage paid yearly, of the assessed value when
+                given, else of the home value.
+            insurance_pct (float): Yearly home insurance cost as percentage of home value.
+            maintenance_annual (float): Yearly cost of home maintenance.
+            maintenance_growth_pct (float): Yearly percentage increase of maintenance costs (None: inflation).
+            improvement_annual (float): Yearly cost of improvements.
+            improvement_growth_pct (float): Yearly percentage increase of improvement costs (None: inflation).
+            hoa_annual (float): Yearly HOA dues.
+            hoa_growth_pct (float): Yearly percentage increase of HOA dues (None: inflation).
             property_tax_annual (float, optional): The tax bill in dollars per year (keyword-only;
-                replaces ``property_tax_percent``).
+                replaces ``property_tax_pct``).
             property_tax_growth_pct (float, optional): Yearly growth of ``property_tax_annual`` (None:
                 inflation).
             assessed_value (float, optional): The assessor's value the percent applies to.
             assessment_growth_cap_pct (float, optional): Cap on the assessed value's yearly growth (it
                 otherwise follows the home's appreciation).
             insurance_annual (float, optional): The homeowner's insurance premium in dollars per year
-                (replaces ``home_insurance_percent``).
+                (replaces ``insurance_pct``).
             insurance_growth_pct (float, optional): Yearly growth of ``insurance_annual`` (None: inflation).
             inflation (bool, optional): True: maintenance, improvements and HOA dues grow with the
-                economy's inflation (their ``*_increase`` arguments are ignored).
+                economy's inflation (their growth arguments are ignored).
+
+        The Plan 25 names (``property_tax_percent``, ``home_insurance_percent``, ``maintenance_amount``,
+        ``maintenance_increase``, ``improvement_amount``, ``improvement_increase``, ``hoa_amount``,
+        ``hoa_increase``) are deprecated aliases.
         """
         super().__init__(model)
-        self.property_tax_percent = property_tax_percent
-        self.home_insurance_percent = home_insurance_percent
-        self.maintenance_amount = maintenance_amount
-        self.improvement_amount = improvement_amount
-        self.hoa_amount = hoa_amount
+        self.property_tax_percent = property_tax_pct
+        self.home_insurance_percent = insurance_pct
+        self.maintenance_amount = maintenance_annual
+        self.improvement_amount = improvement_annual
+        self.hoa_amount = hoa_annual
         if inflation:
-            maintenance_increase = improvement_increase = hoa_increase = None
-        self._maintenance_increase = maintenance_increase
-        self._improvement_increase = improvement_increase
-        self._hoa_increase = hoa_increase
+            maintenance_growth_pct = improvement_growth_pct = hoa_growth_pct = None
+        self._maintenance_increase = maintenance_growth_pct
+        self._improvement_increase = improvement_growth_pct
+        self._hoa_increase = hoa_growth_pct
         self.inflation = inflation
         self.property_tax_annual = property_tax_annual
         self.property_tax_growth_pct = property_tax_growth_pct
@@ -582,15 +602,20 @@ class Mortgage(Loan):
     §163(h)(3)(F)(i)(IV)).
     """
 
+    @deprecated_arguments(
+        {**{k: v for k, v in LOAN_RENAMES.items() if k != "person"}, "start_date": "start_year"},
+        positional=("original_amount", "start_year", "term_years", "rate_pct", "current_balance", "payment_monthly"),
+        keep_positional=0,
+    )
     def __init__(
         self,
-        loan_amount: float | None = None,
-        start_date: float | None = None,
-        length_years: int | None = None,
-        yearly_interest_rate: float | None = None,
-        principal: float | None = None,
-        monthly_payment: float | None = None,
         *,
+        original_amount: float | None = None,
+        start_year: int | None = None,
+        term_years: float | None = None,
+        rate_pct: float | None = None,
+        current_balance: float | None = None,
+        payment_monthly: float | None = None,
         term_months: int | None = None,
         origination=None,
         payments_made: int | None = None,
@@ -600,25 +625,30 @@ class Mortgage(Loan):
     ):
         """Mortgage
 
+        Every argument is keyword-only (positional use and the old names ``loan_amount``, ``start_date``,
+        ``length_years``, ``yearly_interest_rate``, ``principal`` and ``monthly_payment`` are deprecated).
+
         Args:
-            loan_amount (float): Amount originally borrowed (may be omitted when the current balance and
-                months remaining are given).
-            start_date (float): Starting year of the loan. Without a current balance (``principal``), a
-                start year before the run is taken as an origination in January of that year (a balance
-                is then the schedule's); prefer ``origination``.
-            length_years (int): Original term in years (e.g. 30, 15); or ``term_months``.
-            yearly_interest_rate (float): APR, percent.
-            principal (float, optional): Current balance. Defaults to the schedule's (the original
+            original_amount (float): Amount originally borrowed (may be omitted when the current balance
+                and months remaining are given).
+            start_year (int): Year the loan started. Without a ``current_balance``, a start year before
+                the run is taken as an origination in January of that year (the balance is then the
+                schedule's); prefer ``origination``.
+            term_years (float): Original term in years (e.g. 30, 15); or ``term_months``.
+            rate_pct (float): APR, percent.
+            current_balance (float, optional): Current balance. Defaults to the schedule's (the original
                 amount for a new loan).
-            monthly_payment (float, optional): Principal and interest per month (computed when None);
+            payment_monthly (float, optional): Principal and interest per month (computed when None);
                 the statement's total when ``escrow_monthly`` is given.
-            term_months (int, optional): Original term in months (keyword-only).
-            origination (str, optional): Origination month ``"YYYY-MM"`` (keyword-only).
+            term_months (int, optional): Original term in months.
+            origination (str, optional): Origination month ``"YYYY-MM"``.
             payments_made (int, optional): Payments made before the run (instead of ``origination``).
             remaining_months (int, optional): Months to maturity on the statement.
-            escrow_monthly (float, optional): Escrow included in ``monthly_payment``.
+            escrow_monthly (float, optional): Escrow included in ``payment_monthly``.
             extra_principal_monthly (float, optional): Extra principal paid every month.
         """
+        loan_amount, start_date, length_years = original_amount, start_year, term_years
+        yearly_interest_rate, principal, monthly_payment = rate_pct, current_balance, payment_monthly
         # Intentionally does NOT call Loan.__init__ (no person/model yet); resolve the loan data
         # directly and register as an agent later in _attach.
         self.person = None

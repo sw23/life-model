@@ -6,6 +6,7 @@ import html
 from typing import TYPE_CHECKING, ClassVar
 
 from ..base_classes import Benefit
+from ..deprecated_names import deprecated_arguments
 from ..ledger import FlowKind
 from ..model import snap_money
 from ..people.person import Person
@@ -45,19 +46,30 @@ class Pension(Benefit):
     # the COLA follows it.
     STEP_PRIORITY: ClassVar[dict[str, int]] = {"on_year_end": 5}
 
+    @deprecated_arguments(
+        {
+            "person": "owner",
+            "benefit_amount": "benefit_annual",
+            "cola_percent": "cola_pct",
+            "survivor_percent": "survivor_pct",
+            "benefit_multiplier": "benefit_multiplier_pct",
+            "final_salary": "final_salary_annual",
+        },
+        positional=("company", "vesting_years", "benefit_annual"),
+    )
     def __init__(
         self,
-        person: Person,
+        owner: Person,
+        *,
         company: str,
         vesting_years: int,
-        benefit_amount: float = 0.0,
-        *,
+        benefit_annual: float = 0.0,
         start_age: float | None = None,
-        cola_percent: float = 0.0,
-        survivor_percent: float = 0.0,
+        cola_pct: float = 0.0,
+        survivor_pct: float = 0.0,
         years_of_service: int | None = None,
-        benefit_multiplier: float | None = None,
-        final_salary: float | None = None,
+        benefit_multiplier_pct: float | None = None,
+        final_salary_annual: float | None = None,
         job: "Job | None" = None,
         salary_history: "dict[int, float] | None" = None,
         final_average_years: int | None = None,
@@ -72,21 +84,26 @@ class Pension(Benefit):
     ):
         """Models a pension plan for a person
 
+        Every argument after the owner is keyword-only. Deprecated (one release): positional arguments,
+        and the names ``person`` (owner), ``benefit_amount`` (benefit_annual), ``cola_percent``
+        (cola_pct), ``survivor_percent`` (survivor_pct), ``benefit_multiplier`` (benefit_multiplier_pct)
+        and ``final_salary`` (final_salary_annual).
+
         Args:
-            person: The person to which this pension belongs
+            owner: The person to which this pension belongs
             company: The company providing the pension
             vesting_years: Number of years required for vesting
-            benefit_amount: Flat annual benefit amount (ignored when the accrual formula is given)
+            benefit_annual: Flat annual benefit amount (ignored when the accrual formula is given)
             start_age: Age at which benefits begin. Defaults to None, meaning benefits start at the
                 person's retirement age (today's eligibility rule).
-            cola_percent: Annual cost-of-living adjustment applied to the benefit once in pay
+            cola_pct: Annual cost-of-living adjustment applied to the benefit once in pay
                 (e.g. 2.0 for +2% per year). Defaults to 0.0 (level benefit).
-            survivor_percent: Percentage of the benefit continued to a surviving spouse when the
+            survivor_pct: Percentage of the benefit continued to a surviving spouse when the
                 retiree dies (e.g. 50.0 for a 50% joint-and-survivor election). Defaults to 0.0
                 (single-life: the benefit terminates at death).
             years_of_service: Years of credited service. Defaults to ``vesting_years`` (vested).
-            benefit_multiplier: Percent of final salary accrued per year of service (e.g. 1.5).
-            final_salary: Final (or final-average) salary used by the accrual formula.
+            benefit_multiplier_pct: Percent of final salary accrued per year of service (e.g. 1.5).
+            final_salary_annual: Final (or final-average) salary used by the accrual formula.
             job: The sponsoring job whose service accrues to this pension. Defaults to None, which
                 uses the person's job at ``company`` (if any) each year.
             salary_history: Covered pay by year from the plan statement ``{year: salary}`` (Plan 27
@@ -110,9 +127,11 @@ class Pension(Benefit):
                 otherwise it is paid to the bank and taxed as a pension distribution.
 
         Raises:
-            ValueError: If only one of ``benefit_multiplier`` / ``final_salary`` (or
+            ValueError: If only one of ``benefit_multiplier_pct`` / ``final_salary_annual`` (or
                 ``salary_history``) is given.
         """
+        person, benefit_amount, cola_percent, survivor_percent = owner, benefit_annual, cola_pct, survivor_pct
+        benefit_multiplier, final_salary = benefit_multiplier_pct, final_salary_annual
         super().__init__(person, company)
         if benefit_multiplier is not None and final_salary is None and salary_history:
             final_salary = self._final_average(salary_history, final_average_years)

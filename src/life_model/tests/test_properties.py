@@ -50,7 +50,7 @@ class TestLoanAmortizationProperties(unittest.TestCase):
         principal=st.floats(min_value=1000.0, max_value=1_000_000.0),
     )
     def test_loan_amortizes_to_zero_and_total_covers_principal(self, rate, term, principal):
-        mortgage = Mortgage(loan_amount=principal, start_date=2020, length_years=term, yearly_interest_rate=rate)
+        mortgage = Mortgage(original_amount=principal, start_year=2020, term_years=term, rate_pct=rate)
         payment = mortgage.monthly_payment
         total_paid = 0.0
         for _ in range(term):

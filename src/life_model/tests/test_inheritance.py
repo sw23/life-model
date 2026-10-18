@@ -25,7 +25,7 @@ class TestInheritanceHierarchy(unittest.TestCase):
     def setUp(self):
         self.model = LifeModel()
         self.family = Family(self.model)
-        self.spending = Spending(model=self.model, base=12000, yearly_increase=2.0)
+        self.spending = Spending(model=self.model, base_annual=12000, growth_pct=2.0)
         self.person = Person(family=self.family, name="Test Person", age=30, retirement_age=65, spending=self.spending)
 
     def test_bank_account_inheritance(self):
@@ -98,7 +98,7 @@ class TestInheritanceHierarchy(unittest.TestCase):
 
     def test_pension_inheritance(self):
         """Test that Pension properly inherits from Benefit"""
-        pension = Pension(person=self.person, company="Big Corp", vesting_years=5, benefit_amount=24000)
+        pension = Pension(owner=self.person, company="Big Corp", vesting_years=5, benefit_annual=24000)
 
         # Test inheritance
         self.assertIsInstance(pension, Benefit)

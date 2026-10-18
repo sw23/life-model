@@ -1059,7 +1059,7 @@ def validate_model(model) -> list[Finding]:
                 WARNING,
                 f"{path}.spending",
                 "spending grows 0%/yr (the core default).",
-                "pass Spending(yearly_increase=None) to follow inflation, or a percentage.",
+                "pass Spending(growth_pct=None) to follow inflation, or a percentage.",
                 "zero_growth",
             )
         elif increase is not None and 0 < increase < 1:

@@ -30,7 +30,7 @@ class TestTaxCalculationService(unittest.TestCase):
     def setUp(self):
         self.model = LifeModel(1, config=_fixture_config())
         self.family = Family(self.model, "Test Family")
-        self.spending = Spending(self.model, base=50000)
+        self.spending = Spending(self.model, base_annual=50000)
         self.person = Person(self.family, "John", 30, 67, self.spending)
         self.person.filing_status = FilingStatus.SINGLE
 
@@ -102,7 +102,7 @@ class TestPaymentService(unittest.TestCase):
     def setUp(self):
         self.model = LifeModel(2, config=_fixture_config())
         self.family = Family(self.model, "Test Family")
-        self.spending = Spending(self.model, base=50000)
+        self.spending = Spending(self.model, base_annual=50000)
         self.person = Person(self.family, "Jane", 35, 67, self.spending)
 
         # Add a bank account
@@ -194,7 +194,7 @@ class TestServiceIntegration(unittest.TestCase):
     def setUp(self):
         self.model = LifeModel(3)
         self.family = Family(self.model, "Test Family")
-        self.spending = Spending(self.model, base=40000)
+        self.spending = Spending(self.model, base_annual=40000)
         self.person = Person(self.family, "Integration Test", 40, 67, self.spending)
 
         # Add accounts

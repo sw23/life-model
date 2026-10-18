@@ -29,7 +29,7 @@ from .scenarios import married_homeowners, stochastic_retiree
 def _early_retiree(start_year=2026, years=5) -> LifeModel:
     """Spends more than the bank holds: the waterfall sells brokerage, then draws pre-tax money."""
     model = LifeModel(start_year=start_year, end_year=start_year + years - 1, seed=3)
-    person = Person(Family(model), "Pat", 50, 50, Spending(model, base=80000))
+    person = Person(Family(model), "Pat", 50, 50, Spending(model, base_annual=80000))
     BankAccount(person, "Bank", balance=5000)
     BrokerageAccount(person, "Broker", balance=60000)
     job = Job(person, "Old", "Retired", Salary(model, base=0))
@@ -77,7 +77,7 @@ class TestRunReturnsAResult(unittest.TestCase):
 
     def test_collect_data_false_still_returns_a_result(self):
         model = LifeModel(start_year=2026, end_year=2027, collect_data=False)
-        person = Person(Family(model), "Pat", 40, 65, Spending(model, base=1000))
+        person = Person(Family(model), "Pat", 40, 65, Spending(model, base_annual=1000))
         BankAccount(person, "Bank", balance=5000)
         result = model.run()
         self.assertIsNone(result.model_frame)
@@ -251,7 +251,7 @@ class TestMonthlyFrames(unittest.TestCase):
 
     def test_monthly_frame_and_balance_sheets(self):
         model = LifeModel(start="2026-07", end_year=2027, collect="month")
-        person = Person(Family(model), "Pat", 40, 70, Spending(model, base=12000))
+        person = Person(Family(model), "Pat", 40, 70, Spending(model, base_annual=12000))
         BankAccount(person, "Bank", balance=50000, interest_rate=0)
         result = model.run()
         self.assertEqual(len(result.monthly_frame), 6 + 12)

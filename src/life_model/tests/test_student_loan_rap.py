@@ -26,7 +26,15 @@ def _borrower(prior_agi: float | None = 40000):
 
 
 def _loan(person, amount=50000.0, rate=6.0, loan_type=StudentLoanType.FEDERAL_UNSUBSIDIZED):
-    return StudentLoan(person, loan_type, amount, rate, 10, "State U", repayment_plan=RAP)
+    return StudentLoan(
+        person,
+        loan_type=loan_type,
+        original_amount=amount,
+        rate_pct=rate,
+        term_years=10,
+        school_name="State U",
+        repayment_plan=RAP,
+    )
 
 
 class TestRapPaymentFormula(unittest.TestCase):

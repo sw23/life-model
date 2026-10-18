@@ -79,7 +79,7 @@ def _one_year(status: FilingStatus, incomes: "list[list[tuple]]") -> tuple[LifeM
     family = Family(model)
     people = []
     for i, entries in enumerate(incomes):
-        person = Person(family, f"P{i}", 40, 65, Spending(model, base=0), state="TX")
+        person = Person(family, f"P{i}", 40, 65, Spending(model, base_annual=0), state="TX")
         BankAccount(person, "Bank", balance=1_000_000)
         for income_type, amount in entries:
             if income_type == IncomeType.WAGES:
@@ -217,7 +217,7 @@ class TestReturnsOnWholeHouseholds(unittest.TestCase):
 
     def test_penalties_and_adjustments_are_itemized_by_source(self):
         model = LifeModel(start_year=2026, end_year=2026)
-        person = Person(Family(model), "Young", 40, 65, Spending(model, base=0))
+        person = Person(Family(model), "Young", 40, 65, Spending(model, base_annual=0))
         BankAccount(person, "Bank", balance=100000)
         person.income.add_wages(90000, 90000)
         person.income.add_deduction(5000, source="ira_deduction")
@@ -239,8 +239,8 @@ class TestTaxStatsOnEveryMember(unittest.TestCase):
     def _couple(self):
         model = LifeModel(start_year=2026, end_year=2026)
         family = Family(model)
-        a = Person(family, "A", 45, 65, Spending(model, base=0), state="CA")
-        b = Person(family, "B", 44, 65, Spending(model, base=0), state="CA")
+        a = Person(family, "A", 45, 65, Spending(model, base_annual=0), state="CA")
+        b = Person(family, "B", 44, 65, Spending(model, base_annual=0), state="CA")
         a.get_married(b)
         for person in (a, b):
             BankAccount(person, "Bank", balance=500000)

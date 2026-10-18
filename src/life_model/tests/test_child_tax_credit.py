@@ -108,7 +108,7 @@ class TestTaxUnitCTCWiring(unittest.TestCase):
 
     def _run_year(self, with_child):
         model = LifeModel(start_year=2026, end_year=2026, config=_fixture_config())
-        parent = Person(Family(model), "Parent", age=35, retirement_age=70, spending=Spending(model, base=0))
+        parent = Person(Family(model), "Parent", age=35, retirement_age=70, spending=Spending(model, base_annual=0))
         BankAccount(parent, "Bank", balance=100000, interest_rate=0)
         Job(parent, "Co", "Dev", Salary(model=model, base=80000, yearly_increase=0, yearly_bonus=0))
         if with_child:
@@ -124,7 +124,7 @@ class TestTaxUnitCTCWiring(unittest.TestCase):
 
     def test_unborn_and_adult_children_do_not_qualify(self):
         model = LifeModel(start_year=2026, end_year=2026, config=_fixture_config())
-        parent = Person(Family(model), "Parent", age=45, retirement_age=70, spending=Spending(model, base=0))
+        parent = Person(Family(model), "Parent", age=45, retirement_age=70, spending=Spending(model, base_annual=0))
         BankAccount(parent, "Bank", balance=100000, interest_rate=0)
         Job(parent, "Co", "Dev", Salary(model=model, base=80000, yearly_increase=0, yearly_bonus=0))
         Child(parent, "Unborn", birth_year=2030)  # negative age
@@ -133,7 +133,7 @@ class TestTaxUnitCTCWiring(unittest.TestCase):
         taxes = model.datacollector.get_model_vars_dataframe().iloc[-1]["Taxes"]
 
         model2, parent2 = LifeModel(start_year=2026, end_year=2026, config=_fixture_config()), None
-        parent2 = Person(Family(model2), "Parent", age=45, retirement_age=70, spending=Spending(model2, base=0))
+        parent2 = Person(Family(model2), "Parent", age=45, retirement_age=70, spending=Spending(model2, base_annual=0))
         BankAccount(parent2, "Bank", balance=100000, interest_rate=0)
         Job(parent2, "Co", "Dev", Salary(model=model2, base=80000, yearly_increase=0, yearly_bonus=0))
         model2.step_year()
@@ -149,7 +149,7 @@ class TestZeroChildrenGoldenFrame(unittest.TestCase):
     def _frame():
         model = LifeModel(start_year=2026, end_year=2035, config=_fixture_config())
         family = Family(model)
-        person = Person(family, "A", 30, 65, Spending(model, base=20000, yearly_increase=2.0))
+        person = Person(family, "A", 30, 65, Spending(model, base_annual=20000, growth_pct=2.0))
         BankAccount(person, "Bank", interest_rate=0.0)
         Job(person, "Co", "Dev", Salary(model=model, base=80000, yearly_increase=2.0))
         model.run()

@@ -55,7 +55,7 @@ class TestLiquidationOrder(unittest.TestCase):
     def test_brokerage_drained_before_pretax_401k(self):
         """D3: cash is raised from taxable brokerage before pre-tax 401k."""
         model = LifeModel(end_year=2020, start_year=2020)
-        person = Person(Family(model), "Retiree", 65, 60, Spending(model, base=5000))
+        person = Person(Family(model), "Retiree", 65, 60, Spending(model, base_annual=5000))
         BankAccount(person, "Bank", balance=0)
         BrokerageAccount(person, "B", balance=10000, growth_rate=0)  # basis == balance, no gain
         job = Job(person, "Co", "Retiree", Salary(model, base=0))
@@ -74,7 +74,7 @@ class TestAnnualContributionReset(unittest.TestCase):
     def test_401k_deferrals_reset_each_year(self):
         """Item 3/7: 402(g) room resets annually rather than being a lifetime cap."""
         model = LifeModel(end_year=2022, start_year=2020)
-        person = Person(Family(model), "P", 40, 65, Spending(model, base=0))
+        person = Person(Family(model), "P", 40, 65, Spending(model, base_annual=0))
         BankAccount(person, "Bank", balance=0)
         job = Job(person, "Co", "Dev", Salary(model, base=100000, yearly_increase=0))
         Job401kAccount(job, pretax_contrib_percent=10, average_growth=0)
@@ -98,7 +98,7 @@ class TestAnnualContributionReset(unittest.TestCase):
 class TestPretaxDrawsAtSettlement(unittest.TestCase):
     def _retiree(self, age, ira_balance):
         model = LifeModel(end_year=2020, start_year=2020, config=_fixture_config())
-        person = Person(Family(model), "R", age, 40, Spending(model, base=30000, yearly_increase=0))
+        person = Person(Family(model), "R", age, 40, Spending(model, base_annual=30000, growth_pct=0))
         BankAccount(person, "Bank", balance=0, interest_rate=0)
         ira = TraditionalIRA(person, balance=ira_balance, growth_rate=0)
         return model, person, ira
@@ -128,7 +128,7 @@ class TestPretaxDrawsAtSettlement(unittest.TestCase):
 class TestTraditionalVersusRoth(unittest.TestCase):
     def _taxes_after_contributing(self, account_cls):
         model = LifeModel(end_year=2020, start_year=2020, config=_fixture_config())
-        person = Person(Family(model), "W", 40, 65, Spending(model, base=0))
+        person = Person(Family(model), "W", 40, 65, Spending(model, base_annual=0))
         BankAccount(person, "Bank", balance=10000, interest_rate=0)
         Job(person, "Co", "Dev", Salary(model, base=60000, yearly_increase=0))
         account_cls(person, growth_rate=0).contribute(6000)
@@ -152,7 +152,7 @@ class TestHsaFundsSettlement(unittest.TestCase):
 
     def _person(self, age, hsa_balance, spending=0):
         model = LifeModel(end_year=2026, start_year=2026, config=_fixture_config())
-        person = Person(Family(model), "P", age, 40, Spending(model, base=spending, yearly_increase=0))
+        person = Person(Family(model), "P", age, 40, Spending(model, base_annual=spending, growth_pct=0))
         BankAccount(person, "Bank", balance=0, interest_rate=0)
         hsa = HealthSavingsAccount(
             person, HSAType.INDIVIDUAL, balance=hsa_balance, growth_rate=0, employer_contribution=0

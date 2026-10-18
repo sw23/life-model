@@ -19,7 +19,7 @@ from ..work.job import Job, Salary
 
 
 def _person(model, age=40, spending=0, name="Pat"):
-    return Person(Family(model), name, age, 65, Spending(model, base=spending))
+    return Person(Family(model), name, age, 65, Spending(model, base_annual=spending))
 
 
 class TestEventConstruction(unittest.TestCase):
@@ -122,8 +122,8 @@ class TestEngineEvents(unittest.TestCase):
     def test_legacy_messages_keep_their_text(self):
         model = LifeModel(start_year=2026, end_year=2027)
         family = Family(model)
-        a = Person(family, "A", 64, 65, Spending(model, base=0))
-        b = Person(family, "B", 60, 65, Spending(model, base=0))
+        a = Person(family, "A", 64, 65, Spending(model, base_annual=0))
+        b = Person(family, "B", 60, 65, Spending(model, base_annual=0))
         BankAccount(a, "Bank", balance=1000)
         Job(a, "Co", "Dev", Salary(model, base=50000))
         a.get_married(b)

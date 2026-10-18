@@ -17,14 +17,14 @@ from ..people.person import Person, Spending
 def _expenses(model, **overrides):
     kwargs = {
         "model": model,
-        "property_tax_percent": 0.0,
-        "home_insurance_percent": 0.0,
-        "maintenance_amount": 0.0,
-        "maintenance_increase": 0.0,
-        "improvement_amount": 0.0,
-        "improvement_increase": 0.0,
-        "hoa_amount": 0.0,
-        "hoa_increase": 0.0,
+        "property_tax_pct": 0.0,
+        "insurance_pct": 0.0,
+        "maintenance_annual": 0.0,
+        "maintenance_growth_pct": 0.0,
+        "improvement_annual": 0.0,
+        "improvement_growth_pct": 0.0,
+        "hoa_annual": 0.0,
+        "hoa_growth_pct": 0.0,
     }
     kwargs.update(overrides)
     return HomeExpenses(**kwargs)
@@ -40,7 +40,7 @@ def _person(model, bank_balance=0.0, married_to=None):
 class TestMortgageAmortization(unittest.TestCase):
     def test_thirty_year_amortizes_to_zero_with_closed_form_interest(self):
         """A 30yr $400k/6.5% mortgage amortizes to $0 in exactly 360 monthly periods."""
-        mortgage = Mortgage(loan_amount=400000, start_date=2020, length_years=30, yearly_interest_rate=6.5)
+        mortgage = Mortgage(original_amount=400000, start_year=2020, term_years=30, rate_pct=6.5)
         payment = mortgage.monthly_payment
         for _ in range(30):
             mortgage.make_yearly_payment(payment)
@@ -52,7 +52,7 @@ class TestMortgageAmortization(unittest.TestCase):
 
     def test_zero_interest_mortgage_no_division_by_zero(self):
         """A 0% mortgage computes a payment and amortizes to zero (no div-by-zero)."""
-        mortgage = Mortgage(loan_amount=120000, start_date=2020, length_years=10, yearly_interest_rate=0.0)
+        mortgage = Mortgage(original_amount=120000, start_year=2020, term_years=10, rate_pct=0.0)
         self.assertAlmostEqual(mortgage.monthly_payment, 1000.0, places=2)
         for _ in range(10):
             mortgage.make_yearly_payment(mortgage.monthly_payment)
@@ -60,7 +60,7 @@ class TestMortgageAmortization(unittest.TestCase):
 
     def test_extra_principal_never_drives_principal_negative(self):
         """Paying more than the remaining balance pays off the loan; principal never goes negative."""
-        mortgage = Mortgage(loan_amount=100000, start_date=2020, length_years=30, yearly_interest_rate=5.0)
+        mortgage = Mortgage(original_amount=100000, start_year=2020, term_years=30, rate_pct=5.0)
         paid = mortgage.make_payment(mortgage.monthly_payment, extra_to_principal=1_000_000)
         self.assertEqual(mortgage.principal, 0.0)
         self.assertGreater(paid, 0)
@@ -73,13 +73,13 @@ class TestHomePurchase(unittest.TestCase):
     def test_buying_debits_down_payment_and_closing_costs(self):
         model = LifeModel(start_year=2020, end_year=2020)
         person = _person(model, bank_balance=500000)
-        mortgage = Mortgage(loan_amount=300000, start_date=2020, length_years=30, yearly_interest_rate=5.0)
+        mortgage = Mortgage(original_amount=300000, start_year=2020, term_years=30, rate_pct=5.0)
         closing_pct = model.config.housing.closing_cost_percent
         Home(
-            person=person,
+            owner=person,
             name="New House",
             purchase_price=400000,
-            value_yearly_increase=0.0,
+            value_growth_pct=0.0,
             down_payment=80000,
             mortgage=mortgage,
             expenses=_expenses(model),
@@ -91,12 +91,12 @@ class TestHomePurchase(unittest.TestCase):
     def test_already_owned_home_costs_nothing_at_construction(self):
         model = LifeModel(start_year=2020, end_year=2020)
         person = _person(model, bank_balance=500000)
-        mortgage = Mortgage(loan_amount=300000, start_date=2020, length_years=30, yearly_interest_rate=5.0)
+        mortgage = Mortgage(original_amount=300000, start_year=2020, term_years=30, rate_pct=5.0)
         Home(
-            person=person,
+            owner=person,
             name="Existing House",
             purchase_price=400000,
-            value_yearly_increase=0.0,
+            value_growth_pct=0.0,
             down_payment=80000,
             mortgage=mortgage,
             expenses=_expenses(model),
@@ -108,12 +108,12 @@ class TestHomeSale(unittest.TestCase):
     def test_sale_credits_net_proceeds_and_pays_off_mortgage(self):
         model = LifeModel(start_year=2020, end_year=2020)
         person = _person(model, bank_balance=0.0)
-        mortgage = Mortgage(loan_amount=300000, start_date=2020, length_years=30, yearly_interest_rate=5.0)
+        mortgage = Mortgage(original_amount=300000, start_year=2020, term_years=30, rate_pct=5.0)
         home = Home(
-            person=person,
+            owner=person,
             name="House",
             purchase_price=200000,
-            value_yearly_increase=0.0,
+            value_growth_pct=0.0,
             down_payment=0.0,
             mortgage=mortgage,
             expenses=_expenses(model),
@@ -131,10 +131,10 @@ class TestHomeSale(unittest.TestCase):
         model = LifeModel(start_year=2020, end_year=2020)
         person = _person(model, bank_balance=0.0)
         home = Home(
-            person=person,
+            owner=person,
             name="House",
             purchase_price=200000,
-            value_yearly_increase=0.0,
+            value_growth_pct=0.0,
             down_payment=0.0,
             mortgage=None,
             expenses=_expenses(model),
@@ -150,10 +150,10 @@ class TestHomeSale(unittest.TestCase):
         b = Person(family, "B", age=40, retirement_age=70, spending=Spending(model, 0))
         a.get_married(b)
         home = Home(
-            person=a,
+            owner=a,
             name="House",
             purchase_price=200000,
-            value_yearly_increase=0.0,
+            value_growth_pct=0.0,
             down_payment=0.0,
             mortgage=None,
             expenses=_expenses(model),
@@ -170,12 +170,12 @@ class TestPMI(unittest.TestCase):
     def test_pmi_charged_above_threshold_and_dropped_at_or_below(self):
         model = LifeModel(start_year=2020, end_year=2020)
         person = _person(model)
-        mortgage = Mortgage(loan_amount=360000, start_date=2020, length_years=30, yearly_interest_rate=5.0)
+        mortgage = Mortgage(original_amount=360000, start_year=2020, term_years=30, rate_pct=5.0)
         home = Home(
-            person=person,
+            owner=person,
             name="House",
             purchase_price=400000,
-            value_yearly_increase=0.0,
+            value_growth_pct=0.0,
             down_payment=40000,
             mortgage=mortgage,
             expenses=_expenses(model),

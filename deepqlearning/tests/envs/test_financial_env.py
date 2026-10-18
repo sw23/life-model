@@ -338,7 +338,7 @@ class TestObservationV2(unittest.TestCase):
 
         env = self._fixed_env()
         self.assertAlmostEqual(env._compute_observation_features()["debt"], 0.0)
-        CarLoan(person=env.person, loan_amount=30000, length_years=5, yearly_interest_rate=6.0, name="Car")
+        CarLoan(owner=env.person, original_amount=30000, term_years=5, rate_pct=6.0, name="Car")
         f = env._compute_observation_features()
         self.assertAlmostEqual(f["debt"], 30000 / 1e6)
         self.assertGreater(f["debt_to_income"], 0.0)

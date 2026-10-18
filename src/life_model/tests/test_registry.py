@@ -23,8 +23,8 @@ class TestRegistry(unittest.TestCase):
         self.family = Family(self.model)
         self.spending = Spending(
             model=self.model,
-            base=12000,  # yearly base spending
-            yearly_increase=2.0,  # 2% yearly increase
+            base_annual=12000,  # yearly base spending
+            growth_pct=2.0,  # 2% yearly increase
         )
         self.person = Person(family=self.family, name="Test Person", age=30, retirement_age=65, spending=self.spending)
 
@@ -67,26 +67,26 @@ class TestRegistry(unittest.TestCase):
         self.assertEqual(len(self.person.homes), 0)
 
         # Create home components
-        mortgage = Mortgage(loan_amount=300000, start_date=2023, length_years=30, yearly_interest_rate=4.5)
+        mortgage = Mortgage(original_amount=300000, start_year=2023, term_years=30, rate_pct=4.5)
 
         expenses = HomeExpenses(
             model=self.model,
-            property_tax_percent=1.5,
-            home_insurance_percent=0.5,
-            maintenance_amount=1000,
-            maintenance_increase=2.0,
-            improvement_amount=500,
-            improvement_increase=2.0,
-            hoa_amount=100,
-            hoa_increase=2.0,
+            property_tax_pct=1.5,
+            insurance_pct=0.5,
+            maintenance_annual=1000,
+            maintenance_growth_pct=2.0,
+            improvement_annual=500,
+            improvement_growth_pct=2.0,
+            hoa_annual=100,
+            hoa_growth_pct=2.0,
         )
 
         # Create a home
         home = Home(
-            person=self.person,
+            owner=self.person,
             name="Test House",
             purchase_price=400000,
-            value_yearly_increase=3.0,
+            value_growth_pct=3.0,
             down_payment=100000,
             mortgage=mortgage,
             expenses=expenses,
@@ -102,7 +102,7 @@ class TestRegistry(unittest.TestCase):
         self.assertEqual(len(self.person.apartments), 0)
 
         # Create an apartment
-        apartment = Apartment(person=self.person, name="Test Apartment", monthly_rent=1500, yearly_increase=3.0)
+        apartment = Apartment(owner=self.person, name="Test Apartment", rent_monthly=1500, rent_growth_pct=3.0)
 
         # Check that the apartment was registered
         self.assertEqual(len(self.person.apartments), 1)
@@ -115,10 +115,10 @@ class TestRegistry(unittest.TestCase):
 
         # Create a life insurance policy
         policy = LifeInsurance(
-            person=self.person,
+            owner=self.person,
             policy_type=LifeInsuranceType.TERM,
             death_benefit=500000,
-            monthly_premium=50,
+            premium_monthly=50,
             term_years=20,
         )
 

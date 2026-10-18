@@ -36,7 +36,7 @@ def _quiet(function, *args, **kwargs):
 def _simple_model(*, years: int = 3, checks: str = "strict", bank: float = 20000.0) -> LifeModel:
     model = LifeModel(start_year=2026, end_year=2026 + years - 1, checks=checks)
     family = Family(model)
-    person = Person(family=family, name="Avery", age=40, retirement_age=65, spending=Spending(model, base=30000))
+    person = Person(family=family, name="Avery", age=40, retirement_age=65, spending=Spending(model, base_annual=30000))
     BankAccount(owner=person, company="Bank", balance=bank)
     Job(owner=person, company="Acme", role="Analyst", salary=Salary(model, base=80000))
     return model
@@ -88,7 +88,9 @@ class TestModes(unittest.TestCase):
     def test_checks_record_balance_sheets_without_data_collection(self):
         model = LifeModel(start_year=2026, end_year=2027, collect_data=False, checks="strict")
         family = Family(model)
-        person = Person(family=family, name="Avery", age=40, retirement_age=65, spending=Spending(model, base=1000))
+        person = Person(
+            family=family, name="Avery", age=40, retirement_age=65, spending=Spending(model, base_annual=1000)
+        )
         BankAccount(owner=person, company="Bank", balance=5000)
         model.run()
         self.assertEqual(sorted(model.balance_sheets), [2026, 2027])
@@ -248,7 +250,9 @@ class TestEachInvariant(unittest.TestCase):
     def test_rmd_minimum(self):
         model = LifeModel(start_year=2026, end_year=2027)
         family = Family(model)
-        person = Person(family=family, name="Rory", age=76, retirement_age=65, spending=Spending(model, base=1000))
+        person = Person(
+            family=family, name="Rory", age=76, retirement_age=65, spending=Spending(model, base_annual=1000)
+        )
         BankAccount(owner=person, company="Bank", balance=50000)
         TraditionalIRA(person=person, balance=100000)
         with mock.patch.object(TraditionalIRA, "pre_step", lambda self: None):
@@ -284,8 +288,12 @@ class TestCashFloorRegressionGuard(unittest.TestCase):
     def _couple(self) -> LifeModel:
         model = LifeModel(start_year=2026, end_year=2027)
         family = Family(model)
-        head = Person(family=family, name="Jordan", age=50, retirement_age=50, spending=Spending(model, base=40000))
-        spouse = Person(family=family, name="Casey", age=50, retirement_age=50, spending=Spending(model, base=10000))
+        head = Person(
+            family=family, name="Jordan", age=50, retirement_age=50, spending=Spending(model, base_annual=40000)
+        )
+        spouse = Person(
+            family=family, name="Casey", age=50, retirement_age=50, spending=Spending(model, base_annual=10000)
+        )
         head.get_married(spouse)
         BankAccount(owner=head, company="Bank", balance=1000)
         BankAccount(owner=spouse, company="Credit Union", balance=80000)
@@ -324,7 +332,9 @@ class TestBrokerageSizingWithCarryforward(unittest.TestCase):
     def test_no_cash_left_after_a_netted_sale(self):
         model = LifeModel(start_year=2026, end_year=2026, checks="strict")
         family = Family(model)
-        person = Person(family=family, name="Ari", age=62, retirement_age=60, spending=Spending(model, base=60000))
+        person = Person(
+            family=family, name="Ari", age=62, retirement_age=60, spending=Spending(model, base_annual=60000)
+        )
         BankAccount(owner=person, company="Bank", balance=0)
         account = BrokerageAccount(person=person, company="Brokerage", balance=0, growth_rate=0)
         account.deposit_with_basis(400000, 100000)

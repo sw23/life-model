@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar, Optional
 
 from ..account.job401k import Job401kAccount
+from ..deprecated_names import deprecated_arguments
 from ..ledger import FlowKind, cash_label, debt_label
 from ..limits import federal_retirement_age
 from ..model import Event, EventKind, LifeModel, LifeModelAgent
@@ -1838,11 +1839,12 @@ class Spending(LifeModelAgent):
     # The escalator runs at year end after the year's taxes are settled (0).
     STEP_PRIORITY: ClassVar[dict[str, int]] = {"on_year_end": 10}
 
+    @deprecated_arguments({"base": "base_annual", "yearly_increase": "growth_pct"})
     def __init__(
         self,
         model: LifeModel,
-        base: float = 0,
-        yearly_increase: float | None = 0,
+        base_annual: float = 0,
+        growth_pct: float | None = 0,
         *,
         categories: "dict[str, SpendingLine] | None" = None,
         schedule: "list[tuple[float, float]] | None" = None,
@@ -1851,10 +1853,11 @@ class Spending(LifeModelAgent):
 
         Args:
             model (LifeModel): LifeModel instance.
-            base (float): Base spending amount (a year's; paid monthly): the uncategorized remainder when
-                ``categories`` are given.
-            yearly_increase (float, optional): Yearly percentage increase in spending. 10 = 10%.
-                Pass None to grow with the economy's inflation each year. Defaults to 0 (no increase).
+            base_annual (float): Base spending amount (a year's; paid monthly): the uncategorized remainder
+                when ``categories`` are given (``base=`` is a deprecated alias).
+            growth_pct (float, optional): Yearly percentage increase in spending. 10 = 10%.
+                Pass None to grow with the economy's inflation each year. Defaults to 0 (no increase;
+                ``yearly_increase=`` is a deprecated alias).
             categories (dict, optional): Categorized lines ``{name: SpendingLine(...)}`` on top of
                 ``base`` (keyword-only; Plan 27 D6). Each is paid with the month's bills under its name.
             schedule (list, optional): ``[(age, percent), ...]``: in the month the person reaches each
@@ -1863,8 +1866,8 @@ class Spending(LifeModelAgent):
                 person is created count as applied (the entered amounts are today's).
         """
         super().__init__(model)
-        self.base = base
-        self._yearly_increase_override = yearly_increase
+        self.base = base_annual
+        self._yearly_increase_override = growth_pct
         self.categories: dict[str, SpendingLine] = dict(categories or {})
         self.schedule: list[tuple[float, float]] = sorted((float(a), float(p)) for a, p in (schedule or []))
         for _, pct in self.schedule:

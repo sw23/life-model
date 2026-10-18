@@ -150,8 +150,8 @@ def silent_defaults() -> list[tuple[str, str, str]]:
             ),
         ),
         (
-            "`Spending(yearly_increase=)`",
-            _fmt(_param(spending, "yearly_increase").default),
+            "`Spending(growth_pct=)`",
+            _fmt(_param(spending, "growth_pct").default),
             (
                 "Spending never rises (the spec validator warns). `None` (spec: `growth_pct: economy`) follows "
                 f"inflation ({economy.inflation:g}% in the fixed economy)."
@@ -166,8 +166,8 @@ def silent_defaults() -> list[tuple[str, str, str]]:
             ),
         ),
         (
-            "`Apartment(yearly_increase=)`",
-            _fmt(_param(apartment, "yearly_increase").default),
+            "`Apartment(rent_growth_pct=)`",
+            _fmt(_param(apartment, "rent_growth_pct").default),
             (
                 "Rent rises 5% a year unless told otherwise (the spec validator warns when `rent_growth_pct` is "
                 "unset); `None` follows inflation."
@@ -187,7 +187,7 @@ def silent_defaults() -> list[tuple[str, str, str]]:
             ),
         ),
         (
-            "`Home(value_yearly_increase=None)`",
+            "`Home(value_growth_pct=None)`",
             f"economy `home_appreciation` = {economy.home_appreciation:g}%",
             "Homes appreciate at the economy's rate when given `None`.",
         ),
@@ -219,7 +219,7 @@ def silent_defaults() -> list[tuple[str, str, str]]:
             ),
         ),
         (
-            "`CreditCard(yearly_interest_rate=None, payment_strategy=)`",
+            "`CreditCard(rate_pct=None, payment_strategy=)`",
             f"{card.default_interest_rate:g}% APR, {_fmt(_param(card_cls, 'payment_strategy').default)}",
             (
                 f"Minimum payments ({card.default_minimum_payment_percent:g}% of the balance, at least "
@@ -227,7 +227,7 @@ def silent_defaults() -> list[tuple[str, str, str]]:
             ),
         ),
         (
-            "`SocialSecurity(withdrawal_start_age=None, income_history=None)`",
+            "`SocialSecurity(claim_age=None, earnings_history=None)`",
             "the retirement age; no earnings",
             (
                 "Benefits are claimed at the retirement age (an error below 62). With no earnings history the "

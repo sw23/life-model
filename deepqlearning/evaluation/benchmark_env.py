@@ -50,7 +50,7 @@ def _build_model(collect_data: bool, seed: int = 0) -> LifeModel:
         name="Bench",
         age=25,
         retirement_age=65,
-        spending=Spending(model=model, base=30000, yearly_increase=2),
+        spending=Spending(model=model, base_annual=30000, growth_pct=2),
     )
     BankAccount(owner=person, company="Bank", type="Checking", balance=10000, interest_rate=0.5)
     job = Job(

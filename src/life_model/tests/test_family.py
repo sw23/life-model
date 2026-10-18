@@ -27,8 +27,8 @@ class TestFamilyAggregation(unittest.TestCase):
     def setUp(self):
         self.model = LifeModel(start_year=2020, end_year=2020)
         self.family = Family(self.model)
-        self.a = Person(self.family, "Ada", age=40, retirement_age=70, spending=Spending(self.model, base=15000))
-        self.b = Person(self.family, "Ben", age=42, retirement_age=70, spending=Spending(self.model, base=5000))
+        self.a = Person(self.family, "Ada", age=40, retirement_age=70, spending=Spending(self.model, base_annual=15000))
+        self.b = Person(self.family, "Ben", age=42, retirement_age=70, spending=Spending(self.model, base_annual=5000))
 
     def test_bank_account_balance_sums_members(self):
         BankAccount(self.a, "Bank A", balance=1000, interest_rate=0)
@@ -51,16 +51,16 @@ class TestFamilyMarriedFilingStatus(unittest.TestCase):
     def test_marriage_sets_joint_filing_status(self):
         model = LifeModel(start_year=2020, end_year=2020)
         family = Family(model)
-        a = Person(family, "Ada", age=40, retirement_age=70, spending=Spending(model, base=0))
-        b = Person(family, "Ben", age=40, retirement_age=70, spending=Spending(model, base=0))
+        a = Person(family, "Ada", age=40, retirement_age=70, spending=Spending(model, base_annual=0))
+        b = Person(family, "Ben", age=40, retirement_age=70, spending=Spending(model, base_annual=0))
         a.get_married(b)
         self.assertEqual(family.filing_status, FilingStatus.MARRIED_FILING_JOINTLY)
 
     def test_federal_deductions_use_joint_standard_deduction(self):
         model = LifeModel(start_year=2020, end_year=2020, config=_fixture_config())
         family = Family(model)
-        a = Person(family, "Ada", age=40, retirement_age=70, spending=Spending(model, base=0))
-        b = Person(family, "Ben", age=40, retirement_age=70, spending=Spending(model, base=0))
+        a = Person(family, "Ada", age=40, retirement_age=70, spending=Spending(model, base_annual=0))
+        b = Person(family, "Ben", age=40, retirement_age=70, spending=Spending(model, base_annual=0))
         a.get_married(b)
         # Fixture MFJ standard deduction is $20k, exceeding zero itemized deductions.
         self.assertEqual(family.federal_deductions, 20000)
@@ -70,8 +70,8 @@ class TestFamilyStepSettlesJointTaxes(unittest.TestCase):
     def test_two_earner_couple_pays_combined_federal_tax_once(self):
         model = LifeModel(start_year=2020, end_year=2020, config=_fixture_config())
         family = Family(model)
-        a = Person(family, "Ada", age=40, retirement_age=70, spending=Spending(model, base=0))
-        b = Person(family, "Ben", age=40, retirement_age=70, spending=Spending(model, base=0))
+        a = Person(family, "Ada", age=40, retirement_age=70, spending=Spending(model, base_annual=0))
+        b = Person(family, "Ben", age=40, retirement_age=70, spending=Spending(model, base_annual=0))
         a.get_married(b)
         for p in (a, b):
             BankAccount(p, "Bank", balance=100000, interest_rate=0)
@@ -89,8 +89,8 @@ class TestFamilyMoneyFlow(unittest.TestCase):
     def setUp(self):
         self.model = LifeModel(start_year=2020, end_year=2020)
         self.family = Family(self.model)
-        self.a = Person(self.family, "Ada", age=40, retirement_age=70, spending=Spending(self.model, base=10000))
-        self.b = Person(self.family, "Ben", age=41, retirement_age=70, spending=Spending(self.model, base=5000))
+        self.a = Person(self.family, "Ada", age=40, retirement_age=70, spending=Spending(self.model, base_annual=10000))
+        self.b = Person(self.family, "Ben", age=41, retirement_age=70, spending=Spending(self.model, base_annual=5000))
         self.a.get_married(self.b)
 
     def test_combined_taxable_income_sums_members(self):

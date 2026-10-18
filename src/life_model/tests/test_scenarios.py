@@ -35,14 +35,14 @@ def _no_growth_expenses(model):
     """Home expenses with property tax/insurance/maintenance so housing cash flow is deterministic."""
     return HomeExpenses(
         model=model,
-        property_tax_percent=1.0,
-        home_insurance_percent=0.5,
-        maintenance_amount=1000.0,
-        maintenance_increase=0.0,
-        improvement_amount=0.0,
-        improvement_increase=0.0,
-        hoa_amount=0.0,
-        hoa_increase=0.0,
+        property_tax_pct=1.0,
+        insurance_pct=0.5,
+        maintenance_annual=1000.0,
+        maintenance_growth_pct=0.0,
+        improvement_annual=0.0,
+        improvement_growth_pct=0.0,
+        hoa_annual=0.0,
+        hoa_growth_pct=0.0,
     )
 
 
@@ -76,9 +76,9 @@ def assert_liquid_conserved(test: unittest.TestCase, model: LifeModel, persons) 
 class TestSingleRenterScenario(unittest.TestCase):
     def test_single_renter_conserves_cash(self):
         model = LifeModel(start_year=2020, end_year=2025)
-        person = Person(Family(model), "Riley", age=30, retirement_age=70, spending=Spending(model, base=25000))
+        person = Person(Family(model), "Riley", age=30, retirement_age=70, spending=Spending(model, base_annual=25000))
         BankAccount(person, "Bank", balance=50000, interest_rate=0)
-        Apartment(person, "Downtown", monthly_rent=1500, yearly_increase=0)
+        Apartment(person, "Downtown", rent_monthly=1500, rent_growth_pct=0)
         Job(person, "Co", "Analyst", Salary(model=model, base=70000))
         assert_liquid_conserved(self, model, [person])
 
@@ -86,14 +86,14 @@ class TestSingleRenterScenario(unittest.TestCase):
 class TestSingleHomeownerScenario(unittest.TestCase):
     def test_single_homeowner_conserves_cash(self):
         model = LifeModel(start_year=2020, end_year=2025)
-        person = Person(Family(model), "Sam", age=40, retirement_age=70, spending=Spending(model, base=20000))
+        person = Person(Family(model), "Sam", age=40, retirement_age=70, spending=Spending(model, base_annual=20000))
         BankAccount(person, "Bank", balance=100000, interest_rate=0)
-        mortgage = Mortgage(loan_amount=300000, start_date=2018, length_years=30, yearly_interest_rate=5.0)
+        mortgage = Mortgage(original_amount=300000, start_year=2018, term_years=30, rate_pct=5.0)
         Home(
-            person=person,
+            owner=person,
             name="House",
             purchase_price=375000,
-            value_yearly_increase=0.0,
+            value_growth_pct=0.0,
             down_payment=75000,
             mortgage=mortgage,
             expenses=_no_growth_expenses(model),
@@ -106,17 +106,17 @@ class TestMarriedFamilyScenario(unittest.TestCase):
     def test_mfj_dual_earner_with_mortgage_and_kids_conserves_cash(self):
         model = LifeModel(start_year=2020, end_year=2025)
         family = Family(model)
-        a = Person(family, "Ada", age=38, retirement_age=70, spending=Spending(model, base=30000))
-        b = Person(family, "Ben", age=39, retirement_age=70, spending=Spending(model, base=10000))
+        a = Person(family, "Ada", age=38, retirement_age=70, spending=Spending(model, base_annual=30000))
+        b = Person(family, "Ben", age=39, retirement_age=70, spending=Spending(model, base_annual=10000))
         a.get_married(b)
         BankAccount(a, "Bank A", balance=120000, interest_rate=0)
         BankAccount(b, "Bank B", balance=30000, interest_rate=0)
-        mortgage = Mortgage(loan_amount=400000, start_date=2019, length_years=30, yearly_interest_rate=4.5)
+        mortgage = Mortgage(original_amount=400000, start_year=2019, term_years=30, rate_pct=4.5)
         Home(
-            person=a,
+            owner=a,
             name="Family House",
             purchase_price=500000,
-            value_yearly_increase=0.0,
+            value_growth_pct=0.0,
             down_payment=100000,
             mortgage=mortgage,
             expenses=_no_growth_expenses(model),
@@ -131,13 +131,13 @@ class TestMarriedFamilyScenario(unittest.TestCase):
 class TestRetireeScenario(unittest.TestCase):
     def test_retiree_drawing_401k_and_social_security_conserves_cash(self):
         model = LifeModel(start_year=2026, end_year=2030)
-        person = Person(Family(model), "Pat", age=70, retirement_age=65, spending=Spending(model, base=40000))
+        person = Person(Family(model), "Pat", age=70, retirement_age=65, spending=Spending(model, base_annual=40000))
         BankAccount(person, "Bank", balance=5000, interest_rate=0)
         job = Job(person, "Old Co", "Retiree", Salary(model=model, base=0))
         job.retired = True
         Job401kAccount(job=job, pretax_balance=800000, average_growth=0)
         income_history = [Income(year, 60000) for year in range(1985, 2020)]
-        SocialSecurity(person=person, withdrawal_start_age=67, income_history=income_history)
+        SocialSecurity(owner=person, claim_age=67, earnings_history=income_history)
         assert_liquid_conserved(self, model, [person])
 
 
@@ -169,7 +169,7 @@ class TestDeathOfSpouseScenario(unittest.TestCase):
 class TestRecessionScenario(unittest.TestCase):
     def _invested_end_balance(self, scenario):
         model = LifeModel(start_year=2026, end_year=2029, scenario=scenario)
-        person = Person(Family(model), "Ivy", age=40, retirement_age=70, spending=Spending(model, base=0))
+        person = Person(Family(model), "Ivy", age=40, retirement_age=70, spending=Spending(model, base_annual=0))
         BankAccount(person, "Bank", balance=0, interest_rate=0)
         # Economy-driven brokerage (no growth override) so the recession's negative equity path applies.
         account = BrokerageAccount(person, "Broker", balance=500000)

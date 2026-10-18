@@ -6,6 +6,7 @@ import html
 from enum import Enum
 from typing import cast
 
+from ..deprecated_names import deprecated_arguments
 from ..ledger import FlowKind
 from ..model import Event, LifeModel, LifeModelAgent, month_index, snap_money
 from ..people.person import Person
@@ -50,17 +51,20 @@ class InsuranceClaim:
 
 
 class Insurance(LifeModelAgent):
+    @deprecated_arguments(
+        {"person": "owner", "annual_premium": "premium_annual", "premium_increase_rate": "premium_increase_pct"}
+    )
     def __init__(
         self,
-        person: Person,
+        owner: Person,
         insurance_type: InsuranceType,
         company: str,
-        annual_premium: float,
+        premium_annual: float,
         coverage_amount: float,
         deductible: float = 0,
         coverage_start_age: int | None = None,
         coverage_end_age: int | None = None,
-        premium_increase_rate: float | None = None,
+        premium_increase_pct: float | None = None,
         max_claims_per_year: int | None = None,
         *,
         oop_max_annual: float | None = None,
@@ -74,15 +78,16 @@ class Insurance(LifeModelAgent):
         """Models insurance coverage for a person
 
         Args:
-            person: The person who owns this insurance
+            owner: The person who owns this insurance (``person=`` is deprecated)
             insurance_type: Type of insurance
             company: Insurance company name
-            annual_premium: Annual premium cost
+            premium_annual: Annual premium cost (``annual_premium=`` is deprecated)
             coverage_amount: Coverage amount/limit
             deductible: Insurance deductible amount
             coverage_start_age: Age when coverage starts (None for immediate)
             coverage_end_age: Age when coverage ends (None for lifetime)
-            premium_increase_rate: Annual premium increase percentage. Configured default if None.
+            premium_increase_pct: Annual premium increase percentage. Configured default if None
+                (``premium_increase_rate=`` is deprecated).
             max_claims_per_year: Maximum claims allowed per year. Configured default if None.
             oop_max_annual: HEALTH: the out-of-pocket maximum per year (keyword-only; Plan 27 D9). With
                 it or ``coinsurance_pct`` the policy caps the person's ``MedicalCosts``: they pay the
@@ -97,6 +102,7 @@ class Insurance(LifeModelAgent):
                 (benefits are then taxable income, IRC §104(a)(3), §105(a)); False (default): an
                 individually paid policy, whose benefits are tax-free.
         """
+        person, annual_premium, premium_increase_rate = owner, premium_annual, premium_increase_pct
         super().__init__(cast(LifeModel, person.model))
         self.model: LifeModel = cast("LifeModel", self.model)
         general_config = self.model.config.insurance.general

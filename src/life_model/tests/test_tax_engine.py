@@ -74,7 +74,7 @@ class TestFicaPerPerson(unittest.TestCase):
         # A retiree living on 401k distributions has no wages, so owes zero FICA.
         model = LifeModel(start_year=2020, end_year=2020, config=_fixture_config())
         family = Family(model)
-        person = Person(family, "Retired R", age=65, retirement_age=60, spending=Spending(model, base=30000))
+        person = Person(family, "Retired R", age=65, retirement_age=60, spending=Spending(model, base_annual=30000))
         BankAccount(person, "Bank", balance=0, interest_rate=0)
         job = Job(person, "Old Co", "Retiree", Salary(model=model, base=0))
         Job401kAccount(job=job, pretax_balance=500000, average_growth=0)
@@ -90,7 +90,7 @@ class TestFicaPerPerson(unittest.TestCase):
         # Pre-tax 401k deferrals reduce income tax but are still FICA wages.
         model = LifeModel(start_year=2020, end_year=2020, config=_fixture_config())
         family = Family(model)
-        person = Person(family, "Saver S", age=40, retirement_age=70, spending=Spending(model, base=0))
+        person = Person(family, "Saver S", age=40, retirement_age=70, spending=Spending(model, base_annual=0))
         BankAccount(person, "Bank", balance=0, interest_rate=0)
         job = Job(person, "Co", "Dev", Salary(model=model, base=100000))
         # Defer 20% ($20k) pre-tax.
@@ -107,8 +107,8 @@ class TestFicaPerPerson(unittest.TestCase):
         # Fixture wage base is $110k; two earners at $70k and $80k are both under it.
         model = LifeModel(start_year=2020, end_year=2020, config=_fixture_config())
         family = Family(model)
-        b = Person(family, "Spouse B", age=40, retirement_age=70, spending=Spending(model, base=0))
-        c = Person(family, "Spouse C", age=40, retirement_age=70, spending=Spending(model, base=0))
+        b = Person(family, "Spouse B", age=40, retirement_age=70, spending=Spending(model, base_annual=0))
+        c = Person(family, "Spouse C", age=40, retirement_age=70, spending=Spending(model, base_annual=0))
         b.get_married(c)
         for p in (b, c):
             BankAccount(p, "Bank", balance=100000, interest_rate=0)
@@ -131,7 +131,7 @@ class TestWithdrawalSizing(unittest.TestCase):
         # withdrawal triggers — leaving no meaningful buffer behind.
         model = LifeModel(start_year=2020, end_year=2020, config=_fixture_config())
         family = Family(model)
-        person = Person(family, "Retiree", age=65, retirement_age=60, spending=Spending(model, base=50000))
+        person = Person(family, "Retiree", age=65, retirement_age=60, spending=Spending(model, base_annual=50000))
         BankAccount(person, "Bank", balance=0, interest_rate=0)
         job = Job(person, "Old Co", "Retiree", Salary(model=model, base=0))
         Job401kAccount(job=job, pretax_balance=1000000, average_growth=0)
@@ -154,7 +154,7 @@ class TestDeductionTiming(unittest.TestCase):
     def _federal_tax_with_donation(self, donation_amount: float) -> float:
         model = LifeModel(start_year=2020, end_year=2020, config=_fixture_config())
         family = Family(model)
-        person = Person(family, "Giver", age=40, retirement_age=70, spending=Spending(model, base=0))
+        person = Person(family, "Giver", age=40, retirement_age=70, spending=Spending(model, base_annual=0))
         BankAccount(person, "Bank", balance=50000, interest_rate=0)
         Job(person, "Co", "Dev", Salary(model=model, base=100000))
         if donation_amount > 0:
@@ -177,7 +177,7 @@ class TestDeductionTiming(unittest.TestCase):
         # A bare deposit (no cash leaving the person) is not a deductible contribution.
         model = LifeModel(start_year=2020, end_year=2020, config=_fixture_config())
         family = Family(model)
-        person = Person(family, "DAF Owner", age=40, retirement_age=70, spending=Spending(model, base=0))
+        person = Person(family, "DAF Owner", age=40, retirement_age=70, spending=Spending(model, base_annual=0))
         BankAccount(person, "Bank", balance=100000, interest_rate=0)
         daf = DonorAdvisedFund(person, "Fund", balance=0)
 
@@ -189,23 +189,23 @@ class TestDeductionTiming(unittest.TestCase):
 
 
 def _add_home(person, loan_amount=300000, rate=5.0, property_tax_percent=1.0, purchase_price=400000):
-    mortgage = Mortgage(loan_amount=loan_amount, start_date=2020, length_years=30, yearly_interest_rate=rate)
+    mortgage = Mortgage(original_amount=loan_amount, start_year=2020, term_years=30, rate_pct=rate)
     expenses = HomeExpenses(
         model=person.model,
-        property_tax_percent=property_tax_percent,
-        home_insurance_percent=0.0,
-        maintenance_amount=0,
-        maintenance_increase=0.0,
-        improvement_amount=0,
-        improvement_increase=0.0,
-        hoa_amount=0,
-        hoa_increase=0.0,
+        property_tax_pct=property_tax_percent,
+        insurance_pct=0.0,
+        maintenance_annual=0,
+        maintenance_growth_pct=0.0,
+        improvement_annual=0,
+        improvement_growth_pct=0.0,
+        hoa_annual=0,
+        hoa_growth_pct=0.0,
     )
     return Home(
-        person=person,
+        owner=person,
         name="House",
         purchase_price=purchase_price,
-        value_yearly_increase=0.0,
+        value_growth_pct=0.0,
         down_payment=100000,
         mortgage=mortgage,
         expenses=expenses,
@@ -216,7 +216,7 @@ class TestHousingDeductions(unittest.TestCase):
     """Mortgage interest uses pre-payment interest with a $750k cap; property tax is SALT."""
 
     def test_interest_recorded_before_payment(self):
-        mortgage = Mortgage(loan_amount=300000, start_date=2020, length_years=30, yearly_interest_rate=5.0)
+        mortgage = Mortgage(original_amount=300000, start_year=2020, term_years=30, rate_pct=5.0)
         # A full year of simple interest on the starting principal is $15,000.
         self.assertAlmostEqual(mortgage.get_interest_for_year(), 15000.0, places=2)
         mortgage.make_yearly_payment(mortgage.monthly_payment)
@@ -230,7 +230,7 @@ class TestHousingDeductions(unittest.TestCase):
     def test_mortgage_interest_and_property_tax_deductible(self):
         model = LifeModel(start_year=2020, end_year=2020, config=_fixture_config())
         family = Family(model)
-        person = Person(family, "Owner", age=40, retirement_age=70, spending=Spending(model, base=0))
+        person = Person(family, "Owner", age=40, retirement_age=70, spending=Spending(model, base_annual=0))
         home = _add_home(person, loan_amount=300000, rate=5.0, property_tax_percent=1.0)
 
         # Full pre-payment interest ($15k, loan under the $750k cap) plus property tax
@@ -242,7 +242,7 @@ class TestHousingDeductions(unittest.TestCase):
     def test_acquisition_debt_cap_limits_interest(self):
         model = LifeModel(start_year=2020, end_year=2020, config=_fixture_config())
         family = Family(model)
-        person = Person(family, "Jumbo", age=40, retirement_age=70, spending=Spending(model, base=0))
+        person = Person(family, "Jumbo", age=40, retirement_age=70, spending=Spending(model, base_annual=0))
         # $1.5M loan: only the interest on the first $750k of acquisition debt is deductible (half).
         _add_home(person, loan_amount=1500000, rate=5.0, property_tax_percent=0.0, purchase_price=1600000)
 

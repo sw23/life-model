@@ -33,46 +33,44 @@ class HomeEquityLine(RevolvingDebt):
 
     def __init__(
         self,
-        person: "Person",
+        owner: "Person",
+        *,
         home: "Home",
         credit_limit: float,
+        rate_pct: float,
         balance: float = 0.0,
-        yearly_interest_rate: float | None = None,
-        *,
         improvement_balance: float = 0.0,
         payment_strategy: PaymentStrategy = PaymentStrategy.INTEREST_ONLY,
-        fixed_payment: float = 0.0,
-        minimum_payment_percent: float | None = None,
+        payment_monthly: float = 0.0,
+        minimum_payment_pct: float | None = None,
         name: str | None = None,
     ):
-        """Home equity line of credit.
+        """Home equity line of credit (every argument after the owner is keyword-only).
 
         Args:
-            person: The borrower.
+            owner: The borrower.
             home: The home securing the line.
             credit_limit: The line's limit.
+            rate_pct: APR, percent (required: a HELOC has no configured default).
             balance: Current balance owed.
-            yearly_interest_rate: APR, percent (required: a HELOC has no configured default).
             improvement_balance: Part of ``balance`` that paid for improvements to ``home`` (its interest
-                is deductible acquisition-debt interest). Keyword-only.
-            payment_strategy: How it is paid down (default interest-only). Keyword-only.
-            fixed_payment: Monthly payment for ``FIXED``. Keyword-only.
-            minimum_payment_percent: Minimum payment percent for ``MINIMUM`` (configured default when None).
+                is deductible acquisition-debt interest).
+            payment_strategy: How it is paid down (default interest-only).
+            payment_monthly: Monthly payment for ``FIXED``.
+            minimum_payment_pct: Minimum payment percent for ``MINIMUM`` (configured default when None).
             name: Display name (defaults to ``"HELOC on <home>"``).
         """
-        if yearly_interest_rate is None:
-            raise TypeError("HomeEquityLine needs yearly_interest_rate (a HELOC has no configured default)")
         if not 0 <= improvement_balance <= balance + 1e-9:
             raise ValueError("improvement_balance must be between 0 and balance")
         super().__init__(
-            person,
-            name or f"HELOC on {home.name}",
-            credit_limit,
+            owner,
+            name=name or f"HELOC on {home.name}",
+            credit_limit=credit_limit,
             balance=balance,
-            yearly_interest_rate=yearly_interest_rate,
-            minimum_payment_percent=minimum_payment_percent,
+            rate_pct=rate_pct,
+            minimum_payment_pct=minimum_payment_pct,
             payment_strategy=payment_strategy,
-            fixed_payment=fixed_payment,
+            payment_monthly=payment_monthly,
         )
         self.home = home
         self.improvement_balance = float(improvement_balance)

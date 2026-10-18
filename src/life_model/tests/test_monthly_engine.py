@@ -114,7 +114,7 @@ class TestPeriodPlumbing(unittest.TestCase):
 
     def test_collect_month_keeps_the_yearly_frame(self):
         model = LifeModel(start_year=2026, end_year=2027, collect="month")
-        person = Person(Family(model), "Pat", 40, 65, Spending(model, base=12000))
+        person = Person(Family(model), "Pat", 40, 65, Spending(model, base_annual=12000))
         BankAccount(person, "Bank", balance=50000)
         model.run()
         yearly = model.get_yearly_stat_df(styled=False)
@@ -351,7 +351,7 @@ class TestMonthlyBenefits(unittest.TestCase):
         model = LifeModel(start_year=2026, end_year=2027)
         person = Person(Family(model), "Pat", None, 60, Spending(model, 0), birth="1964-03")
         BankAccount(person, "Bank", balance=0, interest_rate=0)
-        ss = SocialSecurity(person, withdrawal_start_age=62.5, income_history=EARNINGS_HISTORY)
+        ss = SocialSecurity(person, claim_age=62.5, earnings_history=EARNINGS_HISTORY)
         self.assertEqual(ss.claim_period, (2026, 9))  # 62 in March 2026, 62.5 in September
         model.run()
         months = sorted((e.year, e.month) for e in model.ledger if e.source == "Social Security")
@@ -367,8 +367,8 @@ class TestMonthlyBenefits(unittest.TestCase):
         model = LifeModel(start_year=2026, end_year=2026)
         person = Person(Family(model), "Pat", 70, 65, Spending(model, 0))
         BankAccount(person, "Bank", balance=0, interest_rate=0)
-        Pension(person, "Co", vesting_years=1, benefit_amount=24000)
-        annuity = Annuity(person, AnnuityType.IMMEDIATE, initial_balance=100000, interest_rate=4.0)
+        Pension(person, company="Co", vesting_years=1, benefit_annual=24000)
+        annuity = Annuity(person, annuity_type=AnnuityType.IMMEDIATE, balance=100000, rate_pct=4.0)
         model.run()
         pension_months = [e for e in model.ledger if e.kind == "benefit" and e.source == "Co pension"]
         self.assertEqual([e.month for e in pension_months], list(range(1, 13)))
@@ -394,7 +394,7 @@ class TestMonthlyBenefits(unittest.TestCase):
         heir = Person(person.family, "Kim", 40, 65, Spending(model, 0))
         BankAccount(heir, "Bank", balance=0, interest_rate=0)
         BankAccount(person, "Bank", balance=0, interest_rate=0)
-        Pension(person, "Co", vesting_years=1, benefit_amount=12000)
+        Pension(person, company="Co", vesting_years=1, benefit_annual=12000)
         model.run()
         # Paid January through May (Pat turns 80 and dies in May); the pension ends with Pat.
         frame = model.get_yearly_stat_df(styled=False, extra_columns=["Pension Income"]).set_index("Year")
@@ -463,9 +463,9 @@ class TestMonthlyBills(unittest.TestCase):
         from ..housing.apartment import Apartment
 
         model = LifeModel(start_year=2026, end_year=2026)
-        person = Person(Family(model), "Pat", 40, 70, Spending(model, base=12000))
+        person = Person(Family(model), "Pat", 40, 70, Spending(model, base_annual=12000))
         BankAccount(person, "Bank", balance=100000, interest_rate=0)
-        Apartment(person, "Flat", monthly_rent=1500, yearly_increase=0)
+        Apartment(person, "Flat", rent_monthly=1500, rent_growth_pct=0)
         LifeEvents(model, [LifeEvent(2026, "trip", person.spending.add_expense, 4000, month=5)])
         model.run()
         spending = {}
@@ -483,7 +483,7 @@ class TestMonthlyBills(unittest.TestCase):
         model = LifeModel(start="2026-04", end_year=2032)
         person = Person(Family(model), "Pat", 40, 70, Spending(model, 0))
         BankAccount(person, "Bank", balance=100000, interest_rate=0)
-        loan = CarLoan(person, loan_amount=30000, length_years=5, yearly_interest_rate=6.0, name="Car")
+        loan = CarLoan(person, original_amount=30000, term_years=5, rate_pct=6.0, name="Car")
         paid_off = None
         while model.running:
             model.step()
@@ -496,7 +496,7 @@ class TestMonthlyBills(unittest.TestCase):
 
     def test_short_months_draw_the_waterfall_and_carry_unpaid_bills(self):
         model = LifeModel(start_year=2026, end_year=2026)
-        person = Person(Family(model), "Pat", 40, 70, Spending(model, base=24000))
+        person = Person(Family(model), "Pat", 40, 70, Spending(model, base_annual=24000))
         BankAccount(person, "Bank", balance=5000, interest_rate=0)
         model.run()
         # $2,000 a month: the bank covers January and February and half of March; the rest is

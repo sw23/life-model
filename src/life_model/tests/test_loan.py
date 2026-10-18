@@ -21,7 +21,7 @@ def _person(model):
 class TestLoanAmortization(unittest.TestCase):
     def _make_loan(self, amount, rate, years):
         model = LifeModel(start_year=2020, end_year=2020)
-        return CarLoan(_person(model), loan_amount=amount, length_years=years, yearly_interest_rate=rate, name="Car")
+        return CarLoan(_person(model), original_amount=amount, term_years=years, rate_pct=rate, name="Car")
 
     def test_amortizes_to_exactly_zero_and_interest_matches_closed_form(self):
         """Across several loans, the scheduled payment amortizes to $0 with closed-form interest."""
