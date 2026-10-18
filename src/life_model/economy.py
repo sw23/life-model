@@ -58,6 +58,16 @@ def compound_months(monthly_percents) -> float:
     return (factor - 1) * 100
 
 
+def rescale_months(monthly_percents: list[float], annual_percent: float) -> list[float]:
+    """``monthly_percents`` scaled (each month's growth factor by the same multiplier) so they compound
+    to ``annual_percent``: the year's within-year shape is kept, its total is replaced."""
+    current = compound_months(monthly_percents)
+    if current <= -100 or annual_percent <= -100:
+        return [annual_to_monthly(annual_percent)] * len(monthly_percents)
+    factor = ((1 + annual_percent / 100) / (1 + current / 100)) ** (1 / len(monthly_percents))
+    return [((1 + m / 100) * factor - 1) * 100 for m in monthly_percents]
+
+
 def path_month_key(year: int, month: int) -> str:
     """The ``economy.paths`` key of one month (``"2027-03"``)."""
     return f"{year:04d}-{month:02d}"
@@ -96,6 +106,8 @@ class EconomyModel(LifeModelAgent):
         # The standardized AR(1) state of each series (stochastic mode).
         self._ar_state: dict[str, float] = {}
         self._cholesky = None
+        # Optional ``(year, annual_rates) -> annual_rates`` hook (see set_year_adjuster).
+        self._year_adjuster = None
         # Cache the starting year immediately so consumers constructed before the first step
         # (the usual case) already see coherent rates.
         self._ensure_year(model.year)
@@ -107,9 +119,31 @@ class EconomyModel(LifeModelAgent):
         rates = self._rates_by_year.get(year)
         if rates is None:
             monthly, annual = self._compute_year(year)
+            if self._year_adjuster is not None:
+                monthly, annual = self._adjusted(year, monthly, annual)
             self._monthly_by_year[year] = monthly
             self._rates_by_year[year] = rates = annual
         return rates
+
+    def _adjusted(self, year: int, monthly: dict, annual: dict) -> "tuple[dict, dict]":
+        adjusted = self._year_adjuster(year, dict(annual))
+        months = {
+            name: (rescale_months(monthly[name], adjusted[name]) if adjusted[name] != annual[name] else monthly[name])
+            for name in monthly
+        }
+        return months, adjusted
+
+    def set_year_adjuster(self, adjuster) -> None:
+        """Install ``adjuster(year, annual_rates) -> annual_rates``: each year's annual rates (percent,
+        by name) as the economy resolves them are replaced by the adjuster's, and the year's monthly
+        rates are rescaled to compound to them (keeping their within-year shape). Years already
+        resolved are adjusted now. Used by scenario overlays that shift or script a stochastic
+        economy."""
+        self._year_adjuster = adjuster
+        for year in list(self._rates_by_year):
+            months, annual = self._adjusted(year, self._monthly_by_year[year], self._rates_by_year[year])
+            self._monthly_by_year[year] = months
+            self._rates_by_year[year] = annual
 
     def _compute_year(self, year: int) -> "tuple[dict[str, list[float]], dict[str, float]]":
         mode = self.config.mode

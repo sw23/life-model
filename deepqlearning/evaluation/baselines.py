@@ -120,7 +120,7 @@ def age_glide_policy(env: FinancialLifeEnv) -> int:
     retired."""
     if env.person.is_retired:
         return _NO_ACTION
-    age = env.person.age
+    age = env.decision_age
     bucket = next(frac for threshold, frac in _GLIDE_STEPS if age < threshold)
     return _first_legal(env, [encode_flat_action(ActionType.TRANSFER_BANK_TO_401K_PRETAX, bucket)])
 

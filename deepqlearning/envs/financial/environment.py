@@ -450,7 +450,8 @@ class FinancialLifeEnv(gym.Env):
         return self._ss_benefit_cache[1]
 
     def step(self, action: int) -> tuple[np.ndarray, float, bool, bool, dict]:
-        """Execute one step (one simulated year) in the environment.
+        """Execute one step (one simulated year: twelve monthly model steps, through the year end) in the
+        environment.
 
         Args:
             action: Flat discrete action index (see ``actions.decode_flat_action``): an
@@ -477,7 +478,8 @@ class FinancialLifeEnv(gym.Env):
             percentage_change=self.SPENDING_STEP,
         )
 
-        # Step the simulation forward one year. Mortality is model-native: the
+        # Step the simulation forward one year (``step_year``: the monthly model through its next year
+        # end, so rewards and observations still describe a year). Mortality is model-native: the
         # person may die inside this call, which runs the full death machinery and removes their
         # agents from the model. Snapshot the pre-step net worth so the estate value at death is
         # observable to the reward (post-death net worth reads ~0 once assets dissolve).
@@ -504,6 +506,20 @@ class FinancialLifeEnv(gym.Env):
         return self._get_observation(), reward, terminated, truncated, info
 
     @property
+    def decision_age(self) -> int:
+        """The person's age as the environment reports it at a decision: their age during the most
+        recently simulated year (the start age before the first step).
+
+        This is the annual engine's convention (its ``Person.age`` advanced at the start of each
+        simulated year), kept on the monthly engine — where ``Person.age`` is the age in the model's
+        current month, i.e. in January of the upcoming year between env steps — so episode length,
+        observations and termination keep their meaning.
+        """
+        if self.current_step == 0:
+            return self.person.age
+        return self.person.age_in(self.model.year - 1)
+
+    @property
     def died_from_natural_causes(self) -> bool:
         """Whether the person died in-simulation (model-native stochastic mortality)."""
         return self.person.is_deceased
@@ -511,8 +527,8 @@ class FinancialLifeEnv(gym.Env):
     def _mortality_probability(self) -> float:
         """The person's current-year chance of death from the SSA table (blended for OTHER)."""
         if self.person.gender == GenderAtBirth.OTHER:
-            return get_blended_chance_of_mortality(self.person.age)
-        return get_chance_of_mortality(self.person.age, self.person.gender)
+            return get_blended_chance_of_mortality(self.decision_age)
+        return get_chance_of_mortality(self.decision_age, self.person.gender)
 
     def _get_info(
         self,
@@ -524,7 +540,7 @@ class FinancialLifeEnv(gym.Env):
         return {
             "action_result": action_result,
             "net_worth": self._calculate_net_worth(),
-            "age": self.person.age,
+            "age": self.decision_age,
             "is_retired": self.person.is_retired,
             "bank_balance": self.person.bank_account_balance,
             "annual_spending": self.person.spending.get_yearly_spending(),
@@ -634,7 +650,8 @@ class FinancialLifeEnv(gym.Env):
         # model.step_year(), so at decision time the honest quantity is the projection: wages the
         # jobs will deposit plus the RMD the 401k will force. (Documented deviation from "income
         # so far": intra-year state is never observable at the env's decision boundary.)
-        next_age = person.age + 1
+        age = self.decision_age
+        next_age = age + 1
         birth_year = self.model.year - next_age
         start_age = rmd_start_age(birth_year, config=self.model.config, year=self.model.year)
         projected_rmd = required_min_distrib(next_age, pretax_401k, config=self.model.config, start_age=start_age)
@@ -651,11 +668,11 @@ class FinancialLifeEnv(gym.Env):
         inflation, equity_return, bond_return = self._observed_market_rates()
 
         return {
-            "age": person.age / 100.0,
-            "years_to_retirement": max(0.0, person.retirement_age - person.age) / 50.0,
+            "age": age / 100.0,
+            "years_to_retirement": max(0.0, person.retirement_age - age) / 50.0,
             "is_retired": 1.0 if person.is_retired else 0.0,
             "mortality_probability": self._mortality_probability(),
-            "life_progress": (person.age - self.episode_household["person_start_age"]) / self.max_steps,
+            "life_progress": (age - self.episode_household["person_start_age"]) / self.max_steps,
             "bank_balance": bank_balance / deflator / _MONEY_SCALE,
             "pretax_401k": pretax_401k / deflator / _MONEY_SCALE,
             "roth_401k": roth_401k / deflator / _MONEY_SCALE,
@@ -677,8 +694,8 @@ class FinancialLifeEnv(gym.Env):
                 bracket_headroom / deflator / 100_000.0 if np.isfinite(bracket_headroom) else float("inf")
             ),
             "marginal_rate": marginal_rate,
-            "years_to_59_5": max(0.0, PENALTY_FREE_AGE - person.age) / 35.0,
-            "years_to_rmd_start": max(0.0, start_age - person.age) / 50.0,
+            "years_to_59_5": max(0.0, PENALTY_FREE_AGE - age) / 35.0,
+            "years_to_rmd_start": max(0.0, start_age - age) / 50.0,
             "projected_rmd": projected_rmd / deflator / _MONEY_SCALE,
             "ira_room_fraction": ira_room_fraction,
             "hsa_room_fraction": hsa_room_fraction,
@@ -689,7 +706,7 @@ class FinancialLifeEnv(gym.Env):
             "log_deflator": float(np.log(max(deflator, 1e-9))),
             "ss_annual_benefit": self._ss_annual_benefit() / deflator / 100_000.0,
             "years_to_ss_claim": (
-                max(0.0, self.social_security.withdrawal_start_age - person.age) / 50.0
+                max(0.0, self.social_security.withdrawal_start_age - age) / 50.0
                 if self.social_security is not None
                 else 0.0
             ),
@@ -769,7 +786,7 @@ class FinancialLifeEnv(gym.Env):
         """
         return bool(
             self.person.is_deceased
-            or self.person.age >= self.config["person_max_age"]
+            or self.decision_age >= self.config["person_max_age"]
             or self._calculate_net_worth() < self.BANKRUPTCY_THRESHOLD
         )
 
@@ -780,7 +797,7 @@ class FinancialLifeEnv(gym.Env):
             mortality_prob = self._mortality_probability()
             status = "DECEASED" if self.died_from_natural_causes else "ALIVE"
             print(
-                f"Year: {self.model.year}, Age: {self.person.age}, Status: {status}, "
+                f"Year: {self.model.year}, Age: {self.decision_age}, Status: {status}, "
                 f"Mortality Risk: {mortality_prob:.1%}, "
                 f"Net Worth: ${net_worth:,.0f}, "
                 f"Bank: ${self.person.bank_account_balance:,.0f}, "
