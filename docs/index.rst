@@ -15,6 +15,7 @@ insurance and taxes over time. See the project `README on GitHub
    Installation instructions <install.rst>
    Configuration <configuration.md>
    Outputs glossary <outputs.md>
+   Household spec <household-spec.md>
    API documentation <apidoc.rst>
    License <license.rst>
 

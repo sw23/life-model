@@ -46,6 +46,10 @@ intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),
 }
 
+# Slug anchors for level-1/2 headings, so the generated household-spec reference can link between its
+# model sections (e.g. [Meta](#meta)).
+myst_heading_anchors = 2
+
 source_suffix = {
     ".rst": "restructuredtext",
     ".md": "markdown",

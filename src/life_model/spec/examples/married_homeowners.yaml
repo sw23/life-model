@@ -1,0 +1,233 @@
+# Synthetic example household (not real data): the John and Jane family from ExampleSimulation.ipynb,
+# married homeowners with a child. Load it with life_model.spec.load_example("married_homeowners").
+spec_version: 1
+meta:
+  name: Married homeowners
+  description: Synthetic example. Two married earners, a mortgaged home, a 529 for their son, life
+    insurance and five dated events.
+  as_of: 2026-01
+  start_year: 2026
+  end_year: 2072
+people:
+- id: john
+  name: John
+  age: 44
+  gender: male
+  retirement_age: 60
+  spending:
+    amount_annual: 12000
+    growth_pct: 5
+  jobs:
+  - id: john_job
+    company: Pizza Papa
+    role: Manager
+    salary_annual: 50000
+    raise_pct: 1
+    bonus_pct: 1
+  accounts:
+  - kind: bank
+    company: Bank
+    balance: 20000
+    interest_pct: 0.5
+  - kind: 401k
+    job: john_job
+    pretax_balance: 100000
+    roth_balance: 100000
+    pretax_contrib_pct: 15
+    roth_contrib_pct: 5
+    growth_pct: 5
+    match_tiers:
+    - match_pct: 50
+      up_to_pay_pct: 6
+  - kind: 529
+    beneficiary: junior
+    balance: 18000
+  housing:
+  - kind: home
+    name: John and Jane's House
+    purchase_price: 350000
+    value_growth_pct: 5
+    down_payment: 75000
+    mortgage:
+      original_amount: 275000
+      balance: 233873
+      rate_pct: 3.5
+      term_years: 30
+      start_year: 2019
+    expenses:
+      property_tax_pct: 0.88
+      insurance_pct: 0.5
+      maintenance_annual: 700
+      maintenance_growth_pct: 2
+      improvement_annual: 700
+      improvement_growth_pct: 2
+      hoa_monthly: 150
+      hoa_growth_pct: 2
+  insurance:
+  - kind: life
+    policy: term
+    death_benefit: 750000
+    premium_monthly: 65
+    term_years: 20
+  social_security:
+    claim_age: 67
+    earnings_history:
+      2003: 8000
+      2004: 14000
+      2005: 16000
+      2006: 17000
+      2007: 20000
+      2008: 27000
+      2009: 28000
+      2010: 30000
+      2011: 33000
+      2012: 37000
+      2013: 39000
+      2014: 40000
+      2015: 45000
+      2016: 45000
+      2017: 46000
+      2018: 46000
+      2019: 47000
+      2020: 47000
+      2021: 48000
+      2022: 49000
+      2023: 50000
+      2024: 52000
+      2025: 54000
+  children:
+  - id: junior
+    name: Junior
+    birth_year: 2015
+- id: jane
+  name: Jane
+  age: 45
+  gender: female
+  retirement_age: 60
+  spending:
+    amount_annual: 12000
+    growth_pct: 5
+  jobs:
+  - id: jane_job
+    company: Bargain Ben
+    role: Manager
+    salary_annual: 65000
+    raise_pct: 3
+    bonus_pct: 2
+  accounts:
+  - kind: bank
+    company: Credit Union
+    balance: 30000
+    interest_pct: 0.01
+    primary: true
+  - kind: bank
+    company: Credit Union
+    type: Savings
+    balance: 20100
+    interest_pct: 0.1
+  - kind: 401k
+    job: jane_job
+    pretax_balance: 50000
+    pretax_contrib_pct: 15
+    growth_pct: 5
+  - kind: brokerage
+    id: jane_brokerage
+    lots:
+    - value: 24000
+      cost_basis: 15000
+      acquired_year: 2018
+    - value: 6000
+      cost_basis: 5500
+      acquired_year: 2024
+  debts:
+  - kind: car
+    name: Hatchback
+    original_amount: 28000
+    balance: 19500
+    rate_pct: 6.9
+    term_years: 5
+  insurance:
+  - kind: life
+    policy: whole
+    death_benefit: 500000
+    premium_monthly: 280
+    cash_value_growth_pct: 3.5
+    loan_interest_pct: 5
+  social_security:
+    claim_age: 67
+    earnings_history:
+      2000: 20000
+      2001: 21000
+      2002: 23000
+      2003: 23000
+      2004: 24000
+      2005: 24000
+      2006: 25000
+      2007: 27000
+      2008: 29000
+      2009: 29000
+      2010: 32000
+      2011: 32000
+      2012: 33000
+      2013: 33000
+      2014: 40000
+      2015: 41000
+      2016: 45000
+      2017: 45000
+      2018: 46000
+      2019: 46000
+      2020: 46000
+      2021: 60000
+      2022: 63000
+      2023: 65000
+      2024: 67000
+      2025: 70000
+relationships:
+  marriages:
+  - spouses:
+    - john
+    - jane
+events:
+- id: jane_promotion
+  at:
+    year: 2027
+  person: jane
+  name: Jane is promoted
+  action: change_job
+  job: jane_job
+  salary_annual: 72000
+- id: john_car
+  at:
+    age: 55
+  person: john
+  name: John buys a new car for $32k
+  action: one_time_expense
+  amount: 32000
+- id: junior_college
+  at:
+    year: 2033
+  person: john
+  name: Junior's college room and board
+  action: recurring_expense
+  amount_annual: 15000
+  until:
+    year: 2036
+- id: invest_bonus
+  at:
+    relative:
+      after: jane_promotion
+      years: 1
+  person: jane
+  name: Jane invests a bonus
+  action: contribute
+  account: jane_brokerage
+  amount: 10000
+- id: downsize_spending
+  at:
+    relative:
+      after: john_car
+      years: 5
+  person: john
+  name: Spending falls once John retires
+  action: change_spending
+  change_pct: -15

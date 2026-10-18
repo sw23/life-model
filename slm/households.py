@@ -30,10 +30,9 @@ from dataclasses import replace
 
 import numpy as np
 
-from deepqlearning.envs.financial.scenarios import HOUSEHOLD_SCENARIOS, EpisodeSampler, HouseholdScenario
+from deepqlearning.envs.financial.scenarios import HOUSEHOLD_SCENARIOS, EpisodeSampler, HouseholdScenario, ss_claim_age
 from life_model.config.financial_config import default_financial_config
 from life_model.dependents.child import Child
-from life_model.insurance.social_security import get_max_delayed_retirement_credit_age, get_min_early_retirement_age
 from life_model.people.person import GenderAtBirth
 
 # Named economies drawn per household; None is the stochastic baseline. "recession" is held out
@@ -158,11 +157,7 @@ def _add_children_and_healthcare(rng: np.random.Generator, household: dict) -> d
 def resolved_ss_claim_age(household: dict) -> int:
     """The Social Security claiming age the env uses for ``household`` (its retirement age clipped
     to the claiming window, unless the household sets ``ss_claim_age``)."""
-    cfg = default_financial_config()
-    claim = household.get("ss_claim_age")
-    if claim is None:
-        claim = household["person_retirement_age"]
-    return int(min(max(int(claim), get_min_early_retirement_age(cfg)), get_max_delayed_retirement_credit_age(cfg)))
+    return ss_claim_age(household)
 
 
 def sample_households(scenarios: list[str], n_per_scenario: int, generation_seed: int) -> list[tuple[str, dict, int]]:

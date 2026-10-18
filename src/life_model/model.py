@@ -763,6 +763,21 @@ class LifeModel(mesa.Model):
 
         return RunResult.from_model(self, spec=spec)
 
+    def validate(self) -> list:
+        """Check the constructed household before running it.
+
+        Runs the household validator (:func:`life_model.spec.validate.validate_model`): errors such
+        as a person without a bank account, an unknown state code or a life event dated before
+        ``start_year``, and warnings such as two unmarried adults in one family, 0% spending growth
+        or a percent entered as a fraction.
+
+        Returns:
+            list[Finding]: The findings (empty when nothing is wrong).
+        """
+        from .spec.validate import validate_model
+
+        return validate_model(self)
+
     def _require_datacollector(self) -> LifeModelDataCollector:
         """Return the DataCollector, or raise clearly when built with ``collect_data=False``."""
         if self.datacollector is None:
