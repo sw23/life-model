@@ -142,9 +142,16 @@ class _Extractor:
         for spec_name, config_name in _ECONOMY_FIELDS.items():
             if getattr(current, config_name) != getattr(baseline, config_name):
                 values[spec_name] = getattr(current, config_name)
-        if current.paths != baseline.paths:
-            names = {v: k for k, v in _ECONOMY_FIELDS.items()}
-            values["paths"] = {names[k]: dict(v) for k, v in current.paths.items() if k in names}
+        # Paths merge into the scenario's per year, so only the differing (rate, year) entries are emitted.
+        names = {v: k for k, v in _ECONOMY_FIELDS.items()}
+        paths: dict[str, dict[int, float]] = {}
+        for rate, years in current.paths.items():
+            base_years = baseline.paths.get(rate, {})
+            changed = {year: value for year, value in years.items() if base_years.get(year) != value}
+            if changed and rate in names:
+                paths[names[rate]] = changed
+        if paths:
+            values["paths"] = paths
         stochastic = {}
         for name in type(current.stochastic).model_fields:
             if getattr(current.stochastic, name) != getattr(baseline.stochastic, name):

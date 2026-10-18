@@ -246,3 +246,153 @@ class TestDocsAndPackaging(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def _kitchen_sink() -> dict:
+    """A spec using every supported kind, with non-default values, for the round-trip test."""
+    data = minimal()
+    data["meta"].update({"end_year": 2060, "seed": 3, "default_state": "NY", "scenario": "recession"})
+    # recession already runs a path economy; the override changes one path year and the base inflation.
+    data["economy"] = {"inflation_pct": 2.5, "paths": {"equity_return_pct": {2027: -10.0}}}
+    alex = data["people"][0]
+    alex.update({"gender": "female", "mortality": "fixed_age", "death_age": 95, "state": "CA"})
+    alex["jobs"][0].update({"bonus_pct": 10, "stock_plan": {"signon_value": 40000, "refresher_value": 20000}})
+    alex["accounts"] = [
+        {"kind": "bank", "id": "checking", "balance": 20000, "interest_pct": 0.5, "primary": True},
+        {"kind": "bank", "company": "Online Bank", "type": "Savings", "balance": 5000, "interest_pct": 4.0},
+        {"kind": "401k", "job": "job", "pretax_balance": 1000, "roth_balance": 2000, "pretax_contrib_pct": 6},
+        {"kind": "brokerage", "balance": 10000, "growth_pct": 6, "dividend_yield_pct": 1.5},
+        {"kind": "traditional_ira", "balance": 3000, "contribution_limit_annual": 6000},
+        {"kind": "roth_ira", "balance": 4000},
+        {"kind": "hsa", "coverage": "family", "balance": 500, "employer_contribution_annual": 1000},
+        {"kind": "inherited_pretax", "balance": 50000, "decedent_name": "Aunt", "years": 8},
+        {
+            "kind": "pension",
+            "company": "City",
+            "vesting_years": 5,
+            "years_of_service": 12,
+            "benefit_multiplier_pct": 1.5,
+            "final_salary_annual": 70000,
+            "start_age": 62,
+            "cola_pct": 1,
+            "survivor_pct": 50,
+        },
+        {"kind": "pension", "company": "Old Co", "vesting_years": 3, "benefit_annual": 6000},
+        {
+            "kind": "annuity",
+            "annuity_type": "deferred",
+            "balance": 80000,
+            "interest_pct": 4,
+            "payout_type": "joint_and_survivor",
+            "joint_annuitant": "bo",
+            "survivor_pct": 50,
+        },
+        {"kind": "daf", "name": "Giving Fund", "balance": 7000, "growth_pct": 6},
+        {
+            "kind": "trust",
+            "trust_type": "irrevocable",
+            "beneficiaries": ["bo"],
+            "name": "Family Trust",
+            "balance": 9000,
+        },
+        {"kind": "529", "beneficiary": "kid", "balance": 2500, "contribution_limit_annual": 15000},
+    ]
+    alex["debts"] = [
+        {"kind": "car", "original_amount": 25000, "balance": 12000, "rate_pct": 7, "term_years": 5},
+        {
+            "kind": "student",
+            "loan_type": "federal_subsidized",
+            "original_amount": 20000,
+            "rate_pct": 4,
+            "term_years": 10,
+            "in_deferment": True,
+            "repayment_plan": "repayment_assistance_plan",
+        },
+        {"kind": "credit_card", "credit_limit": 9000, "balance": 1200, "rate_pct": 22, "card_type": "visa"},
+    ]
+    alex["housing"] = [
+        {
+            "kind": "home",
+            "id": "house",
+            "purchase_price": 500000,
+            "value_growth_pct": 3,
+            "down_payment": 100000,
+            "mortgage": {
+                "original_amount": 400000,
+                "balance": 380000,
+                "rate_pct": 6.5,
+                "term_years": 30,
+                "start_year": 2024,
+            },
+            "expenses": {"property_tax_pct": 1.2, "insurance_pct": 0.4, "hoa_monthly": 200, "hoa_growth_pct": 3},
+        },
+        {"kind": "rental", "name": "Studio", "rent_monthly": 900, "rent_growth_pct": "economy"},
+    ]
+    alex["insurance"] = [
+        {
+            "kind": "life",
+            "policy": "term",
+            "death_benefit": 1e6,
+            "premium_monthly": 60,
+            "term_years": 30,
+            "beneficiary": "bo",
+        },
+        {
+            "kind": "life",
+            "policy": "term",
+            "death_benefit": 2e5,
+            "premium_monthly": 20,
+            "term_years": 10,
+            "premium_schedule": "yearly_increase",
+            "premium_increase_pct": 2,
+        },
+        {
+            "kind": "life",
+            "policy": "term",
+            "death_benefit": 1e5,
+            "premium_monthly": 15,
+            "term_years": 10,
+            "premium_schedule": "age_banded",
+        },
+        {"kind": "life", "policy": "whole", "death_benefit": 3e5, "premium_monthly": 250, "cash_value_growth_pct": 3},
+        {"kind": "ltc", "company": "LTC Co", "premium_annual": 2500, "coverage_amount": 150000, "coverage_end_age": 95},
+        {"kind": "umbrella", "premium_annual": 300, "coverage_amount": 1e6, "premium_increase_pct": 1},
+    ]
+    alex["social_security"] = {"claim_age": 68, "earnings_history": {2018: 50000, 2019: 52000}}
+    alex["healthcare"] = {"medical_costs": True, "long_term_care": True}
+    alex["giving"] = [
+        {"kind": "donation", "charity": "Library", "amount_annual": 500, "frequency_years": 2, "end_year": 2040}
+    ]
+    alex["children"] = [{"id": "kid", "name": "Kid", "birth_year": 2018}]
+    bo = {
+        "id": "bo",
+        "name": "Bo",
+        "age": 42,
+        "retirement_age": 64,
+        "spending": {"amount_annual": 20000, "growth_pct": 2},
+        "accounts": [{"kind": "bank", "balance": 3000}],
+    }
+    data["people"].append(bo)
+    data["relationships"] = {"marriages": [{"spouses": ["alex", "bo"], "filing_status": "separate"}]}
+    data["events"] = [
+        {"id": "raise", "at": 2028, "person": "alex", "action": "change_job", "job": "job", "salary_annual": 90000},
+        {"at": {"relative": {"after": "raise", "years": 2}}, "person": "alex", "action": "sell_home", "home": "house"},
+        {"at": {"age": 50}, "person": "bo", "action": "one_time_expense", "amount": 3000},
+        {"at": {"age": 70}, "person": "alex", "action": "claim_social_security"},
+        {"at": 2055, "person": "bo", "action": "die"},
+    ]
+    return data
+
+
+class TestKitchenSinkRoundTrip(unittest.TestCase):
+    def test_every_supported_kind_extracts_back_to_its_spec(self):
+        spec = spec_of(_kitchen_sink())
+        model = build_model(spec, check=False)
+        self.assertEqual(dumps(spec_from_model(model)), dumps(canonical(spec)))
+
+    def test_python_built_model_extracts_and_rebuilds_identically(self):
+        """spec_from_model on a hand-built model gives a spec whose build matches it (migration path)."""
+        model = build_model(spec_of(_kitchen_sink()), check=False)
+        extracted = spec_from_model(model)
+        rebuilt = build_model(extracted, check=False)
+        self.assertEqual(dumps(spec_from_model(rebuilt)), dumps(extracted))

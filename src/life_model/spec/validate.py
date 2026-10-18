@@ -711,7 +711,7 @@ def validate_model(model) -> list[Finding]:
                 "create a BankAccount(owner=person, ...).",
                 "no_bank_account",
             )
-        if person.jobs and person.retirement_age < person.age:
+        if any(not job.retired for job in person.jobs) and person.retirement_age < person.age:
             add(
                 ERROR,
                 f"{path}.retirement_age",
