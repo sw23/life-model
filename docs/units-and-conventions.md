@@ -189,3 +189,4 @@ month, Medicare at 65, annuity payout start, pension start. By the end-of-year a
 | Taxes | | Settled in December from the year's income ledger (the sized waterfall) |
 | Mortality | Monthly hazard `1 - (1 - q)^(1/12)` (fixed-age deaths in the birth month); a death in month m stops pay from m+1 | |
 | Data | Ledger entries carry their month; month-end balance sheets (the monthly conservation check); monthly rows with `collect="month"` | Model and agent frames at each year end; tax returns |
+| Invariant checks (`checks=`) | Read: monthly conservation, between-month continuity, month-end balances, the cash floor at the month of each waterfall draw | Run at each year end, after December's taxes (`life_model.invariants`) |

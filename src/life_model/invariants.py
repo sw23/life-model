@@ -19,8 +19,8 @@ produces those results. They run once a year, at the year end (after December's 
 * ``no_draw_above_cash_floor``: no taxable sale or pre-tax withdrawal by the payment waterfall in a
   month the tax unit ended with cash above its floor (the rule Plan 26 item 4 broke): the waterfall
   runs monthly, so a draw in a lean month is legitimate even when later months' pay refills the bank,
-  and money that reached the bank after the month's last draw (a year-end insurance payout) does not
-  count;
+  and money that reached the bank after the month's last draw (a year-end insurance payout, a tax
+  refund) does not count;
 * ``contribution_limits``: 401(k) elective deferrals (402(g) + catch-up), 415(c) annual additions per
   plan, IRA and HSA contributions stay within the year's limits;
 * ``no_income_after_job_end``: no wages, bonus or vests from an employer after the job ended;
@@ -342,7 +342,8 @@ _WATERFALL_CAUSES = ("pay ", "fund ", "raise cash for ")
 
 def _inflows_after_last_draw(ctx: YearContext, month: int | None, banks: "set[str]") -> float:
     """Money that reached the unit's ``banks`` in ``month`` after the waterfall's last draw (a year-end
-    insurance payout, say): the draw could not have spent it, so it does not count against the floor."""
+    insurance payout, a refund of refundable credits): the draw could not have spent it, so it does not
+    count against the floor."""
     balances = ctx.months.get(month) if month is not None else None
     entries = (
         ctx.model.ledger.between(balances.ledger_start, balances.ledger_end) if balances is not None else ctx.entries
@@ -357,11 +358,13 @@ def _inflows_after_last_draw(ctx: YearContext, month: int | None, banks: "set[st
             last = index
     if last is None:
         return 0.0
-    return sum(
-        entry.amount
-        for entry in entries[last + 1 :]
-        if entry.to_account in banks and entry.from_account not in banks and entry.amount > 0
-    )
+    inflows = 0.0
+    for entry in entries[last + 1 :]:
+        if entry.to_account in banks and entry.from_account not in banks and entry.amount > 0:
+            inflows += entry.amount
+        elif entry.from_account in banks and entry.to_account not in banks and entry.amount < 0:
+            inflows -= entry.amount  # a negative payment out of the bank: a tax refund
+    return inflows
 
 
 def no_draw_above_cash_floor(ctx: YearContext) -> list[Violation]:

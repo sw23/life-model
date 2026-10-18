@@ -235,6 +235,17 @@ Plans 29 (reconciliation, invariants, household goldens, backtest) and 30 (CLI, 
 were written against the annual engine and merged into this branch afterwards. Their expected tax lines
 are external truth and did not change; what changed is listed here.
 
+The merge conflicted in five files: `model.py` (the monthly `step()` now also runs the invariant
+checker: a snapshot at year start, the yearly rules at year end, and records balance sheets whenever
+checks are on), `spec/validate.py` (both the start/birth checks and the actuals checks),
+`docs/index.rst` (every page), `docs/units-and-conventions.md` (Plan 30's units page plus this plan's
+time, money, ages and monthly-versus-annual sections, adjusted to the monthly engine) and
+`montecarlo.py` (both docstring notes).
+
+`life-model run --collect month` / `life_model.run(collect="month")` collect month-end rows and export
+them; a mid-year `meta.start` works with `--years` / `--end-year` (the part first year counts as one),
+`explain`, `compare` and `montecarlo`, and the run summary carries it (`start`).
+
 ### Household goldens: `early_retiree` spec inputs (no expected value changed)
 
 The 15 other household goldens reproduce every line on the monthly engine unchanged (wages and
@@ -277,9 +288,10 @@ whenever checks are on):
 * `no_draw_above_cash_floor` looks at the month of each waterfall draw rather than the year end: the
   unit's banks at that month's close, less money that reached them after the month's last waterfall
   draw. Two monthly-engine facts made the year-end form wrong: a lean month's sale is legitimate when
-  later months' pay refills the bank, and the long-term-care policy pays the year's claim at the year
-  end, after December's bills were funded by a sale (every `stochastic_retiree` seed tripped the
-  year-end form on this).
+  later months' pay refills the bank, and money can arrive after December's bills were funded by a
+  sale: the long-term-care policy pays the year's claim at the year end (every `stochastic_retiree`
+  seed tripped the year-end form on this), and refundable credits are refunded at settlement (a
+  sampled SLM household with children).
 
 Test changes in `test_invariants.py` are mechanical: a "year" of driver steps is `step_year()`; mocks
 that inject a once-a-year violation from a monthly stage (`pre_step`) act in January only; the
