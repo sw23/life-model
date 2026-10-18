@@ -319,3 +319,11 @@ gives a return and flows for the simulated months only; the report now says so i
 (`test_part_year_start_reconciles_only_the_simulated_months`: May-December pays 8/12 of the year's
 wages, a January bonus is not paid, the part-year records reconcile green and a full-year record is
 red on wages with the note).
+
+### A flaky RL test (pre-existing)
+
+`deepqlearning/tests/envs/test_retirement_income.py::test_retiree_with_no_assets_lives_on_benefits`
+builds an unseeded environment whose 67-year-old dies in about one run in ten within the five years
+(the estate is settled and the bank emptied, so the final `bank_account_balance > 0` fails): 7 of 60
+runs on `fourth-wave` (f66307f), 9 of 60 here. The test now makes the retiree immortal; it is about
+the benefit covering the spending.
