@@ -131,7 +131,7 @@ def _person_param_specs(prefix: str, name: str) -> dict[str, Any]:
         },
         f"{prefix}_retirement_balance": Slider(f"{name}'s 401k Balance ($)", d["retirement_balance"], 0, 500000, 5000),
         f"{prefix}_retirement_contrib": Slider(f"{name}'s 401k Contribution (%)", d["retirement_contrib"], 0, 50, 1),
-        f"{prefix}_company_match": Slider(f"{name}'s 401k Company Match (%)", d["company_match"], 0, 20, 1),
+        f"{prefix}_company_match": Slider(f"{name}'s 401k Company Match (% of pay)", d["company_match"], 0, 20, 1),
         f"{prefix}_children": Slider(f"{name}'s Children", d["children"], 0, 5, 1),
     }
 
@@ -189,7 +189,9 @@ def _add_person(model: LifeModel, family: Family, prefix: str, kwargs: dict[str,
             job=job,
             pretax_balance=g("retirement_balance"),
             pretax_contrib_percent=g("retirement_contrib"),
-            company_match_percent=g("company_match"),
+            # "Company match (%)" is the plan's dollar-for-dollar match up to that percent of pay
+            # (the deprecated company_match_percent meant a percent *of the deferral*).
+            match_tiers=[(100, g("company_match"))] if g("company_match") > 0 else None,
             average_growth=g("retirement_growth"),
         )
 

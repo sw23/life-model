@@ -77,6 +77,10 @@ class Job(LifeModelAgent):
         # the 401(k)-eligible compensation computed below, matching the usual plan-document rule.
         self.stock_plan: StockPlan | None = None
         self.retired = False
+        # Years of service: a year counts once its payroll is booked (the annual model treats a paid
+        # year as a worked year, including the year the job ends). Drives 401k match vesting and
+        # pension service credit.
+        self.years_of_service = 0
         # What this job has booked for ``_booked_year`` (see ``_book_payroll``).
         self._booked: Payroll | None = None
         self._booked_year: int | None = None
@@ -98,26 +102,26 @@ class Job(LifeModelAgent):
         year, so recomputing after a mid-year change (see :meth:`step`) doesn't count the job's own
         earlier deferral against it.
         """
-        salary = self.salary.base
         gross_income = self.salary.base + self.salary.bonus
         pretax = roth = match = 0.0
         if self.retirement_account is not None:
             account = self.retirement_account
+            # Plan pay: base salary, plus the bonus when the plan counts it (match_on_bonus).
+            compensation = account.plan_compensation(self.salary.base, self.salary.bonus)
             booked_elective = self._booked.elective if self._booked is not None else 0.0
             # Elective deferrals share one 402(g) limit across all of the person's jobs, so two
             # jobs can no longer each defer the full limit.
-            room = min(self.owner.remaining_401k_elective_room() + booked_elective, salary)
-            pretax = min(account.pretax_contrib(salary), room)
+            room = min(self.owner.remaining_401k_elective_room() + booked_elective, compensation)
+            pretax = min(account.pretax_contrib(compensation), room)
             room -= pretax
-            roth = min(account.roth_contrib(salary), room)
+            roth = min(account.roth_contrib(compensation), room)
             elective = pretax + roth
 
-            # Employer match: the configured percentage of the deferral, capped both by
-            # match_percent x salary and by the 415(c) overall annual-additions limit (employee +
-            # employer money per plan) so the match can't run away.
-            salary_cap = (account.company_match_percent / 100) * salary
-            match = min(account.company_match(elective), salary_cap)
-            additions_limit = job_401k_annual_additions_limit(self.owner.model.config)
+            # Employer match from the plan formula (match tiers, or the deprecated legacy percent),
+            # capped by this year's 415(c) overall annual-additions limit (employee + employer
+            # money per plan) so the match can't run away.
+            match = account.employer_match(elective, compensation)
+            additions_limit = job_401k_annual_additions_limit(self.owner.model.year_config)
             match = max(0.0, min(match, additions_limit - elective))
         return Payroll(gross=gross_income, pretax=pretax, roth=roth, match=match)
 
@@ -131,7 +135,8 @@ class Job(LifeModelAgent):
         if self.retirement_account is not None:
             account = self.retirement_account
             self.owner.record_401k_elective_deferral(delta.elective)
-            account.pretax_balance += delta.pretax + delta.match
+            account.pretax_balance += delta.pretax
+            account.receive_match(delta.match)
             account.roth_balance += delta.roth
 
         take_home = delta.gross - delta.elective
@@ -156,6 +161,7 @@ class Job(LifeModelAgent):
         payroll = self._compute_payroll()
         booked = self._booked if self._booked_year == self.model.year else None
         if booked is None:
+            self.years_of_service += 1
             self._apply_payroll(payroll)
         elif not payroll.is_close(booked):
             self._apply_payroll(payroll - booked)
@@ -163,6 +169,8 @@ class Job(LifeModelAgent):
             payroll = booked
         self._booked = payroll
         self._booked_year = self.model.year
+        if self.retirement_account is not None:
+            self.retirement_account.vest_match()
         self.stat_gross_income = payroll.gross
         self.stat_retirement_contrib = payroll.elective
         self.stat_retirement_match = payroll.match
@@ -191,8 +199,12 @@ class Job(LifeModelAgent):
         self._book_payroll()
 
     def retire(self):
-        """Retire from the job"""
+        """Retire from the job (unvested employer 401k money is forfeited)."""
+        if self.retired:
+            return
         self.retired = True
+        if self.retirement_account is not None:
+            self.retirement_account.forfeit_unvested_match()
         self.model.event_log.add(Event(f"{self.owner.name} retired from {self.company}"))
 
 

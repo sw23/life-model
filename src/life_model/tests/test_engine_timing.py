@@ -602,5 +602,72 @@ class TestSocialSecurityTaxedAtSettlement(unittest.TestCase):
         self.assertAlmostEqual(retiree.agi_history[2027], 80000 + expected, places=2)
 
 
+class TestMatchTiers(unittest.TestCase):
+    """Item 7 / D7: the employer match as plan documents state it, the deprecated alias, 415(c)."""
+
+    def _match(self, *, deferral=6, salary=100000, bonus=0, model=None, **account_kwargs):
+        model = model or _model(end_year=2026)
+        person = _worker(model, salary=0, bank=0, spending=0)
+        job = Job(person, "Co", "Eng", Salary(model, base=salary, yearly_bonus=bonus))
+        Job401kAccount(job=job, pretax_contrib_percent=deferral, average_growth=0, **account_kwargs)
+        model.run()
+        return job.stat_retirement_match
+
+    def test_single_tier(self):
+        self.assertAlmostEqual(self._match(match_tiers=[(50, 6)]), 3000, places=6)
+
+    def test_safe_harbor_tiers(self):
+        tiers = [(100, 3), (50, 2)]
+        self.assertAlmostEqual(self._match(match_tiers=tiers), 4000, places=6)  # 3% + 1% of pay
+        self.assertAlmostEqual(self._match(deferral=4, match_tiers=tiers), 3500, places=6)
+        self.assertAlmostEqual(self._match(deferral=2, match_tiers=tiers), 2000, places=6)
+
+    def test_match_on_bonus(self):
+        tiers = [(100, 6)]
+        self.assertAlmostEqual(self._match(bonus=10, match_tiers=tiers), 6000, places=6)
+        self.assertAlmostEqual(self._match(bonus=10, match_tiers=tiers, match_on_bonus=True), 6600, places=6)
+
+    def test_deprecated_percent_warns_and_keeps_the_legacy_formula(self):
+        with self.assertWarns(DeprecationWarning) as caught:
+            match = self._match(company_match_percent=6)
+        self.assertAlmostEqual(match, 360, places=6)  # 6% of the $6,000 deferral
+        self.assertIn("match_tiers=[(100, 6)]", str(caught.warning))
+
+    def test_tiers_and_deprecated_percent_are_exclusive(self):
+        with self.assertRaises(ValueError):
+            self._match(company_match_percent=6, match_tiers=[(100, 6)])
+
+    def test_415c_limit_is_year_indexed(self):
+        # A huge match is capped at that year's annual-additions limit minus the deferral.
+        model = LifeModel(start_year=2023, end_year=2023)
+        self.assertEqual(model.year_config.get_job_401k_annual_additions_limit(), 66000)
+        match = self._match(model=model, salary=1_000_000, deferral=1, match_tiers=[(1000, 10)])
+        self.assertAlmostEqual(match, 66000 - 10000, places=6)
+
+    def test_unvested_match_forfeited_on_leaving_early(self):
+        model = _model(end_year=2028)
+        person = _worker(model, salary=0, bank=0, spending=0)
+        job = Job(person, "Co", "Eng", Salary(model, base=100000))
+        account = Job401kAccount(
+            job=job, pretax_contrib_percent=6, average_growth=0, match_tiers=[(100, 6)], match_vesting_years=3
+        )
+        LifeEvents(model, [LifeEvent(2027, "quit", job.retire)])
+        model.run()
+        # Two years of deferrals stay; two years of unvested match are forfeited.
+        self.assertAlmostEqual(account.pretax_balance, 2 * 6000, places=6)
+
+    def test_match_vests_after_the_service_requirement(self):
+        model = _model(end_year=2028)
+        person = _worker(model, salary=0, bank=0, spending=0)
+        job = Job(person, "Co", "Eng", Salary(model, base=100000))
+        account = Job401kAccount(
+            job=job, pretax_contrib_percent=6, average_growth=0, match_tiers=[(100, 6)], match_vesting_years=3
+        )
+        model.run()  # 2026-2028: three years of service
+        self.assertEqual(account.unvested_match, 0)
+        job.retire()
+        self.assertAlmostEqual(account.pretax_balance, 3 * 12000, places=6)
+
+
 if __name__ == "__main__":
     unittest.main()

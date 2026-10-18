@@ -65,3 +65,14 @@ now also counting preferential income and tax-exempt interest); the tests that c
 (`test_social_security.py`, `test_married_filing_separately.py`) pass unchanged.
 `Person.get_income_taxes_due` is now `TaxUnit([person]).get_income_taxes_due` (the
 `TaxCalculationService` and `test_state_tax.py` callers pass unchanged).
+
+## Task 6 / D7 — 401k match tiers, vesting, year-indexed 415(c)
+
+No existing test's expected value changed: `company_match_percent` keeps its legacy formula (a
+percent of the deferral, capped at that percent of pay) and now emits a `DeprecationWarning`
+naming the `match_tiers` equivalents. The 415(c) annual-additions limit is read from
+`model.year_config`; `tax_years` gained `limit_415c` (2022 $61,000 … 2026 $72,000, IRS) and
+projects it in $1,000 steps. The dashboard's "Company Match" slider now means a dollar-for-dollar
+match up to that percent of pay (`match_tiers=[(100, pct)]`), changing dashboard outputs for any
+non-zero match (the default 3% with a 6% deferral: $180 → $3,000 of match on $100k).
+`Job.retire()` is now idempotent (a second call no longer logs a second "retired" event).

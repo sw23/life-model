@@ -174,7 +174,7 @@ class FinancialConfig:
 
         The year-table values replace the static ones everywhere the model reads them: the federal
         standard deduction and brackets, the Social Security wage base (FICA and AIME share it), and
-        the 401k, IRA and HSA contribution limits. Preferential capital-gains brackets are not in the
+        the 401k (402(g) and, when the table has it, 415(c)), IRA and HSA contribution limits. Preferential capital-gains brackets are not in the
         year table; past the last published year they are scaled by ``inflation_factor`` (the same
         factor the table values were projected with), otherwise left as configured.
 
@@ -207,7 +207,11 @@ class FinancialConfig:
         retirement = model.retirement.model_copy(
             update={
                 "job_401k_contrib_limit": model.retirement.job_401k_contrib_limit.model_copy(
-                    update={"base": params.limit_401k_base, "catch_up_amount": params.limit_401k_catch_up}
+                    update={
+                        "base": params.limit_401k_base,
+                        "catch_up_amount": params.limit_401k_catch_up,
+                        **({"annual_additions_limit": params.limit_415c} if params.limit_415c is not None else {}),
+                    }
                 ),
                 "ira": model.retirement.ira.model_copy(update={"contribution_limit": params.limit_ira}),
             }
@@ -275,6 +279,9 @@ class FinancialConfig:
         data["limit_hsa_self"] = round_to(data["limit_hsa_self"] * factor, 50)
         data["limit_hsa_family"] = round_to(data["limit_hsa_family"] * factor, 50)
         data["gift_exclusion"] = round_to(data["gift_exclusion"] * factor, 1000)
+        if data.get("limit_415c") is not None:
+            # §415(d)(4)(B): the defined-contribution limit is adjusted in $1,000 increments.
+            data["limit_415c"] = round_to(data["limit_415c"] * factor, 1000)
         # rmd_start_age is a structural (age) parameter, not a dollar amount — leave it.
         return YearlyTaxParameters(**data)
 
