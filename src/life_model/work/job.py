@@ -7,8 +7,9 @@ import html
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar
 
+from ..ledger import FlowKind
 from ..limits import job_401k_annual_additions_limit
-from ..model import Event, LifeModel, LifeModelAgent
+from ..model import Event, EventKind, LifeModel, LifeModelAgent
 from ..people.person import Person
 
 if TYPE_CHECKING:
@@ -24,6 +25,8 @@ class Payroll:
     pretax: float = 0.0
     roth: float = 0.0
     match: float = 0.0
+    #: The bonus part of ``gross``.
+    bonus: float = 0.0
 
     @property
     def elective(self) -> float:
@@ -48,6 +51,7 @@ class Payroll:
             pretax=self.pretax - other.pretax,
             roth=self.roth - other.roth,
             match=self.match - other.match,
+            bonus=self.bonus - other.bonus,
         )
 
 
@@ -72,6 +76,8 @@ class Job(LifeModelAgent):
         self.company = company
         self.role = role
         self.salary = salary
+        if getattr(salary, "owner", None) is None:
+            salary.owner = owner  # whose salary it is (reporting: the agent frame's Owner column)
         self.retirement_account: Job401kAccount | None = None
         # Set by StockPlan when one attaches to this job. Vest income is deliberately excluded from
         # the 401(k)-eligible compensation computed below, matching the usual plan-document rule.
@@ -123,7 +129,7 @@ class Job(LifeModelAgent):
             match = account.employer_match(elective, compensation)
             additions_limit = job_401k_annual_additions_limit(self.owner.model.year_config)
             match = max(0.0, min(match, additions_limit - elective))
-        return Payroll(gross=gross_income, pretax=pretax, roth=roth, match=match)
+        return Payroll(gross=gross_income, pretax=pretax, roth=roth, match=match, bonus=self.salary.bonus)
 
     def _apply_payroll(self, delta: "Payroll") -> None:
         """Move ``delta`` of payroll: take-home pay to the bank, deferrals and match to the 401k,
@@ -132,21 +138,56 @@ class Job(LifeModelAgent):
         ``delta`` is a whole year's payroll the first time, or the difference between a re-computed
         and the already-booked payroll after a mid-year change (components may be negative).
         """
+        owner = self.owner
+        ledger = self.model.ledger
+        pay_to = owner.cash_destination
+        true_up = self._booked_year == self.model.year
+        cause = f"{self.model.year} payroll true-up" if true_up else f"{self.model.year} payroll"
+        # Gross pay arrives in the bank; the deferrals move on to the 401k (amounts are negative
+        # when a mid-year change claws pay back).
+        ledger.post(
+            delta.gross - delta.bonus, FlowKind.WAGE, to_account=pay_to, source=self.company, cause=cause, agent=owner
+        )
+        ledger.post(delta.bonus, FlowKind.BONUS, to_account=pay_to, source=self.company, cause=cause, agent=owner)
         if self.retirement_account is not None:
             account = self.retirement_account
-            self.owner.record_401k_elective_deferral(delta.elective)
+            owner.record_401k_elective_deferral(delta.elective)
             account.pretax_balance += delta.pretax
             account.receive_match(delta.match)
             account.roth_balance += delta.roth
+            ledger.post(
+                delta.pretax,
+                FlowKind.CONTRIBUTION,
+                from_account=pay_to,
+                to_account=account,
+                cause="pre-tax 401k deferral",
+                agent=owner,
+            )
+            ledger.post(
+                delta.roth,
+                FlowKind.CONTRIBUTION,
+                from_account=pay_to,
+                to_account=account,
+                cause="Roth 401k deferral",
+                agent=owner,
+            )
+            ledger.post(
+                delta.match,
+                FlowKind.MATCH,
+                to_account=account,
+                source=self.company,
+                cause="employer match",
+                agent=owner,
+            )
 
         take_home = delta.gross - delta.elective
         if take_home >= 0:
             # Deposit take-home pay into bank account
-            self.owner.deposit_into_bank_account(take_home)
+            owner.deposit_into_bank_account(take_home, post=False)
         else:
             # A mid-year pay cut claws back pay that was already deposited; whatever the bank
             # can't return is owed (the unit settles it with the year's bills).
-            self.owner.debt += self.owner.deduct_from_bank_accounts(-take_home)
+            owner.add_debt(owner.deduct_from_bank_accounts(-take_home), to_account=pay_to, cause=cause)
 
         # Add to taxable income for the person
         # - Income tax is settled by the tax unit in Family.step
@@ -205,7 +246,14 @@ class Job(LifeModelAgent):
         self.retired = True
         if self.retirement_account is not None:
             self.retirement_account.forfeit_unvested_match()
-        self.model.event_log.add(Event(f"{self.owner.name} retired from {self.company}"))
+        self.model.event_log.add(
+            Event(
+                EventKind.RETIRED,
+                person=self.owner,
+                cause=self.company,
+                message=f"{self.owner.name} retired from {self.company}",
+            )
+        )
 
 
 class Salary(LifeModelAgent):
@@ -222,6 +270,8 @@ class Salary(LifeModelAgent):
         self.base = base
         self._yearly_increase_override = yearly_increase
         self.yearly_bonus = yearly_bonus
+        #: The person paid this salary (set by ``Job``).
+        self.owner = None
 
     @property
     def yearly_increase(self) -> float:
@@ -237,6 +287,12 @@ class Salary(LifeModelAgent):
     @property
     def bonus(self) -> float:
         return self.base * (self.yearly_bonus / 100)
+
+    @property
+    def base_salary(self) -> float:
+        """The base salary (an alias of ``base`` reported as the agent frame's ``Salary`` column,
+        snapshotted before the year-end raise)."""
+        return self.base
 
     def post_step(self):
         # Escalator runs after the year's income has been earned/deposited (consume-then-advance).

@@ -17,6 +17,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, ClassVar
 
+from ..ledger import FlowKind
 from ..model import LifeModelAgent
 
 if TYPE_CHECKING:
@@ -294,7 +295,7 @@ class StockPlan(LifeModelAgent):
             # A vest is W-2 compensation: ordinary income and FICA wages alike. Social Security
             # accumulates it into the year's record and re-clamps the total to the wage base, so
             # adding it on top of salary is safe.
-            self.owner.income.add_wages(ordinary_amount=vested, fica_wages=vested)
+            self.owner.income.add_wages(ordinary_amount=vested, fica_wages=vested, source="rsu_vest")
             if self.owner.social_security is not None:
                 self.owner.social_security.add_income_for_year(vested)
             self._dispose(vested)
@@ -332,8 +333,9 @@ class StockPlan(LifeModelAgent):
         the sale price and the basis are the same number. Holding creates a lot at that same basis,
         with a holding period starting now, so only post-vest appreciation is ever taxed as a gain.
         """
+        company = self.job.company
         if self.disposition == "sell":
-            self.owner.receive_cash(vested, source="stock vest")
+            self.owner.receive_cash(vested, source=company, kind=FlowKind.VEST, cause="RSU vest (sold at vest)")
             return
 
         account = self.brokerage_account
@@ -342,9 +344,12 @@ class StockPlan(LifeModelAgent):
             account = accounts[0] if accounts else None
         if account is None:
             # Nowhere to hold the shares; fall back to cash rather than losing the value.
-            self.owner.receive_cash(vested, source="stock vest")
+            self.owner.receive_cash(vested, source=company, kind=FlowKind.VEST, cause="RSU vest (no brokerage)")
             return
         account.deposit_with_basis(vested, cost_basis=vested, acquired_year=self.model.year)
+        self.model.ledger.post(
+            vested, FlowKind.VEST, to_account=account, source=company, cause="RSU vest (held)", agent=self.owner
+        )
 
     def _repr_html_(self):
         desc = "<ul>"

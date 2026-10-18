@@ -124,7 +124,7 @@ class Child(LifeModelAgent):
             # actually reduces other assets. This keeps bank+529 conservation intact while
             # making the 529 machinery load-bearing.
             self._draw_college_from_529s(cost)
-        self.person.spending.add_expense(cost)
+        self.person.spending.add_expense(cost, category="dependents")
         self.stat_dependent_costs = cost
 
     def _draw_college_from_529s(self, amount: float) -> float:

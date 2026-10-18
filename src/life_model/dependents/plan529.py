@@ -6,6 +6,7 @@ import html
 from typing import TYPE_CHECKING, Optional
 
 from ..base_classes import Investment
+from ..ledger import FlowKind
 from ..model import compound_interest
 from ..tax.income import IncomeType
 
@@ -15,6 +16,9 @@ if TYPE_CHECKING:
 
 
 class Plan529(Investment):
+    STATS_OWNED = frozenset({"stat_529_balance"})
+    BALANCE_STAT = "stat_529_balance"
+
     def __init__(
         self,
         owner: "Person",
@@ -74,11 +78,15 @@ class Plan529(Investment):
         # Register with the model registry
         self.model.registries.plan_529s.register(owner, self)
 
-    def contribute(self, amount: float) -> float:
+    def contribute(
+        self, amount: float, *, from_account=None, source: str = "contribution from outside the model"
+    ) -> float:
         """Make a contribution to the 529 plan
 
         Args:
             amount: Amount to contribute
+            from_account: Household account the caller already debited for it (keyword-only); when
+                None the money is posted to the ledger as new money from ``source``.
 
         Returns:
             Amount actually contributed (limited by contribution limits)
@@ -98,6 +106,14 @@ class Plan529(Investment):
             self.balance += actual_contribution
             self.total_contributions += actual_contribution
             self.contributions_this_year += actual_contribution
+            self.model.ledger.post(
+                actual_contribution,
+                FlowKind.CONTRIBUTION,
+                from_account=from_account,
+                to_account=self,
+                source=None if from_account is not None else source,
+                agent=self.person,
+            )
 
         return actual_contribution
 
@@ -136,7 +152,9 @@ class Plan529(Investment):
             self.total_withdrawals += actual_withdrawal
             self.qualified_withdrawals += actual_withdrawal
             # Qualified withdrawals are tax-free; deposit the cash to the owner.
-            self.person.receive_cash(actual_withdrawal, source="529 qualified withdrawal")
+            self.person.receive_cash(
+                actual_withdrawal, source="529 qualified withdrawal", kind=FlowKind.WITHDRAWAL, from_account=self
+            )
 
         return actual_withdrawal
 
@@ -173,11 +191,15 @@ class Plan529(Investment):
 
         # Route the cash and taxes: full withdrawal to the owner's bank, the earnings portion is
         # ordinary income, and the penalty is debited from the owner.
-        self.person.receive_cash(actual_withdrawal, source="529 non-qualified withdrawal")
+        self.person.receive_cash(
+            actual_withdrawal, source="529 non-qualified withdrawal", kind=FlowKind.WITHDRAWAL, from_account=self
+        )
         if earnings_withdrawn > 0:
-            self.person.income.add(IncomeType.ORDINARY, earnings_withdrawn)
+            self.person.income.add(IncomeType.ORDINARY, earnings_withdrawn, source="529_nonqualified")
         if penalty_amount > 0:
-            self.person.deduct_from_bank_accounts(penalty_amount)
+            self.person.deduct_from_bank_accounts(
+                penalty_amount, kind=FlowKind.PENALTY, sink="IRS", cause="529 non-qualified withdrawal penalty"
+            )
             self.stat_penalties_paid += penalty_amount
 
         return (actual_withdrawal, penalty_amount)
@@ -243,6 +265,7 @@ class Plan529(Investment):
         self.balance += growth
         self.total_earnings += growth
         self.stat_growth_history.append(growth)
+        self._post_growth(growth)
 
     def step(self):
         """Step phase: Track statistics"""

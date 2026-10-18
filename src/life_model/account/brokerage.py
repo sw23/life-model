@@ -6,6 +6,7 @@ import html
 from dataclasses import dataclass
 
 from ..base_classes import Investment
+from ..ledger import FlowKind
 from ..people.person import Person
 from ..tax.income import IncomeType
 
@@ -112,10 +113,14 @@ class BrokerageAccount(Investment):
 
         self._accrue_to_lots(appreciation)
         self.balance += appreciation
+        self._post_growth(appreciation)
 
         if dividend > 0:
-            self.person.income.add(IncomeType.QUALIFIED_DIVIDEND, dividend)
+            self.person.income.add(IncomeType.QUALIFIED_DIVIDEND, dividend, source="dividend")
             self.deposit(dividend)
+            self.model.ledger.post(
+                dividend, FlowKind.DIVIDEND, to_account=self, source="dividends (reinvested)", agent=self.person
+            )
 
         growth = appreciation + dividend
         self.stat_growth_history.append(growth)
@@ -172,9 +177,9 @@ class BrokerageAccount(Investment):
         """
         withdrawn, long_term_gain, short_term_gain = self.sell(amount)
         if long_term_gain != 0:
-            self.person.income.add(IncomeType.LONG_TERM_CAPITAL_GAIN, long_term_gain)
+            self.person.income.add(IncomeType.LONG_TERM_CAPITAL_GAIN, long_term_gain, source="brokerage_sale")
         if short_term_gain != 0:
-            self.person.income.add(IncomeType.SHORT_TERM_CAPITAL_GAIN, short_term_gain)
+            self.person.income.add(IncomeType.SHORT_TERM_CAPITAL_GAIN, short_term_gain, source="brokerage_sale")
         return withdrawn
 
     def sell(self, amount: float) -> tuple[float, float, float]:

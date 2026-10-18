@@ -5,15 +5,20 @@
 
 from collections.abc import Callable
 from datetime import datetime
+from enum import Enum
 from math import e as const_e
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 import mesa
 import pandas as pd
 from pandas.io.formats.style import Styler
 
 from .config.financial_config import FinancialConfig
+from .ledger import LEDGER_COLUMNS, CashFlowLedger
 from .registry import ModelRegistries
+
+if TYPE_CHECKING:
+    from .results import RunResult
 
 
 def compound_interest(principal: float, rate: float, num_times_applied: int = 1, elapsed_time_periods: int = 1):
@@ -33,7 +38,16 @@ def round_money(amount: float) -> float:
 
 
 class Stat:
-    def __init__(self, name: str, title: str | None = None, fmt: str | None = None, aggregator: Callable | None = None):
+    def __init__(
+        self,
+        name: str,
+        title: str | None = None,
+        fmt: str | None = None,
+        aggregator: Callable | None = None,
+        *,
+        description: str = "",
+        default=0,
+    ):
         """Stat
 
         Args:
@@ -41,11 +55,16 @@ class Stat:
             title (str, optional): Title of stat.
             fmt (str, optional): Format string for printing.
             aggregator (Callable, optional): Function to aggregate stat values. Default is sum().
+            description (str, optional): What the stat measures (rendered into docs/outputs.md).
+            default (optional): Model-level value when no agent owns the stat (an aggregator such as
+                ``max`` has no value for an empty sequence).
         """
         self.name = name
         self.title = title or name
         self.fmt = fmt
         self.aggregator = aggregator or sum
+        self.description = description
+        self.default = default
 
     def model_reporter(self, model: "LifeModel"):
         """Aggregate the stat over the agents whose class declares it in ``STATS_OWNED``.
@@ -53,27 +72,194 @@ class Stat:
         Only owners are counted, so a stat can never be double counted by an agent type that
         merely inherited a zero, and a write to an undeclared agent cannot leak into the total.
         """
-        return self.aggregator(getattr(agent, self.name) for agent in model.agents if self.name in agent.STATS_OWNED)
+        values = [getattr(agent, self.name) for agent in model.agents if self.name in agent.STATS_OWNED]
+        if not values:
+            return self.default
+        return self.aggregator(values)
 
 
 class MoneyStat(Stat):
-    def __init__(self, name: str, title: str | None = None):
-        super().__init__(name, title, FMT_MONEY)
+    def __init__(self, name: str, title: str | None = None, description: str = ""):
+        super().__init__(name, title, FMT_MONEY, description=description)
+
+
+class EventKind(str, Enum):
+    """What an :class:`Event` records. Detail kinds (:attr:`is_detail`) are the year-by-year mechanics
+    (every RMD, forced sale, solver withdrawal, penalty and shortfall); they are kept on the log and in
+    ``RunResult.events``/``explain`` but left out of the event log's notebook table, which shows the
+    life story."""
+
+    NOTE = "note"  #: Free-text event (what ``Event(message)`` creates).
+    LIFE_EVENT_FIRED = "life_event_fired"
+    RETIRED = "retired"
+    RETIREMENT_AGE = "retirement_age"
+    MARRIED = "married"
+    DIED = "died"
+    HOME_BOUGHT = "home_bought"
+    HOME_SOLD = "home_sold"
+    POLICY_LAPSED = "policy_lapsed"
+    ANNUITIZED = "annuitized"
+    INHERITANCE = "inheritance"
+    FORCED_SALE = "forced_sale"
+    PRETAX_WITHDRAWAL = "pretax_withdrawal"
+    WITHDRAWAL = "withdrawal"
+    RMD = "rmd"
+    PENALTY = "penalty"
+    SHORTFALL_DEBT = "shortfall_debt"
+
+    @property
+    def is_detail(self) -> bool:
+        return self in _DETAIL_KINDS
+
+
+#: One-line meaning of every :class:`EventKind` (rendered into docs/outputs.md).
+EVENT_KIND_DOCS: dict[str, str] = {
+    "note": "Free-text event (what Event(message) creates); most legacy messages.",
+    "life_event_fired": "A scheduled LifeEvent fired (details: stage; the record also has name and scheduled_year).",
+    "retired": "A job ended (retirement, a layoff, death).",
+    "retirement_age": "A person reached the federal retirement age (59.5).",
+    "married": "Two people married (details: spouse).",
+    "died": "A person died.",
+    "home_bought": "A home was bought (amount: price; cause: the purchase).",
+    "home_sold": "A home was sold (amount: price; details: net_proceeds, taxable_gain).",
+    "policy_lapsed": "A life insurance policy lapsed (cause: non-payment, or a loan above the cash value).",
+    "annuitized": "An annuity converted to income payments (amount: reserve; details: monthly_payout).",
+    "inheritance": "Assets passed at a death (estate, designated account, trust payout, inherited IRA done).",
+    "forced_sale": "Detail: the payment waterfall sold brokerage holdings (amount, account, cause).",
+    "pretax_withdrawal": "Detail: the waterfall withdrew pre-tax money (amount; details: target = the solver's size).",
+    "withdrawal": "Detail: the waterfall drew Roth money.",
+    "rmd": "Detail: a required minimum distribution (amount, account).",
+    "penalty": "Detail: an additional tax settled with the year's return (amount; cause: its source).",
+    "shortfall_debt": "Detail: bills the household could not pay, carried as debt (amount, cause).",
+}
+
+_DETAIL_KINDS = frozenset(
+    {
+        EventKind.FORCED_SALE,
+        EventKind.PRETAX_WITHDRAWAL,
+        EventKind.WITHDRAWAL,
+        EventKind.RMD,
+        EventKind.PENALTY,
+        EventKind.SHORTFALL_DEBT,
+    }
+)
 
 
 class Event:
-    def __init__(self, message: str):
+    def __init__(
+        self,
+        kind: "EventKind | str | None" = None,
+        year: int | None = None,
+        person=None,
+        amount: float | None = None,
+        account=None,
+        cause: str | None = None,
+        message: str | None = None,
+        **details,
+    ):
         """Event
 
+        ``Event("free text")`` (a plain string first argument) is a :attr:`EventKind.NOTE` with that
+        message, as events have always been. A typed event passes an :class:`EventKind` first, plus
+        what it is about; its message is generated when not given.
+
         Args:
-            message (str): Event description.
+            kind (EventKind | str): The event's kind, or (legacy) its message.
+            year (int, optional): Year; stamped by :meth:`EventLog.add` when None.
+            person (Person | str, optional): Who it is about (stored as name and agent id).
+            amount (float, optional): Dollar amount involved.
+            account (agent | str, optional): Account involved (stored as its ledger label and name).
+            cause (str, optional): Why it happened.
+            message (str, optional): Display text (generated from the fields when None).
+            **details: Extra kind-specific fields (e.g. ``target`` on a pre-tax withdrawal).
         """
-        self.message = message
-        # Stamped with the model year when the event is added to an EventLog.
-        self.year: int | None = None
+        if isinstance(kind, EventKind):
+            self.kind = kind
+        elif kind is None:
+            self.kind = EventKind.NOTE
+        else:
+            # Legacy: Event("free text").
+            self.kind = EventKind.NOTE
+            message = kind if message is None else message
+        self.year = year
+        self.person_name: str | None = getattr(person, "name", person)
+        self.person_id: int | None = getattr(person, "unique_id", None)
+        self.amount = amount
+        from .ledger import account_label, describe_account
+
+        self.account: str | None = account_label(account)
+        self.account_name: str | None = (
+            None if account is None else account if isinstance(account, str) else describe_account(account)
+        )
+        self.cause = cause
+        self.details = details
+        self.message = message if message is not None else self._auto_message()
+
+    def _auto_message(self) -> str:
+        who = self.person_name or "Someone"
+        amount = f"${self.amount:,.0f}" if self.amount is not None else ""
+        account = self.account_name or "an account"
+        because = f" to {self.cause}" if self.cause else ""
+        target = self.details.get("target")
+        if self.kind == EventKind.FORCED_SALE:
+            return f"{who} sold {amount} of {account}{because}"
+        if self.kind == EventKind.PRETAX_WITHDRAWAL:
+            sized = f" (solver target ${target:,.0f})" if target is not None else ""
+            return f"{who} withdrew {amount} pre-tax from {account}{sized}{because}"
+        if self.kind == EventKind.WITHDRAWAL:
+            return f"{who} withdrew {amount} from {account}{because}"
+        if self.kind == EventKind.RMD:
+            return f"{who} took a {amount} required minimum distribution from {account}"
+        if self.kind == EventKind.PENALTY:
+            return f"{who} owes {amount} of additional tax ({self.cause})"
+        if self.kind == EventKind.SHORTFALL_DEBT:
+            return f"{who} carried {amount} of unpaid bills as debt ({self.cause})"
+        parts = [self.kind.value.replace("_", " "), who]
+        if amount:
+            parts.append(amount)
+        if self.cause:
+            parts.append(f"({self.cause})")
+        return " ".join(parts)
+
+    @property
+    def is_detail(self) -> bool:
+        """Whether this is a detail event (hidden from :meth:`EventLog._repr_html_`)."""
+        return self.kind.is_detail
+
+    def to_dict(self) -> dict:
+        """The event as a flat dict (``details`` are serialized as a JSON string)."""
+        import json
+
+        return {
+            "year": self.year,
+            "kind": self.kind.value,
+            "person": self.person_name,
+            "person_id": self.person_id,
+            "amount": self.amount,
+            "account": self.account,
+            "account_name": self.account_name,
+            "cause": self.cause,
+            "message": self.message,
+            "details": json.dumps(self.details, default=str) if self.details else None,
+        }
 
     def _repr_html_(self):
         return f"<tr><td>{self.year}</td><td>{self.message}</td></tr>\n"
+
+
+#: Columns of :meth:`EventLog.to_frame` (and ``RunResult.events``).
+EVENT_COLUMNS = (
+    "year",
+    "kind",
+    "person",
+    "person_id",
+    "amount",
+    "account",
+    "account_name",
+    "cause",
+    "message",
+    "details",
+)
 
 
 class EventLog:
@@ -87,15 +273,31 @@ class EventLog:
         self.list = []
 
     def _repr_html_(self):
+        # The life story: detail events (RMDs, forced sales, ...) are omitted, which keeps this table
+        # exactly as it was before events were typed. Use :meth:`to_frame` for everything.
         table = "<table>"
         table += "<tr><th>Year:</th><th>Event:</th></tr>\n"
-        table += "".join(x._repr_html_() for x in self.list)
+        table += "".join(x._repr_html_() for x in self.list if not x.is_detail)
         table += "</table>"
         return table
 
     def add(self, event: Event):
-        event.year = self.model.year
+        if event.year is None or event.kind == EventKind.NOTE:
+            # Stamped with the year it was logged (as always for free-text events).
+            event.year = self.model.year
         self.list.append(event)
+
+    def of_kind(self, *kinds: "EventKind | str") -> list[Event]:
+        """The logged events of the given kinds."""
+        wanted = {EventKind(k) for k in kinds}
+        return [event for event in self.list if event.kind in wanted]
+
+    def for_year(self, year: int) -> list[Event]:
+        return [event for event in self.list if event.year == year]
+
+    def to_frame(self) -> "pd.DataFrame":
+        """Every logged event (detail kinds included), one row each (columns: :data:`EVENT_COLUMNS`)."""
+        return pd.DataFrame([event.to_dict() for event in self.list], columns=list(EVENT_COLUMNS))
 
 
 def _optional_attribute(name: str) -> Callable:
@@ -110,6 +312,41 @@ def _optional_attribute(name: str) -> Callable:
         return getattr(agent, name, None)
 
     return reporter
+
+
+def _pre_post_attribute(name: str) -> Callable:
+    """Agent reporter returning the value ``agent.<name>`` had before this year's ``post_step``
+    escalators ran (see ``LifeModel.add_agent_stat(..., pre_post=True)``), else None."""
+
+    def reporter(agent):
+        values = getattr(agent, "pre_post_values", None)
+        if values is not None and name in values:
+            return values[name]
+        return None
+
+    return reporter
+
+
+def agent_name(agent) -> str | None:
+    """The agent's own name for the agent frame's ``Name`` column: a person's or child's name, a
+    home's, a job's or account's company, a fund's or card's name; None when it has none."""
+    for attr in ("name", "company", "fund_name", "card_name", "charity_name", "school_name"):
+        value = getattr(agent, attr, None)
+        if isinstance(value, str):
+            return value
+    return None
+
+
+def agent_owner_name(agent) -> str | None:
+    """The name of the person an agent belongs to (``Owner`` column); a person's own name."""
+    for attr in ("person", "owner", "grantor"):
+        owner = getattr(agent, attr, None)
+        name = getattr(owner, "name", None)
+        if isinstance(name, str):
+            return name
+    if type(agent).__name__ == "Person":
+        return agent.name
+    return None
 
 
 class LifeModelDataCollector(mesa.DataCollector):
@@ -127,39 +364,92 @@ class LifeModelDataCollector(mesa.DataCollector):
 
 class LifeModel(mesa.Model):
     STATS: ClassVar[list[MoneyStat]] = [
-        MoneyStat("stat_gross_income", "Income"),  # Gross income made in a year
-        MoneyStat("stat_bank_balance", "Bank Balance"),  # Bank account balance at the end of each year
-        MoneyStat("stat_brokerage_balance", "Brokerage Balance"),  # Taxable brokerage balance at year end
-        MoneyStat("stat_401k_balance", "401k Balance"),  # Total 401k balance at the end of each year
-        MoneyStat("stat_useable_balance", "Useable Balance"),  # Balance available for use in a year
-        MoneyStat("stat_debt", "Debt"),  # Total debt balance in each year
-        MoneyStat("stat_taxes_paid", "Taxes"),  # Taxes paid in a year
-        MoneyStat("stat_money_spent", "Spending"),  # Money spent in a year
-        MoneyStat("stat_retirement_contrib", "401k Contrib"),  # Money contributed to retirement in a given year
-        MoneyStat("stat_retirement_match", "401k Match"),  # Money matched by company in 401k in a given year
-        MoneyStat("stat_required_min_distrib", "RMDs"),  # Money taken out from required minimum distrib.
-        MoneyStat("stat_housing_costs", "Housing"),  # Money paid towards mortgage or rent
-        MoneyStat("stat_interest_paid", "Interest Paid"),  # Money paid in interest for loans
-        MoneyStat("stat_ss_income", "SS Income"),  # Income from social security
-        MoneyStat("stat_charitable_donations", "Charity"),  # Total charitable donations in a year
+        MoneyStat("stat_gross_income", "Income", "Gross income made in the year (salary, bonus, RSU vests)."),
+        MoneyStat("stat_bank_balance", "Bank Balance", "Bank account balances after the year's bills are paid."),
+        MoneyStat("stat_brokerage_balance", "Brokerage Balance", "Taxable brokerage balances at year end."),
+        MoneyStat("stat_401k_balance", "401k Balance", "401k balances (pre-tax plus Roth) at year end."),
+        MoneyStat(
+            "stat_useable_balance", "Useable Balance", "Balances usable without penalty (banks, 401ks past 59.5)."
+        ),
+        MoneyStat("stat_debt", "Debt", "Unpaid-bills debt plus outstanding loan and mortgage balances."),
+        MoneyStat(
+            "stat_taxes_paid", "Taxes", "All taxes paid in the year: federal, state, payroll, NIIT, net of credits."
+        ),
+        MoneyStat("stat_money_spent", "Spending", "Living expenses plus one-time expenses charged in the year."),
+        MoneyStat("stat_retirement_contrib", "401k Contrib", "Employee 401k deferrals (pre-tax and Roth) in the year."),
+        MoneyStat("stat_retirement_match", "401k Match", "Employer 401k match in the year."),
+        MoneyStat("stat_required_min_distrib", "RMDs", "Required minimum distributions taken in the year."),
+        MoneyStat("stat_housing_costs", "Housing", "Mortgage payments, home expenses and rent paid in the year."),
+        MoneyStat("stat_interest_paid", "Interest Paid", "Interest charged on mortgages, loans and carried debt."),
+        MoneyStat("stat_ss_income", "SS Income", "Social Security benefits received in the year."),
+        MoneyStat("stat_charitable_donations", "Charity", "Charitable donations (direct and DAF grants) in the year."),
     ]
 
-    EXTRA_STATS: ClassVar[list[MoneyStat]] = [
-        MoneyStat("stat_taxes_paid_federal", "Federal Taxes"),  # Federal income taxes paid in a year
-        MoneyStat("stat_taxes_paid_state", "State Taxes"),  # State income taxes paid in a year
-        MoneyStat("stat_taxes_paid_ss", "SS Taxes"),  # Social security taxes paid in a year
-        MoneyStat("stat_taxes_paid_medicare", "Medicare Taxes"),  # Medicare taxes paid in a year
-        MoneyStat("stat_premium_payments", "Life Ins Premiums"),  # Life insurance premiums paid in a year
-        MoneyStat("stat_cash_value", "Life Ins Cash Value"),  # Life insurance cash value
-        MoneyStat("stat_death_benefit_paid", "Death Benefits"),  # Death benefits paid out
-        MoneyStat("stat_medical_costs", "Medical Costs"),  # Healthcare/Medicare/LTC costs paid in a year
-        MoneyStat("stat_dependent_costs", "Dependent Costs"),  # Child/dependent costs charged in a year
-        MoneyStat("stat_pension_income", "Pension Income"),  # Defined-benefit pension income received in a year
-        MoneyStat("stat_taxes_paid_niit", "NIIT"),  # Net investment income surtax paid in a year
-        MoneyStat("stat_capital_gains", "Capital Gains"),  # Capital gains realized in a year
-        MoneyStat("stat_stock_vested", "Stock Vested"),  # Value of stock compensation vesting in a year
-        MoneyStat("stat_stock_unvested", "Stock Unvested"),  # Value of unvested stock grants at year end
-        MoneyStat("stat_itemized_deductions", "Itemized Deductions"),  # Itemized deductions claimed (0 = standard)
+    EXTRA_STATS: ClassVar[list[Stat]] = [
+        MoneyStat("stat_taxes_paid_federal", "Federal Taxes", "Federal income tax, including penalties."),
+        MoneyStat("stat_taxes_paid_state", "State Taxes", "State income tax."),
+        MoneyStat("stat_taxes_paid_ss", "SS Taxes", "Social Security payroll tax."),
+        MoneyStat("stat_taxes_paid_medicare", "Medicare Taxes", "Medicare payroll tax (incl. the additional tax)."),
+        MoneyStat("stat_premium_payments", "Life Ins Premiums", "Life insurance premiums paid in the year."),
+        MoneyStat("stat_cash_value", "Life Ins Cash Value", "Whole-life cash value."),
+        MoneyStat("stat_death_benefit_paid", "Death Benefits", "Life insurance death benefits paid out."),
+        MoneyStat("stat_medical_costs", "Medical Costs", "Healthcare, Medicare and long-term-care costs."),
+        MoneyStat("stat_dependent_costs", "Dependent Costs", "Child and dependent costs charged in the year."),
+        MoneyStat("stat_pension_income", "Pension Income", "Defined-benefit pension income received."),
+        MoneyStat("stat_taxes_paid_niit", "NIIT", "Net investment income tax."),
+        MoneyStat("stat_capital_gains", "Capital Gains", "Net capital gains realized (after loss netting)."),
+        MoneyStat("stat_stock_vested", "Stock Vested", "Value of stock compensation vesting in the year."),
+        MoneyStat("stat_stock_unvested", "Stock Unvested", "Value of unvested stock grants at year end."),
+        MoneyStat(
+            "stat_itemized_deductions",
+            "Itemized Deductions",
+            "Itemized deductions claimed (0 when standard was taken).",
+        ),
+        MoneyStat("stat_tax_credits", "Credits", "Tax credits (child tax credit, ...) claimed."),
+        MoneyStat(
+            "stat_tax_penalties", "Penalties", "Additional taxes (early-withdrawal penalties); part of Federal Taxes."
+        ),
+        MoneyStat(
+            "stat_net_worth",
+            "Net Worth",
+            "Assets minus liabilities at year end (the household balance sheet the conservation check uses).",
+        ),
+        MoneyStat("stat_traditional_ira_balance", "Traditional IRA Balance", "Traditional IRA balances at year end."),
+        MoneyStat("stat_roth_ira_balance", "Roth IRA Balance", "Roth IRA balances at year end."),
+        MoneyStat("stat_hsa_balance", "HSA Balance", "Health savings account balances at year end."),
+        MoneyStat("stat_529_balance", "529 Balance", "529 education plan balances at year end."),
+        MoneyStat("stat_inherited_ira_balance", "Inherited IRA Balance", "Inherited (10-year rule) IRA balances."),
+        MoneyStat("stat_annuity_balance", "Annuity Balance", "Annuity accumulation balances plus annuitized reserves."),
+        MoneyStat("stat_daf_balance", "DAF Balance", "Donor-advised fund balances (not counted in net worth)."),
+        MoneyStat("stat_trust_balance", "Trust Balance", "Trust balances (only revocable trusts count in net worth)."),
+        MoneyStat("stat_home_value", "Home Value", "Market value of homes owned at year end."),
+        MoneyStat("stat_home_equity", "Home Equity", "Home value minus the mortgage balance."),
+        MoneyStat("stat_mortgage_principal", "Mortgage Principal", "Mortgage balances at year end."),
+        MoneyStat("stat_agi", "AGI", "Adjusted gross income on the year's returns."),
+        MoneyStat("stat_taxable_income", "Taxable Income", "Taxable income on the year's returns."),
+        Stat(
+            "stat_marginal_rate",
+            "Marginal Rate",
+            "{:.0f}%",
+            max,
+            description="Federal ordinary bracket rate (percent) of the last taxable dollar (max across returns).",
+        ),
+        Stat(
+            "stat_standard_deduction_taken",
+            "Standard Deduction Taken",
+            None,
+            max,
+            description="Whether a return took the standard deduction (True if any did).",
+            default=False,
+        ),
+        MoneyStat(
+            "stat_forced_sales", "Forced Sales", "Brokerage holdings the payment waterfall sold to pay bills and taxes."
+        ),
+        MoneyStat(
+            "stat_pretax_withdrawals",
+            "Pre-tax Withdrawals",
+            "401k/IRA/HSA money the payment waterfall withdrew to pay bills and taxes (RMDs excluded).",
+        ),
     ]
 
     #: The ordered stages one ``step()`` (one simulated year) runs over every agent:
@@ -205,6 +495,8 @@ class LifeModel(mesa.Model):
         """
         # Mesa 3.5 deprecates ``seed=`` in favor of ``rng=``; both seed ``self.random`` identically.
         super().__init__(rng=seed)
+        #: The seed this model was built with (None when unseeded; see ``RunResult.seed``).
+        self.initial_seed = seed
         if start_year is None:
             start_year = datetime.now().astimezone().year
 
@@ -226,8 +518,21 @@ class LifeModel(mesa.Model):
         self.end_year = end_year
         self.year = start_year
         self.event_log = EventLog(self)
+        #: Every settled return, keyed ``(year, unit_id)``; ``tax_returns[year]`` works when the year
+        #: has one return (see :class:`~life_model.tax.return_record.TaxReturns`).
+        from .tax.return_record import TaxReturns
+
+        self.tax_returns = TaxReturns()
+        #: Append-only record of every money movement (see :mod:`life_model.ledger`).
+        self.ledger = CashFlowLedger(self)
+        #: Balance sheets around each simulated year and the ledger range posted during it, keyed by
+        #: year (recorded when collecting data; read by :mod:`life_model.checks`).
+        self.balance_sheets: dict = {}
         self.simulated_years = []
         self._stages = list(self.STAGES)
+        # Attributes snapshotted before post_step (see add_agent_stat(..., pre_post=True)).
+        self._pre_post_attrs: set[str] = {"base_salary", "base_spending"}
+        self._closing_sheet = None
         #: The stage currently executing (one of ``STAGES``), or None outside ``step()`` (model
         #: setup, between years). Agents record it at construction (``created_in_stage``).
         self.current_stage: str | None = None
@@ -247,9 +552,16 @@ class LifeModel(mesa.Model):
                     **{x.title: lambda model, x=x: x.model_reporter(model) for x in self.EXTRA_STATS},
                 },
                 agent_reporters={
+                    "Name": agent_name,
+                    "Type": lambda agent: type(agent).__name__,
+                    "Owner": agent_owner_name,
                     **{x.title: _optional_attribute(x.name) for x in self.STATS},
                     **{x.title: _optional_attribute(x.name) for x in self.EXTRA_STATS},
+                    # This year's salary and base spending, before the year-end escalators.
+                    "Salary": _pre_post_attribute("base_salary"),
+                    "Spending Base": _pre_post_attribute("base_spending"),
                 },
+                tables={"Ledger": list(LEDGER_COLUMNS)},
             )
 
     @classmethod
@@ -298,10 +610,13 @@ class LifeModel(mesa.Model):
 
         Canonical yearly sequence (see ``STAGES``, and LifeModelAgent.STEP_PRIORITY for ordering
         within a stage):
-          * pre_step:  age++, mortality, RMDs, income and benefits deposited
-          * events:    scheduled life events fire (before settlement, so they apply this year)
-          * step:      payroll true-up, account growth, then tax units settle taxes/spending/withdrawals
-          * post_step: stat resets, escalators (salary/spending/rent increases), taxable_income reset
+
+        * ``pre_step``: age++, mortality, RMDs, income and benefits deposited
+        * ``events``: scheduled life events fire (before settlement, so they apply this year)
+        * ``step``: payroll true-up, account growth, then tax units settle taxes/spending/withdrawals
+        * ``post_step``: stat resets, escalators (salary/spending/rent increases), taxable_income reset
+
+        Then every agent's ``collect_stats`` year-end hook runs.
 
         The DataCollector row for year Y is collected *after* the stages run (while ``self.year``
         still equals Y), so the row for year Y contains year-Y flows and end-of-year-Y balances.
@@ -317,22 +632,71 @@ class LifeModel(mesa.Model):
             return
 
         self.simulated_years.append(self.year)
+        track = self.datacollector is not None
+        if track:
+            from .ledger import household_balance_sheet
+
+            opening = household_balance_sheet(self)
+            ledger_start = len(self.ledger)
 
         # Execute each stage in a deterministic, priority-ordered sequence per stage. The agent list
-        # is snapshotted per stage: an agent created during a stage first runs in the next stage.
+        # is snapshotted per stage: an agent created during a stage first runs in the next stage, and
+        # an agent removed during a stage (a decedent's pension, say) does not run the rest of it.
+        agents = self.agents
         for stage in self._stages:
             self.current_stage = stage
-            for agent in sorted(self.agents, key=lambda a: a.STEP_PRIORITY.get(stage, 0)):
-                getattr(agent, stage)()
+            if stage == "post_step":
+                # Escalators run in post_step; snapshot what they change so reporters can show the
+                # year's value (e.g. this year's salary, not next year's).
+                self._snapshot_pre_post()
+            for agent in sorted(agents, key=lambda a: a.STEP_PRIORITY.get(stage, 0)):
+                if agent in agents:
+                    getattr(agent, stage)()
         self.current_stage = None
+        self._collect_year_end_stats()
 
         # Collect after the stages so row Year=Y holds year-Y flows and balances
         # (skipped entirely when the model was built with collect_data=False).
-        if self.datacollector is not None:
+        if track:
+            from .checks import YearBalances
+
+            closing = self._closing_sheet
+            self.balance_sheets[self.year] = YearBalances(
+                year=self.year,
+                opening=opening,
+                closing=closing,
+                ledger_start=ledger_start,
+                ledger_end=len(self.ledger),
+            )
+            for record in self.ledger.to_records(ledger_start):
+                self.datacollector.add_table_row("Ledger", record)
             self.datacollector.collect(self)
 
         self.year += 1
         self.running = self.year <= self.end_year
+
+    def _collect_year_end_stats(self) -> None:
+        """Run every agent's :meth:`LifeModelAgent.collect_stats` and set each person's net worth from
+        the household balance sheet."""
+        from .ledger import household_balance_sheet
+        from .people.person import Person
+
+        for agent in list(self.agents):
+            agent.collect_stats()
+        sheet = household_balance_sheet(self)
+        for agent in self.agents:
+            if isinstance(agent, Person) and not agent.is_deceased:
+                agent.stat_net_worth = sheet.owner_total(agent.unique_id)
+        self._closing_sheet = sheet
+
+    def _snapshot_pre_post(self) -> None:
+        """Copy the attributes registered with ``add_agent_stat(..., pre_post=True)`` (and the
+        built-in ``Salary``/``Spending Base`` columns) before the ``post_step`` escalators run."""
+        attrs = self._pre_post_attrs
+        for agent in self.agents:
+            values = {attr: getattr(agent, attr) for attr in attrs if hasattr(agent, attr)}
+            if values:
+                agent.pre_post_values = values
 
     def get_year_range(self) -> range:
         """Get the inclusive range of simulated years ``[start_year, end_year]``."""
@@ -382,13 +746,31 @@ class LifeModel(mesa.Model):
         """:meth:`config_for_year` for the current simulated year."""
         return self.config_for_year(self.year)
 
-    def run(self):
+    def run(self, *, spec=None) -> "RunResult":
         """Run the simulation over the inclusive year range ``[start_year, end_year]``.
 
         The number of simulated years is ``end_year - start_year + 1``.
+
+        Returns:
+            RunResult: the run's frames, tax returns, ledger, events and seed (see
+            :mod:`life_model.results`). Callers that ignore it lose nothing: the frames are built
+            from the model only when read. ``spec`` (keyword-only) is recorded on the result.
         """
         for _ in self.get_year_range():
             self.step()
+        return self.result(spec=spec)
+
+    def result(self, *, spec=None) -> "RunResult":
+        """The :class:`~life_model.results.RunResult` of what has been simulated so far.
+
+        ``spec`` defaults to the household spec the model was built from (``model.household.spec``,
+        set by :func:`life_model.spec.build_model`), if any.
+        """
+        from .results import RunResult
+
+        if spec is None:
+            spec = getattr(getattr(self, "household", None), "spec", None)
+        return RunResult.from_model(self, spec=spec)
 
     def validate(self) -> list:
         """Check the constructed household before running it.
@@ -414,15 +796,23 @@ class LifeModel(mesa.Model):
             )
         return self.datacollector
 
-    def add_agent_stat(self, title: str, attr_name: str):
+    def add_agent_stat(self, title: str, attr_name: str, *, pre_post: bool = False):
         """Add an agent stat to the model
 
         Args:
             title (str): Title of the stat
             attr_name (str): Name of the attribute
+            pre_post (bool, optional): Report the value the attribute had *before* the year's
+                ``post_step`` (where escalators such as salary raises run), i.e. this year's value
+                rather than next year's. Keyword-only; defaults to False (the value at collection).
         """
         # Agents without the attribute report None for it.
-        self._require_datacollector().add_agent_reporter(title, _optional_attribute(attr_name))
+        if pre_post:
+            self._pre_post_attrs.add(attr_name)
+            reporter = _pre_post_attribute(attr_name)
+        else:
+            reporter = _optional_attribute(attr_name)
+        self._require_datacollector().add_agent_reporter(title, reporter)
 
     def get_yearly_stat_df(
         self,
@@ -431,7 +821,8 @@ class LifeModel(mesa.Model):
         aggregate: dict[str, Callable] | None = None,
         column_formats: dict[str, str] | None = None,
         real_dollars: bool = False,
-    ) -> Styler:
+        styled: bool = True,
+    ) -> "Styler | pd.DataFrame":
         """Get a DataFrame of the yearly stats
 
         Args:
@@ -442,13 +833,14 @@ class LifeModel(mesa.Model):
             real_dollars (bool, optional): When True, every money column is deflated by the economy's
                 cumulative inflation so values are expressed in start-year dollars. Defaults to False
                 (nominal dollars).
+            styled (bool, optional): Return a formatted ``Styler`` (default) or, when False, the plain
+                DataFrame.
 
         Returns:
-            pd.DataFrame: DataFrame of the yearly stats
+            Styler | pd.DataFrame: The yearly stats. ``columns`` and ``extra_columns`` are not modified.
         """
-        # Get the list of columns to use
-        if columns is None:
-            columns = ["Year"] + [x.title for x in self.STATS]
+        # Get the list of columns to use (a copy: the caller's list is never mutated)
+        columns = ["Year"] + [x.title for x in self.STATS] if columns is None else list(columns)
         if extra_columns is not None:
             for i, column in enumerate(extra_columns):
                 columns.insert(i + 1, column)
@@ -470,6 +862,8 @@ class LifeModel(mesa.Model):
             df = df.aggregate(aggregators).reset_index().transpose()
             df.columns = df.iloc[0]
             df = df.drop(df.index[0])
+        if not styled:
+            return df
         formats = {x.title: x.fmt for x in stats if x.fmt is not None}
         if column_formats is not None:
             formats.update(column_formats)
@@ -599,6 +993,10 @@ class LifeModelAgent(mesa.Agent):
 
     def post_step(self):
         """Post-step phase. Called for all agents after the step phase."""
+
+    def collect_stats(self):
+        """Year-end hook: record end-of-year balance stats. Called for every agent after the stages
+        and before data collection (a monthly engine calls it at December's year end)."""
 
 
 class ModelSetupException(Exception):

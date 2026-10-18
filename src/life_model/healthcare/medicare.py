@@ -112,7 +112,7 @@ class Medicare(LifeModelAgent):
             self._enrollment_logged = True
         premium = self.annual_premium()
         self.stat_medical_costs = premium
-        self.person.spending.add_expense(premium)
+        self.person.spending.add_expense(premium, category="medicare_premium")
 
     def _repr_html_(self):
         return (

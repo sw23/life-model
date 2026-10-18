@@ -6,6 +6,7 @@ import html
 from typing import TYPE_CHECKING, cast
 
 from ..base_classes import Investment
+from ..ledger import FlowKind
 from ..model import Event, LifeModel
 
 if TYPE_CHECKING:
@@ -13,7 +14,8 @@ if TYPE_CHECKING:
 
 
 class DonorAdvisedFund(Investment):
-    STATS_OWNED = frozenset({"stat_charitable_donations"})
+    STATS_OWNED = frozenset({"stat_charitable_donations", "stat_daf_balance"})
+    BALANCE_STAT = "stat_daf_balance"
 
     def __init__(
         self,
@@ -88,6 +90,9 @@ class DonorAdvisedFund(Investment):
         self.balance -= actual_withdrawal
         return actual_withdrawal
 
+    #: The fund's money has been given to the sponsoring charity: it is not the household's.
+    IN_NET_WORTH = False
+
     def contribute(self, amount: float) -> float:
         """Contribute to DAF from person's bank account (creates tax deduction)
 
@@ -99,7 +104,9 @@ class DonorAdvisedFund(Investment):
         """
         # Withdraw from person's bank account
         # Note: deduct_from_bank_accounts returns amount that COULD NOT be deducted
-        remaining_balance = self.person.deduct_from_bank_accounts(amount)
+        remaining_balance = self.person.deduct_from_bank_accounts(
+            amount, kind=FlowKind.GIFT, sink=f"{self.fund_name} donor-advised fund", cause="DAF contribution"
+        )
         amount_withdrawn = amount - remaining_balance
 
         if amount_withdrawn > 0:

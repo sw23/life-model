@@ -5,6 +5,7 @@
 import html
 from enum import Enum
 
+from ..ledger import FlowKind
 from ..model import LifeModelAgent
 from ..people.person import Person
 
@@ -89,6 +90,7 @@ class RevolvingDebt(LifeModelAgent):
         self.stat_balance_history = []
 
         self.model.registries.credit_cards.register(person, self)
+        self.model.ledger.post_opening(self, self.balance, liability=True)
 
     # ``principal`` mirrors ``balance`` so revolving debt reads uniformly with amortizing loans
     # (net-worth aggregation, payment code, and tests can use either name).
@@ -122,6 +124,9 @@ class RevolvingDebt(LifeModelAgent):
             return True  # No-op for zero charges
         if amount <= self.get_available_credit():
             self.balance += amount
+            self.model.ledger.post(
+                amount, FlowKind.SPENDING, from_account=self, sink="card purchase", agent=self.person
+            )
             return True
         return False
 

@@ -6,6 +6,7 @@ import html
 from typing import TYPE_CHECKING
 
 from ..base_classes import Benefit
+from ..ledger import FlowKind
 from ..people.person import Person
 from ..tax.income import IncomeType
 
@@ -150,8 +151,8 @@ class Pension(Benefit):
         benefit = self.get_annual_benefit()
         self.stat_pension_income = benefit
         if benefit > 0:
-            self.person.income.add(IncomeType.PENSION, benefit)
-            self.person.receive_cash(benefit, source=f"pension from {self.company}")
+            self.person.income.add(IncomeType.PENSION, benefit, source="pension")
+            self.person.receive_cash(benefit, source=f"{self.company} pension", kind=FlowKind.BENEFIT)
 
     def step(self):
         # Service for a year worked at the sponsor (step stage: after this year's payroll was booked,

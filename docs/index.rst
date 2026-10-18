@@ -14,9 +14,17 @@ insurance and taxes over time. See the project `README on GitHub
 
    Installation instructions <install.rst>
    Configuration <configuration.md>
+   Outputs glossary <outputs.md>
    Household spec <household-spec.md>
    API documentation <apidoc.rst>
    License <license.rst>
+
+.. toctree::
+   :maxdepth: 1
+   :caption: Re-baseline logs
+
+   Plan 26: engine timing and settlement <rebaseline-plan-26.md>
+   Plan 28: explainable outputs <rebaseline-plan-28.md>
 
 Indices and tables
 ==================

@@ -5,7 +5,8 @@
 from enum import Enum
 from typing import ClassVar, cast
 
-from ..model import Event, LifeModel, LifeModelAgent, compound_interest
+from ..ledger import FlowKind
+from ..model import Event, EventKind, LifeModel, LifeModelAgent, compound_interest
 from ..people.person import Person
 from ..tax.income import IncomeType
 
@@ -146,6 +147,37 @@ class LifeInsurance(LifeModelAgent):
         self.model.registries.life_insurance_policies.register(person, self)
 
     @property
+    def ledger_value(self) -> float:
+        """The policy's value on the household balance sheet: cash value net of policy loans, while
+        the policy is in force."""
+        return self.cash_value - self.outstanding_loan_balance if self.is_active else 0.0
+
+    def close(self, cause: str) -> None:
+        """Take the policy out of force; any cash value net of loans not paid out goes to the insurer
+        (a negative value, a loan larger than the cash value, is extinguished). The policy then holds
+        no money: its cash value and loan are settled."""
+        value = self.ledger_value
+        was_active = self.is_active
+        self.is_active = False
+        if not was_active:
+            return
+        if value > 0:
+            self.model.ledger.post(
+                value, FlowKind.FORFEIT, from_account=self, sink="insurer", cause=cause, agent=self.person
+            )
+        elif value < 0:
+            self.model.ledger.post(
+                -value,
+                FlowKind.BENEFIT,
+                to_account=self,
+                source="insurer: policy loan extinguished",
+                cause=cause,
+                agent=self.person,
+            )
+        self.cash_value = 0.0
+        self.outstanding_loan_balance = 0.0
+
+    @property
     def yearly_premium(self) -> float:
         """Calculate yearly premium cost"""
         return self.monthly_premium * 12
@@ -191,7 +223,7 @@ class LifeInsurance(LifeModelAgent):
             household.append(self.person.spouse)
         amount_paid = 0.0
         if sum(member.spendable_resources for member in household) >= yearly_cost:
-            self.person.spending.add_expense(yearly_cost)
+            self.person.spending.add_expense(yearly_cost, category="life_insurance_premium")
             amount_paid = yearly_cost
 
         if amount_paid >= yearly_cost:
@@ -209,6 +241,13 @@ class LifeInsurance(LifeModelAgent):
                 )
                 cash_value_contribution = yearly_cost * fraction
                 self.cash_value += cash_value_contribution
+                self.model.ledger.post(
+                    cash_value_contribution,
+                    FlowKind.PREMIUM,
+                    to_account=self,
+                    source="insurer: cash value credited from the premium",
+                    agent=self.person,
+                )
 
             return True
         else:
@@ -217,6 +256,13 @@ class LifeInsurance(LifeModelAgent):
                 remaining_premium = yearly_cost - amount_paid
                 cash_value_used = min(remaining_premium, self.available_cash_value)
                 self.cash_value -= cash_value_used
+                self.model.ledger.post(
+                    cash_value_used,
+                    FlowKind.PREMIUM,
+                    from_account=self,
+                    sink="insurer: premium paid from cash value",
+                    agent=self.person,
+                )
                 amount_paid += cash_value_used
 
                 # If we used any cash value, consider the payment successful
@@ -239,12 +285,21 @@ class LifeInsurance(LifeModelAgent):
     def lapse_policy(self):
         """Lapse the policy due to non-payment"""
         self.is_lapsed = True
-        self.is_active = False
-        self.model.event_log.add(Event(f"{self.person.name}'s life insurance policy lapsed due to non-payment"))
+        self.close("life insurance policy lapsed")
+        self.model.event_log.add(
+            Event(
+                EventKind.POLICY_LAPSED,
+                person=self.person,
+                account=self,
+                cause="non-payment",
+                message=f"{self.person.name}'s life insurance policy lapsed due to non-payment",
+            )
+        )
 
     def drop_policy(self):
         """Voluntarily drop the policy (e.g., when no longer needed)"""
-        self.is_active = False
+        if not self.is_active:
+            return  # already ended (death, lapse, expiry): nothing left to surrender
 
         # For whole life policies, person gets the cash surrender value
         if self.policy_type == LifeInsuranceType.WHOLE and self.cash_value > 0:
@@ -255,16 +310,19 @@ class LifeInsurance(LifeModelAgent):
             surrender_value = self.available_cash_value * surrender_percentage
 
             if surrender_value > 0:
-                self.person.deposit_into_bank_account(surrender_value)
+                self.person.deposit_into_bank_account(
+                    surrender_value, kind=FlowKind.WITHDRAWAL, from_account=self, cause="life insurance surrender"
+                )
                 # Gains over the premiums paid (basis) are taxable ordinary income.
                 taxable_gain = max(0.0, surrender_value - self.total_premiums_paid)
                 if taxable_gain > 0:
-                    self.person.income.add(IncomeType.ORDINARY, taxable_gain)
+                    self.person.income.add(IncomeType.ORDINARY, taxable_gain, source="life_insurance")
                 self.model.event_log.add(
                     Event(f"{self.person.name} surrendered life insurance policy for ${surrender_value:,.0f}")
                 )
-                self.cash_value = 0.0
-
+                self.cash_value -= surrender_value
+        self.close("life insurance policy dropped (surrender charge)")
+        self.cash_value = 0.0
         self.model.event_log.add(Event(f"{self.person.name} voluntarily dropped their life insurance policy"))
 
     def take_loan(self, loan_amount: float) -> float:
@@ -280,18 +338,22 @@ class LifeInsurance(LifeModelAgent):
 
         if actual_loan > 0:
             self.outstanding_loan_balance += actual_loan
-            self.person.deposit_into_bank_account(actual_loan)
+            self.person.deposit_into_bank_account(
+                actual_loan, kind=FlowKind.BORROW, from_account=self, cause="loan against life insurance cash value"
+            )
             self.model.event_log.add(Event(f"{self.person.name} took ${actual_loan:,.0f} loan against life insurance"))
 
         return actual_loan
 
     def repay_loan(self, repayment_amount: float) -> float:
         """Repay loan against the policy"""
-        if self.outstanding_loan_balance <= 0:
+        if not self.is_active or self.outstanding_loan_balance <= 0:
             return 0.0
 
         actual_repayment = min(repayment_amount, self.outstanding_loan_balance)
-        remaining_balance = self.person.deduct_from_bank_accounts(actual_repayment)
+        remaining_balance = self.person.deduct_from_bank_accounts(
+            actual_repayment, kind=FlowKind.DEBT_SERVICE, to_account=self, cause="life insurance loan repayment"
+        )
         amount_paid = actual_repayment - remaining_balance
 
         self.outstanding_loan_balance -= amount_paid
@@ -306,17 +368,22 @@ class LifeInsurance(LifeModelAgent):
         if benefit_amount > 0:
             # A designated (surviving) beneficiary takes precedence; otherwise pay the surviving
             # spouse, then the first family member with a bank account.
+            paid = {
+                "source": "life insurer: death benefit",
+                "kind": FlowKind.BENEFIT,
+                "cause": f"death benefit on {self.person.name}",
+            }
             if self.beneficiary is not None and not self.beneficiary.is_deceased:
-                self.beneficiary.deposit_into_bank_account(benefit_amount)
+                self.beneficiary.deposit_into_bank_account(benefit_amount, **paid)
                 recipient = self.beneficiary.name
             elif self.person.spouse and hasattr(self.person.spouse, "deposit_into_bank_account"):
-                self.person.spouse.deposit_into_bank_account(benefit_amount)
+                self.person.spouse.deposit_into_bank_account(benefit_amount, **paid)
                 recipient = self.person.spouse.name
             else:
                 # Add to family's primary account (first family member with bank account)
                 for member in self.person.family.members:
                     if member != self.person and hasattr(member, "bank_accounts") and member.bank_accounts:
-                        member.deposit_into_bank_account(benefit_amount)
+                        member.deposit_into_bank_account(benefit_amount, **paid)
                         recipient = member.name
                         break
                 else:
@@ -343,7 +410,7 @@ class LifeInsurance(LifeModelAgent):
 
         # Check if term policy has expired
         if self.is_term_expired:
-            self.is_active = False
+            self.close("term life policy expired")
             self.model.event_log.add(Event(f"{self.person.name}'s term life insurance policy expired"))
             self.stat_policy_active = 0
             return
@@ -362,22 +429,37 @@ class LifeInsurance(LifeModelAgent):
         if self.policy_type == LifeInsuranceType.WHOLE and self.cash_value > 0:
             growth = compound_interest(self.cash_value, self.cash_value_growth_rate)
             self.cash_value += growth
+            self.model.ledger.post(
+                growth, FlowKind.GROWTH, to_account=self, source="insurer: cash value growth", agent=self.person
+            )
 
         # Compound interest on outstanding loans
         if self.outstanding_loan_balance > 0:
             loan_interest = self.outstanding_loan_balance * (self.loan_interest_rate / 100)
             self.outstanding_loan_balance += loan_interest
+            self.model.ledger.post(
+                loan_interest,
+                FlowKind.DEBT_SERVICE,
+                from_account=self,
+                sink="insurer: policy loan interest",
+                agent=self.person,
+            )
 
             # A policy lapses once the loan balance exceeds the cash value securing it. The loan
             # amount over the premiums paid (basis) becomes taxable ordinary income.
             if self.outstanding_loan_balance > self.cash_value:
                 taxable_gain = max(0.0, self.outstanding_loan_balance - self.total_premiums_paid)
                 if taxable_gain > 0:
-                    self.person.income.add(IncomeType.ORDINARY, taxable_gain)
+                    self.person.income.add(IncomeType.ORDINARY, taxable_gain, source="life_insurance")
                 self.model.event_log.add(
                     Event(
-                        f"{self.person.name}'s life insurance lapsed: loan balance "
-                        f"${self.outstanding_loan_balance:,.0f} exceeded cash value ${self.cash_value:,.0f}"
+                        EventKind.POLICY_LAPSED,
+                        person=self.person,
+                        amount=self.outstanding_loan_balance,
+                        account=self,
+                        cause="policy loan exceeded the cash value",
+                        message=f"{self.person.name}'s life insurance lapsed: loan balance "
+                        f"${self.outstanding_loan_balance:,.0f} exceeded cash value ${self.cash_value:,.0f}",
                     )
                 )
                 self.lapse_policy()

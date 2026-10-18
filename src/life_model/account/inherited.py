@@ -4,7 +4,8 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 from ..base_classes import Investment
-from ..model import Event
+from ..ledger import FlowKind
+from ..model import Event, EventKind
 from ..people.person import Person
 from ..tax.income import IncomeType
 
@@ -28,7 +29,8 @@ class InheritedPretaxAccount(Investment):
         heir uses the flat ten-year spread.
     """
 
-    STATS_OWNED = frozenset({"stat_useable_balance"})
+    STATS_OWNED = frozenset({"stat_useable_balance", "stat_inherited_ira_balance"})
+    BALANCE_STAT = "stat_inherited_ira_balance"
 
     def __init__(self, beneficiary: Person, balance: float, decedent_name: str, years: int = 10):
         """Create an inherited pre-tax account for a non-spouse beneficiary.
@@ -80,8 +82,14 @@ class InheritedPretaxAccount(Investment):
         distribution = self.withdraw(self.balance / self.years_remaining)
         self.years_remaining -= 1
         if distribution > 0:
-            self.person.income.add(IncomeType.PRETAX_DISTRIBUTION, distribution)
-            self.person.receive_cash(distribution, source=f"inherited retirement from {self.decedent_name}")
+            self.person.income.add(IncomeType.PRETAX_DISTRIBUTION, distribution, source="inherited")
+            self.person.receive_cash(
+                distribution,
+                source=f"inherited retirement from {self.decedent_name}",
+                kind=FlowKind.WITHDRAWAL,
+                from_account=self,
+                cause="inherited IRA 10-year distribution",
+            )
 
         # Once the ten-year window closes (or the balance is exhausted), remove the account so it
         # stops stepping.
@@ -92,10 +100,22 @@ class InheritedPretaxAccount(Investment):
         """Distribute any residual balance and remove the account from the simulation."""
         if self.balance > 0:
             residual = self.withdraw(self.balance)
-            self.person.income.add(IncomeType.PRETAX_DISTRIBUTION, residual)
-            self.person.receive_cash(residual, source=f"inherited retirement from {self.decedent_name}")
+            self.person.income.add(IncomeType.PRETAX_DISTRIBUTION, residual, source="inherited")
+            self.person.receive_cash(
+                residual,
+                source=f"inherited retirement from {self.decedent_name}",
+                kind=FlowKind.WITHDRAWAL,
+                from_account=self,
+                cause="inherited IRA final distribution",
+            )
         self.model.event_log.add(
-            Event(f"{self.person.name}'s inherited account from {self.decedent_name} fully distributed")
+            Event(
+                EventKind.INHERITANCE,
+                person=self.person,
+                account=self,
+                cause=f"inherited from {self.decedent_name}",
+                message=f"{self.person.name}'s inherited account from {self.decedent_name} fully distributed",
+            )
         )
         self.remove()
 

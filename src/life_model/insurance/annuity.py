@@ -6,7 +6,8 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any, cast
 
 from ..config.financial_config import resolve_financial_config as _fin
-from ..model import Event, LifeModel, LifeModelAgent
+from ..ledger import FlowKind
+from ..model import Event, EventKind, LifeModel, LifeModelAgent
 from ..people.mortality import get_chance_of_mortality
 from ..people.person import GenderAtBirth, Person
 from ..tax.income import IncomeType
@@ -206,6 +207,8 @@ def calculate_annuity_factor(
 
 
 class Annuity(LifeModelAgent):
+    STATS_OWNED = frozenset({"stat_annuity_balance"})
+
     def __init__(
         self,
         person: Person,
@@ -313,6 +316,20 @@ class Annuity(LifeModelAgent):
 
         # Register with model
         self.model.registries.annuities.register(person, self)
+        self.model.ledger.post_opening(self, initial_balance)
+
+    def collect_stats(self):
+        """Year-end value: the accumulation balance plus the annuitized reserve, while in force."""
+        self.stat_annuity_balance = self.balance + self.annuitized_reserve if self.is_active else 0.0
+
+    def _close(self, cause: str) -> None:
+        """End the contract; whatever value it still holds goes to the insurer (posted as forfeited)."""
+        remaining = self.balance + self.annuitized_reserve
+        if self.is_active and remaining:
+            self.model.ledger.post(
+                remaining, FlowKind.FORFEIT, from_account=self, sink="insurer", cause=cause, agent=self.person
+            )
+        self.is_active = False
 
     @property
     def years_since_purchase(self) -> int:
@@ -353,7 +370,9 @@ class Annuity(LifeModelAgent):
             return False
 
         # Try to deduct from bank accounts
-        remaining_balance = self.person.deduct_from_bank_accounts(amount)
+        remaining_balance = self.person.deduct_from_bank_accounts(
+            amount, kind=FlowKind.CONTRIBUTION, to_account=self, cause="annuity deposit"
+        )
         amount_deposited = amount - remaining_balance
 
         if amount_deposited > 0:
@@ -385,7 +404,17 @@ class Annuity(LifeModelAgent):
         self.balance -= withdrawal_amount
         self._tax_distribution(taxable)
 
-        self.person.receive_cash(net_withdrawal, source="annuity withdrawal")
+        self.person.receive_cash(
+            net_withdrawal, source="annuity withdrawal", kind=FlowKind.WITHDRAWAL, from_account=self
+        )
+        self.model.ledger.post(
+            surrender_charge,
+            FlowKind.FORFEIT,
+            from_account=self,
+            sink="insurer: surrender charge",
+            cause="annuity withdrawal surrender charge",
+            agent=self.person,
+        )
 
         if surrender_charge > 0:
             self.model.event_log.add(
@@ -404,9 +433,11 @@ class Annuity(LifeModelAgent):
         tax before the federal retirement age (IRC §72(q), same rate as §72(t))."""
         if taxable <= 0:
             return
-        self.person.income.add(IncomeType.ORDINARY, taxable)
+        self.person.income.add(IncomeType.ORDINARY, taxable, source="annuity")
         self.stat_taxable_payouts += taxable
-        self.person.income.add_penalty(self.person.early_withdrawal_penalty(taxable))
+        self.person.income.add_penalty(
+            self.person.early_withdrawal_penalty(taxable), source="annuity_early_distribution"
+        )
 
     def _joint_life(self) -> Person:
         """The joint annuitant for a JOINT_AND_SURVIVOR contract (defaults to the living spouse)."""
@@ -484,7 +515,14 @@ class Annuity(LifeModelAgent):
             self.exclusion_ratio = 1.0
 
         self.model.event_log.add(
-            Event(f"{self.person.name} annuitized with ${self.monthly_payout:,.0f}/month payments")
+            Event(
+                EventKind.ANNUITIZED,
+                person=self.person,
+                amount=self.annuitized_reserve,
+                account=self,
+                message=f"{self.person.name} annuitized with ${self.monthly_payout:,.0f}/month payments",
+                monthly_payout=self.monthly_payout,
+            )
         )
         return True
 
@@ -513,7 +551,7 @@ class Annuity(LifeModelAgent):
 
         if self.annuitized_reserve <= 0:
             # Reserve exhausted: guaranteed payments already accounted for; stop paying.
-            self.is_active = False
+            self._close("annuity reserve exhausted")
             return 0.0
 
         if (
@@ -522,7 +560,7 @@ class Annuity(LifeModelAgent):
             and self.remaining_period_certain_payments <= 0
         ):
             # The annuitant died and the guaranteed period has run out: the contract is complete.
-            self.is_active = False
+            self._close("period-certain guarantee ended after the annuitant's death")
             return 0.0
 
         scheduled = self.monthly_payout or 0.0
@@ -538,11 +576,13 @@ class Annuity(LifeModelAgent):
         # Tax the gains portion as ordinary income (exclusion ratio covers return of basis).
         taxable_portion = payout * (1 - self.exclusion_ratio)
         if taxable_portion > 0:
-            self.person.income.add(IncomeType.ORDINARY, taxable_portion)
+            self.person.income.add(IncomeType.ORDINARY, taxable_portion, source="annuity")
             self.stat_taxable_payouts += taxable_portion
 
         # Deposit the payout into the person's bank account.
-        self.person.receive_cash(payout, source="annuity payout")
+        self.person.receive_cash(
+            payout, source="annuity payout", kind=FlowKind.WITHDRAWAL, from_account=self, cause="annuity payout"
+        )
 
         # Reduce period certain payments if applicable
         if (
@@ -566,7 +606,15 @@ class Annuity(LifeModelAgent):
         # The gain over basis is ordinary income (a loss is not deducted).
         self._tax_distribution(max(0.0, net_value - self.basis))
         self.basis = 0.0
-        self.person.receive_cash(net_value, source="annuity surrender")
+        self.person.receive_cash(net_value, source="annuity surrender", kind=FlowKind.WITHDRAWAL, from_account=self)
+        self.model.ledger.post(
+            surrender_charge,
+            FlowKind.FORFEIT,
+            from_account=self,
+            sink="insurer: surrender charge",
+            cause="annuity surrender charge",
+            agent=self.person,
+        )
 
         self.model.event_log.add(
             Event(f"{self.person.name} surrendered annuity for ${net_value:,.0f} (${surrender_charge:,.0f} charge)")
@@ -583,6 +631,7 @@ class Annuity(LifeModelAgent):
             return
 
         # Apply interest growth to the reserve (annuitized) or the accumulation balance.
+        interest_earned = 0.0
         if self.is_annuitized:
             if self.annuitized_reserve > 0:
                 interest_earned = self.annuitized_reserve * (self.interest_rate / 100)
@@ -592,6 +641,9 @@ class Annuity(LifeModelAgent):
             interest_earned = self.balance * (self.accumulation_rate / 100)
             self.balance += interest_earned
             self.stat_interest_earned += interest_earned
+        self.model.ledger.post(
+            interest_earned, FlowKind.GROWTH, to_account=self, source="insurer: credited interest", agent=self.person
+        )
 
         self.stat_balance = self.balance
         self.stat_annuitized_reserve = self.annuitized_reserve
@@ -629,16 +681,22 @@ class Annuity(LifeModelAgent):
             if inheritor is not None and self.balance > 0:
                 gain = max(0.0, self.balance - self.basis)
                 if gain > 0:
-                    inheritor.income.add(IncomeType.ORDINARY, gain)
-                inheritor.receive_cash(self.balance, source=f"{owner.name}'s annuity death benefit")
+                    inheritor.income.add(IncomeType.ORDINARY, gain, source="annuity_death_benefit")
+                inheritor.receive_cash(
+                    self.balance,
+                    source=f"{owner.name}'s annuity death benefit",
+                    kind=FlowKind.INHERITANCE,
+                    from_account=self,
+                    cause=f"{owner.name}'s annuity death benefit",
+                )
                 self.balance = 0.0
-            self.is_active = False
+            self._close(f"{owner.name}'s annuity ended at death with no heir")
             registry.unregister(owner, self)
             return
         if self.payout_type == AnnuityPayoutType.JOINT_AND_SURVIVOR:
             joint = self.joint_annuitant
             if self.survivor_phase or joint is None or joint is owner or joint.is_deceased:
-                self.is_active = False
+                self._close(f"joint-and-survivor annuity ended at {owner.name}'s death")
                 registry.unregister(owner, self)
                 return
             # Continue to the joint annuitant (not the residual inheritor) at the survivor share.
@@ -655,7 +713,7 @@ class Annuity(LifeModelAgent):
         ):
             self.annuitant_deceased = True  # the estate transfer moves it to the inheritor
             return
-        self.is_active = False
+        self._close(f"life annuity ended at {owner.name}'s death")
         registry.unregister(owner, self)
 
     def _repr_html_(self):

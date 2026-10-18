@@ -29,6 +29,8 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
+# RunResult.to_parquet / MonteCarloResult.to_parquet (JSON and CSV exports need nothing extra).
+parquet = ["pyarrow"]
 docs = [
     "sphinx>=7",
     "furo",

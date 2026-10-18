@@ -42,6 +42,7 @@
 from typing import TYPE_CHECKING
 
 from ..config.financial_config import resolve_financial_config as _fin
+from ..ledger import FlowKind
 from ..model import LifeModelAgent
 from ..people.person import Person
 from ..tax.federal import FilingStatus
@@ -514,11 +515,15 @@ class SocialSecurity(LifeModelAgent):
         # provisional income (spouse's income, gains, RSU vests, the year-end withdrawal), so the
         # tax unit computes the taxable portion at settlement (TaxUnit.taxable_social_security);
         # nothing here depends on which other income has already been booked.
+        if self.person.is_deceased:
+            # Benefits stop at death (a surviving spouse's survivor floor is applied to their own
+            # record in Person._apply_survivor_adjustments).
+            return
         if self.model.year >= self.withdrawal_start_year:
             # Apply any survivor-benefit floor (max of own vs. deceased spouse's benefit).
             yearly_pia = max(self.get_pia(), self.survivor_pia_floor) * 12
             self.person.income.add_social_security(yearly_pia)
-            self.person.receive_cash(yearly_pia, source="social security")
+            self.person.receive_cash(yearly_pia, source="Social Security", kind=FlowKind.BENEFIT)
             self.person.stat_ss_income = yearly_pia
 
     def _taxable_benefit_portion(self, annual_benefit: float) -> float:

@@ -27,9 +27,22 @@ class DebtService:
         Returns:
             Tuple[float, float]: ``(total_paid, total_interest)`` across all of the person's debts.
         """
-        total_paid = 0.0
-        total_interest = 0.0
+        lines = self.service_year_detail()
+        return sum(line[1] for line in lines), sum(line[2] for line in lines)
+
+    def service_year_detail(self) -> list[tuple[object, float, float, float, float]]:
+        """Service every personal debt for one simulated year, per debt.
+
+        Returns:
+            One ``(debt, paid, interest, principal_before, principal_after)`` per debt: the cash the
+            borrower paid, the interest charged within it, and the balance before and after the
+            year. ``principal_after - (principal_before - (paid - interest))`` is any change the
+            payments don't explain (interest capitalized, an income-driven plan's principal match,
+            forgiveness).
+        """
+        lines = []
         for debt in self.person.all_debts:
-            total_paid += debt.service_year()
-            total_interest += debt.interest_paid_this_year
-        return total_paid, total_interest
+            before = debt.principal
+            paid = debt.service_year()
+            lines.append((debt, paid, debt.interest_paid_this_year, before, debt.principal))
+        return lines

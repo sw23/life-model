@@ -7,6 +7,7 @@ import html
 from typing import ClassVar
 
 from ..base_classes import FinancialAccount
+from ..ledger import FlowKind
 from ..model import compound_interest
 from ..people.person import Person
 from ..tax.income import IncomeType
@@ -95,8 +96,9 @@ class BankAccount(FinancialAccount):
         interest = compound_interest(self.balance, self.interest_rate, self.compound_rate)
         self.balance += interest
         self.stat_total_interest += interest
+        self.model.ledger.post(interest, FlowKind.INTEREST, to_account=self, source=self.company, agent=self.person)
         if interest != 0:
-            self.person.income.add(IncomeType.INTEREST, interest)
+            self.person.income.add(IncomeType.INTEREST, interest, source="bank_interest")
 
     def post_step(self):
         # Year-end statistics, after the tax unit has paid the year's bills from this account.

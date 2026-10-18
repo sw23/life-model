@@ -6,6 +6,7 @@ import html
 from enum import Enum
 from typing import cast
 
+from ..ledger import FlowKind
 from ..model import Event, LifeModel, LifeModelAgent
 from ..people.person import Person
 
@@ -140,7 +141,7 @@ class Insurance(LifeModelAgent):
         if not self.is_coverage_active:
             return False
 
-        self.person.spending.add_expense(self.annual_premium)
+        self.person.spending.add_expense(self.annual_premium, category="insurance_premium")
         self.stat_premiums_paid += self.annual_premium
         return True
 
@@ -208,8 +209,18 @@ class Insurance(LifeModelAgent):
             # person is therefore exactly the deductible. When the loss was already charged
             # through another path (charge_loss=False), only the payout is credited.
             if charge_loss:
-                self.person.deduct_from_bank_accounts(claim.amount)
-            self.person.receive_cash(claim.payout_amount, source="insurance payout")
+                self.person.deduct_from_bank_accounts(
+                    claim.amount,
+                    kind=FlowKind.SPENDING,
+                    sink=f"insured loss: {claim.description}",
+                    cause=f"{self.insurance_type.value} claim",
+                )
+            self.person.receive_cash(
+                claim.payout_amount,
+                source=f"{self.company} ({self.insurance_type.value} insurance)",
+                kind=FlowKind.BENEFIT,
+                cause=f"{self.insurance_type.value} claim payout",
+            )
             self.stat_deductibles_paid += claim.deductible
             self.stat_claims_paid_out += claim.payout_amount
 

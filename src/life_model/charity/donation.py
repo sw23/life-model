@@ -6,6 +6,7 @@ import html
 from enum import Enum
 from typing import TYPE_CHECKING, ClassVar, cast
 
+from ..ledger import FlowKind
 from ..model import Event, LifeModel, LifeModelAgent
 
 if TYPE_CHECKING:
@@ -89,7 +90,9 @@ class Donation(LifeModelAgent):
 
         # Attempt to withdraw from bank account
         # Note: deduct_from_bank_accounts returns amount that COULD NOT be deducted
-        remaining_balance = self.person.deduct_from_bank_accounts(self.annual_amount)
+        remaining_balance = self.person.deduct_from_bank_accounts(
+            self.annual_amount, kind=FlowKind.GIFT, sink=self.charity_name, cause="charitable donation"
+        )
         amount_withdrawn = self.annual_amount - remaining_balance
 
         if amount_withdrawn > 0:
@@ -127,6 +130,9 @@ class Donation(LifeModelAgent):
         """
         # Reset this year's donation stat, then make the donation so the deduction is current.
         self.stat_charitable_donations = 0
+        if self.person.is_deceased:
+            # A pledge ends with its donor (an heir who inherits it re-owns it; see Person.die).
+            return
         self.make_donation()
 
     def step(self):
