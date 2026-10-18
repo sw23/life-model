@@ -453,3 +453,14 @@ class TestMonthlyTiming(unittest.TestCase):
         model.step()
         self.assertAlmostEqual(john.income.dependent_care_benefits, 100)
         self.assertAlmostEqual(john.fica_wages, 4900)
+
+
+class TestTaxYearAges(unittest.TestCase):
+    def test_section_63f_uses_the_age_at_the_end_of_the_year(self):
+        # Born October 1961: 64 in January 2026, 65 by December 31 -> the $2,050 additional amount.
+        model = LifeModel(start_year=2026, end_year=2026)
+        pat = Person(Family(model), "Pat", None, 67, Spending(model, 0), birth="1961-10")
+        BankAccount(pat, "Bank", balance=100000, interest_rate=0)
+        _job(pat, 50000)
+        model.step_year()
+        self.assertEqual(model.tax_returns[2026].additional_standard_deduction, 2050)
