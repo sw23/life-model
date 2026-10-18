@@ -341,6 +341,7 @@ def schedule_lines(r: "TaxReturn") -> dict[str, dict[str, float]]:
         "A": {
             "4": r.itemized_components.get("medical", 0.0),
             "5e": r.itemized_components.get("salt", 0.0),
+            "7": r.itemized_components.get("salt", 0.0),  # no "other taxes" (line 6) in the engine
             "8a": r.itemized_components.get("mortgage_interest", 0.0),
             "8e": r.itemized_components.get("mortgage_interest", 0.0),
             "10": r.itemized_components.get("mortgage_interest", 0.0),
@@ -632,7 +633,9 @@ def _classify(item: ReconciliationLine, rows: dict[tuple[str, str], Reconciliati
             key = upstream if ":" in upstream else f"1040:{upstream}"
             other = rows.get((item.source, key))
             if other is not None and other.status in (RED, YELLOW):
-                item.note = (item.note + " " if item.note else "") + f"follows {other.section} line {other.line}"
+                root = getattr(other, "_root", None) or other
+                item._root = root
+                item.note = (item.note + " " if item.note else "") + f"follows {root.section} line {root.line}"
                 return "propagated"
         if line in _CREDIT_LINES and actual > simulated:
             return "unmodeled_credit"
@@ -854,8 +857,9 @@ def reconcile(
             row.status = tolerance.status(row.simulated - row.actual, row.actual)
             row.cause = None
         by_key.setdefault((row.source, row.key), row)
-    # Classify in form order, so a total sees the status of the lines it adds up.
-    for row in rows:
+    # Classify schedules and documents first, then the 1040 in line order, so a total finds the root
+    # of a difference it carries.
+    for row in sorted(rows, key=lambda r: (r.section == "1040", _row_order(r))):
         if row.status in (RED, YELLOW):
             row.cause = _classify(row, by_key)
     report.lines = sorted(rows, key=_row_order)

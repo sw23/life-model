@@ -22,7 +22,9 @@ import yaml
 PACKAGE = Path(__file__).resolve().parents[1]
 
 #: Synthetic people (example specs, fixtures, the example notebook).
-SYNTHETIC_PEOPLE = frozenset({"Alex", "Ann", "Jane", "John", "Junior", "Lee", "Morgan", "Pat", "Sam"})
+SYNTHETIC_PEOPLE = frozenset(
+    {"Alex", "Ann", "Casey", "Jane", "John", "Junior", "Kit", "Lee", "Morgan", "Pat", "Riley", "Robin", "Sam"}
+)
 #: Synthetic organizations.
 SYNTHETIC_ORGS = frozenset(
     {
@@ -46,7 +48,15 @@ SYNTHETIC_ORGS = frozenset(
 #: Other capitalized words free text may use mid-sentence (product names, places, generic nouns).
 GENERIC_PROPER_WORDS = frozenset(
     {
+        "AGI",
+        "Additional",
         "Analyst",
+        "Form",
+        "IRC",
+        "IRMAA",
+        "MAGI",
+        "NIIT",
+        "W-",
         "California",
         "Card",
         "Checking",
@@ -71,6 +81,8 @@ def _tracked_data_files() -> list[Path]:
     files = sorted((PACKAGE / "spec" / "examples").glob("*.yaml"))
     fixtures = PACKAGE / "tests" / "fixtures"
     files += sorted(p for p in fixtures.rglob("*") if p.suffix in (".yaml", ".yml", ".json"))
+    goldens = PACKAGE / "tests" / "goldens"
+    files += sorted(p for p in goldens.rglob("*") if p.suffix in (".yaml", ".yml", ".json"))
     return files
 
 

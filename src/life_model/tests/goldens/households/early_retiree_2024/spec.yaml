@@ -1,0 +1,44 @@
+# Household golden (synthetic, not real data). See ../README.md.
+spec_version: 1
+meta:
+  name: Early retiree harvesting gains
+  description: 'Household golden (synthetic): a 58-year-old early retiree living on savings and brokerage
+    sales, with gains taxed in the 0% and 15% brackets.'
+  as_of: 2024-01
+  start_year: 2024
+  end_year: 2024
+  seed: 1
+  default_state: FL
+people:
+- id: sam
+  name: Sam
+  age: 58
+  retirement_age: 50
+  spending:
+    amount_annual: 80000
+    growth_pct: 0
+  accounts:
+  - kind: bank
+    id: sam_checking
+    company: Community Bank
+    type: Checking
+    balance: 0
+    interest_pct: 0.0
+    compounding: annual
+    primary: true
+  - kind: bank
+    id: sam_savings
+    company: Credit Union
+    type: Savings
+    balance: 10000
+    interest_pct: 4.0
+    compounding: annual
+  - kind: brokerage
+    id: sam_brokerage
+    company: Example Brokerage
+    lots:
+    - value: 900000
+      cost_basis: 300000
+      acquired_year: 2015
+    growth_pct: 2
+    dividend_yield_pct: 2
