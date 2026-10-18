@@ -124,3 +124,13 @@ then dropped the first row, which showed every age one year too young next to th
 year's flows and ended in an all-MISSING row; it now shifts the agent index and keeps every year.
 John's 401k uses `match_tiers=[(50, 6)]` instead of the deprecated `company_match_percent=50`
 (which matched 50% of a 20% deferral, i.e. 10% of pay; now 3% of pay).
+
+## Dashboard / RL / SLM suites
+
+No expected value changed. `slm/tests/test_evaluate_adviser.py::test_oracle_has_zero_regret_and_full_top_set_agreement`
+failed once the simulator's numbers moved (a heuristic's normalized regret was 1.04): the regret
+span's floor was the worst *searched* candidate, while normalized regret is also computed for the
+heuristic answers, which can do worse. `slm/evaluate_adviser.py` now takes the floor over searched
+candidates and heuristics, so normalized regret is in [0, 1] by construction. (After task 1 alone,
+`test_rationale_of_matches_build_rationale` also failed transiently on a tie in one sampled
+household; it passes on the final numbers and was not changed.)
