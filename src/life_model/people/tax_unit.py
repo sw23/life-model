@@ -974,11 +974,28 @@ class TaxUnit:
             month = member.spending.take_month_lines()
             amount = sum(month.values())
             spending_by_member[member.unique_id] = spending_by_member.get(member.unique_id, 0.0) + amount
-            total += amount
+            # Cards that take a share of the month's spending (Plan 27 D7) are charged; the rest is a bill.
+            charged = 0.0
+            for card in member.credit_cards:
+                take = card.spending_charge(amount - charged)
+                if take > 0 and card.charge(take, post=False, grace=True):
+                    charged += take
+                    lines.append(
+                        _BillLine(
+                            take,
+                            FlowKind.SPENDING,
+                            member,
+                            f"charged to {card.name}",
+                            from_account=card,
+                            sink="living expenses",
+                        )
+                    )
+            share = 1 - charged / amount if amount > 0 else 1.0
+            total += amount - charged
             for category, line_amount in month.items():
                 kind = FlowKind.PREMIUM if category.endswith("premium") else FlowKind.SPENDING
                 sink = "living expenses" if category == "base" else category.replace("_", " ")
-                lines.append(_BillLine(line_amount, kind, member, sink, sink=sink))
+                lines.append(_BillLine(line_amount * share, kind, member, sink, sink=sink))
         return lines, total
 
     def _housing_and_debt_lines(

@@ -261,6 +261,11 @@ class Person(LifeModelAgent):
         return self.model.registries.student_loans.get_items(self)
 
     @property
+    def home_equity_lines(self):
+        """Get all home equity lines of credit for this person from the registry (Plan 27 D7)."""
+        return self.model.registries.home_equity_lines.get_items(self)
+
+    @property
     def medical_costs(self):
         """Get the MedicalCosts agent(s) for this person from the registry."""
         return self.model.registries.medical_costs.get_items(self)
@@ -277,11 +282,12 @@ class Person(LifeModelAgent):
 
     @property
     def all_debts(self):
-        """All personal debts serviced by the simulation (car loans, credit cards, student loans).
+        """All personal debts serviced by the simulation (car loans, credit cards, student loans, home
+        equity lines).
 
         Mortgages are serviced through the owning ``Home`` and are not included here.
         """
-        return [*self.car_loans, *self.credit_cards, *self.student_loans]
+        return [*self.car_loans, *self.credit_cards, *self.student_loans, *self.home_equity_lines]
 
     @property
     def outstanding_debt_balance(self) -> float:
@@ -403,21 +409,13 @@ class Person(LifeModelAgent):
         itemized = self.charitable_deductions if include_charitable else 0.0
         itemized += self.medical_expense_deduction_with(additional_income)
 
-        federal = self.model.year_config.tax.federal
-        # A separate return gets half of the joint mortgage-debt and SALT limits.
-        limit_share = 0.5 if self.filing_status == FilingStatus.MARRIED_FILING_SEPARATELY else 1.0
+        # Mortgage (and home-improvement HELOC) interest actually paid this year, within the
+        # acquisition-debt limits (IRC §163(h)(3); a separate return gets half of the limits).
+        from ..housing.home import qualified_residence_interest
+
+        itemized += qualified_residence_interest(self)
         salt_paid = state_income_tax_paid
         for home in self.homes:
-            mortgage = getattr(home, "mortgage", None)
-            if mortgage:
-                # Deduct the interest actually paid this year (pre-payment principal), limited to
-                # the share attributable to the first $750k of acquisition debt.
-                interest = mortgage.interest_paid_this_year
-                acquisition_debt = mortgage.loan_amount
-                debt_limit = federal.mortgage_interest_debt_limit * limit_share
-                if acquisition_debt > debt_limit:
-                    interest *= debt_limit / acquisition_debt
-                itemized += interest
             salt_paid += home.property_tax_for_year
 
         if include_salt:
@@ -433,18 +431,11 @@ class Person(LifeModelAgent):
         """The non-charity parts of :meth:`itemized_deductions` by line, for the tax return record:
         ``mortgage_interest`` (limited to the acquisition-debt cap), ``salt`` (after the cap) and
         ``medical`` (above the floor). Charity is added per return (it is capped at the return's AGI)."""
-        federal = self.model.year_config.tax.federal
-        limit_share = 0.5 if self.filing_status == FilingStatus.MARRIED_FILING_SEPARATELY else 1.0
-        mortgage_interest = 0.0
+        from ..housing.home import qualified_residence_interest
+
+        mortgage_interest = qualified_residence_interest(self)
         salt_paid = state_income_tax_paid
         for home in self.homes:
-            mortgage = getattr(home, "mortgage", None)
-            if mortgage:
-                interest = mortgage.interest_paid_this_year
-                debt_limit = federal.mortgage_interest_debt_limit * limit_share
-                if mortgage.loan_amount > debt_limit:
-                    interest *= debt_limit / mortgage.loan_amount
-                mortgage_interest += interest
             salt_paid += home.property_tax_for_year
         cap = salt_cap(self.filing_status, self.agi(additional_income), self.model.year_config)
         return {

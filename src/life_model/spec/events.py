@@ -232,6 +232,14 @@ def _compile_one(builder: "_Builder", timing: EventTiming, event, year: int) -> 
         name = _name(event, f"{person.name} contributes ${event.amount:,.0f}")
         return [_life_event(year, name, event, _contribute, builder, person, event.account, event.amount)]
 
+    if action == "refinance":
+        name = _name(event, f"{person.name} refinances at {event.rate_pct:g}%")
+        return [_life_event(year, name, event, _refinance, builder, event)]
+
+    if action == "heloc_draw":
+        name = _name(event, f"{person.name} draws ${event.amount:,.0f} on a home equity line")
+        return [_life_event(year, name, event, _heloc_draw, builder, event)]
+
     raise NotImplementedError(f"event action {action!r} is not supported by the builder")
 
 
@@ -342,3 +350,27 @@ def _contribute(builder: "_Builder", person, account_id: str, amount: float) -> 
     else:
         person.deduct_from_bank_accounts(available)
         account.deposit(available)
+
+
+def _refinance(builder: "_Builder", event: s.RefinanceEvent) -> None:
+    from ..housing.home import Home
+
+    target = builder.built.items[event.debt]
+    loan = target.mortgage if isinstance(target, Home) else target
+    if loan is None or loan.principal <= 0:
+        builder.model.event_log.add(Event(f"refinance skipped: {event.debt} has no balance"))
+        return
+    kwargs: dict[str, Any] = {
+        "term_months": event.term_months,
+        "term_years": event.term_years,
+        "costs": event.costs,
+        "finance_costs": event.finance_costs,
+        "cash_out": event.cash_out,
+    }
+    if isinstance(target, Home):
+        kwargs["cash_out_for_improvements"] = event.cash_out_for_improvements
+    loan.refinance(event.rate_pct, **kwargs)
+
+
+def _heloc_draw(builder: "_Builder", event: s.HelocDrawEvent) -> None:
+    builder.built.items[event.heloc].draw(event.amount, for_improvements=event.for_improvements)

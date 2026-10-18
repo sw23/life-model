@@ -202,6 +202,7 @@ class _Extractor:
             )
             for i, c in enumerate(person.children)
         ]
+        housing = self.housing(person)  # before debts: a home equity line references its home's id
         return s.Person(
             id=pid,
             name=person.name,
@@ -219,8 +220,8 @@ class _Extractor:
             ),
             jobs=jobs,
             accounts=_sorted(self.accounts(person, job_ids), ACCOUNT_KIND_ORDER),
-            debts=_sorted(self.debts(person), DEBT_KIND_ORDER),
-            housing=_sorted(self.housing(person), HOUSING_KIND_ORDER),
+            debts=_sorted(self.debts(person, housing), DEBT_KIND_ORDER),
+            housing=_sorted(housing, HOUSING_KIND_ORDER),
             insurance=_sorted(self.insurance(person), INSURANCE_KIND_ORDER),
             social_security=self.social_security(person, pid),
             healthcare=self.healthcare(person),
@@ -530,21 +531,42 @@ class _Extractor:
 
     # --- debts, housing, insurance ---
 
-    def debts(self, person) -> list:
+    def loan_terms(self, loan) -> dict[str, Any]:
+        """A loan's statement fields: as entered (builder provenance) before the run steps, else today's
+        state (original amount and term, payments made so far, current balance)."""
+        entered = getattr(loan, "spec_loan_inputs", None)
+        if entered is not None and not self.stepped:
+            return dict(entered)
+        from ..debt.terms import amortizing_payment, scheduled_balance
+
+        default_payment = amortizing_payment(loan.loan_amount, loan.yearly_interest_rate, loan.term_months)
+        payment = loan.monthly_payment
+        made = loan.payments_made
+        if loan.origination is not None:
+            from ..debt.terms import months_between
+
+            made_from_origination = max(0, months_between(loan.origination, (self.model.year, self.model.month)) - 1)
+        else:
+            made_from_origination = None
+        default_balance = scheduled_balance(loan.loan_amount, loan.yearly_interest_rate, payment, made)
+        years = loan.term_months / 12
+        whole = years == int(years)
+        return {
+            "original_amount": loan.loan_amount,
+            "balance": _none_if(loan.principal, default_balance if made else loan.loan_amount),
+            "rate_pct": loan.yearly_interest_rate,
+            "term_years": int(years) if whole else None,
+            "term_months": None if whole else loan.term_months,
+            "payment_monthly": None if abs(payment - default_payment) < 1e-9 else payment,
+            "origination": None if loan.origination is None else f"{loan.origination[0]}-{loan.origination[1]:02d}",
+            "payments_made": None if made == 0 or made_from_origination is not None else made,
+            "extra_principal_monthly": loan.extra_principal_monthly,
+        }
+
+    def debts(self, person, housing: list | None = None) -> list:
         out: list = []
         for loan in person.car_loans:
-            out.append(
-                s.CarLoan(
-                    kind="car",
-                    id=self.item_id(loan),
-                    name=loan.name,
-                    original_amount=loan.loan_amount,
-                    balance=_none_if(loan.principal, loan.loan_amount),
-                    rate_pct=loan.yearly_interest_rate,
-                    term_years=loan.length_years,
-                    payment_monthly=_none_if(loan.monthly_payment, loan.calculate_monthly_payment()),
-                )
-            )
+            out.append(s.CarLoan(kind="car", id=self.item_id(loan), name=loan.name, **self.loan_terms(loan)))
         for loan in person.student_loans:
             out.append(
                 s.StudentLoan(
@@ -552,13 +574,13 @@ class _Extractor:
                     id=self.item_id(loan),
                     loan_type=loan.loan_type.name.lower(),
                     school=loan.school_name,
-                    original_amount=loan.loan_amount,
-                    balance=_none_if(loan.principal, loan.loan_amount),
-                    rate_pct=loan.yearly_interest_rate,
-                    term_years=loan.length_years,
-                    payment_monthly=_none_if(loan.monthly_payment, loan.calculate_monthly_payment()),
-                    in_deferment=loan.in_deferment,
+                    in_deferment=loan.in_deferment if loan.deferment_until is None else False,
                     repayment_plan=loan.repayment_plan.name.lower(),
+                    deferment_until=loan.deferment_until
+                    if loan.deferment_until is not None and loan.deferment_until >= self.start
+                    else None,
+                    qualifying_payments=loan.qualifying_payments,
+                    **self.loan_terms(loan),
                 )
             )
         debt_cfg = self.config.debt.credit_card
@@ -577,6 +599,25 @@ class _Extractor:
                     card_type=card.card_type.name.lower() if getattr(card, "card_type", None) is not None else None,
                     payment_strategy=card.payment_strategy.value,
                     payment_monthly=card.fixed_payment,
+                    spending_charged_pct=card.spending_charge_pct,
+                )
+            )
+        for line in person.home_equity_lines:
+            home_id = getattr(line.home, "spec_id", None) or self.item_ids.get(id(line.home))
+            if home_id is None:
+                continue  # its home has no id to reference (or was sold)
+            out.append(
+                s.HomeEquityLine(
+                    kind="heloc",
+                    id=self.item_id(line),
+                    home=home_id,
+                    name=_none_if(line.name, f"HELOC on {line.home.name}"),
+                    credit_limit=line.credit_limit,
+                    balance=line.balance,
+                    rate_pct=line.yearly_interest_rate,
+                    improvement_balance=line.improvement_balance,
+                    payment_strategy=cast(Any, line.payment_strategy.value),
+                    payment_monthly=line.fixed_payment,
                 )
             )
         return out
@@ -584,23 +625,28 @@ class _Extractor:
     def housing(self, person) -> list:
         out: list = []
         start = self.start
-        for home in person.homes:
+        for index, home in enumerate(person.homes):
             mortgage = None
             if home.mortgage is not None:
                 m = home.mortgage
+                terms = self.loan_terms(m)
+                start_year = getattr(m, "spec_start_year", None) if not self.stepped else None
+                if start_year is None and m.start_date is not None and getattr(m, "spec_loan_inputs", None) is None:
+                    start_year = _none_if(int(m.start_date), start)
                 mortgage = s.Mortgage(
-                    original_amount=m.loan_amount,
-                    balance=_none_if(m.principal, m.loan_amount),
-                    rate_pct=m.yearly_interest_rate,
-                    term_years=m.length_years,
-                    start_year=_none_if(int(m.start_date), start),
-                    payment_monthly=_none_if(m.monthly_payment, m.calculate_monthly_payment()),
+                    start_year=start_year,
+                    escrow_monthly=m.escrow_monthly if not self.stepped else None,
+                    **terms,
                 )
             e = home.expenses
+            basis = home.cost_basis + (home.total_improvements if self.stepped else 0.0)
+            home_id = self.item_id(home)
+            if home_id is None and any(line.home is home for line in person.home_equity_lines):
+                home_id = self.item_id(home, f"{self.pid(person)}_home_{index}")
             out.append(
                 s.Home(
                     kind="home",
-                    id=self.item_id(home),
+                    id=home_id,
                     name=home.name,
                     purchase_price=home.purchase_price,
                     value_growth_pct=_growth(home._value_yearly_increase_override),
@@ -609,13 +655,25 @@ class _Extractor:
                     expenses=s.HomeExpenses(
                         property_tax_pct=e.property_tax_percent,
                         insurance_pct=e.home_insurance_percent,
+                        property_tax_annual=e.property_tax_annual,
+                        property_tax_growth_pct=_growth(e.property_tax_growth_pct),
+                        assessed_value=e.assessed_value,
+                        assessment_growth_cap_pct=e.assessment_growth_cap_pct,
+                        insurance_annual=e.insurance_annual,
+                        insurance_growth_pct=_growth(e.insurance_growth_pct),
                         maintenance_annual=e.maintenance_amount,
-                        maintenance_growth_pct=e.maintenance_increase,
+                        maintenance_growth_pct=_growth(e._maintenance_increase),
                         improvement_annual=e.improvement_amount,
-                        improvement_growth_pct=e.improvement_increase,
+                        improvement_growth_pct=_growth(e._improvement_increase),
                         hoa_monthly=e.hoa_amount / 12,
-                        hoa_growth_pct=e.hoa_increase,
+                        hoa_growth_pct=_growth(e._hoa_increase),
                     ),
+                    current_value=_none_if(home.home_value, home.purchase_price),
+                    cost_basis=_none_if(basis, home.purchase_price),
+                    purchase_year=None if home.purchase_period is None else home.purchase_period[0],
+                    pmi=home.pmi,
+                    pmi_monthly=home.pmi_monthly,
+                    closing_cost_pct=home.closing_cost_percent,
                 )
             )
         for apartment in person.apartments:

@@ -115,24 +115,45 @@ class Loan(LifeModelAgent, ABC):
     start) for the interest deductions and stats. :meth:`make_yearly_payment` (twelve payments at
     once) remains for direct callers. Concrete subclasses supply only rate/term/identification and
     register themselves; they do not re-implement payment math.
+
+    Terms are in months (Plan 27 D7): ``term_months`` is canonical and ``length_years`` is sugar for
+    ``term_months / 12``. A loan already in progress is entered the way its statement shows it — an
+    ``origination`` month (or ``payments_made``), the ``remaining_months``, the current balance
+    (``principal``) and the payment — and :func:`~life_model.debt.terms.resolve_loan_terms` fills in
+    the rest and rejects inputs that contradict each other. ``extra_principal_monthly`` is paid with
+    every scheduled payment.
     """
 
     def __init__(
         self,
         person: "Person",
-        loan_amount: float,
-        yearly_interest_rate: float,
-        length_years: int,
+        loan_amount: float | None = None,
+        yearly_interest_rate: float | None = None,
+        length_years: int | None = None,
         principal: float | None = None,
         monthly_payment: float | None = None,
+        *,
+        term_months: int | None = None,
+        origination=None,
+        payments_made: int | None = None,
+        remaining_months: int | None = None,
+        extra_principal_monthly: float = 0.0,
     ):
         super().__init__(person.model)
         self.person = person
-        self.loan_amount = loan_amount
-        self.yearly_interest_rate = yearly_interest_rate
-        self.length_years = length_years
-        self.principal = loan_amount if principal is None else principal
-        self.monthly_payment = self.calculate_monthly_payment() if monthly_payment is None else monthly_payment
+        self._set_terms(
+            as_of=(self.model.year, self.model.month),
+            loan_amount=loan_amount,
+            yearly_interest_rate=yearly_interest_rate,
+            length_years=length_years,
+            principal=principal,
+            monthly_payment=monthly_payment,
+            term_months=term_months,
+            origination=origination,
+            payments_made=payments_made,
+            remaining_months=remaining_months,
+            extra_principal_monthly=extra_principal_monthly,
+        )
 
         # Interest actually charged over the current year, captured as the year is amortized so the
         # itemized deduction / interest stats aren't understated by reading the post-payment principal.
@@ -149,6 +170,157 @@ class Loan(LifeModelAgent, ABC):
         # A loan taken out mid-run financed something outside the balance sheet (a car, tuition).
         self.model.ledger.post_opening(self, self.principal, liability=True)
 
+    #: How resolution errors name the arguments (subclasses and the spec builder may rename).
+    TERM_NAMES: ClassVar[dict[str, str]] = {
+        "original_amount": "loan_amount",
+        "current_balance": "principal",
+        "rate_pct": "yearly_interest_rate",
+    }
+
+    def _set_terms(
+        self,
+        *,
+        as_of: tuple[int, int] | None,
+        loan_amount: float | None,
+        yearly_interest_rate: float | None,
+        length_years: float | None,
+        principal: float | None,
+        monthly_payment: float | None,
+        term_months: int | None,
+        origination,
+        payments_made: int | None,
+        remaining_months: int | None,
+        extra_principal_monthly: float = 0.0,
+    ) -> None:
+        """Resolve and store the loan's terms (see :func:`~life_model.debt.terms.resolve_loan_terms`)."""
+        from .debt.terms import resolve_loan_terms
+
+        if yearly_interest_rate is None:
+            raise TypeError(f"{type(self).__name__} needs an interest rate")
+        if term_months is None and length_years is not None:
+            term_months = round(length_years * 12)
+        elif term_months is not None and length_years is not None and round(length_years * 12) != term_months:
+            raise ValueError(f"length_years={length_years} and term_months={term_months} disagree")
+        if extra_principal_monthly < 0:
+            raise ValueError("extra_principal_monthly must not be negative")
+        terms = resolve_loan_terms(
+            rate_pct=yearly_interest_rate,
+            as_of=as_of,
+            original_amount=loan_amount,
+            term_months=term_months,
+            origination=origination,
+            payments_made=payments_made,
+            remaining_months=remaining_months,
+            current_balance=principal,
+            monthly_payment=monthly_payment,
+            names=self.TERM_NAMES,
+        )
+        self.loan_amount = terms.original_amount
+        self.yearly_interest_rate = yearly_interest_rate
+        self.term_months = terms.term_months
+        self.principal = terms.current_balance
+        self.monthly_payment = terms.monthly_payment
+        #: Scheduled payments made so far (counts on with every payment in the run).
+        self.payments_made = terms.payments_made
+        #: Origination ``(year, month)`` when known (None: unknown).
+        self.origination = terms.origination
+        #: Extra principal paid with every scheduled payment (Plan 27 D7).
+        self.extra_principal_monthly = float(extra_principal_monthly)
+
+    @property
+    def length_years(self) -> float:
+        """The term in years (``term_months / 12``; an int for a whole number of years)."""
+        years = self.term_months / 12
+        return int(years) if years == int(years) else years
+
+    @length_years.setter
+    def length_years(self, value: float) -> None:
+        self.term_months = round(value * 12)
+
+    @property
+    def remaining_months(self) -> int:
+        """Scheduled payments left to maturity (a prepaid loan pays off sooner)."""
+        return max(0, self.term_months - self.payments_made)
+
+    def refinance(
+        self,
+        rate_pct: float,
+        *,
+        term_months: int | None = None,
+        term_years: float | None = None,
+        costs: float = 0.0,
+        finance_costs: bool = False,
+        cash_out: float = 0.0,
+    ) -> float:
+        """Refinance (Plan 27 D7): a new loan at ``rate_pct`` for the current balance (plus ``cash_out``,
+        and ``costs`` when ``finance_costs``), amortized over the new term from this month.
+
+        Closing ``costs`` not financed are paid now through the household waterfall; ``cash_out`` is
+        paid to the owner. Returns the new principal.
+        """
+        from .ledger import FlowKind
+        from .model import Event, EventKind
+
+        if term_months is None:
+            if term_years is None:
+                raise ValueError("refinance needs term_months or term_years")
+            term_months = round(term_years * 12)
+        if costs < 0 or cash_out < 0:
+            raise ValueError("refinance costs and cash_out must not be negative")
+        name = getattr(self, "name", None) or type(self).__name__
+        cause = f"refinance of {name}"
+        ledger = self.model.ledger
+        old_principal = self.principal
+        if cash_out > 0:
+            self._pay_cash_out(cash_out, cause)
+        if costs > 0:
+            if finance_costs:
+                ledger.post(
+                    costs,
+                    FlowKind.DEBT_SERVICE,
+                    from_account=self,
+                    sink="refinance closing costs",
+                    cause=cause,
+                    agent=self.person,
+                )
+            else:
+                from .people.tax_unit import TaxUnit
+
+                unpaid = TaxUnit.for_member(self.person).pay_bills(
+                    costs, kind=FlowKind.DEBT_SERVICE, sink="refinance closing costs", cause=cause
+                )
+                self.person.add_debt(unpaid, kind=FlowKind.DEBT_SERVICE, sink="refinance closing costs", cause=cause)
+        new_principal = old_principal + cash_out + (costs if finance_costs else 0.0)
+        self._on_refinance(old_principal, new_principal)
+        self.principal = new_principal
+        self.loan_amount = new_principal
+        self.yearly_interest_rate = rate_pct
+        self.term_months = int(term_months)
+        self.payments_made = 0
+        self.origination = (self.model.year, self.model.month)
+        self.monthly_payment = self.calculate_monthly_payment()
+        self.model.event_log.add(
+            Event(
+                EventKind.REFINANCED,
+                person=self.person,
+                amount=new_principal,
+                account=self,
+                cause=cause,
+                message=f"{self.person.name} refinanced {name}: ${new_principal:,.0f} at {rate_pct:g}% for "
+                f"{term_months} months (${self.monthly_payment:,.2f}/month)",
+            )
+        )
+        return new_principal
+
+    def _on_refinance(self, old_principal: float, new_principal: float) -> None:
+        """Hook for subclasses (a mortgage keeps its grandfathered acquisition debt)."""
+
+    def _pay_cash_out(self, amount: float, cause: str) -> None:
+        """Pay a refinance's cash-out to the owner (borrowed from this loan)."""
+        from .ledger import FlowKind
+
+        self.person.receive_cash(amount, source=cause, kind=FlowKind.BORROW, from_account=self, cause=cause)
+
     @property
     def monthly_interest_rate(self) -> float:
         """Per-month interest rate as a fraction (e.g. 6% APR -> 0.005)."""
@@ -159,14 +331,9 @@ class Loan(LifeModelAgent, ABC):
 
         Guards the zero-interest case (avoids division by zero) and a zero-length term.
         """
-        p = self.loan_amount
-        i = self.monthly_interest_rate
-        n = self.length_years * 12
-        if n == 0:
-            return p
-        if i == 0:
-            return p / n
-        return p * (i * ((1 + i) ** n)) / (((1 + i) ** n) - 1)
+        from .debt.terms import amortizing_payment
+
+        return amortizing_payment(self.loan_amount, self.yearly_interest_rate, self.term_months)
 
     def get_interest_amount(self, period: str = "month") -> float:
         """Interest accrued on the current principal for one period.
@@ -206,6 +373,11 @@ class Loan(LifeModelAgent, ABC):
 
         unpaid_interest = monthly_interest - actual_interest_payment
         self.principal = max(0.0, self.principal - principal_payment + unpaid_interest)
+        if self.principal < 0.005:
+            # The last scheduled payment leaves only floating-point residue: the loan is paid off.
+            principal_payment += self.principal
+            self.principal = 0.0
+        self.payments_made = getattr(self, "payments_made", 0) + 1
 
         self.stat_principal_payment_history.append(principal_payment)
         self.stat_interest_payment_history.append(actual_interest_payment)
@@ -251,7 +423,7 @@ class Loan(LifeModelAgent, ABC):
         """
         if self.principal <= 0:
             return 0.0
-        paid = self.make_payment(self.monthly_payment)
+        paid = self.make_payment(self.monthly_payment, self.extra_principal_monthly)
         self._record_month(self.stat_principal_payment_history[-1], self.stat_interest_payment_history[-1])
         return paid
 

@@ -352,6 +352,10 @@ class FederalTaxConfig(StrictModel):
     # Itemized-deduction limits (defaults let existing configs load without these keys).
     # vintage: 2026, source: IRC §163(h)(3) TCJA acquisition-debt limit; §164(b)(6) SALT cap (OBBBA).
     mortgage_interest_debt_limit: int = Field(default=750000, ge=0)
+    # Acquisition debt incurred on or before this date keeps the pre-TCJA $1,000,000 limit, and reduces
+    # the $750,000 limit of later debt (IRC §163(h)(3)(F)(i)(IV)). vintage: statutory, source: IRC §163(h)(3).
+    mortgage_interest_grandfathered_debt_limit: int = Field(default=1000000, ge=0)
+    mortgage_interest_grandfather_date: str = Field(default="2017-12", pattern=r"^\d{4}-\d{2}$")
     # SALT cap per return (§164(b)(6)/(7)). Simulated years read the year's values from ``tax_years``
     # (``salt``): the cap, and from 2025 (OBBBA) its phase-down by ``salt_phaseout_rate`` percent of
     # MAGI over ``salt_phaseout_threshold``, not below ``salt_cap_floor``. A separate return gets
@@ -851,6 +855,9 @@ class HousingConfig(StrictModel):
     # threshold, then automatically dropped. vintage: 2026, source: typical private-MI rates.
     pmi_rate: float = Field(default=0.5, ge=0)  # percent of loan balance per year
     pmi_ltv_threshold: float = Field(default=80.0, ge=0, le=100)  # percent LTV
+    # Automatic termination once the original schedule reaches this LTV (and final termination at
+    # the term's midpoint). vintage: statutory, source: 12 U.S.C. 4901(18), 4902(b)-(c).
+    pmi_termination_ltv: float = Field(default=78.0, ge=0, le=100)  # percent LTV
     closing_cost_percent: float = Field(default=2.0, ge=0)  # percent of purchase price at buy
     selling_cost_percent: float = Field(default=6.0, ge=0)  # percent of sale price at sell
     # vintage: IRC §121 primary-residence capital-gains exclusion (statutory, unindexed).

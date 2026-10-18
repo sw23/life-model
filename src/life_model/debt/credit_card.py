@@ -26,9 +26,13 @@ class PaymentStrategy(Enum):
     MINIMUM = "minimum"  # Pay only the required minimum (max of a % of balance and a dollar floor).
     FULL_BALANCE = "full_balance"  # Pay the whole balance every month (carries no interest after month 1).
     FIXED = "fixed"  # Pay a fixed dollar amount each month.
+    INTEREST_ONLY = "interest_only"  # Pay the month's interest (a HELOC's draw period).
 
 
 class RevolvingDebt(LifeModelAgent):
+    #: The registry (``model.registries.<name>``) the debt is listed in.
+    REGISTRY = "credit_cards"
+
     """Open-ended revolving debt (e.g. a credit card).
 
     Unlike an amortizing :class:`~life_model.base_classes.Loan`, revolving debt has no fixed term:
@@ -49,6 +53,8 @@ class RevolvingDebt(LifeModelAgent):
         minimum_payment_floor: float | None = None,
         payment_strategy: "PaymentStrategy" = PaymentStrategy.MINIMUM,
         fixed_payment: float = 0.0,
+        *,
+        spending_charge_pct: float = 0.0,
     ):
         """Revolving debt.
 
@@ -62,8 +68,14 @@ class RevolvingDebt(LifeModelAgent):
             minimum_payment_floor: Dollar floor on the minimum payment (defaults from config).
             payment_strategy: How the balance is paid down each month.
             fixed_payment: Monthly payment when ``payment_strategy`` is ``FIXED``.
+            spending_charge_pct: Percent of the owner's monthly living spending charged to this debt
+                (up to the available credit) instead of paid from the bank (Plan 27 D7). The card then
+                pays it down under ``payment_strategy``: ``FULL_BALANCE`` pays the month's charges with
+                no interest; ``MINIMUM`` carries a balance. Keyword-only; defaults to 0 (no charges).
         """
         super().__init__(person.model)
+        if not 0 <= spending_charge_pct <= 100:
+            raise ValueError("spending_charge_pct must be between 0 and 100")
         config = person.model.config.debt.credit_card
         if yearly_interest_rate is None:
             yearly_interest_rate = config.default_interest_rate
@@ -81,6 +93,7 @@ class RevolvingDebt(LifeModelAgent):
         self.minimum_payment_floor = minimum_payment_floor
         self.payment_strategy = payment_strategy
         self.fixed_payment = fixed_payment
+        self.spending_charge_pct = float(spending_charge_pct)
 
         # Interest charged over the current year, captured as the year is serviced.
         self.interest_paid_this_year = 0.0
@@ -89,7 +102,7 @@ class RevolvingDebt(LifeModelAgent):
         self.stat_interest_payment_history = []
         self.stat_balance_history = []
 
-        self.model.registries.credit_cards.register(person, self)
+        getattr(self.model.registries, self.REGISTRY).register(person, self)
         self.model.ledger.post_opening(self, self.balance, liability=True)
 
     # ``principal`` mirrors ``balance`` so revolving debt reads uniformly with amortizing loans
@@ -116,23 +129,40 @@ class RevolvingDebt(LifeModelAgent):
         """Get available credit remaining"""
         return max(0, self.credit_limit - self.balance)
 
-    def charge(self, amount: float) -> bool:
-        """Charge amount to the card. Returns success status."""
+    def charge(self, amount: float, *, sink: str = "card purchase", post: bool = True, grace: bool = False) -> bool:
+        """Charge amount to the card. Returns success status.
+
+        ``post=False`` leaves the ledger to the caller (settlement posts charged bills by line).
+        ``grace=True`` (the monthly spending charges) accrues no interest on the charge until it is
+        billed, with the month's payment.
+        """
         if amount < 0:
             raise ValueError("Cannot charge negative amounts")
         if amount == 0:
             return True  # No-op for zero charges
-        if amount <= self.get_available_credit():
+        if amount <= self.get_available_credit() + 1e-9:
             self.balance += amount
-            self.model.ledger.post(
-                amount, FlowKind.SPENDING, from_account=self, sink="card purchase", agent=self.person
-            )
+            self.charges_this_year = getattr(self, "charges_this_year", 0.0) + amount
+            if grace:
+                # The month's purchases accrue no interest until billed (paid with this month's
+                # payment under FULL_BALANCE; carried into next month otherwise).
+                self._unbilled = getattr(self, "_unbilled", 0.0) + amount
+            if post:
+                self.model.ledger.post(amount, FlowKind.SPENDING, from_account=self, sink=sink, agent=self.person)
             return True
         return False
 
+    def spending_charge(self, month_spending: float) -> float:
+        """The part of a month's living spending charged to this debt (``spending_charge_pct``, up to
+        the available credit)."""
+        if self.spending_charge_pct <= 0 or month_spending <= 0:
+            return 0.0
+        return min(month_spending * self.spending_charge_pct / 100, self.get_available_credit())
+
     def get_interest_amount(self, period: str = "month") -> float:
-        """Interest accrued on the current balance for one period (monthly default)."""
-        annual = self.balance * (self.yearly_interest_rate / 100)
+        """Interest accrued on the current balance for one period (monthly default); this month's new
+        charges accrue none until billed."""
+        annual = max(0.0, self.balance - getattr(self, "_unbilled", 0.0)) * (self.yearly_interest_rate / 100)
         if period == "year":
             return annual
         if period == "month":
@@ -155,6 +185,8 @@ class RevolvingDebt(LifeModelAgent):
             return self.balance + self.get_interest_amount("month")
         if self.payment_strategy is PaymentStrategy.FIXED:
             return self.fixed_payment
+        if self.payment_strategy is PaymentStrategy.INTEREST_ONLY:
+            return self.get_interest_amount("month")
         return self.get_minimum_payment()
 
     def make_payment(self, payment_amount: float, extra_to_principal: float = 0) -> float:
@@ -192,13 +224,16 @@ class RevolvingDebt(LifeModelAgent):
         """Make this month's payment under the strategy (called by the tax unit with the month's
         bills). Returns the cash paid; the interest is added to ``interest_paid_this_year``."""
         if self.balance <= 0:
+            self._unbilled = 0.0
             return 0.0
         paid = self.make_payment(self._scheduled_payment())
         self.interest_paid_this_year += self.stat_interest_payment_history[-1]
+        self._unbilled = 0.0
         return paid
 
     def on_year_start(self):
         self.interest_paid_this_year = 0.0
+        self.charges_this_year = 0.0
 
     def on_year_end(self):
         """Track the year-end balance."""
@@ -230,6 +265,8 @@ class CreditCard(RevolvingDebt):
         card_type: CreditCardType | None = None,
         payment_strategy: "PaymentStrategy" = PaymentStrategy.MINIMUM,
         fixed_payment: float = 0.0,
+        *,
+        spending_charge_pct: float = 0.0,
     ):
         """Models a credit card for a person.
 
@@ -243,6 +280,8 @@ class CreditCard(RevolvingDebt):
             card_type: Card network (Visa, MasterCard, ...).
             payment_strategy: How the balance is paid down each month.
             fixed_payment: Monthly payment when ``payment_strategy`` is ``FIXED``.
+            spending_charge_pct: Percent of the owner's monthly living spending charged to the card
+                (see :class:`RevolvingDebt`). Keyword-only; defaults to 0.
         """
         super().__init__(
             person,
@@ -253,6 +292,7 @@ class CreditCard(RevolvingDebt):
             minimum_payment_percent=minimum_payment_percent,
             payment_strategy=payment_strategy,
             fixed_payment=fixed_payment,
+            spending_charge_pct=spending_charge_pct,
         )
         self.card_name = card_name
         self.card_type = card_type

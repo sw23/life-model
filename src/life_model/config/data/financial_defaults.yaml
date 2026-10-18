@@ -75,6 +75,14 @@ tax:
     capital_loss_ordinary_offset: 3000
     # vintage: 2026, source: IRC §163(h)(3) (TCJA acquisition-debt limit)
     mortgage_interest_debt_limit: 750000
+    # Debt incurred on or before 2017-12-15 keeps the $1,000,000 limit (and reduces the $750,000 limit of
+    # later debt); home-equity debt not used to buy, build or substantially improve the home is not
+    # deductible for years after 2017. The engine compares origination months, so a loan originated in
+    # December 2017 counts as grandfathered (the statute's day is the 15th).
+    # vintage: statutory, source: IRC §163(h)(3)(B)(ii), (F)(i)(I) and (IV) as amended by P.L. 115-97 and
+    # P.L. 119-21 (law.cornell.edu/uscode/text/26/163, fetched 2026-10-18)
+    mortgage_interest_grandfathered_debt_limit: 1000000
+    mortgage_interest_grandfather_date: "2017-12"
     # SALT cap: static mirror of tax_years[2026].salt (simulated years read the year table; after it,
     # salt_cap_statute's schedule applies). vintage: 2026, source: OBBBA (P.L. 119-21) §70120, IRC
     # §164(b)(7): $40,400 cap, reduced by 30% of MAGI over $505,000, not below $10,000 (MFS: half).
@@ -626,9 +634,15 @@ debt:
   unpaid_balance_interest_rate: null
 
 housing:
-  # PMI charged yearly while loan-to-value exceeds the threshold, then auto-dropped.
+  # PMI charged (a twelfth a month) while loan-to-value exceeds the threshold, then dropped.
   pmi_rate: 0.5  # percent of loan balance per year
-  pmi_ltv_threshold: 80.0  # percent LTV
+  # Homeowners Protection Act: cancellation at the borrower's request once the balance reaches 80% of
+  # the original value (by actual payments: the engine assumes the request), automatic termination
+  # when the original schedule reaches 78%, final termination at the midpoint of the term.
+  # vintage: statutory, source: 12 U.S.C. 4901(2), (12), (18) and 4902(a)-(c) (law.cornell.edu, fetched
+  # 2026-10-18)
+  pmi_ltv_threshold: 80.0  # percent LTV (cancellation date)
+  pmi_termination_ltv: 78.0  # percent LTV (termination date)
   closing_cost_percent: 2.0  # percent of purchase price paid at purchase
   selling_cost_percent: 6.0  # percent of sale price paid at sale (agent commission, etc.)
   # vintage: statutory, source: IRC §121 primary-residence capital-gains exclusion (unindexed)

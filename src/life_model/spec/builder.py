@@ -19,8 +19,8 @@ the builder then constructs, for all people at each step:
    stock plans;
 4. other accounts in kind order: brokerage, traditional_ira, roth_ira, hsa, inherited_pretax,
    pension, annuity, daf, trust;
-5. debts (car, student, credit_card), housing (homes, then rentals), insurance (life, then general
-   policies);
+5. debts (car, student, credit_card), housing (homes, then rentals), home equity lines (they need
+   their home), insurance (life, then general policies);
 6. children, then 529 plans (which reference children);
 7. healthcare agents (medical costs, Medicare, long-term care), then Social Security;
 8. giving; marriages already in effect at the start; events (a ``LifeEvents`` agent, last).
@@ -32,7 +32,8 @@ Undocumented core workarounds the builder relies on (each documented on its sche
 turns them into real constructor arguments, and this module switches over then):
 
 * brokerage opening lots: ``BrokerageAccount(balance=0)`` + one ``deposit_with_basis`` per lot;
-* a loan in progress: ``loan_amount=original_amount, principal=balance``.
+* (a loan in progress used ``loan_amount=original_amount, principal=balance``; since Plan 27 the loan
+  classes take the statement's origination / balance / months remaining directly).
 
 Past-dated events: the builder never creates a ``LifeEvent`` dated before ``start_year`` and never
 passes ``LifeEvents(allow_past=True)``. A spec event that resolves before the start year is a
@@ -104,7 +105,7 @@ ACCOUNT_KIND_ORDER = (
     "trust",
     "529",
 )
-DEBT_KIND_ORDER = ("car", "student", "credit_card")
+DEBT_KIND_ORDER = ("car", "student", "credit_card", "heloc")
 HOUSING_KIND_ORDER = ("home", "rental")
 INSURANCE_KIND_ORDER = (
     "life",
@@ -663,35 +664,47 @@ class _Builder:
 
     # --- debts, housing, insurance ---
 
+    @staticmethod
+    def _loan_terms(loan: Any) -> dict[str, Any]:
+        """The statement inputs every amortizing loan takes (Plan 27 D1/D7)."""
+        return {
+            "loan_amount": loan.original_amount,
+            "length_years": loan.term_years,
+            "yearly_interest_rate": loan.rate_pct,
+            "principal": loan.balance,
+            "monthly_payment": loan.payment_monthly,
+            "term_months": loan.term_months,
+            "origination": loan.origination,
+            "payments_made": loan.payments_made,
+            "remaining_months": loan.remaining_months,
+            "extra_principal_monthly": loan.extra_principal_monthly,
+        }
+
+    @staticmethod
+    def _remember_loan(agent, loan: Any):
+        """Provenance for the extractor: the statement fields as entered."""
+        agent.spec_loan_inputs = {name: getattr(loan, name) for name in s._LoanTerms.model_fields}
+        return agent
+
     def build_debt(self, person, debt: Any):
         if debt.kind == "car":
             from ..debt.car_loan import CarLoan
 
-            # Workaround: loan_amount=original, principal=current (Plan 27 D1/D7).
-            return CarLoan(
-                person=person,
-                loan_amount=debt.original_amount,
-                length_years=debt.term_years,
-                yearly_interest_rate=debt.rate_pct,
-                name=debt.name,
-                principal=debt.balance,
-                monthly_payment=debt.payment_monthly,
-            )
+            return self._remember_loan(CarLoan(person=person, name=debt.name, **self._loan_terms(debt)), debt)
         if debt.kind == "student":
             from ..debt.student_loan import StudentLoan, StudentLoanRepaymentPlan, StudentLoanType
 
-            return StudentLoan(
+            loan = StudentLoan(
                 person=person,
                 loan_type=StudentLoanType[debt.loan_type.upper()],
-                loan_amount=debt.original_amount,
-                yearly_interest_rate=debt.rate_pct,
-                length_years=debt.term_years,
                 school_name=debt.school,
-                principal=debt.balance,
-                monthly_payment=debt.payment_monthly,
                 in_deferment=debt.in_deferment,
                 repayment_plan=StudentLoanRepaymentPlan[debt.repayment_plan.upper()],
+                deferment_until=debt.deferment_until,
+                qualifying_payments=debt.qualifying_payments,
+                **self._loan_terms(debt),
             )
+            return self._remember_loan(loan, debt)
         if debt.kind == "credit_card":
             from ..debt.credit_card import CreditCard, CreditCardType, PaymentStrategy
 
@@ -705,6 +718,22 @@ class _Builder:
                 card_type=CreditCardType[debt.card_type.upper()] if debt.card_type is not None else None,
                 payment_strategy=PaymentStrategy(debt.payment_strategy),
                 fixed_payment=debt.payment_monthly,
+                spending_charge_pct=debt.spending_charged_pct,
+            )
+        if debt.kind == "heloc":
+            from ..debt.credit_card import PaymentStrategy
+            from ..debt.heloc import HomeEquityLine
+
+            return HomeEquityLine(
+                person=person,
+                home=self.built.items[debt.home],
+                credit_limit=debt.credit_limit,
+                balance=debt.balance,
+                yearly_interest_rate=debt.rate_pct,
+                improvement_balance=debt.improvement_balance,
+                payment_strategy=PaymentStrategy(debt.payment_strategy),
+                fixed_payment=debt.payment_monthly,
+                name=debt.name,
             )
         raise NotImplementedError(f"debt kind {debt.kind!r} is not supported by the builder")
 
@@ -714,25 +743,31 @@ class _Builder:
         mortgage = None
         if home.mortgage is not None:
             m = home.mortgage
+            terms = self._loan_terms(m)
             mortgage = Mortgage(
-                loan_amount=m.original_amount,
-                start_date=m.start_year if m.start_year is not None else self.model.start_year,
-                length_years=m.term_years,
-                yearly_interest_rate=m.rate_pct,
-                principal=m.balance,
-                monthly_payment=m.payment_monthly,
+                start_date=m.start_year if m.start_year is not None else self.model.year,
+                escrow_monthly=m.escrow_monthly,
+                **terms,
             )
+            self._remember_loan(mortgage, m)
+            mortgage.spec_start_year = m.start_year
         e = home.expenses
         expenses = HomeExpenses(
             model=self.model,
             property_tax_percent=e.property_tax_pct,
             home_insurance_percent=e.insurance_pct,
             maintenance_amount=e.maintenance_annual,
-            maintenance_increase=e.maintenance_growth_pct,
+            maintenance_increase=_growth(e.maintenance_growth_pct),
             improvement_amount=e.improvement_annual,
-            improvement_increase=e.improvement_growth_pct,
+            improvement_increase=_growth(e.improvement_growth_pct),
             hoa_amount=e.hoa_monthly * 12,
-            hoa_increase=e.hoa_growth_pct,
+            hoa_increase=_growth(e.hoa_growth_pct),
+            property_tax_annual=e.property_tax_annual,
+            property_tax_growth_pct=_growth(e.property_tax_growth_pct),
+            assessed_value=e.assessed_value,
+            assessment_growth_cap_pct=e.assessment_growth_cap_pct,
+            insurance_annual=e.insurance_annual,
+            insurance_growth_pct=_growth(e.insurance_growth_pct),
         )
         return Home(
             person=person,
@@ -743,6 +778,12 @@ class _Builder:
             mortgage=cast(Mortgage, mortgage),  # core accepts None (no mortgage)
             expenses=expenses,
             purchase=home.purchase if purchase is None else purchase,
+            current_value=home.current_value,
+            cost_basis=home.cost_basis,
+            purchase_year=home.purchase_year,
+            pmi=home.pmi,
+            pmi_monthly=home.pmi_monthly,
+            closing_cost_percent=home.closing_cost_pct,
         )
 
     def build_rental(self, person, rental: s.Rental):
@@ -895,10 +936,13 @@ class _Builder:
         late = ("bank", "401k", *LATE_ACCOUNT_KINDS)
         for p, i, item in each("accounts", lambda a: a.kind not in late):
             self._register(p, "accounts", i, item, self.build_account(self.person(p.id), p, item))
-        for p, i, item in each("debts"):
+        for p, i, item in each("debts", lambda d: d.kind != "heloc"):
             self._register(p, "debts", i, item, self.build_debt(self.person(p.id), item))
         for p, i, item in each("housing"):
             self._register(p, "housing", i, item, self.build_housing(self.person(p.id), item))
+        # Home equity lines are secured by a home, so they follow housing.
+        for p, i, item in each("debts", lambda d: d.kind == "heloc"):
+            self._register(p, "debts", i, item, self.build_debt(self.person(p.id), item))
         for p, i, item in each("insurance"):
             self._register(p, "insurance", i, item, self.build_insurance(self.person(p.id), item))
         for p in people:

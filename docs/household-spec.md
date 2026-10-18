@@ -35,7 +35,7 @@ error: put what already happened into the starting state (for example a marriage
 
 ## Event actions
 
-`marry`, `divorce`, `retire`, `change_job`, `move`, `buy_home`, `sell_home`, `one_time_expense`, `recurring_expense`, `change_spending`, `add_account`, `contribute`, `convert_to_roth`, `claim_social_security`, `die`.
+`marry`, `divorce`, `retire`, `change_job`, `move`, `buy_home`, `sell_home`, `one_time_expense`, `recurring_expense`, `change_spending`, `add_account`, `contribute`, `convert_to_roth`, `claim_social_security`, `die`, `refinance`, `heloc_draw`.
 
 ## HouseholdSpec
 
@@ -49,7 +49,7 @@ A complete household: metadata, optional economy overrides, people, relationship
 | `people` | list[[Person](#person)] |  | **required** |  | The people in the household (one family). |
 | `relationships` | [Relationships](#relationships) |  | {} |  | Marriages. |
 | `withdrawal_order` | list[`"bank"` \\| `"brokerage"` \\| `"roth_basis"` \\| `"pretax"` \\| `"roth_earnings"`] (optional) |  | — | `Family.withdrawal_order` | Household payment waterfall: the order sources are drawn to pay bills and taxes, across every member. Each source exactly once, starting with 'bank'. Defaults to bank, brokerage, roth_basis, pretax, roth_earnings. |
-| `events` | list[one of: [MarryEvent](#marryevent), [DivorceEvent](#divorceevent), [RetireEvent](#retireevent), [ChangeJobEvent](#changejobevent), [MoveEvent](#moveevent), [BuyHomeEvent](#buyhomeevent), [SellHomeEvent](#sellhomeevent), [OneTimeExpenseEvent](#onetimeexpenseevent), [RecurringExpenseEvent](#recurringexpenseevent), [ChangeSpendingEvent](#changespendingevent), [AddAccountEvent](#addaccountevent), [ContributeEvent](#contributeevent), [ConvertToRothEvent](#converttorothevent), [ClaimSocialSecurityEvent](#claimsocialsecurityevent), [DieEvent](#dieevent)] |  | [] |  | Dated life events. |
+| `events` | list[one of: [MarryEvent](#marryevent), [DivorceEvent](#divorceevent), [RetireEvent](#retireevent), [ChangeJobEvent](#changejobevent), [MoveEvent](#moveevent), [BuyHomeEvent](#buyhomeevent), [SellHomeEvent](#sellhomeevent), [OneTimeExpenseEvent](#onetimeexpenseevent), [RecurringExpenseEvent](#recurringexpenseevent), [ChangeSpendingEvent](#changespendingevent), [AddAccountEvent](#addaccountevent), [ContributeEvent](#contributeevent), [ConvertToRothEvent](#converttorothevent), [ClaimSocialSecurityEvent](#claimsocialsecurityevent), [DieEvent](#dieevent), [RefinanceEvent](#refinanceevent), [HelocDrawEvent](#helocdrawevent)] |  | [] |  | Dated life events. |
 | `actuals` | map[integer → [ActualRecords](#actualrecords)] (optional) |  | — |  | What the household's real documents say, by tax year (filed 1040 lines, W-2s, 1099s, statement balances): read by 'life-model reconcile' and the backtest, ignored by the builder. Keep real documents in my-models/ (git-ignored). |
 
 ## Meta
@@ -132,7 +132,7 @@ Builds: `Person`.
 | `spending` | [Spending](#spending) |  | **required** |  | Living spending. |
 | `jobs` | list[[Job](#job)] |  | [] |  | Jobs (W-2). |
 | `accounts` | list[one of: [BankAccount](#bankaccount), [FixedIncomeAccount](#fixedincomeaccount), [BrokerageAccount](#brokerageaccount), [Job401k](#job401k), [TraditionalIRA](#traditionalira), [RothIRA](#rothira), [HealthSavingsAccount](#healthsavingsaccount), [Plan529](#plan529), [InheritedPretaxAccount](#inheritedpretaxaccount), [Pension](#pension), [Annuity](#annuity), [DonorAdvisedFund](#donoradvisedfund), [Trust](#trust)] |  | [] |  | Accounts, discriminated by 'kind'. |
-| `debts` | list[one of: [CarLoan](#carloan), [StudentLoan](#studentloan), [CreditCard](#creditcard)] |  | [] |  | Debts (car, student, credit_card). |
+| `debts` | list[one of: [CarLoan](#carloan), [StudentLoan](#studentloan), [CreditCard](#creditcard), [HomeEquityLine](#homeequityline)] |  | [] |  | Debts (car, student, credit_card, heloc). |
 | `housing` | list[one of: [Home](#home), [Rental](#rental)] |  | [] |  | Homes and rentals. |
 | `insurance` | list[one of: [LifeInsurance](#lifeinsurance), [GeneralInsurance](#generalinsurance)] |  | [] |  | Insurance policies. |
 | `social_security` | [SocialSecurity](#socialsecurity) (optional) |  | — |  | Social Security benefits. |
@@ -511,52 +511,56 @@ Builds: `Trust`.
 
 ## CarLoan
 
-An auto loan. A loan already in progress is entered as original_amount plus the current balance; the builder passes loan_amount=original_amount, principal=balance (the undocumented core workaround), so the payment follows the original amortization and the loan pays off over its remaining term. Plan 27 D1/D7 adds origination dates and months.
+An auto loan. Enter a loan the way its statement shows it (Plan 27 D1/D7): the original amount and term with an origination month (or payments_made) give today's balance and payment with no other input; or give the current balance with the months remaining (or the payment). Any three of balance / months remaining / payment determine the fourth; inputs that contradict each other are a validation error naming the field. The first payment is in the month after origination; a balance below the original schedule is a prepaid loan (it pays off early at the contract payment).
 
 Builds: `CarLoan`.
 
 | Field | Type | Unit | Default | Maps to | Description |
 |---|---|---|---|---|---|
+| `original_amount` | number (optional) | USD | — | `Loan.loan_amount` | Amount originally borrowed (may be omitted with balance and remaining_months). |
+| `balance` | number (optional) | USD | — | `Loan.principal` | Current principal (defaults to the original schedule's balance: original_amount for a new loan). |
+| `rate_pct` | number | percent (typically > 1) | **required** | `Loan.yearly_interest_rate` | APR. |
+| `term_years` | integer (optional) | years | — | `Loan.length_years` | Original term in whole years (or term_months). |
+| `term_months` | integer (optional) | months | — | `Loan.term_months` | Original term in months (66, 75, 360, ...). |
+| `payment_monthly` | number (optional) | USD/month | — | `Loan.monthly_payment` | Principal and interest per month (computed when unset). |
+| `origination` | string (optional) | YYYY-MM | — | `Loan.origination` | Origination month. |
+| `payments_made` | integer (optional) |  | — | `Loan.payments_made` | Payments made before the start (instead of origination). |
+| `remaining_months` | integer (optional) | months | — | `Loan.remaining_months` | Payments left to maturity on the statement. |
+| `extra_principal_monthly` | number | USD/month | `0.0` | `Loan.extra_principal_monthly` | Extra principal paid with every payment (paid with the month's bills). |
 | `kind` | `"car"` |  | **required** |  |  |
 | `id` | string (optional) |  | — |  | Optional identifier for this debt, unique across the spec. Required when another entry references it (a 401k's job, an event's target, a relative event's anchor). |
 | `name` | string |  | `"Car"` | `CarLoan.name` | Vehicle (make/model). |
-| `original_amount` | number | USD | **required** | `CarLoan.loan_amount` | Amount originally borrowed. |
-| `balance` | number (optional) | USD | — | `CarLoan.principal` | Current principal (defaults to original_amount). |
-| `rate_pct` | number | percent (typically > 1) | **required** | `CarLoan.yearly_interest_rate` | APR. |
-| `term_years` | integer | years | **required** | `CarLoan.length_years` | Original term in whole years. |
-| `payment_monthly` | number (optional) | USD/month | — | `CarLoan.monthly_payment` | Monthly payment (computed when unset). |
-| `term_months` | integer (optional) | months | — |  | Term in months (66, 75, ...). NOT YET SUPPORTED (Plan 27 D7): rejected by the validator. |
-| `origination` | string (optional) | YYYY-MM | — |  | Origination month. NOT YET SUPPORTED (Plan 27 D1): rejected by the validator. |
-| `payments_made` | integer (optional) |  | — |  | Payments already made. NOT YET SUPPORTED (Plan 27 D1): rejected by the validator. |
-| `extra_principal_monthly` | number (optional) | USD/month | — |  | Extra principal each month. NOT YET SUPPORTED (Plan 27 D7): rejected by the validator. |
 
 ## StudentLoan
 
-A student loan. A loan already in progress is entered as original_amount plus the current balance; the builder passes loan_amount=original_amount, principal=balance (the undocumented core workaround), so the payment follows the original amortization and the loan pays off over its remaining term. Plan 27 D1/D7 adds origination dates and months.
+A student loan. Enter a loan the way its statement shows it (Plan 27 D1/D7): the original amount and term with an origination month (or payments_made) give today's balance and payment with no other input; or give the current balance with the months remaining (or the payment). Any three of balance / months remaining / payment determine the fourth; inputs that contradict each other are a validation error naming the field. The first payment is in the month after origination; a balance below the original schedule is a prepaid loan (it pays off early at the contract payment).
 
 Builds: `StudentLoan`.
 
 | Field | Type | Unit | Default | Maps to | Description |
 |---|---|---|---|---|---|
+| `original_amount` | number (optional) | USD | — | `Loan.loan_amount` | Amount originally borrowed (may be omitted with balance and remaining_months). |
+| `balance` | number (optional) | USD | — | `Loan.principal` | Current principal (defaults to the original schedule's balance: original_amount for a new loan). |
+| `rate_pct` | number | percent (typically > 1) | **required** | `Loan.yearly_interest_rate` | APR. |
+| `term_years` | integer (optional) | years | — | `Loan.length_years` | Original term in whole years (or term_months). |
+| `term_months` | integer (optional) | months | — | `Loan.term_months` | Original term in months (66, 75, 360, ...). |
+| `payment_monthly` | number (optional) | USD/month | — | `Loan.monthly_payment` | Principal and interest per month (computed when unset). |
+| `origination` | string (optional) | YYYY-MM | — | `Loan.origination` | Origination month. |
+| `payments_made` | integer (optional) |  | — | `Loan.payments_made` | Payments made before the start (instead of origination). |
+| `remaining_months` | integer (optional) | months | — | `Loan.remaining_months` | Payments left to maturity on the statement. |
+| `extra_principal_monthly` | number | USD/month | `0.0` | `Loan.extra_principal_monthly` | Extra principal paid with every payment (paid with the month's bills). |
 | `kind` | `"student"` |  | **required** |  |  |
 | `id` | string (optional) |  | — |  | Optional identifier for this debt, unique across the spec. Required when another entry references it (a 401k's job, an event's target, a relative event's anchor). |
 | `loan_type` | `"federal_subsidized"` \\| `"federal_unsubsidized"` \\| `"private"` \\| `"plus"` |  | **required** | `StudentLoan.loan_type` | Loan program. |
 | `school` | string |  | `"School"` | `StudentLoan.school_name` | School name. |
-| `original_amount` | number | USD | **required** | `StudentLoan.loan_amount` | Amount originally borrowed. |
-| `balance` | number (optional) | USD | — | `StudentLoan.principal` | Current principal (defaults to original_amount). |
-| `rate_pct` | number | percent (typically > 1) | **required** | `StudentLoan.yearly_interest_rate` | Interest rate. |
-| `term_years` | integer | years | **required** | `StudentLoan.length_years` | Original term in whole years. |
-| `payment_monthly` | number (optional) | USD/month | — | `StudentLoan.monthly_payment` | Monthly payment (computed when unset). |
 | `in_deferment` | boolean |  | `False` | `StudentLoan.in_deferment` | In deferment (no payments). |
 | `repayment_plan` | `"standard"` \\| `"repayment_assistance_plan"` |  | `"standard"` | `StudentLoan.repayment_plan` | Standard amortization or the income-driven RAP (federal only). |
-| `deferment_until` | integer (optional) | year | — |  | Last deferment year. NOT YET SUPPORTED (Plan 27 item 12): rejected by the validator. |
-| `qualifying_payments` | integer (optional) |  | — |  | Prior forgiveness-qualifying payments. NOT YET SUPPORTED (Plan 27 D1): rejected by the validator. |
-| `term_months` | integer (optional) | months | — |  | Term in months. NOT YET SUPPORTED (Plan 27 D7): rejected by the validator. |
-| `payments_made` | integer (optional) |  | — |  | Payments already made. NOT YET SUPPORTED (Plan 27 D1): rejected by the validator. |
+| `deferment_until` | integer (optional) | year | — | `StudentLoan.deferment_until` | Last deferment year (inclusive): no payments through that December (unsubsidized interest capitalizes), then repayment over the months left. |
+| `qualifying_payments` | integer |  | `0` | `StudentLoan.qualifying_payments` | Forgiveness-qualifying payments already made under an income-driven plan. |
 
 ## CreditCard
 
-A credit card (revolving debt). New charges from spending are not modeled (Plan 27 item 12).
+A credit card (revolving debt). ``spending_charged_pct`` routes part of the owner's monthly living spending through the card (Plan 27 D7).
 
 Builds: `CreditCard`.
 
@@ -572,6 +576,26 @@ Builds: `CreditCard`.
 | `card_type` | `"visa"` \\| `"mastercard"` \\| `"american_express"` \\| `"discover"` \\| `"store_card"` (optional) |  | — | `CreditCard.card_type` | Card network. |
 | `payment_strategy` | `"minimum"` \\| `"full_balance"` \\| `"fixed"` |  | `"minimum"` | `CreditCard.payment_strategy` | How the balance is paid down each month. |
 | `payment_monthly` | number | USD/month | `0.0` | `CreditCard.fixed_payment` | Monthly payment for the 'fixed' strategy. |
+| `spending_charged_pct` | number | percent | `0.0` | `CreditCard.spending_charge_pct` | Percent of the owner's monthly living spending charged to the card (up to the available credit) instead of paid from the bank; 'full_balance' then pays it each month with no interest. |
+
+## HomeEquityLine
+
+A home equity line of credit secured by one of the person's homes (Plan 27 D7). Interest on the part of the balance used to improve the home is deductible acquisition-debt interest; the rest is not.
+
+Builds: `HomeEquityLine`.
+
+| Field | Type | Unit | Default | Maps to | Description |
+|---|---|---|---|---|---|
+| `kind` | `"heloc"` |  | **required** |  |  |
+| `id` | string (optional) |  | — |  | Optional identifier for this debt, unique across the spec. Required when another entry references it (a 401k's job, an event's target, a relative event's anchor). |
+| `home` | string |  | **required** | `HomeEquityLine.home` | Id of the home securing the line. |
+| `name` | string (optional) |  | — | `HomeEquityLine.name` | Display name. |
+| `credit_limit` | number | USD | **required** | `HomeEquityLine.credit_limit` | Credit limit. |
+| `balance` | number | USD | `0.0` | `HomeEquityLine.balance` | Current balance. |
+| `rate_pct` | number | percent (typically > 1) | **required** | `HomeEquityLine.yearly_interest_rate` | APR. |
+| `improvement_balance` | number | USD | `0.0` | `HomeEquityLine.improvement_balance` | Part of the balance that paid for improvements to the home. |
+| `payment_strategy` | `"interest_only"` \\| `"minimum"` \\| `"full_balance"` \\| `"fixed"` |  | `"interest_only"` | `HomeEquityLine.payment_strategy` | How the balance is paid down each month. |
+| `payment_monthly` | number | USD/month | `0.0` | `HomeEquityLine.fixed_payment` | Monthly payment for the 'fixed' strategy. |
 
 ## Home
 
@@ -584,51 +608,62 @@ Builds: `Home`.
 | `kind` | `"home"` |  | **required** |  |  |
 | `id` | string (optional) |  | — |  | Optional identifier for this home, unique across the spec. Required when another entry references it (a 401k's job, an event's target, a relative event's anchor). |
 | `name` | string |  | `"Home"` | `Home.name` | Name of the house. |
-| `purchase_price` | number | USD | **required** | `Home.purchase_price` | Purchase price; also the starting market value and cost basis in core (Plan 27 item 10). |
+| `purchase_price` | number | USD | **required** | `Home.purchase_price` | Purchase price (the original value PMI is measured against; the market value and cost basis unless current_value / cost_basis are given). |
 | `value_growth_pct` | number \\| `"economy"` | percent (typically > 1) | `"economy"` | `Home.value_yearly_increase` | Yearly appreciation; 'economy' follows home appreciation. |
 | `down_payment` | number | USD | `0.0` | `Home.down_payment` | Down payment. |
 | `purchase` | boolean |  | `False` | `Home.purchase` | True: bought at the start (down payment and closing costs are paid from the owner's accounts). False: already owned, no cash changes hands. |
 | `mortgage` | [Mortgage](#mortgage) (optional) |  | — |  | The mortgage, if any. |
 | `expenses` | [HomeExpenses](#homeexpenses) |  | **required** |  | Recurring ownership costs. |
-| `current_value` | number (optional) | USD | — |  | Market value today (distinct from purchase price). NOT YET SUPPORTED (Plan 27 D1): rejected by the validator. |
-| `cost_basis` | number (optional) | USD | — |  | Section 121 cost basis. NOT YET SUPPORTED (Plan 27 D1): rejected by the validator. |
-| `purchase_year` | integer (optional) | year | — |  | Year purchased. NOT YET SUPPORTED (Plan 27 D1): rejected by the validator. |
+| `current_value` | number (optional) | USD | — | `Home.current_value` | Market value today (defaults to purchase_price). |
+| `cost_basis` | number (optional) | USD | — | `Home.cost_basis` | Section 121 cost basis: price plus improvements so far (defaults to purchase_price). |
+| `purchase_year` | integer (optional) | year | — | `Home.purchase_year` | Year purchased: a sale less than two years later gets no Section 121 exclusion (unset for a home owned before the start: the test passes). |
+| `pmi` | boolean |  | `True` | `Home.pmi` | False: the mortgage carries no private mortgage insurance (already cancelled, lender-paid). |
+| `pmi_monthly` | number (optional) | USD/month | — | `Home.pmi_monthly` | The statement's PMI premium (instead of the configured rate times the balance). PMI ends at 80% of the original value (by request), 78% by the original schedule, or the term's midpoint. |
+| `closing_cost_pct` | number (optional) | percent | — | `Home.closing_cost_percent` | Closing costs of a purchase, percent of the price (configured default when unset). |
 
 ## Mortgage
 
-The mortgage on a home. A loan already in progress is entered as original_amount plus the current balance; the builder passes loan_amount=original_amount, principal=balance (the undocumented core workaround), so the payment follows the original amortization and the mortgage pays off over its remaining term. Plan 27 D1/D7 adds origination dates and months. start_year is stored by core but not yet used for amortization (Plan 27 item 11).
+The mortgage on a home. Enter a loan the way its statement shows it (Plan 27 D1/D7): the original amount and term with an origination month (or payments_made) give today's balance and payment with no other input; or give the current balance with the months remaining (or the payment). Any three of balance / months remaining / payment determine the fourth; inputs that contradict each other are a validation error naming the field. The first payment is in the month after origination; a balance below the original schedule is a prepaid loan (it pays off early at the contract payment). With escrow_monthly, payment_monthly is the statement's total payment and the escrow (property tax and insurance, paid through the home's expenses) is subtracted. A mortgage originated on or before 2017-12 keeps the $1,000,000 acquisition-debt limit.
 
 Builds: `Mortgage`.
 
 | Field | Type | Unit | Default | Maps to | Description |
 |---|---|---|---|---|---|
-| `original_amount` | number | USD | **required** | `Mortgage.loan_amount` | Amount originally borrowed. |
-| `balance` | number (optional) | USD | — | `Mortgage.principal` | Current principal (defaults to original_amount). |
-| `rate_pct` | number | percent (typically > 1) | **required** | `Mortgage.yearly_interest_rate` | Interest rate. |
-| `term_years` | integer | years | **required** | `Mortgage.length_years` | Original term (30, 15, ...). |
-| `start_year` | integer (optional) | year | — | `Mortgage.start_date` | Year the loan was originated (defaults to the start year). |
-| `payment_monthly` | number (optional) | USD/month | — | `Mortgage.monthly_payment` | Principal and interest per month (computed when unset; exclude escrow). |
-| `origination` | string (optional) | YYYY-MM | — |  | Origination month. NOT YET SUPPORTED (Plan 27 D1): rejected by the validator. |
-| `remaining_months` | integer (optional) | months | — |  | Months remaining. NOT YET SUPPORTED (Plan 27 D1): rejected by the validator. |
-| `escrow_monthly` | number (optional) | USD/month | — |  | Escrow included in the statement payment. NOT YET SUPPORTED (Plan 27 D1): rejected by the validator. |
-| `extra_principal_monthly` | number (optional) | USD/month | — |  | Extra principal each month. NOT YET SUPPORTED (Plan 27 D7): rejected by the validator. |
+| `original_amount` | number (optional) | USD | — | `Loan.loan_amount` | Amount originally borrowed (may be omitted with balance and remaining_months). |
+| `balance` | number (optional) | USD | — | `Loan.principal` | Current principal (defaults to the original schedule's balance: original_amount for a new loan). |
+| `rate_pct` | number | percent (typically > 1) | **required** | `Loan.yearly_interest_rate` | APR. |
+| `term_years` | integer (optional) | years | — | `Loan.length_years` | Original term in whole years (or term_months). |
+| `term_months` | integer (optional) | months | — | `Loan.term_months` | Original term in months (66, 75, 360, ...). |
+| `payment_monthly` | number (optional) | USD/month | — | `Loan.monthly_payment` | Principal and interest per month (computed when unset). |
+| `origination` | string (optional) | YYYY-MM | — | `Loan.origination` | Origination month. |
+| `payments_made` | integer (optional) |  | — | `Loan.payments_made` | Payments made before the start (instead of origination). |
+| `remaining_months` | integer (optional) | months | — | `Loan.remaining_months` | Payments left to maturity on the statement. |
+| `extra_principal_monthly` | number | USD/month | `0.0` | `Loan.extra_principal_monthly` | Extra principal paid with every payment (paid with the month's bills). |
+| `start_year` | integer (optional) | year | — | `Mortgage.start_date` | Year the loan was originated (prefer origination). Without a balance, a year before the start is taken as an origination in January of that year. |
+| `escrow_monthly` | number (optional) | USD/month | — | `Mortgage.escrow_monthly` | Escrow included in payment_monthly (subtracted: the home's expenses pay tax and insurance). |
 
 ## HomeExpenses
 
-Recurring costs of owning a home.
+Recurring costs of owning a home. Property tax is a dollar bill (property_tax_annual), a percent of an assessed value, or a percent of the market value; insurance a dollar premium or a percent of the market value.
 
 Builds: `HomeExpenses`.
 
 | Field | Type | Unit | Default | Maps to | Description |
 |---|---|---|---|---|---|
-| `property_tax_pct` | number | percent | **required** | `HomeExpenses.property_tax_percent` | Property tax per year, percent of market value. |
-| `insurance_pct` | number | percent | **required** | `HomeExpenses.home_insurance_percent` | Homeowner's insurance per year, percent of market value. |
+| `property_tax_pct` | number | percent | `0.0` | `HomeExpenses.property_tax_percent` | Property tax per year, percent of the assessed value when given, else of the market value. |
+| `insurance_pct` | number | percent | `0.0` | `HomeExpenses.home_insurance_percent` | Homeowner's insurance per year, percent of market value. |
+| `property_tax_annual` | number (optional) | USD/year | — | `HomeExpenses.property_tax_annual` | The property tax bill (replaces property_tax_pct). |
+| `property_tax_growth_pct` | number \\| `"economy"` | percent | `"economy"` | `HomeExpenses.property_tax_growth_pct` | Yearly growth of property_tax_annual; 'economy' follows inflation. |
+| `assessed_value` | number (optional) | USD | — | `HomeExpenses.assessed_value` | Assessed value property_tax_pct applies to (grows with the home, up to the cap). |
+| `assessment_growth_cap_pct` | number (optional) | percent | — | `HomeExpenses.assessment_growth_cap_pct` | Cap on the assessed value's yearly growth (e.g. 2 for California). |
+| `insurance_annual` | number (optional) | USD/year | — | `HomeExpenses.insurance_annual` | Homeowner's insurance premium (replaces insurance_pct). |
+| `insurance_growth_pct` | number \\| `"economy"` | percent | `"economy"` | `HomeExpenses.insurance_growth_pct` | Yearly growth of insurance_annual; 'economy' follows inflation. |
 | `maintenance_annual` | number | USD/year | `0.0` | `HomeExpenses.maintenance_amount` | Maintenance. |
-| `maintenance_growth_pct` | number | percent | `0.0` | `HomeExpenses.maintenance_increase` | Yearly increase of maintenance. |
+| `maintenance_growth_pct` | number \\| `"economy"` | percent | `0.0` | `HomeExpenses.maintenance_increase` | Yearly increase of maintenance; 'economy' follows inflation. |
 | `improvement_annual` | number | USD/year | `0.0` | `HomeExpenses.improvement_amount` | Improvements (added to cost basis). |
-| `improvement_growth_pct` | number | percent | `0.0` | `HomeExpenses.improvement_increase` | Yearly increase of improvements. |
+| `improvement_growth_pct` | number \\| `"economy"` | percent | `0.0` | `HomeExpenses.improvement_increase` | Yearly increase of improvements; 'economy' follows inflation. |
 | `hoa_monthly` | number | USD/month | `0.0` | `HomeExpenses.hoa_amount` | HOA dues per month (core stores the annual amount). |
-| `hoa_growth_pct` | number | percent | `0.0` | `HomeExpenses.hoa_increase` | Yearly increase of HOA dues. |
+| `hoa_growth_pct` | number \\| `"economy"` | percent | `0.0` | `HomeExpenses.hoa_increase` | Yearly increase of HOA dues; 'economy' follows inflation. |
 
 ## Rental
 
@@ -1034,6 +1069,41 @@ Death at a given time (sets fixed-age mortality).
 | `person` | string |  | **required** |  | Person the event applies to. |
 | `name` | string (optional) |  | — |  | Description shown in the event list. |
 | `action` | `"die"` |  | **required** |  |  |
+
+## RefinanceEvent
+
+Refinance a mortgage (``debt`` is the home's id) or a car or student loan (Plan 27 D7): a new loan for the balance (plus any cash-out, and the costs when financed) at the new rate and term.
+
+| Field | Type | Unit | Default | Maps to | Description |
+|---|---|---|---|---|---|
+| `id` | string (optional) |  | — |  | Event id (needed to anchor relative events). |
+| `at` | [At](#at) |  | **required** |  | When the event happens: {year}, {age} or {relative: {after, years}}. |
+| `person` | string |  | **required** |  | Person the event applies to. |
+| `name` | string (optional) |  | — |  | Description shown in the event list. |
+| `action` | `"refinance"` |  | **required** |  |  |
+| `debt` | string |  | **required** |  | Id of the home (its mortgage) or of the car / student loan. |
+| `rate_pct` | number | percent | **required** |  | New APR. |
+| `term_years` | integer (optional) | years | — |  | New term in years. |
+| `term_months` | integer (optional) | months | — |  | New term in months. |
+| `costs` | number | USD | `0.0` |  | Closing costs. |
+| `finance_costs` | boolean |  | `False` |  | Roll the costs into the new loan (else paid in cash). |
+| `cash_out` | number | USD | `0.0` |  | Cash taken out above the balance. |
+| `cash_out_for_improvements` | boolean |  | `False` |  | The cash-out pays for improvements to the home (acquisition debt: its interest is deductible). |
+
+## HelocDrawEvent
+
+Draw on a home equity line: to the bank, or spent on improvements to the home securing it.
+
+| Field | Type | Unit | Default | Maps to | Description |
+|---|---|---|---|---|---|
+| `id` | string (optional) |  | — |  | Event id (needed to anchor relative events). |
+| `at` | [At](#at) |  | **required** |  | When the event happens: {year}, {age} or {relative: {after, years}}. |
+| `person` | string |  | **required** |  | Person the event applies to. |
+| `name` | string (optional) |  | — |  | Description shown in the event list. |
+| `action` | `"heloc_draw"` |  | **required** |  |  |
+| `heloc` | string |  | **required** |  | Id of the home equity line (a 'heloc' debt). |
+| `amount` | number | USD | **required** |  | Amount drawn (up to the available credit). |
+| `for_improvements` | boolean |  | `False` |  | Spent on improvements (cost basis; deductible interest) instead of paid to the bank. |
 
 ## ActualRecords
 
