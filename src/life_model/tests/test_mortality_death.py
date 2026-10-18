@@ -75,7 +75,8 @@ class TestMortalityModes(unittest.TestCase):
         df = model.datacollector.get_model_vars_dataframe()
         income_by_year = dict(zip(df["Year"], df["Income"]))
         self.assertEqual(income_by_year[2029], 50000)
-        self.assertEqual(income_by_year[2030], 0)  # died at start of 2030 (age 65)
+        # Plan 32: died in January 2030 (the month Mort turned 65), after January's paycheck.
+        self.assertAlmostEqual(income_by_year[2030], 50000 / 12, places=2)
         self.assertEqual(income_by_year[2035], 0)
 
     def test_stochastic_is_reproducible(self):

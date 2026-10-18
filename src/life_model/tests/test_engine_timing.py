@@ -250,7 +250,8 @@ class TestEventsStage(unittest.TestCase):
     def test_post_step_event_takes_effect_next_year(self):
         model = _model(end_year=2028)
         person = _worker(model)
-        LifeEvents(model, [LifeEvent(2026, "late", person.spending.add_expense, 5000, stage="post_step")])
+        # December's post_step: after the year's last bills are paid (Plan 32: events fire in a month).
+        LifeEvents(model, [LifeEvent(2026, "late", person.spending.add_expense, 5000, stage="post_step", month=12)])
         model.run()
         df = _frame(model)
         self.assertEqual(df.loc[2026, "Spending"], 50000)
@@ -659,7 +660,8 @@ class TestMatchTiers(unittest.TestCase):
         account = Job401kAccount(
             job=job, pretax_contrib_percent=6, average_growth=0, match_tiers=[(100, 6)], match_vesting_years=3
         )
-        LifeEvents(model, [LifeEvent(2027, "quit", job.retire)])
+        # Quits after December 2027's paycheck (Plan 32: an event in a year fires in its month).
+        LifeEvents(model, [LifeEvent(2027, "quit", job.retire, month=12)])
         model.run()
         # Two years of deferrals stay; two years of unvested match are forfeited.
         self.assertAlmostEqual(account.pretax_balance, 2 * 6000, places=6)

@@ -49,6 +49,7 @@ class Job401kAccount(RetirementAccount):
         match_tiers: "Sequence[tuple[float, float]] | None" = None,
         match_on_bonus: bool = False,
         match_vesting_years: int = 0,
+        match_true_up: bool = True,
     ):
         """401k Account
 
@@ -74,6 +75,11 @@ class Job401kAccount(RetirementAccount):
             match_vesting_years (int, optional): Cliff vesting for employer money: the match vests
                 after this many years of service at the job, and unvested match is forfeited when the
                 job ends before then. 0 (default) means immediately vested. Keyword-only.
+            match_true_up (bool, optional): The match is paid per paycheck on that paycheck's
+                deferral; with a true-up (default True) the December paycheck tops it up to the plan
+                formula on the year's totals, so front-loading deferrals (reaching the 402(g) limit
+                before December) loses no match. False models a plan without a true-up.
+                Keyword-only.
         """
         # Balance is derived from pretax + roth; grow via average_growth (annual compounding).
         super().__init__(job.owner, growth_rate=average_growth)
@@ -100,6 +106,7 @@ class Job401kAccount(RetirementAccount):
             None if match_tiers is None else self._validate_tiers(match_tiers)
         )
         self.match_on_bonus = match_on_bonus
+        self.match_true_up = match_true_up
         if match_vesting_years < 0:
             raise ValueError("match_vesting_years must be >= 0")
         self.match_vesting_years = match_vesting_years

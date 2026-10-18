@@ -890,6 +890,14 @@ class EquityCompConfig(StrictModel):
     default_vesting_years: int = Field(default=4, ge=1)
 
 
+class PayrollConfig(StrictModel):
+    """Payroll timing (Plan 32). Modeling conventions, not published figures: no ``vintage`` stamp.
+    Every field is defaulted so configs that omit the section still load."""
+
+    # Month (1-12) a yearly bonus is paid in (a Salary's bonus_month overrides it).
+    bonus_month: int = Field(default=3, ge=1, le=12)
+
+
 class FinancialConfigModel(StrictModel):
     """Complete financial configuration model with validation"""
 
@@ -905,6 +913,7 @@ class FinancialConfigModel(StrictModel):
     healthcare: HealthcareConfig = Field(default_factory=HealthcareConfig)
     dependents: DependentsConfig = Field(default_factory=DependentsConfig)
     equity_comp: EquityCompConfig = Field(default_factory=EquityCompConfig)
+    payroll: PayrollConfig = Field(default_factory=PayrollConfig)
     tax_years: dict[int, YearlyTaxParameters]
     # How simulated years after the last published ``tax_years`` entry are treated: indexed by the
     # economy's realized inflation (IRS-style rounding), or frozen at the last published values.

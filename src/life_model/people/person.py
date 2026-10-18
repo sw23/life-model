@@ -17,7 +17,7 @@ from ..tax.federal import FilingStatus, get_federal_standard_deduction
 from ..tax.income import IncomeLedger, IncomeType
 from ..tax.tax import TaxesDue
 from .family import Family
-from .mortality import get_blended_chance_of_mortality, get_chance_of_mortality
+from .mortality import get_blended_chance_of_mortality, get_chance_of_mortality, monthly_hazard
 from .types import GenderAtBirth, MortalityMode
 
 if TYPE_CHECKING:
@@ -54,8 +54,11 @@ class Person(LifeModelAgent):
         }
     )
 
-    # Age first in pre_step so income/RMD calculations see the current-year age.
-    STEP_PRIORITY: ClassVar[dict[str, int]] = {"pre_step": -20}
+    MONTHLY = True
+    # Mortality is drawn in pre_step after the month's income and benefits arrived (0), so a death in
+    # month m stops wages and benefits from month m+1; before stock vests (5) and premiums (10). The
+    # year-end resets run after the tax settlement (0) and the escalators (10).
+    STEP_PRIORITY: ClassVar[dict[str, int]] = {"pre_step": 1, "on_year_end": 20}
 
     def __init__(
         self,
@@ -141,6 +144,8 @@ class Person(LifeModelAgent):
         self._unpaid_final_expenses = 0.0
         # Year this person was widowed (used to switch filing status to SINGLE the following year).
         self._widowed_year: int | None = None
+        # A spouse who died this year: their income so far this year is on this person's joint return.
+        self.deceased_spouse_this_year: Person | None = None
         self.debt = 0
         # Per-person income ledger: separates FICA wages from ordinary taxable income so that
         # payroll tax and income tax each see the correct base (see tax/income.py).
@@ -521,8 +526,8 @@ class Person(LifeModelAgent):
 
     @property
     def is_retired(self) -> bool:
-        """Check if person is retired"""
-        return self.age >= self.retirement_age
+        """Whether the person has reached their retirement age (exact age)."""
+        return self.age_years_fractional >= self.retirement_age
 
     def _repr_html_(self):
         desc = self.name
@@ -1140,21 +1145,26 @@ class Person(LifeModelAgent):
         :meth:`get_year_at_age`)."""
         return year - self.birth_year
 
-    def pre_step(self):
-        # This year's waterfall accumulators start over (they are collected at year end).
-        self.stat_forced_sales = 0.0
-        self.stat_pretax_withdrawals = 0.0
-        if self.is_deceased:
-            return
+    def on_year_start(self):
         # A surviving spouse files jointly for the year of the death, then switches to single the
         # following year (qualifying-widow treatment is a documented simplification, not modeled).
         if self._widowed_year is not None and self.model.year > self._widowed_year:
             self.filing_status = FilingStatus.SINGLE
             self._widowed_year = None
+        self.deceased_spouse_this_year = None
+
+    def pre_step(self):
+        if self.is_deceased:
+            return
         self._check_mortality()
 
     def _check_mortality(self):
-        """Determine whether the person dies this year and, if so, orchestrate the death."""
+        """Determine whether the person dies this month and, if so, orchestrate the death.
+
+        ``FIXED_AGE`` dies in the birth month of ``death_age``. ``STOCHASTIC`` converts the annual
+        probability ``q`` at the person's age into a monthly hazard ``1 - (1 - q)^(1/12)`` and draws
+        every month.
+        """
         if self.mortality_mode == MortalityMode.IMMORTAL:
             return
         if self.mortality_mode == MortalityMode.FIXED_AGE:
@@ -1166,22 +1176,25 @@ class Person(LifeModelAgent):
             else:
                 chance = get_chance_of_mortality(self.age, self.gender)
             # Draw against the model RNG so seeded runs are reproducible.
-            if self.model.random.random() <= chance:
+            if self.model.random.random() <= monthly_hazard(chance):
                 self.die()
 
     def step(self):
-        # Year-end settlement (taxes, spending, housing, one-time expenses, debt) is performed
-        # at the tax-unit level in Family.step. Here the person only handles retirement.
+        # Bills and taxes are settled at the tax-unit level in Family. Here the person only handles
+        # retirement.
         #
-        # Retirement uses crossing detection (>=, fired once) so that a non-integer retirement
-        # age still triggers and a person can't draw a full salary while "retired".
-        if not self.retirement_triggered and self.age >= self.retirement_age:
+        # Retirement uses crossing detection (>=, fired once) on the exact age, so a person retires in
+        # the month they reach ``retirement_age`` (after that month's paycheck) and a non-integer
+        # retirement age (65.5) takes effect six months after the birthday.
+        if self.is_deceased:
+            return
+        if not self.retirement_triggered and self.age_years_fractional >= self.retirement_age:
             for job in self.jobs:
                 job.retire()
             self.retirement_triggered = True
 
         retirement_age = federal_retirement_age(self.model.config)
-        if not self._retirement_age_event_logged and self.age >= int(retirement_age):
+        if not self._retirement_age_event_logged and self.age_years_fractional >= retirement_age:
             self.model.event_log.add(
                 Event(
                     EventKind.RETIREMENT_AGE,
@@ -1260,6 +1273,12 @@ class Person(LifeModelAgent):
 
         if spouse is not None:
             self._apply_survivor_adjustments(spouse)
+        elif inheritor is not None:
+            # Income received this year before the death: a surviving spouse reports it on the year's
+            # joint return (the decedent stays on the survivor's tax unit until year end). Without
+            # one, the heir reports it (an approximation of the decedent's final return, which is not
+            # modeled); with no heir it goes untaxed.
+            inheritor.income.absorb(self.income)
 
         # 6. Remove the deceased (and any now-empty owned agents) from the simulation.
         self._remove_from_simulation()
@@ -1698,6 +1717,7 @@ class Person(LifeModelAgent):
         approximate the Social Security survivor benefit."""
         spouse.spouse = None
         spouse._widowed_year = self.model.year
+        spouse.deceased_spouse_this_year = self
         # Social Security survivor approximation: the survivor receives at least the deceased's
         # benefit (max of own vs. deceased's), applied as a monthly floor once benefits start.
         if self.social_security is not None and spouse.social_security is not None:
@@ -1726,7 +1746,8 @@ class Person(LifeModelAgent):
             setattr(self, name, 0)
         self.remove()
 
-    def post_step(self):
+    def on_year_end(self):
+        # After the year's return was settled: next year's ledger and limits start empty.
         self.income.clear()
         self.hsa_medical_reimbursed = 0.0
         self._elective_deferrals_ytd = 0.0

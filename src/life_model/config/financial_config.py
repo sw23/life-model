@@ -20,6 +20,7 @@ from .models import (
     HealthcareConfig,
     HousingConfig,
     InsuranceConfig,
+    PayrollConfig,
     RetirementConfig,
     SocialSecurityConfig,
     TaxBracketsConfig,
@@ -132,6 +133,10 @@ class FinancialConfig:
     @property
     def equity_comp(self) -> EquityCompConfig:
         return self._model.equity_comp
+
+    @property
+    def payroll(self) -> PayrollConfig:
+        return self._model.payroll
 
     def tax_year(self, year: int, inflation_factor: float = 1.0) -> YearlyTaxParameters:
         """Get the tax parameters applicable to a given calendar year.

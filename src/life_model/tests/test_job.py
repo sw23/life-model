@@ -14,6 +14,7 @@ from ..model import LifeModel
 from ..people.family import Family
 from ..people.person import Person, Spending
 from ..work.job import Job, Salary
+from .helpers import run_months
 
 TEST_CONFIG = str(Path(__file__).parent / "fixtures" / "test_config.yaml")
 
@@ -34,7 +35,7 @@ class TestJobContributionRouting(unittest.TestCase):
         person = self._person()
         job = Job(person, "Co", "Dev", Salary(model=person.model, base=100000))
         Job401kAccount(job=job, pretax_contrib_percent=10, average_growth=0)
-        job.pre_step()
+        run_months(person.model, job.pre_step)
         # Take-home = gross - 401k contribution.
         self.assertEqual(person.bank_account_balance, 90000)
         # Ordinary income reduced by the pre-tax deferral; FICA base is the full gross.
@@ -45,7 +46,7 @@ class TestJobContributionRouting(unittest.TestCase):
         person = self._person()
         job = Job(person, "Co", "Dev", Salary(model=person.model, base=100000))
         account = Job401kAccount(job=job, roth_contrib_percent=10, average_growth=0)
-        job.pre_step()
+        run_months(person.model, job.pre_step)
         self.assertEqual(person.bank_account_balance, 90000)
         # Roth deferrals are after-tax: ordinary income is not reduced.
         self.assertEqual(person.taxable_income, 100000)
@@ -55,7 +56,7 @@ class TestJobContributionRouting(unittest.TestCase):
         person = self._person()
         job = Job(person, "Co", "Dev", Salary(model=person.model, base=100000))
         account = Job401kAccount(job=job, pretax_contrib_percent=10, company_match_percent=50, average_growth=0)
-        job.pre_step()
+        run_months(person.model, job.pre_step)
         # $10k pre-tax contribution + 50% match = $15k in the pre-tax balance.
         self.assertEqual(account.pretax_balance, 15000)
         self.assertEqual(job.stat_retirement_match, 5000)
@@ -66,7 +67,7 @@ class TestJobContributionRouting(unittest.TestCase):
         person = self._person()
         job = Job(person, "Co", "Dev", Salary(model=person.model, base=1_000_000))
         account = Job401kAccount(job=job, pretax_contrib_percent=50, average_growth=0)
-        job.pre_step()
+        run_months(person.model, job.pre_step)
         # A 50% deferral on a $1M salary is far above any annual 401k limit, so it is capped at the
         # model's own (fixture) limit, not the packaged default.
         limit = job_401k_contrib_limit(person.age, person.model.config)
@@ -78,7 +79,7 @@ class TestJobContributionRouting(unittest.TestCase):
     def test_bonus_included_in_gross_income(self):
         person = self._person()
         job = Job(person, "Co", "Dev", Salary(model=person.model, base=100000, yearly_bonus=10))
-        job.pre_step()
+        run_months(person.model, job.pre_step)
         # Gross = base + 10% bonus = $110k, all deposited (no 401k).
         self.assertEqual(job.stat_gross_income, 110000)
         self.assertEqual(person.bank_account_balance, 110000)
@@ -87,7 +88,7 @@ class TestJobContributionRouting(unittest.TestCase):
         person = self._person()
         job = Job(person, "Co", "Dev", Salary(model=person.model, base=100000))
         job.retired = True
-        job.pre_step()
+        run_months(person.model, job.pre_step)
         self.assertEqual(job.stat_gross_income, 0)
         self.assertEqual(person.bank_account_balance, 0)
         self.assertEqual(person.taxable_income, 0)
@@ -102,7 +103,7 @@ class TestSalary(unittest.TestCase):
     def test_escalator_grows_base_in_post_step(self):
         model = LifeModel(start_year=2020, end_year=2020)
         salary = Salary(model=model, base=100000, yearly_increase=10)
-        salary.post_step()
+        salary.on_year_end()  # the escalator runs at year end (Plan 32)
         self.assertAlmostEqual(salary.base, 110000, places=6)
 
 

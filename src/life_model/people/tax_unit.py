@@ -134,6 +134,15 @@ class TaxUnit:
                 unit = cls([member], withdrawal_order=order)
                 if member.filing_status == FilingStatus.SINGLE and cls._has_dependent_child(member):
                     unit.filing_status = FilingStatus.HEAD_OF_HOUSEHOLD
+                decedent = getattr(member, "deceased_spouse_this_year", None)
+                if (
+                    decedent is not None
+                    and decedent.is_deceased
+                    and member.filing_status == FilingStatus.MARRIED_FILING_JOINTLY
+                ):
+                    # A spouse who died this year is on the year's joint return (their income so far
+                    # this year is taxed with the survivor's); they pay no bills.
+                    unit.members.append(decedent)
                 units.append(unit)
                 seen.add(member.unique_id)
         return units
@@ -157,6 +166,11 @@ class TaxUnit:
         """Whether ``member`` has a dependent child this year (born, and under ``adult_age``)."""
         adult_age = member.model.config.dependents.adult_age
         return any(0 <= child.age < adult_age for child in member.children)
+
+    @property
+    def living_members(self) -> "list[Person]":
+        """Members still alive (a spouse who died this year is on the return but pays no bills)."""
+        return [m for m in self.members if not m.is_deceased]
 
     @property
     def taxable_income(self) -> float:
@@ -856,6 +870,9 @@ class TaxUnit:
         carried_interest_by_member = {m.unique_id: m.debt * debt_rate for m in self.members}
         existing_debt += sum(carried_interest_by_member.values())
         for member in self.members:
+            spending_by_member[member.unique_id] = 0.0
+            housing_by_member[member.unique_id] = 0.0
+            interest_by_member[member.unique_id] = 0.0
             if member.debt:
                 carried = member.debt + carried_interest_by_member[member.unique_id]
                 cause = "repay unpaid bills carried from last year"
@@ -874,7 +891,7 @@ class TaxUnit:
                 )
             member.debt = 0
 
-        for member in self.members:
+        for member in self.living_members:
             spending_by_member[member.unique_id] = member.spending.get_yearly_spending()
             for category, amount in member.spending.year_spending_lines().items():
                 kind = FlowKind.PREMIUM if category.endswith("premium") else FlowKind.SPENDING
@@ -981,6 +998,7 @@ class TaxUnit:
         shares = self._member_shares() if len(self.members) > 1 else {self.members[0].unique_id: 1.0}
         for member in self.members:
             member.stat_itemized_deductions = itemized_claimed * shares[member.unique_id]
+        self._fold_decedent_stats()
 
     def _housing_lines(self, member: "Person", home) -> "list[_BillLine]":
         """The ledger lines of a home's year of payments (``home.year_payment``)."""
@@ -1122,6 +1140,33 @@ class TaxUnit:
 
         shares = self._member_shares()
         income_federal = taxes.federal - taxes.penalties
+        self._record_member_tax_stats(taxes, tax_return, shares, income_federal)
+
+    _TAX_STATS = (
+        "stat_taxes_paid",
+        "stat_taxes_paid_federal",
+        "stat_taxes_paid_state",
+        "stat_taxes_paid_ss",
+        "stat_taxes_paid_medicare",
+        "stat_taxes_paid_niit",
+        "stat_tax_credits",
+        "stat_tax_penalties",
+        "stat_agi",
+        "stat_taxable_income",
+        "stat_itemized_deductions",
+    )
+
+    def _fold_decedent_stats(self) -> None:
+        """A spouse who died this year is no longer reported: their share of the joint return's
+        stats goes to the survivor (the head)."""
+        head = self.members[0]
+        for member in self.members:
+            if member.is_deceased and member is not head:
+                for name in self._TAX_STATS:
+                    setattr(head, name, getattr(head, name, 0) + getattr(member, name, 0))
+                    setattr(member, name, 0)
+
+    def _record_member_tax_stats(self, taxes: TaxesDue, tax_return, shares, income_federal) -> None:
         for index, member in enumerate(self.members):
             share = shares[member.unique_id]
             penalties = member.income.penalties

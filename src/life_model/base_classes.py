@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, ClassVar, Optional
 
 from .ledger import FlowKind
 from .limits import federal_retirement_age
-from .model import LifeModelAgent
+from .model import LifeModelAgent, snap_money
 
 if TYPE_CHECKING:
     from .people.person import Person
@@ -65,7 +65,8 @@ class FinancialAccount(LifeModelAgent, ABC):
 
     @balance.setter
     def balance(self, value: float) -> None:
-        self._balance = value
+        # Monthly flows add twelfths; drop the floating-point residue (see ``snap_money``).
+        self._balance = snap_money(value)
 
     def get_balance(self) -> float:
         """Get current account balance"""

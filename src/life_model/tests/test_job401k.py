@@ -102,9 +102,11 @@ class TestJob401kLimits(unittest.TestCase):
 
         model.step_year()
 
-        # Fixture 402(g) base is $20k: job 1 defers $15k, job 2 only the remaining $5k.
-        self.assertAlmostEqual(job1.retirement_account.pretax_balance, 15000, places=2)
-        self.assertAlmostEqual(job2.retirement_account.pretax_balance, 5000, places=2)
+        # Fixture 402(g) base is $20k shared by both jobs. Plan 32: both pay monthly, so both defer
+        # $1,250 a month until the shared limit is reached in August ($10k each).
+        self.assertAlmostEqual(job1.retirement_account.pretax_balance, 10000, places=2)
+        self.assertAlmostEqual(job2.retirement_account.pretax_balance, 10000, places=2)
+        self.assertAlmostEqual(job1.stat_retirement_contrib + job2.stat_retirement_contrib, 20000, places=2)
 
     def test_employer_match_capped_by_415c(self):
         model = LifeModel(end_year=2020, start_year=2020, config=self._fixture_config())

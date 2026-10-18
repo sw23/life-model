@@ -37,6 +37,14 @@ def round_money(amount: float) -> float:
     return round(amount, 2)
 
 
+def snap_money(amount: float) -> float:
+    """``amount`` with floating-point residue removed: a value within a millionth of a cent of a whole
+    cent becomes that cent (``99999.99999999999`` -> ``100000.0``); any other value is returned
+    unchanged. Twelve monthly twelfths of a salary then add back to the salary."""
+    cents = round(amount, 2)
+    return cents if abs(amount - cents) < 1e-8 else amount
+
+
 def parse_year_month(text: str) -> tuple[int, int]:
     """``"YYYY-MM"`` (or ``"YYYY-MM-DD"``, whose day is ignored: events fire in their month) as
     ``(year, month)``."""
@@ -893,8 +901,13 @@ class LifeModel(mesa.Model):
         from .ledger import household_balance_sheet
         from .people.person import Person
 
+        flows = self._flow_stat_names()
         for agent in list(self.agents):
             agent.collect_stats()
+            for name in flows & agent.STATS_OWNED:
+                value = getattr(agent, name)
+                if isinstance(value, float):
+                    setattr(agent, name, snap_money(value))
         sheet = household_balance_sheet(self)
         for agent in self.agents:
             if isinstance(agent, Person) and not agent.is_deceased:

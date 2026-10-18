@@ -13,14 +13,20 @@ every month.
 
 import unittest
 from itertools import pairwise
+from pathlib import Path
 
 from ..account.bank import BankAccount
+from ..account.job401k import Job401kAccount
 from ..checks import assert_conservation, check_conservation, conservation_records
 from ..config.financial_config import FinancialConfig
 from ..economy import annual_to_monthly, compound_months
+from ..lifeevents import LifeEvent, LifeEvents
 from ..model import LifeModel, LifeModelAgent, ModelSetupException, parse_year_month
 from ..people.family import Family
+from ..people.mortality import monthly_hazard
 from ..people.person import Person, Spending
+from ..people.types import MortalityMode
+from ..work.job import Job, Salary
 from .scenarios import married_homeowners, mortality_and_estate, renter_buys_home, stochastic_retiree
 
 
@@ -243,6 +249,129 @@ class TestExactAges(unittest.TestCase):
         self.assertFalse(person.birth_month_assumed)
         person.age = 50  # re-dates the birth year, keeping the month
         self.assertEqual((person.age, person.birth_year, person.birth_month), (50, 1975, 3))
+
+
+TEST_CONFIG = str(Path(__file__).parent / "fixtures" / "test_config.yaml")
+
+
+def _fixture_config() -> FinancialConfig:
+    return FinancialConfig(config_file=TEST_CONFIG)
+
+
+class TestMonthlyPayroll(unittest.TestCase):
+    def _worker(self, model, base=120000, bonus=0, **salary):
+        person = Person(Family(model), "Pat", 40, 70, Spending(model, 0))
+        BankAccount(person, "Bank", balance=0, interest_rate=0)
+        job = Job(person, "Co", "Dev", Salary(model, base=base, yearly_bonus=bonus, **salary))
+        return person, job
+
+    def test_paid_monthly_with_the_bonus_in_its_month(self):
+        model = LifeModel(start_year=2026, end_year=2026)
+        _person, job = self._worker(model, bonus=10)
+        wages = []
+        for _ in range(12):
+            model.step()
+            wages.append(job.stat_gross_income)
+        self.assertAlmostEqual(wages[0], 10000)
+        self.assertAlmostEqual(wages[2] - wages[1], 10000 + 12000)  # March: the bonus month
+        self.assertEqual(job.stat_gross_income, 132000)
+        months = {e.month for e in model.ledger if e.kind == "wage"}
+        self.assertEqual(months, set(range(1, 13)))
+        self.assertEqual({e.month for e in model.ledger if e.kind == "bonus"}, {3})
+
+    def test_deferrals_stop_at_the_402g_limit_and_true_up_restores_the_match(self):
+        for true_up, expected_match in ((True, 6000), (False, 2000)):
+            with self.subTest(true_up=true_up):
+                model = LifeModel(start_year=2026, end_year=2026, config=_fixture_config())
+                _person, job = self._worker(model, base=120000)
+                account = Job401kAccount(
+                    job, pretax_contrib_percent=50, average_growth=0, match_tiers=[(100, 5)], match_true_up=true_up
+                )
+                deferred = []
+                for _ in range(12):
+                    model.step()
+                    deferred.append(job.stat_retirement_contrib)
+                # $5k a month against the fixture's $20k limit: full in Jan-Apr, nothing after.
+                self.assertEqual(deferred[:5], [5000, 10000, 15000, 20000, 20000])
+                # Per paycheck, 5% of $10k pay is matched in the four months with deferrals ($2k);
+                # the December true-up pays the formula on the year: 5% of $120k.
+                self.assertAlmostEqual(job.stat_retirement_match, expected_match, places=6)
+                self.assertAlmostEqual(account.pretax_balance, 20000 + expected_match, places=6)
+
+    def test_retirement_takes_effect_after_the_birthday_month_paycheck(self):
+        model = LifeModel(start_year=2026, end_year=2027)
+        person = Person(Family(model), "Pat", None, 65, Spending(model, 0), birth="1961-04")
+        BankAccount(person, "Bank", balance=0, interest_rate=0)
+        job = Job(person, "Co", "Dev", Salary(model, base=120000))
+        model.run()
+        # Pat turns 65 in April 2026: paid January through April, retired from May.
+        frame = model.get_yearly_stat_df(styled=False).set_index("Year")
+        self.assertAlmostEqual(frame.loc[2026, "Income"], 40000)
+        self.assertEqual(frame.loc[2027, "Income"], 0)
+        self.assertTrue(job.retired)
+
+
+class TestMonthlyMortality(unittest.TestCase):
+    def test_monthly_hazard_compounds_to_the_annual_probability(self):
+        for q in (0.0, 0.01, 0.3, 1.0):
+            self.assertAlmostEqual(1 - (1 - monthly_hazard(q)) ** 12, q)
+
+    def test_a_spouse_who_dies_mid_year_is_on_that_years_joint_return(self):
+        model = LifeModel(start_year=2026, end_year=2027)
+        family = Family(model)
+        ann = Person(family, "Ann", 50, 70, Spending(model, 0))
+        bob = Person(
+            family,
+            "Bob",
+            None,
+            70,
+            Spending(model, 0),
+            birth="1966-07",
+            mortality_mode=MortalityMode.FIXED_AGE,
+            death_age=60,
+        )
+        ann.get_married(bob)
+        BankAccount(ann, "Bank", balance=0, interest_rate=0)
+        BankAccount(bob, "Bank", balance=0, interest_rate=0)
+        Job(ann, "A", "Dev", Salary(model, base=60000))
+        Job(bob, "B", "Dev", Salary(model, base=120000))
+        model.run()
+        self.assertTrue(bob.is_deceased)
+        # Bob turned 60 (and died) in July 2026 after July's paycheck: 7 months of his pay.
+        joint = model.tax_returns[2026]
+        self.assertEqual(joint.filing_status, "MARRIED_FILING_JOINTLY")
+        self.assertAlmostEqual(joint.wages, 60000 + 120000 * 7 / 12, places=2)
+        self.assertEqual(model.tax_returns[2027].filing_status, "SINGLE")
+        assert_conservation(model, monthly=True)
+
+
+class TestEventsInTheirMonth(unittest.TestCase):
+    def test_an_event_fires_in_its_month(self):
+        model = LifeModel(start_year=2026, end_year=2026)
+        fired = []
+        LifeEvents(model, [LifeEvent(2026, "july", lambda: fired.append(model.month), month=7)])
+        model.run()
+        self.assertEqual(fired, [7])
+
+    def test_a_year_only_event_fires_in_the_first_simulated_month(self):
+        model = LifeModel(start="2026-10", end_year=2027)
+        fired = []
+        LifeEvents(
+            model,
+            [
+                LifeEvent(2026, "start year", lambda: fired.append((model.year, model.month))),
+                LifeEvent(2027, "next year", lambda: fired.append((model.year, model.month))),
+            ],
+        )
+        model.run()
+        self.assertEqual(fired, [(2026, 10), (2027, 1)])
+
+    def test_an_event_before_the_next_month_is_past(self):
+        model = LifeModel(start="2026-10", end_year=2027)
+        with self.assertRaises(ValueError):
+            LifeEvents(model, [LifeEvent(2026, "too early", print, month=9)])
+        with self.assertRaises(ValueError):
+            LifeEvent(2026, "bad month", print, month=13)
 
 
 class TestMonthlyConservation(unittest.TestCase):

@@ -71,9 +71,9 @@ class InheritedPretaxAccount(Investment):
         super().step()
         self.stat_useable_balance = self.balance
 
-    def pre_step(self):
-        # Distribute this year's even slice before the step-stage tax settlement so the income
-        # lands in the beneficiary's ledger for the current year. Growth is applied later in the
+    def on_year_start(self):
+        # Distribute this year's even slice at the start of each year after the inheritance, so the
+        # income lands on the beneficiary's ledger for the year's return. Growth is applied in the
         # step stage (Investment.step), so the remaining balance keeps compounding.
         if self.years_remaining <= 0 or self.balance <= 0:
             self._finish()
