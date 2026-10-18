@@ -279,3 +279,151 @@ def test_healthcare_toggle_default_off_and_opt_in():
     model_on.run()
     df = model_on.datacollector.get_model_vars_dataframe()
     assert (df["Medical Costs"] > 0).all()
+
+
+# --- Plan 25: the dashboard builds through life_model.spec ------------------------------------
+
+
+def _legacy_single_person_model(prefix, **kwargs):
+    """The pre-spec dashboard construction for one person (verbatim core calls), for parity checks."""
+    from life_model.account.bank import BankAccount
+    from life_model.account.job401k import Job401kAccount
+    from life_model.healthcare import LongTermCare, MedicalCosts, Medicare
+    from life_model.housing.home import Home, HomeExpenses, Mortgage
+    from life_model.model import LifeModel
+    from life_model.people.family import Family
+    from life_model.people.person import Person, Spending
+    from life_model.work.job import Job, Salary
+
+    d = {**PERSON_DEFAULTS[prefix], **{k.removeprefix(f"{prefix}_"): v for k, v in kwargs.items()}}
+    shared = {**app.SHARED_DEFAULTS, **kwargs}
+    model = LifeModel(end_year=shared["end_year"], start_year=shared["start_year"], scenario=shared.get("scenario"))
+    family = Family(model)
+    person = Person(
+        family=family,
+        name=prefix.capitalize(),
+        age=d["age"],
+        retirement_age=d["retirement_age"],
+        spending=Spending(model=model, base=d["spending"], yearly_increase=shared["spending_increase"]),
+        state=shared.get("state"),
+    )
+    BankAccount(
+        owner=person,
+        company=d["bank_company"],
+        type="Checking",
+        balance=d["bank_balance"],
+        interest_rate=shared["bank_interest_rate"],
+    )
+    job = Job(
+        owner=person,
+        company=d["company"],
+        role=d["role"],
+        salary=Salary(
+            model=model, base=d["salary"], yearly_increase=shared["salary_increase"], yearly_bonus=d["bonus"]
+        ),
+    )
+    if d["retirement_enabled"]:
+        Job401kAccount(
+            job=job,
+            pretax_balance=d["retirement_balance"],
+            pretax_contrib_percent=d["retirement_contrib"],
+            company_match_percent=d["company_match"],
+            average_growth=d["retirement_growth"],
+        )
+    for i in range(int(d["children"])):
+        person.add_child(f"{prefix.capitalize()}'s Child {i + 1}", birth_year=model.start_year)
+    if shared["home_enabled"]:
+        price = shared["home_price"]
+        Home(
+            person=person,
+            name="Home",
+            purchase_price=price,
+            value_yearly_increase=None,
+            down_payment=price * 0.20,
+            mortgage=Mortgage(
+                loan_amount=price * 0.8,
+                start_date=model.start_year,
+                length_years=int(shared["mortgage_term"]),
+                yearly_interest_rate=shared["mortgage_rate"],
+            ),
+            expenses=HomeExpenses(
+                model=model,
+                property_tax_percent=1.0,
+                home_insurance_percent=0.5,
+                maintenance_amount=3000,
+                maintenance_increase=2.0,
+                improvement_amount=0,
+                improvement_increase=0.0,
+                hoa_amount=0,
+                hoa_increase=0.0,
+            ),
+            purchase=False,
+        )
+    if shared["healthcare_enabled"]:
+        MedicalCosts(person)
+        Medicare(person)
+        LongTermCare(person)
+    return model
+
+
+@pytest.mark.parametrize(
+    "prefix, params",
+    [
+        ("john", {}),
+        (
+            "jane",
+            {
+                "jane_children": 2,
+                "jane_bonus": 10,
+                "home_enabled": True,
+                "state": "CA",
+                "scenario": "recession",
+                "start_year": 2026,
+                "end_year": 2070,
+            },
+        ),
+        ("john", {"john_retirement_enabled": False, "healthcare_enabled": True, "start_year": 2026, "end_year": 2066}),
+    ],
+)
+def test_single_person_dashboard_matches_legacy_construction(prefix, params):
+    """One person (no marriage involved) builds exactly as the hand-written construction did."""
+    other = "jane" if prefix == "john" else "john"
+    model = DashboardLifeModel(**{**params, f"{other}_enabled": False})
+    legacy = _legacy_single_person_model(prefix, **params)
+    for m in (model, legacy):
+        m.random.seed(11)  # long-term care draws from the model RNG
+        m.run()
+    new_df = model.datacollector.get_model_vars_dataframe()
+    legacy_df = legacy.datacollector.get_model_vars_dataframe()
+    assert new_df.equals(legacy_df)
+
+
+def test_couple_is_married_and_files_jointly(couple_model):
+    """Plan 25 D6: the dashboard's two adults are a married couple filing one joint return."""
+    from life_model.people.tax_unit import TaxUnit
+    from life_model.tax.federal import FilingStatus
+
+    john, jane = couple_model.household.people["john"], couple_model.household.people["jane"]
+    assert john.spouse is jane and jane.spouse is john
+    assert john.filing_status == jane.filing_status == FilingStatus.MARRIED_FILING_JOINTLY
+    (unit,) = TaxUnit.build_units(john.family)
+    assert unit.filing_status == FilingStatus.MARRIED_FILING_JOINTLY
+    assert [m.name for m in john.family.members] == ["John", "Jane"]
+
+
+def test_household_spec_is_exposed_and_valid():
+    from life_model.spec import validate_spec
+
+    model = DashboardLifeModel(home_enabled=True, john_children=1)
+    spec = model.household_spec
+    assert [p.id for p in spec.people] == ["john", "jane"]
+    assert spec.relationships.marriages[0].spouses == ("john", "jane")
+    assert spec.people[0].housing[0].kind == "home"
+    # The only finding on the defaults: every investment (the 401ks) is on fixed growth.
+    assert [f.code for f in validate_spec(spec)] == ["fixed_growth"]
+
+
+def test_nobody_enabled_builds_an_empty_family():
+    model = DashboardLifeModel(john_enabled=False, jane_enabled=False)
+    assert model.household_spec is None
+    model.run()

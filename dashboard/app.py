@@ -14,17 +14,12 @@ from typing import Any
 import solara
 from mesa.visualization import Slider, SolaraViz, make_plot_component
 
-from life_model.account.bank import BankAccount
-from life_model.account.job401k import Job401kAccount
 from life_model.config.financial_config import FinancialConfig
 from life_model.config.models import DEFAULT_STATE_KEY
 from life_model.config.scenarios import list_scenarios
-from life_model.healthcare import LongTermCare, MedicalCosts, Medicare
-from life_model.housing.home import Home, HomeExpenses, Mortgage
 from life_model.model import LifeModel
 from life_model.people.family import Family
-from life_model.people.person import Person, Spending
-from life_model.work.job import Job, Salary
+from life_model.spec import HouseholdSpec, populate_model
 
 # Label used in the scenario dropdown for "use the packaged defaults" (scenario=None).
 SCENARIO_DEFAULT_LABEL = "(default)"
@@ -141,8 +136,8 @@ def _get(kwargs: dict[str, Any], key: str, default: Any) -> Any:
     return param_value(kwargs.get(key, default))
 
 
-def _add_person(model: LifeModel, family: Family, prefix: str, kwargs: dict[str, Any]) -> Person | None:
-    """Create a person (with bank account, job, and optional 401k) from the params, if enabled."""
+def _person_spec(prefix: str, kwargs: dict[str, Any]) -> dict[str, Any] | None:
+    """One person's spec entry (bank account, job, optional 401k, children), or None when disabled."""
     d = PERSON_DEFAULTS[prefix]
 
     def g(field: str) -> Any:
@@ -151,109 +146,111 @@ def _add_person(model: LifeModel, family: Family, prefix: str, kwargs: dict[str,
     if not g("enabled"):
         return None
 
-    person = Person(
-        family=family,
-        name=prefix.capitalize(),
-        age=g("age"),
-        retirement_age=g("retirement_age"),
-        spending=Spending(
-            model=model,
-            base=g("spending"),
-            yearly_increase=_get(kwargs, "spending_increase", SHARED_DEFAULTS["spending_increase"]),
-        ),
-        state=_state_value(kwargs.get("state")),
-    )
-
-    BankAccount(
-        owner=person,
-        company=d["bank_company"],
-        type="Checking",
-        balance=g("bank_balance"),
-        interest_rate=_get(kwargs, "bank_interest_rate", SHARED_DEFAULTS["bank_interest_rate"]),
-    )
-
-    job = Job(
-        owner=person,
-        company=d["company"],
-        role=d["role"],
-        salary=Salary(
-            model=model,
-            base=g("salary"),
-            yearly_increase=_get(kwargs, "salary_increase", SHARED_DEFAULTS["salary_increase"]),
-            yearly_bonus=g("bonus"),
-        ),
-    )
-
+    name = prefix.capitalize()
+    start_year = _get(kwargs, "start_year", SHARED_DEFAULTS["start_year"])
+    person: dict[str, Any] = {
+        "id": prefix,
+        "name": name,
+        "age": g("age"),
+        "retirement_age": g("retirement_age"),
+        "state": _state_value(kwargs.get("state")),
+        "spending": {
+            "amount_annual": g("spending"),
+            "growth_pct": _get(kwargs, "spending_increase", SHARED_DEFAULTS["spending_increase"]),
+        },
+        "jobs": [
+            {
+                "id": f"{prefix}_job",
+                "company": d["company"],
+                "role": d["role"],
+                "salary_annual": g("salary"),
+                "raise_pct": _get(kwargs, "salary_increase", SHARED_DEFAULTS["salary_increase"]),
+                "bonus_pct": g("bonus"),
+            }
+        ],
+        "accounts": [
+            {
+                "kind": "bank",
+                "company": d["bank_company"],
+                "type": "Checking",
+                "balance": g("bank_balance"),
+                "interest_pct": _get(kwargs, "bank_interest_rate", SHARED_DEFAULTS["bank_interest_rate"]),
+            }
+        ],
+        # Children are born at the start of the simulation; costs and the Child Tax Credit then
+        # flow through the person's spending and tax unit automatically.
+        "children": [
+            {"id": f"{prefix}_child{i + 1:02d}", "name": f"{name}'s Child {i + 1}", "birth_year": start_year}
+            for i in range(int(g("children")))
+        ],
+    }
     if g("retirement_enabled"):
-        Job401kAccount(
-            job=job,
-            pretax_balance=g("retirement_balance"),
-            pretax_contrib_percent=g("retirement_contrib"),
-            company_match_percent=g("company_match"),
-            average_growth=g("retirement_growth"),
+        person["accounts"].append(
+            {
+                "kind": "401k",
+                "job": f"{prefix}_job",
+                "pretax_balance": g("retirement_balance"),
+                "pretax_contrib_pct": g("retirement_contrib"),
+                "company_match_pct": g("company_match"),
+                "growth_pct": g("retirement_growth"),
+            }
         )
-
-    for i in range(int(g("children"))):
-        # Children are born at the start of the simulation; costs and the Child Tax Credit
-        # then flow through the person's spending and tax unit automatically.
-        person.add_child(f"{prefix.capitalize()}'s Child {i + 1}", birth_year=model.start_year)
-
+    if _get(kwargs, "healthcare_enabled", SHARED_DEFAULTS["healthcare_enabled"]):
+        # The medical cost curve, Medicare (premiums + IRMAA) and the long-term-care hazard model.
+        person["healthcare"] = {"medical_costs": True, "medicare": True, "long_term_care": True}
     return person
 
 
-def _add_home(model: LifeModel, owner: Person | None, kwargs: dict[str, Any]) -> None:
-    """Attach a mortgaged home to ``owner`` when the home checkbox is enabled."""
-    if owner is None or not _get(kwargs, "home_enabled", SHARED_DEFAULTS["home_enabled"]):
-        return
-
+def _home_spec(kwargs: dict[str, Any]) -> dict[str, Any]:
+    """The mortgaged home (20% down, already owned at the start, so no cash changes hands)."""
     price = _get(kwargs, "home_price", SHARED_DEFAULTS["home_price"])
-    rate = _get(kwargs, "mortgage_rate", SHARED_DEFAULTS["mortgage_rate"])
-    term = int(_get(kwargs, "mortgage_term", SHARED_DEFAULTS["mortgage_term"]))
     down_payment = price * 0.20
-
-    mortgage = Mortgage(
-        loan_amount=price - down_payment,
-        start_date=model.start_year,
-        length_years=term,
-        yearly_interest_rate=rate,
-    )
-    expenses = HomeExpenses(
-        model=model,
-        property_tax_percent=1.0,
-        home_insurance_percent=0.5,
-        maintenance_amount=3000,
-        maintenance_increase=2.0,
-        improvement_amount=0,
-        improvement_increase=0.0,
-        hoa_amount=0,
-        hoa_increase=0.0,
-    )
-    Home(
-        person=owner,
-        name="Home",
-        purchase_price=price,
-        value_yearly_increase=None,  # appreciate with the economy
-        down_payment=down_payment,
-        mortgage=mortgage,
-        expenses=expenses,
-        purchase=False,  # already owned at simulation start (no cash outflow)
-    )
+    return {
+        "kind": "home",
+        "name": "Home",
+        "purchase_price": price,
+        "value_growth_pct": "economy",  # appreciate with the economy
+        "down_payment": down_payment,
+        "purchase": False,
+        "mortgage": {
+            "original_amount": price - down_payment,
+            "rate_pct": _get(kwargs, "mortgage_rate", SHARED_DEFAULTS["mortgage_rate"]),
+            "term_years": int(_get(kwargs, "mortgage_term", SHARED_DEFAULTS["mortgage_term"])),
+        },
+        "expenses": {
+            "property_tax_pct": 1.0,
+            "insurance_pct": 0.5,
+            "maintenance_annual": 3000,
+            "maintenance_growth_pct": 2.0,
+        },
+    }
 
 
-def _add_healthcare(model: LifeModel, people: "tuple[Person | None, ...]", kwargs: dict[str, Any]) -> None:
-    """Attach the opt-in healthcare agents to each enabled person when the toggle is on.
+def to_household_spec(**kwargs: Any) -> HouseholdSpec | None:
+    """The dashboard's parameters (Sliders, checkboxes, or plain values) as a ``HouseholdSpec``.
 
-    Adds the age-related medical cost curve, Medicare (premiums + IRMAA), and the long-term-care
-    hazard model. Opt-in; defaults off.
+    John and Jane are each included when enabled; when both are, they are married and file jointly
+    (John heads the tax unit). The home, when enabled, belongs to John (or Jane when John is
+    disabled). Returns None when nobody is enabled (a spec needs at least one person).
     """
-    if not _get(kwargs, "healthcare_enabled", SHARED_DEFAULTS["healthcare_enabled"]):
-        return
-    for person in people:
-        if person is None:
-            continue
-        MedicalCosts(person)
-        Medicare(person)
-        LongTermCare(person)
+    start_year = _get(kwargs, "start_year", SHARED_DEFAULTS["start_year"])
+    people = [p for p in (_person_spec("john", kwargs), _person_spec("jane", kwargs)) if p is not None]
+    if not people:
+        return None
+    if _get(kwargs, "home_enabled", SHARED_DEFAULTS["home_enabled"]):
+        people[0]["housing"] = [_home_spec(kwargs)]
+    data: dict[str, Any] = {
+        "meta": {
+            "name": "Dashboard household",
+            "start_year": start_year,
+            "end_year": _get(kwargs, "end_year", SHARED_DEFAULTS["end_year"]),
+            "scenario": _scenario_value(kwargs.get("scenario")),
+        },
+        "people": people,
+    }
+    if len(people) == 2:
+        data["relationships"] = {"marriages": [{"spouses": ["john", "jane"]}]}
+    return HouseholdSpec.model_validate(data)
 
 
 def _scenario_value(raw: Any) -> str | None:
@@ -273,21 +270,22 @@ def _state_value(raw: Any) -> str | None:
 
 
 class DashboardLifeModel(LifeModel):
-    """LifeModel wrapper that builds a family from dashboard parameters."""
+    """LifeModel wrapper that builds a family from dashboard parameters through the spec builder."""
 
     def __init__(self, **kwargs):
         """Initialize the model from dashboard parameters (Sliders, checkboxes, or plain values)."""
+        self.household_spec = to_household_spec(**kwargs)
         super().__init__(
             end_year=_get(kwargs, "end_year", SHARED_DEFAULTS["end_year"]),
             start_year=_get(kwargs, "start_year", SHARED_DEFAULTS["start_year"]),
             scenario=_scenario_value(kwargs.get("scenario")),
         )
-
-        family = Family(self)
-        john = _add_person(self, family, "john", kwargs)
-        jane = _add_person(self, family, "jane", kwargs)
-        _add_home(self, john or jane, kwargs)
-        _add_healthcare(self, (john, jane), kwargs)
+        if self.household_spec is None:
+            Family(self)  # nobody enabled: an empty family, as before
+            return
+        # The sliders bound every value, and a retirement age below the current age is allowed (the
+        # person retires in the first year), so the build skips the validator's errors.
+        populate_model(self, self.household_spec, check=False)
 
 
 # Model parameters for the dashboard (single source: SHARED_DEFAULTS + PERSON_DEFAULTS).
