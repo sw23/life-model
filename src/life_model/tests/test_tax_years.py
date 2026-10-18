@@ -114,8 +114,8 @@ class TestSaltCap(unittest.TestCase):
     def test_cap_is_per_return_not_per_spouse(self):
         model = LifeModel(start_year=2025, end_year=2025)
         family = Family(model)
-        head = Person(family=family, name="A", age=50, retirement_age=65, spending=Spending(model, base=0))
-        spouse = Person(family=family, name="B", age=50, retirement_age=65, spending=Spending(model, base=0))
+        head = Person(family=family, name="A", age=50, retirement_age=65, spending=Spending(model, base_annual=0))
+        spouse = Person(family=family, name="B", age=50, retirement_age=65, spending=Spending(model, base_annual=0))
         head.get_married(spouse)
         unit = TaxUnit.build_units(family)[0]
         with mock.patch.object(Person, "salt_paid", lambda self, state=0.0: 30000.0 + state):

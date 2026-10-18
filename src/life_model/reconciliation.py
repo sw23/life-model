@@ -1027,12 +1027,20 @@ def _spending_lines(sim: _Year, spending, add) -> None:
         if entry.kind == FlowKind.HOUSING.value and entry.sink is not None:
             housing += entry.amount
     lines = (
-        ("living_annual", "Living spending", sinks.get("living expenses", 0.0), "people[].spending.amount_annual"),
+        (
+            "living_annual",
+            "Living spending",
+            sinks.get("living expenses", 0.0),
+            "people[].spending.amount_annual (categories are separate lines, by name)",
+        ),
         (
             "medical_out_of_pocket_annual",
             "Out-of-pocket medical",
             sinks.get("medical", 0.0),
-            "config healthcare.medical_cost_bands (per-person override: Plan 27 D9)",
+            (
+                "config healthcare.medical_cost_bands, or people[].healthcare.medical_costs_annual (capped by a "
+                "health policy's deductible / coinsurance / oop_max_annual)"
+            ),
         ),
         (
             "medicare_premiums_annual",
@@ -1044,7 +1052,7 @@ def _spending_lines(sim: _Year, spending, add) -> None:
             "dependent_costs_annual",
             "Child and dependent costs",
             sinks.get("dependents", 0.0),
-            "config dependents cost bands (per-child override: Plan 27 D6)",
+            "config dependents cost bands, or people[].children[].cost_override_annual / college_cost_annual",
         ),
         ("housing_annual", "Housing costs", housing, "people[].housing"),
     )

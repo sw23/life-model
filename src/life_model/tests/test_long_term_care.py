@@ -26,7 +26,7 @@ def _flat_model(start_year=2026, end_year=2060, seed=None):
 
 def _make_person(model, age, balance=10_000_000):
     family = Family(model)
-    person = Person(family=family, name="P", age=age, retirement_age=90, spending=Spending(model, base=0))
+    person = Person(family=family, name="P", age=age, retirement_age=90, spending=Spending(model, base_annual=0))
     BankAccount(owner=person, company="Bank", balance=balance)
     return person
 
@@ -98,10 +98,10 @@ class TestLongTermCare(unittest.TestCase):
         model = _flat_model(end_year=2026)
         person = _make_person(model, age=80)
         Insurance(
-            person=person,
+            owner=person,
             insurance_type=InsuranceType.LONG_TERM_CARE,
             company="CarePlus",
-            annual_premium=3000,
+            premium_annual=3000,
             coverage_amount=60000,
             deductible=0,
         )
@@ -120,10 +120,10 @@ class TestLongTermCare(unittest.TestCase):
         model = _flat_model(end_year=2026)
         person = _make_person(model, age=80)
         Insurance(
-            person=person,
+            owner=person,
             insurance_type=InsuranceType.LONG_TERM_CARE,
             company="CarePlus",
-            annual_premium=3000,
+            premium_annual=3000,
             coverage_amount=60000,
             deductible=10000,
         )
@@ -140,10 +140,10 @@ class TestLongTermCare(unittest.TestCase):
         model = _flat_model(end_year=2026)
         person = _make_person(model, age=80)
         Insurance(
-            person=person,
+            owner=person,
             insurance_type=InsuranceType.HEALTH,
             company="Blue Cross",
-            annual_premium=5000,
+            premium_annual=5000,
             coverage_amount=1000000,
             deductible=0,
         )

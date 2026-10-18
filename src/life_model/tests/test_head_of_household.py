@@ -148,9 +148,14 @@ class TestHoHSettlement(unittest.TestCase):
             from ..work.job import Job, Salary
 
             model = LifeModel(start_year=2026, end_year=2026, config=cfg)
-            parent = Person(Family(model), "Solo", age=35, retirement_age=70, spending=Spending(model, base=0))
-            BankAccount(parent, "Bank", balance=50000, interest_rate=0)
-            Job(parent, "Co", "Dev", Salary(model=model, base=50000, yearly_increase=0, yearly_bonus=0))
+            parent = Person(Family(model), "Solo", age=35, retirement_age=70, spending=Spending(model, base_annual=0))
+            BankAccount(parent, company="Bank", balance=50000, interest_pct=0)
+            Job(
+                parent,
+                company="Co",
+                role="Dev",
+                salary=Salary(model=model, base_annual=50000, raise_pct=0, bonus_pct=0),
+            )
             Child(parent, "Kid", birth_year=2020)
             model.step_year()
             return parent.stat_taxes_paid

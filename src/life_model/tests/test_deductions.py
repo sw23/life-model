@@ -26,7 +26,7 @@ from ..tax.income import IncomeType
 
 def _person(model, age, family=None):
     person = Person(family or Family(model), "P", age=age, retirement_age=60, spending=Spending(model, 0))
-    BankAccount(person, "Bank", balance=1_000_000, interest_rate=0)
+    BankAccount(person, company="Bank", balance=1_000_000, interest_pct=0)
     return person
 
 

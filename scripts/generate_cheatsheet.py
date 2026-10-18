@@ -157,8 +157,8 @@ def silent_defaults() -> list[tuple[str, str, str]]:
             ),
         ),
         (
-            "`Spending(yearly_increase=)`",
-            _fmt(_param(spending, "yearly_increase").default),
+            "`Spending(growth_pct=)`",
+            _fmt(_param(spending, "growth_pct").default),
             (
                 "Spending never rises (the spec validator warns). `None` (spec: `growth_pct: economy`) follows "
                 f"inflation ({economy.inflation:g}% in the fixed economy)."
@@ -173,8 +173,8 @@ def silent_defaults() -> list[tuple[str, str, str]]:
             ),
         ),
         (
-            "`Apartment(yearly_increase=)`",
-            _fmt(_param(apartment, "yearly_increase").default),
+            "`Apartment(rent_growth_pct=)`",
+            _fmt(_param(apartment, "rent_growth_pct").default),
             (
                 "Rent rises 5% a year unless told otherwise (the spec validator warns when `rent_growth_pct` is "
                 "unset); `None` follows inflation."
@@ -194,7 +194,7 @@ def silent_defaults() -> list[tuple[str, str, str]]:
             ),
         ),
         (
-            "`Home(value_yearly_increase=None)`",
+            "`Home(value_growth_pct=None)`",
             f"economy `home_appreciation` = {economy.home_appreciation:g}%",
             "Homes appreciate at the economy's rate when given `None`.",
         ),
@@ -227,7 +227,7 @@ def silent_defaults() -> list[tuple[str, str, str]]:
             ),
         ),
         (
-            "`CreditCard(yearly_interest_rate=None, payment_strategy=)`",
+            "`CreditCard(rate_pct=None, payment_strategy=)`",
             f"{card.default_interest_rate:g}% APR, {_fmt(_param(card_cls, 'payment_strategy').default)}",
             (
                 f"Minimum payments ({card.default_minimum_payment_percent:g}% of the balance, at least "
@@ -235,7 +235,7 @@ def silent_defaults() -> list[tuple[str, str, str]]:
             ),
         ),
         (
-            "`SocialSecurity(withdrawal_start_age=None, income_history=None)`",
+            "`SocialSecurity(claim_age=None, earnings_history=None)`",
             "the retirement age; no earnings",
             (
                 "Benefits are claimed at the retirement age (an error below 62). With no earnings history the "
@@ -346,7 +346,33 @@ def render() -> str:
         required, defaults = _signature_rows(cls)
         row = [f"`{name}` ({module})", _owner(cls), ", ".join(required) or "—", ", ".join(defaults) or "—"]
         lines.append("| " + " | ".join(_cell(c) for c in row) + " |")
+    lines += _deprecated_rows()
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _deprecated_rows() -> list[str]:
+    """The documented list of deprecated constructor names (Plan 27 D8; ``life_model.deprecated_names``)."""
+    from life_model.deprecated_names import POSITIONAL, deprecated_names
+
+    lines = [
+        "",
+        "## Deprecated constructor names (Plan 27 D8)",
+        "",
+        (
+            "These still work for one release with a `DeprecationWarning` naming the replacement. Constructors "
+            "listed with a keyword-only boundary also accept their former positional arguments (with a warning)."
+        ),
+        "",
+        "| Class | Old name -> canonical name | Keyword-only after |",
+        "|---|---|---|",
+    ]
+    for owner, renames in deprecated_names().items():
+        module, name = owner.rsplit(".", 1)
+        pairs = ", ".join(f"`{old}` -> `{new}`" for old, new in renames.items()) or "—"
+        boundary = POSITIONAL.get(owner)
+        after = "—" if boundary is None else ("every argument" if boundary[1] == 0 else f"the first {boundary[1]}")
+        lines.append(f"| `{name}` ({module.removeprefix('life_model.')}) | {_cell(pairs)} | {after} |")
+    return lines
 
 
 def main(argv: list[str] | None = None) -> int:

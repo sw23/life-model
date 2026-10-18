@@ -78,8 +78,9 @@ class TestSchema(unittest.TestCase):
         self.assertEqual(schema["title"], "HouseholdSpec")
         self.assertIn("$defs", schema)
         json.dumps(schema)  # serializable as-is
-        # Not-yet-supported fields are flagged in the schema itself.
-        self.assertIn(NYS_KEY, json.dumps(schema["$defs"]["Mortgage"]))
+        # Not-yet-supported fields are flagged in the schema itself (Plan 27 made every mortgage field
+        # supported; group life is still declared ahead of the engine).
+        self.assertIn(NYS_KEY, json.dumps(schema["$defs"]["LifeInsurance"]))
 
     def test_every_rate_field_ends_in_pct(self):
         for model in _all_models():

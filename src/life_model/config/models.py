@@ -352,6 +352,10 @@ class FederalTaxConfig(StrictModel):
     # Itemized-deduction limits (defaults let existing configs load without these keys).
     # vintage: 2026, source: IRC §163(h)(3) TCJA acquisition-debt limit; §164(b)(6) SALT cap (OBBBA).
     mortgage_interest_debt_limit: int = Field(default=750000, ge=0)
+    # Acquisition debt incurred on or before this date keeps the pre-TCJA $1,000,000 limit, and reduces
+    # the $750,000 limit of later debt (IRC §163(h)(3)(F)(i)(IV)). vintage: statutory, source: IRC §163(h)(3).
+    mortgage_interest_grandfathered_debt_limit: int = Field(default=1000000, ge=0)
+    mortgage_interest_grandfather_date: str = Field(default="2017-12", pattern=r"^\d{4}-\d{2}$")
     # SALT cap per return (§164(b)(6)/(7)). Simulated years read the year's values from ``tax_years``
     # (``salt``): the cap, and from 2025 (OBBBA) its phase-down by ``salt_phaseout_rate`` percent of
     # MAGI over ``salt_phaseout_threshold``, not below ``salt_cap_floor``. A separate return gets
@@ -639,6 +643,62 @@ class SocialSecurityBenefitTaxationConfig(StrictModel):
     upper_inclusion_rate: float = Field(ge=0, le=1)
 
 
+def _default_fra_table() -> list[list[int]]:
+    # vintage: statutory, source: SSA OACT "Normal Retirement Age" (ssa.gov/oact/ProgData/nra.html, via a
+    # web.archive.org capture of 2026-01; 42 U.S.C. 416(l)). [first birth year, years, months]; a person born
+    # on January 1 uses the previous year (the engine has birth months, so that case is not distinguished).
+    return [
+        [0, 65, 0],
+        [1938, 65, 2],
+        [1939, 65, 4],
+        [1940, 65, 6],
+        [1941, 65, 8],
+        [1942, 65, 10],
+        [1943, 66, 0],
+        [1955, 66, 2],
+        [1956, 66, 4],
+        [1957, 66, 6],
+        [1958, 66, 8],
+        [1959, 66, 10],
+        [1960, 67, 0],
+    ]
+
+
+def _default_earnings_test() -> dict[int, list[int]]:
+    # vintage: 2026, source: SSA OACT "Exempt Amounts Under the Earnings Test" (ssa.gov/oact/cola/rtea.html,
+    # web.archive.org capture of 2026-01-01): [lower, higher] annual exempt amounts.
+    return {
+        2000: [10080, 17000], 2001: [10680, 25000], 2002: [11280, 30000], 2003: [11520, 30720],
+        2004: [11640, 31080], 2005: [12000, 31800], 2006: [12480, 33240], 2007: [12960, 34440],
+        2008: [13560, 36120], 2009: [14160, 37680], 2010: [14160, 37680], 2011: [14160, 37680],
+        2012: [14640, 38880], 2013: [15120, 40080], 2014: [15480, 41400], 2015: [15720, 41880],
+        2016: [15720, 41880], 2017: [16920, 44880], 2018: [17040, 45360], 2019: [17640, 46920],
+        2020: [18240, 48600], 2021: [18960, 50520], 2022: [19560, 51960], 2023: [21240, 56520],
+        2024: [22320, 59520], 2025: [23400, 62160], 2026: [24480, 65160],
+    }  # fmt: skip
+
+
+class EarningsTestConfig(StrictModel):
+    """The retirement earnings test (42 U.S.C. 403(b), (f)): benefits before full retirement age are
+    withheld $1 for every $2 of earnings over the lower exempt amount ($1 for $3 over the higher one in
+    the year full retirement age is reached, counting earnings before that month).
+
+    Years past the table follow the statutory formula (SSA OACT "Determination of Exempt Amounts"):
+    the base year's monthly amount times AWI(year - 2) / AWI(base AWI year), rounded to $10, never below
+    the prior year's, times 12.
+    """
+
+    exempt_amounts: dict[int, list[int]] = Field(default_factory=_default_earnings_test)
+    # vintage: statutory, source: SSA OACT rtdet.html (2026 determination): $670 (1994, AWI 1992) and
+    # $2,500 (2002, AWI 2000).
+    lower_base_monthly: float = 670.0
+    lower_base_awi_year: int = 1992
+    higher_base_monthly: float = 2500.0
+    higher_base_awi_year: int = 2000
+    lower_withholding_ratio: float = Field(default=2.0, gt=0)  # $1 withheld per $2 of excess earnings
+    higher_withholding_ratio: float = Field(default=3.0, gt=0)  # $1 per $3 in the year of FRA
+
+
 class SocialSecurityConfig(StrictModel):
     min_eligible_credits: int = Field(ge=0)
     max_credits_per_year: int = Field(ge=0)
@@ -668,6 +728,15 @@ class SocialSecurityConfig(StrictModel):
 
     # Provisional-income taxation of benefits
     benefit_taxation: SocialSecurityBenefitTaxationConfig
+
+    # Plan 27 D10 (defaults keep existing configs loadable).
+    # Full retirement age by birth year: [first birth year, years, months], ascending.
+    full_retirement_age_by_birth_year: list[list[int]] = Field(default_factory=_default_fra_table)
+    # vintage: statutory, source: 42 U.S.C. 402(b)-(c) (half of the worker's PIA); reduction 25/36 of 1% a
+    # month for the first 36 months before FRA and 5/12 of 1% beyond (42 U.S.C. 402(q)(1); SSA OACT
+    # "Benefit Reduction for Early Retirement", ssa.gov/oact/quickcalc/earlyretire.html, web.archive.org).
+    spousal_benefit_percent: float = Field(default=50.0, ge=0)
+    earnings_test: EarningsTestConfig = Field(default_factory=EarningsTestConfig)
 
 
 class BankAccountConfig(StrictModel):
@@ -771,10 +840,33 @@ class GeneralInsuranceConfig(StrictModel):
     default_max_claims_per_year: int = Field(ge=0)
 
 
+def _simplified_method_single() -> list[list[int]]:
+    # vintage: statutory, source: IRS Pub. 575 (2025), Simplified Method Worksheet, Table 1 for line 3
+    # (annuity starting date after November 18, 1996; IRC §72(d)(1)(B)): [maximum age, payments].
+    return [[55, 360], [60, 310], [65, 260], [70, 210], [200, 160]]
+
+
+def _simplified_method_joint() -> list[list[int]]:
+    # vintage: statutory, source: IRS Pub. 575 (2025), Table 2 for line 3 (combined ages, starting date after
+    # 1997; IRC §72(d)(1)(B)(iv)): [maximum combined age, payments].
+    return [[110, 410], [120, 360], [130, 310], [140, 260], [400, 210]]
+
+
+class PensionConfig(StrictModel):
+    """Defined-benefit pension parameters (Plan 27 item 5)."""
+
+    simplified_method_single: list[list[int]] = Field(default_factory=_simplified_method_single)
+    simplified_method_joint: list[list[int]] = Field(default_factory=_simplified_method_joint)
+    # Interest rate (percent) for a lump sum's present value and the actuarial survivor reduction when a
+    # plan does not state them (a modeling assumption, not the §417(e) segment rates).
+    lump_sum_interest_rate: float = Field(default=5.0, ge=0)
+
+
 class InsuranceConfig(StrictModel):
     life: LifeInsuranceConfig
     annuity: AnnuityConfig
     general: GeneralInsuranceConfig
+    pension: PensionConfig = Field(default_factory=PensionConfig)
 
 
 class CreditCardConfig(StrictModel):
@@ -863,6 +955,9 @@ class HousingConfig(StrictModel):
     # threshold, then automatically dropped. vintage: 2026, source: typical private-MI rates.
     pmi_rate: float = Field(default=0.5, ge=0)  # percent of loan balance per year
     pmi_ltv_threshold: float = Field(default=80.0, ge=0, le=100)  # percent LTV
+    # Automatic termination once the original schedule reaches this LTV (and final termination at
+    # the term's midpoint). vintage: statutory, source: 12 U.S.C. 4901(18), 4902(b)-(c).
+    pmi_termination_ltv: float = Field(default=78.0, ge=0, le=100)  # percent LTV
     closing_cost_percent: float = Field(default=2.0, ge=0)  # percent of purchase price at buy
     selling_cost_percent: float = Field(default=6.0, ge=0)  # percent of sale price at sell
     # vintage: IRC §121 primary-residence capital-gains exclusion (statutory, unindexed).

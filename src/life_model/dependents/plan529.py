@@ -5,8 +5,8 @@
 import html
 from typing import TYPE_CHECKING, Optional
 
-from .._compat import legacy_signature
 from ..base_classes import Investment
+from ..deprecated_names import deprecated_arguments
 from ..ledger import FlowKind
 from ..model import compound_interest
 from ..tax.income import IncomeType
@@ -20,17 +20,16 @@ class Plan529(Investment):
     STATS_OWNED = frozenset({"stat_529_balance"})
     BALANCE_STAT = "stat_529_balance"
 
-    @legacy_signature(
-        (
-            "owner",
+    @deprecated_arguments(
+        {"growth_rate": "growth_pct", "annual_contribution_limit": "contribution_limit_annual"},
+        positional=(
             "beneficiary",
             "balance",
             "state",
-            "growth_rate",
-            "annual_contribution_limit",
+            "growth_pct",
+            "contribution_limit_annual",
             "lifetime_contribution_limit",
         ),
-        {"growth_rate": "growth_pct", "annual_contribution_limit": "contribution_limit_annual"},
     )
     def __init__(
         self,

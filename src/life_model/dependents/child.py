@@ -26,6 +26,8 @@ class Child(LifeModelAgent):
         care_expenses_annual: float = 0.0,
         interest_annual: float = 0.0,
         dividends_annual: float = 0.0,
+        cost_annual: float | None = None,
+        college_cost_annual: float | None = None,
     ):
         """Models a child dependent for a person
 
@@ -40,6 +42,12 @@ class Child(LifeModelAgent):
             interest_annual: The child's own interest income (e.g. a custodial account outside the
                 household's balances) each year, for the kiddie tax (the parents report it on Form 8814).
             dividends_annual: The child's own qualified dividends each year (same).
+            cost_annual: This child's yearly cost while a dependent (birth to ``adult_age``), in
+                start-year dollars, instead of the configured childcare and school-age bands (Plan 27 D6).
+                Unlike the childcare band it is not counted as dependent care for the credit: enter care
+                in ``care_expenses_annual``.
+            college_cost_annual: This child's yearly college cost, in start-year dollars, instead of the
+                configured college band.
         """
         super().__init__(person.model)
         self.person = person
@@ -48,6 +56,8 @@ class Child(LifeModelAgent):
         self.care_expenses_annual = care_expenses_annual
         self.interest_annual = interest_annual
         self.dividends_annual = dividends_annual
+        self.cost_annual = cost_annual
+        self.college_cost_annual = college_cost_annual
         self.stat_dependent_costs = 0.0
         #: This year's dependent care expenses (Form 2441), education expenses and the part of them paid
         #: with tax-free 529 withdrawals (Form 8863 / Pub. 970), set in ``pre_step``.
@@ -88,12 +98,14 @@ class Child(LifeModelAgent):
         cfg = self.model.config.dependents
         if age < 0:
             return 0.0
+        if age < cfg.adult_age and self.cost_annual is not None:
+            return self.cost_annual
         if age < self.CHILDCARE_END_AGE:
             return cfg.childcare_annual_cost
         if age < cfg.adult_age:
             return cfg.school_age_annual_cost
         if cfg.college_start_age <= age < cfg.college_start_age + cfg.college_years:
-            return cfg.college_annual_cost
+            return cfg.college_annual_cost if self.college_cost_annual is None else self.college_cost_annual
         return 0.0
 
     def yearly_cost(self) -> float:
@@ -152,8 +164,9 @@ class Child(LifeModelAgent):
             self.person.spending.add_expense(extra, category="dependent_care")
             self.care_expenses_this_year += extra
             self.stat_dependent_costs = snap_money(self.stat_dependent_costs + extra)
-        if 0 <= self.age < self.CHILDCARE_END_AGE:
-            # The childcare band is the cost of care while the parents work (Form 2441 expenses).
+        if 0 <= self.age < self.CHILDCARE_END_AGE and self.cost_annual is None:
+            # The childcare band is the cost of care while the parents work (Form 2441 expenses). An
+            # entered cost_annual is the child's whole cost: its care part goes in care_expenses_annual.
             self.care_expenses_this_year += cost
         if cost <= 0:
             return

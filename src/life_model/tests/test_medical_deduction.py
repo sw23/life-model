@@ -17,7 +17,7 @@ from ..tax.income import IncomeType
 
 def _make_person(model, age, balance=5_000_000):
     family = Family(model)
-    person = Person(family=family, name="P", age=age, retirement_age=90, spending=Spending(model, base=0))
+    person = Person(family=family, name="P", age=age, retirement_age=90, spending=Spending(model, base_annual=0))
     BankAccount(owner=person, company="Bank", balance=balance)
     return person
 
@@ -157,10 +157,10 @@ class TestWithdrawalSizingWithMedicalDeduction(unittest.TestCase):
         from ..work.job import Job, Salary
 
         family = Family(model)
-        person = Person(family=family, name="R", age=70, retirement_age=65, spending=Spending(model, base=0))
+        person = Person(family=family, name="R", age=70, retirement_age=65, spending=Spending(model, base_annual=0))
         BankAccount(owner=person, company="Bank", balance=1000)
-        job = Job(owner=person, company="Co", role="Retiree", salary=Salary(model, base=0))
-        Job401kAccount(job=job, pretax_balance=pretax_balance, roth_balance=0, average_growth=0)  # isolate the draw
+        job = Job(owner=person, company="Co", role="Retiree", salary=Salary(model, base_annual=0))
+        Job401kAccount(job=job, pretax_balance=pretax_balance, roth_balance=0, growth_pct=0)  # isolate the draw
         return person
 
     def test_medical_costs_funded_from_401k_leave_no_phantom_debt(self):

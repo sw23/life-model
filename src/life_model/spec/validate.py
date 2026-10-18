@@ -538,9 +538,98 @@ class _SpecChecker:
                     )
                 if isinstance(item, s.Home) and item.mortgage is not None:
                     self.check_mortgage(item.mortgage, f"{path}.housing[{j}].mortgage")
+            home_ids = {h.id for h in p.housing if isinstance(h, s.Home) and h.id is not None}
+            for j, debt in enumerate(p.debts):
+                if isinstance(debt, s.CarLoan | s.StudentLoan):
+                    self.check_loan(debt, f"{path}.debts[{j}]")
+                if isinstance(debt, s.HomeEquityLine) and debt.home not in home_ids:
+                    self.error(
+                        f"{path}.debts[{j}].home",
+                        f"unknown home {debt.home!r} (must be one of this person's homes with an id)",
+                        code="unknown_reference",
+                    )
             for j, policy in enumerate(p.insurance):
                 if isinstance(policy, s.LifeInsurance) and policy.beneficiary is not None:
                     self.check_person_ref(policy.beneficiary, f"{path}.insurance[{j}].beneficiary")
+                if (
+                    isinstance(policy, s.LifeInsurance)
+                    and policy.policy == "term"
+                    and (policy.cash_value or policy.loan_balance)
+                ):
+                    self.error(
+                        f"{path}.insurance[{j}]",
+                        "a term policy has no cash value or policy loan.",
+                        "remove cash_value / loan_balance, or set policy: whole.",
+                    )
+                if (
+                    isinstance(policy, s.LifeInsurance)
+                    and policy.issue_year is not None
+                    and policy.issue_year > self.start
+                ):
+                    self.error(
+                        f"{path}.insurance[{j}].issue_year",
+                        f"issue_year {policy.issue_year} is after the start year (a later policy belongs in an event).",
+                    )
+            self.check_plan27_insurance_and_benefits(p, path)
+
+    def check_plan27_insurance_and_benefits(self, p: s.Person, path: str) -> None:
+        """Plan 27 PR D cross-field checks: annuities in payout, pension rollovers, Social Security."""
+        ira_ids = {a.id for a in p.accounts if a.kind == "traditional_ira" and a.id is not None}
+        for j, account in enumerate(p.accounts):
+            apath = f"{path}.accounts[{j}]"
+            if isinstance(account, s.Annuity) and account.in_payout:
+                if not account.payout_monthly:
+                    self.error(f"{apath}.payout_monthly", "an annuity in payout needs its payout_monthly.")
+                if account.balance:
+                    self.error(f"{apath}.balance", "an annuity in payout has no accumulation balance (set it to 0).")
+            if isinstance(account, s.Annuity) and account.qualified and account.basis:
+                self.error(f"{apath}.basis", "a qualified annuity has no after-tax basis.")
+            if isinstance(account, s.Pension) and account.rollover_account is not None:
+                if account.rollover_account not in ira_ids:
+                    self.error(
+                        f"{apath}.rollover_account",
+                        f"unknown traditional IRA {account.rollover_account!r} (must be one of this person's "
+                        "traditional_ira ids)",
+                        code="unknown_reference",
+                    )
+                if not account.lump_sum_option:
+                    self.warn(
+                        f"{apath}.rollover_account",
+                        "rollover_account is only used with lump_sum_option.",
+                        code="unused_field",
+                    )
+        ss = p.social_security
+        if ss is not None:
+            birth_year = int(p.birth.split("-")[0]) if p.birth is not None else self.start - p.age
+            if not ss.fra_from_birth_year and birth_year < 1960:
+                self.warn(
+                    f"{path}.social_security.fra_from_birth_year",
+                    f"{p.name} was born in {birth_year}: the full retirement age for that birth year is below the "
+                    "configured 67, so early reductions and delayed credits are off.",
+                    "set fra_from_birth_year: true.",
+                    "ss_fra_by_birth_year",
+                )
+            if ss.spousal_benefit:
+                spouse_ids = {
+                    pid for m in self.spec.relationships.marriages if p.id in m.spouses for pid in m.spouses
+                } - {p.id}
+                spouses = [q for q in self.spec.people if q.id in spouse_ids]
+                if not spouses or all(q.social_security is None for q in spouses):
+                    self.warn(
+                        f"{path}.social_security.spousal_benefit",
+                        f"{p.name} has no spouse with social_security, so there is no spousal benefit.",
+                        code="unused_field",
+                    )
+        if any(isinstance(e, s.DisabilityEvent) and e.person == p.id for e in self.spec.events) and not any(
+            isinstance(policy, s.GeneralInsurance) and policy.kind == "disability" and policy.benefit_pct
+            for policy in p.insurance
+        ):
+            self.warn(
+                f"{path}.insurance",
+                f"{p.name} has a disability event but no disability policy with benefit_pct: the jobs stop with "
+                "no income replacement.",
+                code="no_disability_policy",
+            )
 
     def check_account_plan27(self, account, path: str) -> None:
         """Plan 27 account rules: a standalone 401k takes no contributions; an allocation needs growth to
@@ -688,7 +777,55 @@ class _SpecChecker:
         if isinstance(account, s.Annuity) and account.joint_annuitant is not None:
             self.check_person_ref(account.joint_annuitant, f"{path}.joint_annuitant")
 
-    def check_mortgage(self, m: s.Mortgage, path: str) -> None:
+    def check_loan(self, m, path: str, *, as_of: tuple[int, int] | None = None) -> bool:
+        """Resolve a loan's statement inputs like the builder does; an inconsistency is an error naming the
+        field (Plan 27 D1). Returns True when the loan resolved."""
+        from ..debt.terms import LoanTermsError, resolve_loan_terms
+
+        payment = m.payment_monthly
+        escrow = getattr(m, "escrow_monthly", None)
+        if escrow is not None and payment is not None:
+            if escrow > payment:
+                self.error(
+                    f"{path}.escrow_monthly", "escrow is larger than the payment it is part of.", code="loan_terms"
+                )
+                return False
+            payment -= escrow
+        term = m.term_months if m.term_months is not None else (None if m.term_years is None else m.term_years * 12)
+        origination = m.origination
+        start_year = getattr(m, "start_year", None)
+        legacy_origin = start_year is not None and m.balance is None and m.payments_made is None
+        if origination is None and legacy_origin and start_year < self.start:
+            origination = f"{start_year}-01"
+        try:
+            resolve_loan_terms(
+                rate_pct=m.rate_pct,
+                as_of=as_of or (self.start, self.start_month),
+                original_amount=m.original_amount,
+                term_months=term,
+                origination=origination,
+                payments_made=m.payments_made,
+                remaining_months=m.remaining_months,
+                current_balance=m.balance,
+                monthly_payment=payment,
+                names=_LOAN_FIELD_NAMES,
+            )
+        except LoanTermsError as exc:
+            field = exc.field
+            self.error(
+                f"{path}.{field}",
+                str(exc).split(": ", 1)[-1],
+                "recheck it against the statement (see docs/units-and-conventions.md, loans).",
+                "loan_terms",
+            )
+            return False
+        return True
+
+    def check_mortgage(self, m: s.Mortgage, path: str, *, as_of: tuple[int, int] | None = None) -> None:
+        if not self.check_loan(m, path, as_of=as_of):
+            return
+        if m.original_amount is None or m.term_years is None or m.origination is not None:
+            return  # statement inputs: resolved (and checked) above
         origin = m.start_year if m.start_year is not None else self.start
         elapsed = self.start - origin
         payment = _amortized_payment(m.original_amount, m.rate_pct, m.term_years)
@@ -699,12 +836,12 @@ class _SpecChecker:
                 code="mortgage_inconsistent",
             )
         payment_off = m.payment_monthly is not None and payment > 0 and abs(m.payment_monthly - payment) / payment
-        if payment_off and payment_off > MORTGAGE_PAYMENT_TOLERANCE:
+        if m.escrow_monthly is None and payment_off and payment_off > MORTGAGE_PAYMENT_TOLERANCE:
             self.warn(
                 f"{path}.payment_monthly",
                 f"payment ${m.payment_monthly:,.0f}/mo differs from the ${payment:,.0f}/mo principal+interest of "
                 f"{m.original_amount:,.0f} at {m.rate_pct:g}% over {m.term_years}y (escrow included?).",
-                "enter principal and interest only, or leave payment_monthly unset.",
+                "enter principal and interest only, give escrow_monthly, or leave payment_monthly unset.",
                 "mortgage_inconsistent",
             )
         if elapsed <= 0:
@@ -718,15 +855,17 @@ class _SpecChecker:
             )
             return
         expected = _remaining_balance(m.original_amount, m.rate_pct, m.term_years, elapsed * 12)
-        if m.balance is None:
+        if m.balance is None and m.payments_made is None:
             self.warn(
-                f"{path}.balance",
-                f"no current balance: the mortgage starts at its original ${m.original_amount:,.0f} although it was "
-                f"originated {elapsed} year(s) earlier (amortized balance ~${expected:,.0f}).",
-                "enter the statement's current principal as balance.",
+                f"{path}.start_year",
+                f"no current balance or origination month: the mortgage is taken to originate in January {origin} "
+                f"(amortized balance ~${expected:,.0f} at the start).",
+                "enter origination (YYYY-MM) or the statement's current principal as balance.",
                 "mortgage_inconsistent",
             )
-        elif expected > 0 and abs(m.balance - expected) / expected > MORTGAGE_BALANCE_TOLERANCE:
+        elif (
+            m.balance is not None and expected > 0 and abs(m.balance - expected) / expected > MORTGAGE_BALANCE_TOLERANCE
+        ):
             self.warn(
                 f"{path}.balance",
                 f"balance ${m.balance:,.0f} is inconsistent with ${m.original_amount:,.0f} at {m.rate_pct:g}% over "
@@ -826,6 +965,18 @@ class _SpecChecker:
                     self.error(f"{path}.sell_home", f"unknown home {event.sell_home!r}", code="unknown_reference")
             if isinstance(event, s.SellHomeEvent) and not is_kind(event.home, s.Home):
                 self.error(f"{path}.home", f"unknown home {event.home!r}", code="unknown_reference")
+            if isinstance(event, s.RefinanceEvent):
+                target = item_ids.get(event.debt, (None, None, None))[2]
+                if not isinstance(target, s.Home | s.CarLoan | s.StudentLoan):
+                    self.error(
+                        f"{path}.debt",
+                        f"unknown home or loan {event.debt!r} (a home with a mortgage, or a car / student loan)",
+                        code="unknown_reference",
+                    )
+                elif isinstance(target, s.Home) and target.mortgage is None:
+                    self.error(f"{path}.debt", f"home {event.debt!r} has no mortgage to refinance", code="invalid")
+            if isinstance(event, s.HelocDrawEvent) and not is_kind(event.heloc, s.HomeEquityLine):
+                self.error(f"{path}.heloc", f"unknown home equity line {event.heloc!r}", code="unknown_reference")
             if isinstance(event, s.ContributeEvent):
                 target = item_ids.get(event.account)
                 if target is None or target[1] != "accounts":
@@ -902,6 +1053,19 @@ class _SpecChecker:
                 "use growth_pct: economy for accounts that should follow market returns.",
                 "fixed_growth",
             )
+
+
+#: Core argument names (as :func:`~life_model.debt.terms.resolve_loan_terms` reports them) to spec fields.
+_LOAN_FIELD_NAMES = {
+    "original_amount": "original_amount",
+    "current_balance": "balance",
+    "monthly_payment": "payment_monthly",
+    "rate_pct": "rate_pct",
+    "term_months": "term_months",
+    "origination": "origination",
+    "payments_made": "payments_made",
+    "remaining_months": "remaining_months",
+}
 
 
 def _event_items(event) -> list[tuple[str, Any]]:
@@ -1013,7 +1177,7 @@ def validate_model(model) -> list[Finding]:
                 WARNING,
                 f"{path}.spending",
                 "spending grows 0%/yr (the core default).",
-                "pass Spending(yearly_increase=None) to follow inflation, or a percentage.",
+                "pass Spending(growth_pct=None) to follow inflation, or a percentage.",
                 "zero_growth",
             )
         elif increase is not None and 0 < increase < 1:

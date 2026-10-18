@@ -5,6 +5,7 @@
 from enum import Enum
 from typing import ClassVar, cast
 
+from ..deprecated_names import deprecated_arguments
 from ..ledger import FlowKind
 from ..model import Event, EventKind, LifeModel, LifeModelAgent, compound_interest
 from ..people.person import Person
@@ -43,27 +44,39 @@ class LifeInsurance(LifeModelAgent):
     # The year-end update runs before the tax settlement (0): a lapse's taxable gain is this year's.
     STEP_PRIORITY: ClassVar[dict[str, int]] = {"pre_step": 10, "on_year_end": -5}
 
+    @deprecated_arguments(
+        {
+            "person": "owner",
+            "monthly_premium": "premium_monthly",
+            "cash_value_growth_rate": "cash_value_growth_pct",
+            "loan_interest_rate": "loan_interest_pct",
+        }
+    )
     def __init__(
         self,
-        person: Person,
+        owner: Person,
         policy_type: LifeInsuranceType,
         death_benefit: float,
-        monthly_premium: float,
+        premium_monthly: float,
         term_years: int | None = None,
         premium_increase_rate: "float | dict | PremiumIncreaseType | None" = None,
-        cash_value_growth_rate: float | None = None,
-        loan_interest_rate: float | None = None,
+        cash_value_growth_pct: float | None = None,
+        loan_interest_pct: float | None = None,
         max_missed_payments: int | None = None,
         *,
         beneficiary: Person | None = None,
+        issue_year: int | None = None,
+        cash_value: float = 0.0,
+        loan_balance: float = 0.0,
+        premiums_paid: float | None = None,
     ):
         """Models life insurance policy for a person
 
         Args:
-            person: The person to which this policy belongs
+            owner: The person to which this policy belongs (``person=`` is deprecated)
             policy_type: The type of life insurance policy
             death_benefit: Amount paid out on death
-            monthly_premium: Monthly premium cost
+            premium_monthly: Monthly premium cost (``monthly_premium=`` is deprecated)
             term_years: Number of years for term life (None for whole life)
             premium_increase_rate: How the premium changes: ``None`` / ``0`` /
                 ``PremiumIncreaseType.LEVEL`` keep it level (the default: a level-premium term policy,
@@ -71,13 +84,24 @@ class LifeInsurance(LifeModelAgent):
                 percent a year; ``PremiumIncreaseType.AGE_BANDED`` re-prices a term policy every year
                 from the configured age-band multipliers (``insurance.life.term_age_multipliers``);
                 a dict ``{age: multiplier}`` does the same with custom bands.
-            cash_value_growth_rate: Yearly growth rate for whole life cash value. Uses configured default if None.
-            loan_interest_rate: Interest rate for loans against cash value. Uses configured default if None.
+            cash_value_growth_pct: Yearly growth rate (percent) for whole life cash value. Uses configured
+                default if None (``cash_value_growth_rate=`` is deprecated).
+            loan_interest_pct: Interest rate (percent) for loans against cash value. Uses configured default
+                if None (``loan_interest_rate=`` is deprecated).
             max_missed_payments: Maximum consecutive missed payments before lapse. Uses configured default if None.
             beneficiary: Optional designated beneficiary for the death benefit. When set (and
                 surviving), the benefit is paid to this person; otherwise it defaults to the
                 surviving spouse, then the first family member with a bank account.
+            issue_year: Year the policy was issued (keyword-only; Plan 27 D1). Defaults to the current
+                year. A term policy expires ``term_years`` after it; whole-life cash value is credited
+                at the later-year rate after the first year.
+            cash_value: An existing whole-life policy's cash value (from its statement).
+            loan_balance: An existing policy loan against the cash value.
+            premiums_paid: Premiums paid so far (the policy's cost basis for a surrender or a lapse
+                with a loan). Defaults to ``cash_value`` (no gain) for an existing policy.
         """
+        person, monthly_premium = owner, premium_monthly
+        cash_value_growth_rate, loan_interest_rate = cash_value_growth_pct, loan_interest_pct
         super().__init__(cast(LifeModel, person.model))
         self.model: LifeModel = cast("LifeModel", self.model)  # Type override for better intellisense
         life_config = self.model.config.insurance.life
@@ -133,13 +157,19 @@ class LifeInsurance(LifeModelAgent):
         # Policy state
         self.is_active = True
         self.is_lapsed = False
-        self.policy_start_year = self.model.year
+        self.policy_start_year = self.model.year if issue_year is None else int(issue_year)
+        if self.policy_start_year > self.model.year:
+            raise ValueError(f"issue_year {issue_year} is after the current year {self.model.year}")
         self.consecutive_missed_payments = 0
-        self.total_premiums_paid = 0.0
+        if cash_value < 0 or loan_balance < 0:
+            raise ValueError("cash_value and loan_balance must not be negative")
+        if (cash_value or loan_balance) and policy_type != LifeInsuranceType.WHOLE:
+            raise ValueError("only a whole life policy has a cash value or a policy loan")
+        self.total_premiums_paid = float(cash_value if premiums_paid is None else premiums_paid)
 
         # Whole life specific
-        self.cash_value = 0.0
-        self.outstanding_loan_balance = 0.0
+        self.cash_value = float(cash_value)
+        self.outstanding_loan_balance = float(loan_balance)
 
         # Statistics tracking
         self.stat_premium_payments = 0.0
@@ -150,6 +180,9 @@ class LifeInsurance(LifeModelAgent):
 
         # Register with the model registry
         self.model.registries.life_insurance_policies.register(person, self)
+        # An existing policy's cash value net of its loan is a household asset (or a liability when the
+        # loan is larger), posted when the policy enters a running model.
+        self.model.ledger.post_opening(self, self.cash_value - self.outstanding_loan_balance)
 
     @property
     def ledger_value(self) -> float:

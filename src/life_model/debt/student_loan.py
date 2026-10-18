@@ -5,7 +5,8 @@
 import html
 from enum import Enum
 
-from ..base_classes import Loan
+from ..base_classes import LOAN_RENAMES, Loan
+from ..deprecated_names import deprecated_arguments
 from ..model import Event
 from ..people.person import Person
 from ..tax.income import IncomeType
@@ -29,43 +30,88 @@ class StudentLoanRepaymentPlan(Enum):
 
 
 class StudentLoan(Loan):
+    @deprecated_arguments(
+        LOAN_RENAMES,
+        positional=(
+            "loan_type",
+            "original_amount",
+            "rate_pct",
+            "term_years",
+            "school_name",
+            "current_balance",
+            "payment_monthly",
+            "in_deferment",
+        ),
+    )
     def __init__(
         self,
-        person: Person,
-        loan_type: StudentLoanType,
-        loan_amount: float,
-        yearly_interest_rate: float,
-        length_years: int,
-        school_name: str,
-        principal: float | None = None,
-        monthly_payment: float | None = None,
-        in_deferment: bool = False,
+        owner: Person,
         *,
+        loan_type: StudentLoanType,
+        original_amount: float | None = None,
+        rate_pct: float | None = None,
+        term_years: float | None = None,
+        school_name: str = "School",
+        current_balance: float | None = None,
+        payment_monthly: float | None = None,
+        in_deferment: bool = False,
         repayment_plan: StudentLoanRepaymentPlan = StudentLoanRepaymentPlan.STANDARD,
+        term_months: int | None = None,
+        origination=None,
+        payments_made: int | None = None,
+        remaining_months: int | None = None,
+        extra_principal_monthly: float = 0.0,
+        deferment_until: int | None = None,
+        qualifying_payments: int = 0,
     ):
         """Models a student loan for a person
 
         Args:
-            person: The person to which this loan belongs
+            owner: The person to which this loan belongs (``person=`` is a deprecated alias)
             loan_type: Type of student loan
-            loan_amount: Original amount of the loan
-            yearly_interest_rate: Annual interest rate percentage
-            length_years: Length of loan in years
+            original_amount: Original amount of the loan (``loan_amount=`` is deprecated)
+            rate_pct: Annual interest rate percentage (``yearly_interest_rate=`` is deprecated)
+            term_years: Length of loan in years, or ``term_months`` (``length_years=`` is deprecated)
             school_name: Name of the educational institution
-            principal: Current principal balance (defaults to loan_amount)
-            monthly_payment: Monthly payment amount (calculated if not provided)
+            current_balance: Current principal balance (defaults to the schedule's; ``principal=`` is
+                deprecated)
+            payment_monthly: Monthly payment amount (calculated if not provided; ``monthly_payment=``
+                is deprecated)
             in_deferment: Whether the loan is currently in deferment (no scheduled payments).
                 For ``FEDERAL_SUBSIDIZED`` loans the government pays the interest during deferment
                 (the balance does not grow); for other types interest accrues and capitalizes.
             repayment_plan: ``STANDARD`` amortization, or the income-driven Repayment Assistance
                 Plan (federal loans only), whose payment follows the borrower's AGI.
+            term_months, origination, payments_made, remaining_months, extra_principal_monthly: The
+                loan from its statement, as for every :class:`~life_model.base_classes.Loan`.
+            deferment_until: Last year of deferment (inclusive): the loan is in deferment through that
+                December and repays from the January after. Implies ``in_deferment``.
+            qualifying_payments: Forgiveness-qualifying payments already made under an income-driven
+                plan (counts toward the RAP forgiveness horizon).
+
+        Every argument after the owner is keyword-only (positional use is deprecated).
 
         Raises:
             ValueError: If a private loan is put on the Repayment Assistance Plan.
         """
-        super().__init__(person, loan_amount, yearly_interest_rate, length_years, principal, monthly_payment)
+        super().__init__(
+            owner,
+            original_amount=original_amount,
+            rate_pct=rate_pct,
+            term_years=term_years,
+            current_balance=current_balance,
+            payment_monthly=payment_monthly,
+            term_months=term_months,
+            origination=origination,
+            payments_made=payments_made,
+            remaining_months=remaining_months,
+            extra_principal_monthly=extra_principal_monthly,
+        )
         self.loan_type = loan_type
         self.school_name = school_name
+        self.deferment_until = deferment_until
+        if deferment_until is not None:
+            in_deferment = deferment_until >= self.model.year
         self.in_deferment = in_deferment
         if (
             repayment_plan is StudentLoanRepaymentPlan.REPAYMENT_ASSISTANCE_PLAN
@@ -74,13 +120,15 @@ class StudentLoan(Loan):
             raise ValueError("Only federal student loans are eligible for the Repayment Assistance Plan")
         self.repayment_plan = repayment_plan
         # Monthly payments made under an income-driven plan (counts toward forgiveness).
-        self.qualifying_payments = 0
+        if qualifying_payments < 0:
+            raise ValueError("qualifying_payments must not be negative")
+        self.qualifying_payments = int(qualifying_payments)
         self.forgiven_amount = 0.0
         # Unsubsidized interest accrued during deferment this year (capitalized at year end).
         self.deferred_interest = 0.0
         # This year's Repayment Assistance Plan payment (set at the year start from the last AGI).
         self._rap_annual: float | None = None
-        self.model.registries.student_loans.register(person, self)
+        self.model.registries.student_loans.register(owner, self)
 
     def service_year(self) -> float:
         """Service the loan for one year (twelve :meth:`service_month` payments, then the year-end
@@ -114,7 +162,18 @@ class StudentLoan(Loan):
             # Unsubsidized interest accrued during deferment capitalizes onto the principal.
             self.principal += self.deferred_interest
             self.deferred_interest = 0.0
+        if self.in_deferment and self.deferment_until is not None and self.model.year >= self.deferment_until:
+            # Deferment ends: repayment starts in January, the payment re-amortizing the (capitalized)
+            # balance over the months left.
+            self.in_deferment = False
+            self.monthly_payment = self.get_monthly_payment_for_remaining()
         super().on_year_end()
+
+    def get_monthly_payment_for_remaining(self) -> float:
+        """The level payment that retires today's balance over the remaining term (at least a month)."""
+        from .terms import amortizing_payment
+
+        return amortizing_payment(self.principal, self.yearly_interest_rate, max(1, self.remaining_months))
 
     def _service_month_rap(self) -> float:
         """One income-driven monthly payment, then forgiveness once the horizon is reached.

@@ -30,19 +30,20 @@ units are in [units-and-conventions.md](units-and-conventions.md).
 | Statement date | `meta.as_of: 2026-01`; `meta.start_year` is the first simulated year |
 | Ages, state, retirement plans | `people[].age` (age during `start_year`), `state`, `retirement_age`, `gender`, `mortality` |
 | Pay stub / offer letter | `jobs[]`: `company`, `salary_annual`, `bonus_pct`, `raise_pct` |
-| Budget or bank history | `spending.amount_annual` (living costs, excluding housing, debt payments and taxes), `growth_pct` |
+| Budget or bank history | `spending.amount_annual` (living costs, excluding housing, debt payments and taxes), `growth_pct`; optional `categories` (`amount_annual` or `amount_monthly`, `essential`, `start_year`/`end_year`) and an age `schedule` (a retirement spending smile) |
 | Bank statements | `accounts[]` `kind: bank`: `balance`, `interest_pct` (APR; `compounding: annual` for an APY), one `primary: true` |
 | 401k statement | `kind: 401k`, `job:` (the job's `id`), `pretax_balance`, `roth_balance`, `pretax_contrib_pct`, `roth_contrib_pct`, `match_tiers` |
 | Brokerage statement | `kind: brokerage` with `lots` (`value`, `cost_basis`, `acquired_year`) or a single `balance` |
 | IRA / HSA / 529 statements | `kind: traditional_ira`, `roth_ira`, `hsa`, `529` |
-| Mortgage statement | `housing[]` `kind: home`: `purchase_price`, `down_payment`, `mortgage` (`original_amount`, current `balance`, `rate_pct`, `term_years`, `start_year`), `expenses` (property tax %, insurance %, maintenance, HOA) |
+| Mortgage statement | `housing[]` `kind: home`: `purchase_price`, `current_value`, `cost_basis`, `purchase_year`, `mortgage` (`original_amount`, `rate_pct`, `term_years`, and `origination: YYYY-MM`, or the current `balance` with `remaining_months`; `payment_monthly` with `escrow_monthly` when the statement payment includes escrow), `pmi`/`pmi_monthly`, `expenses` (property tax as `property_tax_annual` or % of an `assessed_value`, `insurance_annual`, maintenance, HOA) |
 | Lease | `kind: rental`: `rent_monthly`, `rent_growth_pct` |
-| Loan statements | `debts[]` `kind: car`, `student`, `credit_card`: current `balance`, `original_amount`, `rate_pct` (APR), `term_years` |
-| Insurance declarations | `insurance[]` `kind: life` (term/whole) or a general policy (`health`, `auto`, `home`, `renters`, ...) |
-| SSA statement | `social_security.earnings_history` (year: covered earnings) and `claim_age` |
-| Children | `children[]`: `name`, `birth_year` (and `kind: 529` accounts that name them as `beneficiary`) |
+| Loan statements | `debts[]` `kind: car`, `student`, `credit_card`, `heloc`: `rate_pct` (APR), then the statement's terms (`original_amount` with `term_months`/`term_years` and `origination`, or the current `balance` with `remaining_months`), `extra_principal_monthly`; a student loan's `deferment_until` and `qualifying_payments`; a card's `spending_charged_pct`; a HELOC's `home`, `improvement_balance` |
+| Insurance declarations | `insurance[]` `kind: life` (term/whole; an existing policy's `issue_year`, `cash_value`, `loan_balance`) or a general policy (`health` with `deductible`, `coinsurance_pct`, `oop_max_annual`; `disability` with `benefit_pct`; `auto`, `home`, `renters`, ...) |
+| Pension / annuity statements | `kind: pension` (`benefit_annual` or the formula with `salary_history_annual`, `normal_retirement_age`, `early_retirement_reduction_pct`, `survivor_reduction_pct`, `employee_basis`, `lump_sum_option`); `kind: annuity` (`basis`, `purchase_year`, `qualified`, `in_payout` with `payout_monthly`) |
+| SSA statement | `social_security.pia_override_monthly` (the full-retirement-age benefit) or `earnings_history` (year: covered earnings), `claim_age`, `fra_from_birth_year`, `spousal_benefit` |
+| Children | `children[]`: `name`, `birth_year`, optional `cost_override_annual` / `college_cost_annual` (and `kind: 529` accounts that name them as `beneficiary`) |
 | Marriage | `relationships.marriages[]`: `spouses` (the first is the tax-unit head), `filing_status` |
-| Plans | `events[]`: `at: {year}` / `{age}` / `{relative: {after, years}}`, `person`, `action` (`retire`, `change_job`, `move`, `buy_home`, `one_time_expense`, `recurring_expense`, `change_spending`, `contribute`, `convert_to_roth`, `claim_social_security`, ...) |
+| Plans | `events[]`: `at: {year}` / `{age}` / `{relative: {after, years}}`, `person`, `action` (`retire`, `change_job`, `move`, `buy_home`, `one_time_expense`, `recurring_expense`, `change_spending`, `contribute`, `convert_to_roth`, `claim_social_security`, `refinance`, `heloc_draw`, `disability`, ...) |
 
 Two rules matter most. **Never invent a value**: a missing balance or rate is a question for the
 person, or a labeled assumption, never a plausible-looking number. **Say what the engine would

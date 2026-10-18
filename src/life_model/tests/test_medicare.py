@@ -26,7 +26,7 @@ def _flat_model(start_year=2026, end_year=2040):
 
 def _make_person(model, age, balance=5_000_000):
     family = Family(model)
-    person = Person(family=family, name="P", age=age, retirement_age=90, spending=Spending(model, base=0))
+    person = Person(family=family, name="P", age=age, retirement_age=90, spending=Spending(model, base_annual=0))
     BankAccount(owner=person, company="Bank", balance=balance)
     return person
 
@@ -52,8 +52,8 @@ class TestAGIHistory(unittest.TestCase):
         """Both spouses record the joint return's AGI (not a split)."""
         model = LifeModel(start_year=2026, end_year=2027)
         family = Family(model)
-        a = Person(family=family, name="A", age=40, retirement_age=90, spending=Spending(model, base=0))
-        b = Person(family=family, name="B", age=40, retirement_age=90, spending=Spending(model, base=0))
+        a = Person(family=family, name="A", age=40, retirement_age=90, spending=Spending(model, base_annual=0))
+        b = Person(family=family, name="B", age=40, retirement_age=90, spending=Spending(model, base_annual=0))
         BankAccount(owner=a, company="Bank", balance=1_000_000)
         a.get_married(b)
         a.income.add(IncomeType.ORDINARY, 150000)
@@ -108,8 +108,8 @@ class TestMedicare(unittest.TestCase):
         """A married person is assessed against the MFJ threshold column."""
         model = _flat_model()
         family = Family(model)
-        a = Person(family=family, name="A", age=70, retirement_age=65, spending=Spending(model, base=0))
-        b = Person(family=family, name="B", age=70, retirement_age=65, spending=Spending(model, base=0))
+        a = Person(family=family, name="A", age=70, retirement_age=65, spending=Spending(model, base_annual=0))
+        b = Person(family=family, name="B", age=70, retirement_age=65, spending=Spending(model, base_annual=0))
         BankAccount(owner=a, company="Bank", balance=1_000_000)
         a.get_married(b)
         cfg = model.config.healthcare.medicare

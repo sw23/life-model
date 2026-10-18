@@ -28,12 +28,12 @@ class TestBrokerage(unittest.TestCase):
 
         # Create a brokerage account for testing
         self.brokerage = BrokerageAccount(
-            person=self.mock_person, company="Test Brokerage", balance=10000.0, growth_rate=7.0
+            owner=self.mock_person, company="Test Brokerage", balance=10000.0, growth_pct=7.0
         )
 
     def test_init_default_values(self):
         """Test BrokerageAccount initialization with default values."""
-        brokerage = BrokerageAccount(self.mock_person, "Default Brokerage")
+        brokerage = BrokerageAccount(self.mock_person, company="Default Brokerage")
 
         self.assertEqual(brokerage.person, self.mock_person)
         self.assertEqual(brokerage.company, "Default Brokerage")
@@ -53,11 +53,11 @@ class TestBrokerage(unittest.TestCase):
         self.assertEqual(self.brokerage.calculate_growth(), expected_growth)
 
         # Test with zero balance
-        zero_balance_brokerage = BrokerageAccount(self.mock_person, "Zero", 0, 5.0)
+        zero_balance_brokerage = BrokerageAccount(self.mock_person, company="Zero", balance=0, growth_pct=5.0)
         self.assertEqual(zero_balance_brokerage.calculate_growth(), 0)
 
         # Test with zero growth rate
-        zero_growth_brokerage = BrokerageAccount(self.mock_person, "Zero Growth", 1000, 0)
+        zero_growth_brokerage = BrokerageAccount(self.mock_person, company="Zero Growth", balance=1000, growth_pct=0)
         self.assertEqual(zero_growth_brokerage.calculate_growth(), 0)
 
     def test_get_balance(self):
@@ -138,7 +138,7 @@ class TestBrokerage(unittest.TestCase):
     def test_multiple_transactions(self):
         """Test multiple deposits and withdrawals."""
         initial_balance = 5000.0
-        brokerage = BrokerageAccount(self.mock_person, "Multi Test", initial_balance, 5.0)
+        brokerage = BrokerageAccount(self.mock_person, company="Multi Test", balance=initial_balance, growth_pct=5.0)
 
         # Sequence of transactions
         brokerage.deposit(2000.0)  # 7000
@@ -164,7 +164,9 @@ class TestBrokerage(unittest.TestCase):
     def test_repr_html_formatting(self):
         """Test HTML representation with different values and special characters."""
         # Test with HTML special characters that should be escaped
-        brokerage = BrokerageAccount(self.mock_person, 'Test & Co <script>alert("XSS")</script>', 1234567.89, 12.5)
+        brokerage = BrokerageAccount(
+            self.mock_person, company='Test & Co <script>alert("XSS")</script>', balance=1234567.89, growth_pct=12.5
+        )
         html = brokerage._repr_html_()
 
         # Check that dangerous characters are escaped
@@ -190,7 +192,7 @@ class TestBrokerage(unittest.TestCase):
 
         for input_name, expected_escaped in test_cases:
             with self.subTest(input_name=input_name):
-                brokerage = BrokerageAccount(self.mock_person, input_name, 1000, 5.0)
+                brokerage = BrokerageAccount(self.mock_person, company=input_name, balance=1000, growth_pct=5.0)
                 html_output = brokerage._repr_html_()
                 self.assertIn(expected_escaped, html_output)
                 # Ensure original dangerous characters are not present

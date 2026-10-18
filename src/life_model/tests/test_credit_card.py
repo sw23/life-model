@@ -24,17 +24,17 @@ class TestCreditCard(unittest.TestCase):
 
         # Create a credit card for testing
         self.credit_card = CreditCard(
-            person=self.mock_person,
-            card_name="Chase Sapphire",
+            owner=self.mock_person,
+            name="Chase Sapphire",
             credit_limit=10000.0,
-            current_balance=2000.0,
-            yearly_interest_rate=18.0,
-            minimum_payment_percent=2.0,
+            balance=2000.0,
+            rate_pct=18.0,
+            minimum_payment_pct=2.0,
         )
 
     def test_init_default_values(self):
         """Test CreditCard initialization with default values."""
-        card = CreditCard(self.mock_person, "Basic Card", 5000.0)
+        card = CreditCard(self.mock_person, name="Basic Card", credit_limit=5000.0)
 
         self.assertEqual(card.person, self.mock_person)
         self.assertEqual(card.card_name, "Basic Card")
@@ -57,16 +57,16 @@ class TestCreditCard(unittest.TestCase):
         self.assertEqual(self.credit_card.get_available_credit(), expected_available)
 
         # Test with zero balance
-        zero_balance_card = CreditCard(self.mock_person, "Zero Card", 5000.0, 0.0)
+        zero_balance_card = CreditCard(self.mock_person, name="Zero Card", credit_limit=5000.0, balance=0.0)
         self.assertEqual(zero_balance_card.get_available_credit(), 5000.0)
 
         # Test with max balance
-        max_balance_card = CreditCard(self.mock_person, "Max Card", 3000.0, 3000.0)
+        max_balance_card = CreditCard(self.mock_person, name="Max Card", credit_limit=3000.0, balance=3000.0)
         self.assertEqual(max_balance_card.get_available_credit(), 0.0)
 
     def test_get_available_credit_over_limit(self):
         """Test available credit when balance exceeds limit."""
-        over_limit_card = CreditCard(self.mock_person, "Over Limit", 1000.0, 1200.0)
+        over_limit_card = CreditCard(self.mock_person, name="Over Limit", credit_limit=1000.0, balance=1200.0)
         # Should return 0, not negative
         self.assertEqual(over_limit_card.get_available_credit(), 0.0)
 
@@ -128,12 +128,19 @@ class TestCreditCard(unittest.TestCase):
         self.assertEqual(self.credit_card.get_minimum_payment(), expected_minimum)
 
         # Test with low balance where minimum $25 applies
-        low_balance_card = CreditCard(self.mock_person, "Low Balance", 1000.0, 100.0, 18.0, 2.0)
+        low_balance_card = CreditCard(
+            self.mock_person,
+            name="Low Balance",
+            credit_limit=1000.0,
+            balance=100.0,
+            rate_pct=18.0,
+            minimum_payment_pct=2.0,
+        )
         self.assertEqual(low_balance_card.get_minimum_payment(), 25.0)  # 2% of 100 = 2, but min is 25
 
     def test_get_minimum_payment_zero_balance(self):
         """Test minimum payment with zero balance."""
-        zero_balance_card = CreditCard(self.mock_person, "Zero", 1000.0, 0.0)
+        zero_balance_card = CreditCard(self.mock_person, name="Zero", credit_limit=1000.0, balance=0.0)
         self.assertEqual(zero_balance_card.get_minimum_payment(), 0.0)  # No payment required when balance is zero
 
     def test_make_payment_normal(self):
@@ -238,7 +245,9 @@ class TestCreditCard(unittest.TestCase):
 
     def test_repr_html_escaping(self):
         """Test HTML representation with special characters."""
-        card = CreditCard(self.mock_person, 'Evil Bank & Co <script>alert("XSS")</script>', 5000.0, 1000.0)
+        card = CreditCard(
+            self.mock_person, name='Evil Bank & Co <script>alert("XSS")</script>', credit_limit=5000.0, balance=1000.0
+        )
         html = card._repr_html_()
 
         # Check that dangerous characters are escaped
@@ -275,7 +284,9 @@ class TestCreditCard(unittest.TestCase):
 
     def test_edge_case_high_interest_rate(self):
         """Test with extremely high interest rate."""
-        high_rate_card = CreditCard(self.mock_person, "Loan Shark", 1000.0, 500.0, 35.0)
+        high_rate_card = CreditCard(
+            self.mock_person, name="Loan Shark", credit_limit=1000.0, balance=500.0, rate_pct=35.0
+        )
 
         monthly_interest = (35.0 / 100) * 500.0 / 12
         self.assertGreater(monthly_interest, 0)
@@ -286,7 +297,9 @@ class TestCreditCard(unittest.TestCase):
 
     def test_edge_case_zero_interest(self):
         """Test with zero interest rate."""
-        zero_rate_card = CreditCard(self.mock_person, "Promo Card", 1000.0, 500.0, 0.0)
+        zero_rate_card = CreditCard(
+            self.mock_person, name="Promo Card", credit_limit=1000.0, balance=500.0, rate_pct=0.0
+        )
 
         payment = 100.0
         initial_balance = zero_rate_card.principal

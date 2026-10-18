@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from .charity.donation import Donation  # noqa: F401
     from .debt.car_loan import CarLoan  # noqa: F401
     from .debt.credit_card import RevolvingDebt  # noqa: F401
+    from .debt.heloc import HomeEquityLine  # noqa: F401
     from .debt.student_loan import StudentLoan  # noqa: F401
     from .dependents.child import Child  # noqa: F401
     from .dependents.plan529 import Plan529  # noqa: F401
@@ -166,6 +167,10 @@ class MortgageRegistry(PersonRegistry["Mortgage"]):
     """Registry for managing Mortgage relationships"""
 
 
+class HomeEquityLineRegistry(PersonRegistry["HomeEquityLine"]):
+    """Registry for home equity lines of credit (Plan 27 D7)"""
+
+
 class MedicalCostsRegistry(PersonRegistry["MedicalCosts"]):
     """Registry for managing per-person MedicalCosts agents"""
 
@@ -217,6 +222,7 @@ class ModelRegistries:
         self.credit_cards = CreditCardRegistry()
         self.student_loans = StudentLoanRegistry()
         self.mortgages = MortgageRegistry()
+        self.home_equity_lines = HomeEquityLineRegistry()
         self.medical_costs = MedicalCostsRegistry()
         self.medicare = MedicareRegistry()
         self.long_term_care = LongTermCareRegistry()
@@ -249,6 +255,7 @@ class ModelRegistries:
         self.credit_cards.clear(owner)
         self.student_loans.clear(owner)
         self.mortgages.clear(owner)
+        self.home_equity_lines.clear(owner)
         self.medical_costs.clear(owner)
         self.medicare.clear(owner)
         self.long_term_care.clear(owner)
@@ -279,6 +286,7 @@ class ModelRegistries:
             self.credit_cards,
             self.student_loans,
             self.mortgages,
+            self.home_equity_lines,
             self.medical_costs,
             self.medicare,
             self.long_term_care,

@@ -7,8 +7,8 @@ import warnings
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, ClassVar
 
-from .._compat import legacy_signature
 from ..base_classes import RetirementAccount
+from ..deprecated_names import deprecated_arguments
 from ..ledger import FlowKind
 from ..limits import required_rmd_for_year
 from ..model import Event, EventKind, snap_money
@@ -38,22 +38,21 @@ class Job401kAccount(RetirementAccount):
     is_rmd_eligible = True
     STEP_PRIORITY: ClassVar[dict[str, int]] = {"pre_step": -10, "step": -10}
 
-    @legacy_signature(
-        (
-            "job",
-            "pretax_balance",
-            "pretax_contrib_percent",
-            "roth_balance",
-            "roth_contrib_percent",
-            "average_growth",
-            "company_match_percent",
-        ),
+    @deprecated_arguments(
         {
             "pretax_contrib_percent": "pretax_contrib_pct",
             "roth_contrib_percent": "roth_contrib_pct",
             "average_growth": "growth_pct",
             "person": "owner",
         },
+        positional=(
+            "pretax_balance",
+            "pretax_contrib_pct",
+            "roth_balance",
+            "roth_contrib_pct",
+            "growth_pct",
+            "company_match_percent",
+        ),
     )
     def __init__(
         self,

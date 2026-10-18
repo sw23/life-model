@@ -55,10 +55,10 @@ class TestNewStats(unittest.TestCase):
 
     def test_waterfall_stats_match_the_events(self):
         model = LifeModel(start_year=2026, end_year=2027)
-        person = Person(Family(model), "Pat", 50, 65, Spending(model, base=90000))
-        BankAccount(person, "Bank", balance=1000)
-        BrokerageAccount(person, "Broker", balance=30000)
-        job = Job(person, "Old", "Retired", Salary(model, base=0))
+        person = Person(Family(model), "Pat", 50, 65, Spending(model, base_annual=90000))
+        BankAccount(person, company="Bank", balance=1000)
+        BrokerageAccount(person, company="Broker", balance=30000)
+        job = Job(person, company="Old", role="Retired", salary=Salary(model, base_annual=0))
         job.retired = True
         Job401kAccount(job, pretax_balance=400000)
         model.run()
@@ -99,9 +99,9 @@ class TestAgentFrameColumns(unittest.TestCase):
 
     def test_salary_and_spending_base_show_the_years_value(self):
         model = LifeModel(start_year=2026, end_year=2028)
-        person = Person(Family(model), "Pat", 40, 65, Spending(model, base=30000, yearly_increase=10))
-        BankAccount(person, "Bank", balance=1000)
-        Job(person, "Co", "Dev", Salary(model, base=100000, yearly_increase=5))
+        person = Person(Family(model), "Pat", 40, 65, Spending(model, base_annual=30000, growth_pct=10))
+        BankAccount(person, company="Bank", balance=1000)
+        Job(person, company="Co", role="Dev", salary=Salary(model, base_annual=100000, raise_pct=5))
         model.add_agent_stat("Base (post-escalation)", "base")
         model.add_agent_stat("Base (this year)", "base", pre_post=True)
         model.run()

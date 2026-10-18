@@ -17,10 +17,10 @@ class TestDonation(unittest.TestCase):
         """Set up test fixtures"""
         self.model = LifeModel(start_year=2025, end_year=2030)
         self.family = Family(self.model)
-        self.spending = Spending(self.model, base=50000)
+        self.spending = Spending(self.model, base_annual=50000)
         self.person = Person(self.family, "Test Person", 30, 65, self.spending)
         # Increased balance to support multiple years of spending and donations
-        self.bank_account = BankAccount(self.person, "Test Bank", balance=500000)
+        self.bank_account = BankAccount(self.person, company="Test Bank", balance=500000)
 
     def test_donation_creation(self):
         """Test basic donation creation"""

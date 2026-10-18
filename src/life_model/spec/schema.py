@@ -308,11 +308,38 @@ class At(SpecModel):
 
 
 class SpendingCategory(SpecModel):
-    """A categorized spending line (Plan 27 D6)."""
+    """A categorized spending line (Plan 27 D6): a yearly or monthly amount in start-year dollars, grown
+    every year, paid in the years ``start_year`` through ``end_year`` (a multi-year expense)."""
 
-    amount_annual: NonNegativeMoney = spec_field(description="Annual amount.", unit="USD/year")
-    growth_pct: GrowthPct = spec_field("economy", description="Annual growth.", unit="percent")
-    essential: bool = spec_field(True, description="Essential (vs discretionary) spending.")
+    amount_annual: NonNegativeMoney | None = spec_field(
+        None, description="Amount per year (or amount_monthly).", unit="USD/year", core="SpendingLine.amount"
+    )
+    amount_monthly: NonNegativeMoney | None = spec_field(
+        None, description="Amount per month (or amount_annual).", unit="USD/month", core="SpendingLine.amount"
+    )
+    growth_pct: GrowthPct = spec_field(
+        "economy",
+        description="Annual growth; 'economy' follows inflation.",
+        unit="percent",
+        core="SpendingLine.growth_pct",
+    )
+    essential: bool = spec_field(
+        True, description="Essential (vs discretionary) spending.", core="SpendingLine.essential"
+    )
+    start_year: Year | None = spec_field(
+        None, description="First year paid (the start when unset).", unit="year", core="SpendingLine.start_year"
+    )
+    end_year: Year | None = spec_field(
+        None, description="Last year paid (inclusive; open when unset).", unit="year", core="SpendingLine.end_year"
+    )
+
+    @model_validator(mode="after")
+    def _one_amount(self) -> "SpendingCategory":
+        if (self.amount_annual is None) == (self.amount_monthly is None):
+            raise ValueError("a spending category needs exactly one of amount_annual or amount_monthly")
+        if self.start_year is not None and self.end_year is not None and self.end_year < self.start_year:
+            raise ValueError("end_year is before start_year")
+        return self
 
 
 class Spending(SpecModel):
@@ -333,13 +360,17 @@ class Spending(SpecModel):
     )
     categories: dict[str, SpendingCategory] | None = spec_field(
         None,
-        description="Categorized spending lines on top of the base amount.",
-        not_yet_supported="Plan 27 D6",
+        description="Categorized spending lines on top of amount_annual (then the uncategorized remainder), "
+        "each paid with the month's bills under its name.",
+        core="Spending.categories",
     )
-    schedule: list[tuple[int, float]] | None = spec_field(
+    schedule: list[tuple[AgeFloat, NonNegativePercent]] | None = spec_field(
         None,
-        description="(age, percent of prior spending) steps, e.g. a retirement spending smile.",
-        not_yet_supported="Plan 27 D6",
+        description="(age, percent of prior spending) steps: in the month the person reaches each age, the base "
+        "and every category become that percent of what they were, e.g. a retirement spending smile [[75, 80], "
+        "[85, 87.5]] (80% from 75, 70% of the original from 85). Ages already reached at the start count as "
+        "applied.",
+        core="Spending.schedule",
     )
 
 
@@ -1149,15 +1180,75 @@ class Pension(SpecModel):
         "formula benefit's final salary follows that job.",
         core="Pension.accrues_service",
     )
-    early_retirement_reduction_pct: NonNegativePercent | None = spec_field(
-        None, description="Reduction per year before normal age.", unit="percent", not_yet_supported="Plan 27 item 5"
+    salary_history_annual: dict[int, NonNegativeMoney] | None = spec_field(
+        None,
+        description="Covered pay by year from the plan statement (the formula's final salary comes from it when "
+        "final_salary_annual is unset; the sponsoring job's pay is added as service accrues).",
+        unit="USD/year",
+        core="Pension.salary_history",
     )
-    lump_sum_option: bool = spec_field(False, description="Lump-sum election.", not_yet_supported="Plan 27 item 5")
+    final_average_years: int | None = spec_field(
+        None,
+        description="Final-average-pay window: the highest average of this many consecutive years.",
+        unit="years",
+        core="Pension.final_average_years",
+        ge=1,
+    )
+    normal_retirement_age: AgeFloat | None = spec_field(
+        None, description="The plan's normal retirement age.", unit="age", core="Pension.normal_retirement_age"
+    )
+    early_retirement_reduction_pct: NonNegativePercent | None = spec_field(
+        None,
+        description="Reduction per year the benefit starts before normal_retirement_age (prorated by month).",
+        unit="percent",
+        core="Pension.early_reduction_pct_per_year",
+    )
+    survivor_reduction_pct: NonNegativePercent | Literal["actuarial"] | None = spec_field(
+        None,
+        description="How the survivor election reduces the retiree's own benefit: the plan's percent (10 = a 90% "
+        "joint-and-survivor factor) or 'actuarial' (equal present value with the spouse's age). Unset: no "
+        "reduction.",
+        unit="percent",
+        core="Pension.survivor_reduction",
+        le=100,
+    )
+    employee_basis: NonNegativeMoney = spec_field(
+        0.0,
+        description="After-tax employee contributions, recovered tax-free over the Simplified Method's payments.",
+        unit="USD",
+        core="Pension.employee_basis",
+    )
+    lump_sum_option: bool = spec_field(
+        False, description="Take the benefit as a lump sum at the start age.", core="Pension.lump_sum"
+    )
+    lump_sum_amount: NonNegativeMoney | None = spec_field(
+        None,
+        description="The plan's stated lump sum (else the present value of the life annuity at lump_sum_rate_pct).",
+        unit="USD",
+        core="Pension.lump_sum_amount",
+    )
+    lump_sum_rate_pct: NonNegativePercent | None = spec_field(
+        None,
+        description="Interest rate for the lump sum's present value (configured default when unset).",
+        unit="percent",
+        core="Pension.lump_sum_rate_pct",
+    )
+    rollover_account: Identifier | None = spec_field(
+        None,
+        description="Id of the owner's traditional_ira the lump sum rolls into (untaxed); else it is paid to the "
+        "bank and taxed.",
+        core="Pension.rollover_account",
+    )
 
     @model_validator(mode="after")
     def _formula_pair(self) -> "Pension":
-        if (self.benefit_multiplier_pct is None) != (self.final_salary_annual is None):
-            raise ValueError("benefit_multiplier_pct and final_salary_annual must be given together")
+        final_salary = self.final_salary_annual is not None or bool(self.salary_history_annual)
+        if (self.benefit_multiplier_pct is not None) != final_salary:
+            raise ValueError(
+                "benefit_multiplier_pct and final_salary_annual (or salary_history_annual) must be given together"
+            )
+        if self.early_retirement_reduction_pct and self.normal_retirement_age is None:
+            raise ValueError("early_retirement_reduction_pct needs normal_retirement_age")
         return self
 
 
@@ -1218,13 +1309,30 @@ class Annuity(SpecModel):
         le=100,
     )
     basis: NonNegativeMoney | None = spec_field(
-        None, description="Cost basis of an existing contract.", unit="USD", not_yet_supported="Plan 27 D1"
+        None,
+        description="Cost basis of an existing contract (after-tax money paid in; defaults to balance).",
+        unit="USD",
+        core="Annuity.basis",
     )
     purchase_year: Year | None = spec_field(
-        None, description="Year purchased (surrender clock).", unit="year", not_yet_supported="Plan 27 D1"
+        None,
+        description="Year purchased (the surrender-charge clock and period-certain guarantee count from it).",
+        unit="year",
+        core="Annuity.purchase_year",
     )
-    qualified: bool | None = spec_field(
-        None, description="Held in a qualified (pre-tax) plan.", not_yet_supported="Plan 27 D1"
+    qualified: bool = spec_field(
+        False,
+        description="Held in a qualified plan or IRA (pre-tax money): no basis, every payout taxable.",
+        core="Annuity.qualified",
+    )
+    in_payout: bool = spec_field(
+        False,
+        description="Already paying (an existing SPIA): payout_monthly is paid for life by the insurer (no "
+        "reserve on the balance sheet; balance must be 0).",
+        core="Annuity.in_payout",
+    )
+    cola_pct: NonNegativePercent = spec_field(
+        0.0, description="Yearly payout increase in payout (a COLA rider).", unit="percent", core="Annuity.cola_percent"
     )
 
 
@@ -1306,51 +1414,94 @@ def _string_kind(item: Any) -> Any:
 
 # --- Debts ---------------------------------------------------------------------------------------
 
-_LOAN_WORKAROUND = (
-    "A loan already in progress is entered as original_amount plus the current balance; the builder "
-    "passes loan_amount=original_amount, principal=balance (the undocumented core workaround), so the "
-    "payment follows the original amortization and the loan pays off over its remaining term. Plan 27 "
-    "D1/D7 adds origination dates and months."
+_LOAN_STATEMENT = (
+    "Enter a loan the way its statement shows it (Plan 27 D1/D7): the original amount and term with an "
+    "origination month (or payments_made) give today's balance and payment with no other input; or give the "
+    "current balance with the months remaining (or the payment). Any three of balance / months remaining / "
+    "payment determine the fourth; inputs that contradict each other are a validation error naming the field. "
+    "The first payment is in the month after origination; a balance below the original schedule is a prepaid "
+    "loan (it pays off early at the contract payment)."
 )
 
 
-class CarLoan(SpecModel):
-    __doc__ = f"An auto loan. {_LOAN_WORKAROUND}"
+class _LoanTerms(SpecModel):
+    """Statement fields shared by every amortizing loan."""
+
+    original_amount: NonNegativeMoney | None = spec_field(
+        None,
+        description="Amount originally borrowed (may be omitted with balance and remaining_months).",
+        unit="USD",
+        core="Loan.loan_amount",
+    )
+    balance: NonNegativeMoney | None = spec_field(
+        None,
+        description="Current principal (defaults to the original schedule's balance: original_amount for a new loan).",
+        unit="USD",
+        core="Loan.principal",
+    )
+    rate_pct: NonNegativePercent = spec_field(
+        description="APR.", unit="percent", core="Loan.yearly_interest_rate", typical_above_one=True
+    )
+    term_years: int | None = spec_field(
+        None,
+        description="Original term in whole years (or term_months).",
+        unit="years",
+        core="Loan.length_years",
+        ge=0,
+    )
+    term_months: int | None = spec_field(
+        None, description="Original term in months (66, 75, 360, ...).", unit="months", core="Loan.term_months", ge=0
+    )
+    payment_monthly: NonNegativeMoney | None = spec_field(
+        None,
+        description="Principal and interest per month (computed when unset).",
+        unit="USD/month",
+        core="Loan.monthly_payment",
+    )
+    origination: YearMonth | None = spec_field(
+        None, description="Origination month.", unit="YYYY-MM", core="Loan.origination"
+    )
+    payments_made: int | None = spec_field(
+        None,
+        description="Payments made before the start (instead of origination).",
+        core="Loan.payments_made",
+        ge=0,
+    )
+    remaining_months: int | None = spec_field(
+        None,
+        description="Payments left to maturity on the statement.",
+        unit="months",
+        core="Loan.remaining_months",
+        ge=0,
+    )
+    extra_principal_monthly: NonNegativeMoney = spec_field(
+        0.0,
+        description="Extra principal paid with every payment (paid with the month's bills).",
+        unit="USD/month",
+        core="Loan.extra_principal_monthly",
+    )
+
+    @model_validator(mode="after")
+    def _term(self) -> "_LoanTerms":
+        if self.term_years is not None and self.term_months is not None and self.term_years * 12 != self.term_months:
+            raise ValueError("term_years and term_months disagree (give one)")
+        if self.original_amount is None and self.balance is None and self.payment_monthly is None:
+            raise ValueError("give original_amount, or the balance (with remaining_months or payment_monthly)")
+        return self
+
+
+class CarLoan(_LoanTerms):
+    __doc__ = f"An auto loan. {_LOAN_STATEMENT}"
 
     CORE_CLASS = "CarLoan"
 
     kind: Literal["car"]
     id: Identifier | None = _id_field("debt")
     name: str = spec_field("Car", description="Vehicle (make/model).", core="CarLoan.name")
-    original_amount: NonNegativeMoney = spec_field(
-        description="Amount originally borrowed.", unit="USD", core="CarLoan.loan_amount"
-    )
-    balance: NonNegativeMoney | None = spec_field(
-        None, description="Current principal (defaults to original_amount).", unit="USD", core="CarLoan.principal"
-    )
-    rate_pct: NonNegativePercent = spec_field(
-        description="APR.", unit="percent", core="CarLoan.yearly_interest_rate", typical_above_one=True
-    )
-    term_years: int = spec_field(
-        description="Original term in whole years.", unit="years", core="CarLoan.length_years", ge=0
-    )
-    payment_monthly: NonNegativeMoney | None = spec_field(
-        None, description="Monthly payment (computed when unset).", unit="USD/month", core="CarLoan.monthly_payment"
-    )
-    term_months: int | None = spec_field(
-        None, description="Term in months (66, 75, ...).", unit="months", not_yet_supported="Plan 27 D7"
-    )
-    origination: YearMonth | None = spec_field(
-        None, description="Origination month.", unit="YYYY-MM", not_yet_supported="Plan 27 D1"
-    )
-    payments_made: int | None = spec_field(None, description="Payments already made.", not_yet_supported="Plan 27 D1")
-    extra_principal_monthly: NonNegativeMoney | None = spec_field(
-        None, description="Extra principal each month.", unit="USD/month", not_yet_supported="Plan 27 D7"
-    )
 
 
-class StudentLoan(SpecModel):
-    __doc__ = f"A student loan. {_LOAN_WORKAROUND}"
+class StudentLoan(_LoanTerms):
+    __doc__ = f"A student loan. {_LOAN_STATEMENT}"
 
     CORE_CLASS = "StudentLoan"
 
@@ -1360,21 +1511,6 @@ class StudentLoan(SpecModel):
         description="Loan program.", core="StudentLoan.loan_type"
     )
     school: str = spec_field("School", description="School name.", core="StudentLoan.school_name")
-    original_amount: NonNegativeMoney = spec_field(
-        description="Amount originally borrowed.", unit="USD", core="StudentLoan.loan_amount"
-    )
-    balance: NonNegativeMoney | None = spec_field(
-        None, description="Current principal (defaults to original_amount).", unit="USD", core="StudentLoan.principal"
-    )
-    rate_pct: NonNegativePercent = spec_field(
-        description="Interest rate.", unit="percent", core="StudentLoan.yearly_interest_rate", typical_above_one=True
-    )
-    term_years: int = spec_field(
-        description="Original term in whole years.", unit="years", core="StudentLoan.length_years", ge=0
-    )
-    payment_monthly: NonNegativeMoney | None = spec_field(
-        None, description="Monthly payment (computed when unset).", unit="USD/month", core="StudentLoan.monthly_payment"
-    )
     in_deferment: bool = spec_field(False, description="In deferment (no payments).", core="StudentLoan.in_deferment")
     repayment_plan: Literal["standard", "repayment_assistance_plan"] = spec_field(
         "standard",
@@ -1382,19 +1518,23 @@ class StudentLoan(SpecModel):
         core="StudentLoan.repayment_plan",
     )
     deferment_until: Year | None = spec_field(
-        None, description="Last deferment year.", unit="year", not_yet_supported="Plan 27 item 12"
+        None,
+        description="Last deferment year (inclusive): no payments through that December (unsubsidized interest "
+        "capitalizes), then repayment over the months left.",
+        unit="year",
+        core="StudentLoan.deferment_until",
     )
-    qualifying_payments: int | None = spec_field(
-        None, description="Prior forgiveness-qualifying payments.", not_yet_supported="Plan 27 D1"
+    qualifying_payments: int = spec_field(
+        0,
+        description="Forgiveness-qualifying payments already made under an income-driven plan.",
+        core="StudentLoan.qualifying_payments",
+        ge=0,
     )
-    term_months: int | None = spec_field(
-        None, description="Term in months.", unit="months", not_yet_supported="Plan 27 D7"
-    )
-    payments_made: int | None = spec_field(None, description="Payments already made.", not_yet_supported="Plan 27 D1")
 
 
 class CreditCard(SpecModel):
-    """A credit card (revolving debt). New charges from spending are not modeled (Plan 27 item 12)."""
+    """A credit card (revolving debt). ``spending_charged_pct`` routes part of the owner's monthly living
+    spending through the card (Plan 27 D7)."""
 
     CORE_CLASS = "CreditCard"
 
@@ -1427,87 +1567,162 @@ class CreditCard(SpecModel):
     payment_monthly: NonNegativeMoney = spec_field(
         0.0, description="Monthly payment for the 'fixed' strategy.", unit="USD/month", core="CreditCard.fixed_payment"
     )
+    spending_charged_pct: NonNegativePercent = spec_field(
+        0.0,
+        description="Percent of the owner's monthly living spending charged to the card (up to the available "
+        "credit) instead of paid from the bank; 'full_balance' then pays it each month with no interest.",
+        unit="percent",
+        core="CreditCard.spending_charge_pct",
+        le=100,
+    )
 
 
-Debt = Annotated[CarLoan | StudentLoan | CreditCard, Field(discriminator="kind")]
+class HomeEquityLine(SpecModel):
+    """A home equity line of credit secured by one of the person's homes (Plan 27 D7). Interest on the part
+    of the balance used to improve the home is deductible acquisition-debt interest; the rest is not."""
+
+    CORE_CLASS = "HomeEquityLine"
+
+    kind: Literal["heloc"]
+    id: Identifier | None = _id_field("debt")
+    home: Identifier = spec_field(description="Id of the home securing the line.", core="HomeEquityLine.home")
+    name: str | None = spec_field(None, description="Display name.", core="HomeEquityLine.name")
+    credit_limit: NonNegativeMoney = spec_field(
+        description="Credit limit.", unit="USD", core="HomeEquityLine.credit_limit"
+    )
+    balance: NonNegativeMoney = spec_field(
+        0.0, description="Current balance.", unit="USD", core="HomeEquityLine.balance"
+    )
+    rate_pct: NonNegativePercent = spec_field(
+        description="APR.", unit="percent", core="HomeEquityLine.yearly_interest_rate", typical_above_one=True
+    )
+    improvement_balance: NonNegativeMoney = spec_field(
+        0.0,
+        description="Part of the balance that paid for improvements to the home.",
+        unit="USD",
+        core="HomeEquityLine.improvement_balance",
+    )
+    payment_strategy: Literal["interest_only", "minimum", "full_balance", "fixed"] = spec_field(
+        "interest_only", description="How the balance is paid down each month.", core="HomeEquityLine.payment_strategy"
+    )
+    payment_monthly: NonNegativeMoney = spec_field(
+        0.0,
+        description="Monthly payment for the 'fixed' strategy.",
+        unit="USD/month",
+        core="HomeEquityLine.fixed_payment",
+    )
+
+    @model_validator(mode="after")
+    def _improvements(self) -> "HomeEquityLine":
+        if self.improvement_balance > self.balance:
+            raise ValueError("improvement_balance is larger than the balance")
+        return self
+
+
+Debt = Annotated[CarLoan | StudentLoan | CreditCard | HomeEquityLine, Field(discriminator="kind")]
 
 
 # --- Housing -------------------------------------------------------------------------------------
 
 
-class Mortgage(SpecModel):
+class Mortgage(_LoanTerms):
     __doc__ = (
         "The mortgage on a home. "
-        + _LOAN_WORKAROUND.replace("the loan pays off", "the mortgage pays off")
-        + " start_year is stored by core but not yet used for amortization (Plan 27 item 11)."
+        + _LOAN_STATEMENT
+        + " With escrow_monthly, payment_monthly is the statement's total payment and the escrow (property tax "
+        "and insurance, paid through the home's expenses) is subtracted. A mortgage originated on or before "
+        "2017-12 keeps the $1,000,000 acquisition-debt limit."
     )
 
     CORE_CLASS = "Mortgage"
 
-    original_amount: NonNegativeMoney = spec_field(
-        description="Amount originally borrowed.", unit="USD", core="Mortgage.loan_amount"
-    )
-    balance: NonNegativeMoney | None = spec_field(
-        None, description="Current principal (defaults to original_amount).", unit="USD", core="Mortgage.principal"
-    )
-    rate_pct: NonNegativePercent = spec_field(
-        description="Interest rate.", unit="percent", core="Mortgage.yearly_interest_rate", typical_above_one=True
-    )
-    term_years: int = spec_field(
-        description="Original term (30, 15, ...).", unit="years", core="Mortgage.length_years", ge=0
-    )
     start_year: Year | None = spec_field(
         None,
-        description="Year the loan was originated (defaults to the start year).",
+        description="Year the loan was originated (prefer origination). Without a balance, a year before the start "
+        "is taken as an origination in January of that year.",
         unit="year",
         core="Mortgage.start_date",
     )
-    payment_monthly: NonNegativeMoney | None = spec_field(
-        None,
-        description="Principal and interest per month (computed when unset; exclude escrow).",
-        unit="USD/month",
-        core="Mortgage.monthly_payment",
-    )
-    origination: YearMonth | None = spec_field(
-        None, description="Origination month.", unit="YYYY-MM", not_yet_supported="Plan 27 D1"
-    )
-    remaining_months: int | None = spec_field(
-        None, description="Months remaining.", unit="months", not_yet_supported="Plan 27 D1"
-    )
     escrow_monthly: NonNegativeMoney | None = spec_field(
-        None, description="Escrow included in the statement payment.", unit="USD/month", not_yet_supported="Plan 27 D1"
-    )
-    extra_principal_monthly: NonNegativeMoney | None = spec_field(
-        None, description="Extra principal each month.", unit="USD/month", not_yet_supported="Plan 27 D7"
+        None,
+        description="Escrow included in payment_monthly (subtracted: the home's expenses pay tax and insurance).",
+        unit="USD/month",
+        core="Mortgage.escrow_monthly",
     )
 
 
 class HomeExpenses(SpecModel):
-    """Recurring costs of owning a home."""
+    """Recurring costs of owning a home. Property tax is a dollar bill (property_tax_annual), a percent of an
+    assessed value, or a percent of the market value; insurance a dollar premium or a percent of the market
+    value."""
 
     CORE_CLASS = "HomeExpenses"
 
     property_tax_pct: NonNegativePercent = spec_field(
-        description="Property tax per year, percent of market value.",
+        0.0,
+        description="Property tax per year, percent of the assessed value when given, else of the market value.",
         unit="percent",
         core="HomeExpenses.property_tax_percent",
     )
     insurance_pct: NonNegativePercent = spec_field(
+        0.0,
         description="Homeowner's insurance per year, percent of market value.",
         unit="percent",
         core="HomeExpenses.home_insurance_percent",
     )
+    property_tax_annual: NonNegativeMoney | None = spec_field(
+        None,
+        description="The property tax bill (replaces property_tax_pct).",
+        unit="USD/year",
+        core="HomeExpenses.property_tax_annual",
+    )
+    property_tax_growth_pct: GrowthPct = spec_field(
+        "economy",
+        description="Yearly growth of property_tax_annual; 'economy' follows inflation.",
+        unit="percent",
+        core="HomeExpenses.property_tax_growth_pct",
+    )
+    assessed_value: NonNegativeMoney | None = spec_field(
+        None,
+        description="Assessed value property_tax_pct applies to (grows with the home, up to the cap).",
+        unit="USD",
+        core="HomeExpenses.assessed_value",
+    )
+    assessment_growth_cap_pct: NonNegativePercent | None = spec_field(
+        None,
+        description="Cap on the assessed value's yearly growth (e.g. 2 for California).",
+        unit="percent",
+        core="HomeExpenses.assessment_growth_cap_pct",
+    )
+    insurance_annual: NonNegativeMoney | None = spec_field(
+        None,
+        description="Homeowner's insurance premium (replaces insurance_pct).",
+        unit="USD/year",
+        core="HomeExpenses.insurance_annual",
+    )
+    insurance_growth_pct: GrowthPct = spec_field(
+        "economy",
+        description="Yearly growth of insurance_annual; 'economy' follows inflation.",
+        unit="percent",
+        core="HomeExpenses.insurance_growth_pct",
+    )
     maintenance_annual: NonNegativeMoney = spec_field(
         0.0, description="Maintenance.", unit="USD/year", core="HomeExpenses.maintenance_amount"
     )
-    maintenance_growth_pct: Percent = spec_field(
-        0.0, description="Yearly increase of maintenance.", unit="percent", core="HomeExpenses.maintenance_increase"
+    maintenance_growth_pct: GrowthPct = spec_field(
+        0.0,
+        description="Yearly increase of maintenance; 'economy' follows inflation.",
+        unit="percent",
+        core="HomeExpenses.maintenance_increase",
     )
     improvement_annual: NonNegativeMoney = spec_field(
         0.0, description="Improvements (added to cost basis).", unit="USD/year", core="HomeExpenses.improvement_amount"
     )
-    improvement_growth_pct: Percent = spec_field(
-        0.0, description="Yearly increase of improvements.", unit="percent", core="HomeExpenses.improvement_increase"
+    improvement_growth_pct: GrowthPct = spec_field(
+        0.0,
+        description="Yearly increase of improvements; 'economy' follows inflation.",
+        unit="percent",
+        core="HomeExpenses.improvement_increase",
     )
     hoa_monthly: NonNegativeMoney = spec_field(
         0.0,
@@ -1515,8 +1730,11 @@ class HomeExpenses(SpecModel):
         unit="USD/month",
         core="HomeExpenses.hoa_amount",
     )
-    hoa_growth_pct: Percent = spec_field(
-        0.0, description="Yearly increase of HOA dues.", unit="percent", core="HomeExpenses.hoa_increase"
+    hoa_growth_pct: GrowthPct = spec_field(
+        0.0,
+        description="Yearly increase of HOA dues; 'economy' follows inflation.",
+        unit="percent",
+        core="HomeExpenses.hoa_increase",
     )
 
 
@@ -1529,7 +1747,8 @@ class Home(SpecModel):
     id: Identifier | None = _id_field("home")
     name: str = spec_field("Home", description="Name of the house.", core="Home.name")
     purchase_price: NonNegativeMoney = spec_field(
-        description="Purchase price; also the starting market value and cost basis in core (Plan 27 item 10).",
+        description="Purchase price (the original value PMI is measured against; the market value and cost basis "
+        "unless current_value / cost_basis are given).",
         unit="USD",
         core="Home.purchase_price",
     )
@@ -1551,15 +1770,40 @@ class Home(SpecModel):
     expenses: HomeExpenses = spec_field(description="Recurring ownership costs.")
     current_value: NonNegativeMoney | None = spec_field(
         None,
-        description="Market value today (distinct from purchase price).",
+        description="Market value today (defaults to purchase_price).",
         unit="USD",
-        not_yet_supported="Plan 27 D1",
+        core="Home.current_value",
     )
     cost_basis: NonNegativeMoney | None = spec_field(
-        None, description="Section 121 cost basis.", unit="USD", not_yet_supported="Plan 27 D1"
+        None,
+        description="Section 121 cost basis: price plus improvements so far (defaults to purchase_price).",
+        unit="USD",
+        core="Home.cost_basis",
     )
     purchase_year: Year | None = spec_field(
-        None, description="Year purchased.", unit="year", not_yet_supported="Plan 27 D1"
+        None,
+        description="Year purchased: a sale less than two years later gets no Section 121 exclusion (unset for a "
+        "home owned before the start: the test passes).",
+        unit="year",
+        core="Home.purchase_year",
+    )
+    pmi: bool = spec_field(
+        True,
+        description="False: the mortgage carries no private mortgage insurance (already cancelled, lender-paid).",
+        core="Home.pmi",
+    )
+    pmi_monthly: NonNegativeMoney | None = spec_field(
+        None,
+        description="The statement's PMI premium (instead of the configured rate times the balance). PMI ends at "
+        "80% of the original value (by request), 78% by the original schedule, or the term's midpoint.",
+        unit="USD/month",
+        core="Home.pmi_monthly",
+    )
+    closing_cost_pct: NonNegativePercent | None = spec_field(
+        None,
+        description="Closing costs of a purchase, percent of the price (configured default when unset).",
+        unit="percent",
+        core="Home.closing_cost_percent",
     )
 
 
@@ -1631,12 +1875,23 @@ class LifeInsurance(SpecModel):
     beneficiary: Identifier | None = spec_field(
         None, description="Person id of the designated beneficiary.", core="LifeInsurance.beneficiary"
     )
-    issue_year: Year | None = spec_field(None, description="Year issued.", unit="year", not_yet_supported="Plan 27 D1")
+    issue_year: Year | None = spec_field(
+        None,
+        description="Year issued (a term policy expires term_years after it; defaults to the start year).",
+        unit="year",
+        core="LifeInsurance.issue_year",
+    )
     cash_value: NonNegativeMoney | None = spec_field(
-        None, description="Existing cash value.", unit="USD", not_yet_supported="Plan 27 D1"
+        None, description="Existing whole-life cash value.", unit="USD", core="LifeInsurance.cash_value"
     )
     loan_balance: NonNegativeMoney | None = spec_field(
-        None, description="Existing policy loan.", unit="USD", not_yet_supported="Plan 27 D1"
+        None, description="Existing policy loan.", unit="USD", core="LifeInsurance.loan_balance"
+    )
+    premiums_paid: NonNegativeMoney | None = spec_field(
+        None,
+        description="Premiums paid so far: the policy's cost basis on a surrender (defaults to cash_value).",
+        unit="USD",
+        core="LifeInsurance.premiums_paid",
     )
     group: bool = spec_field(False, description="Employer group life.", not_yet_supported="Plan 27 item 13")
 
@@ -1680,10 +1935,46 @@ class GeneralInsurance(SpecModel):
         None, description="Claims allowed per year.", core="Insurance.max_claims_per_year", ge=0
     )
     oop_max_annual: NonNegativeMoney | None = spec_field(
-        None, description="Health out-of-pocket maximum.", unit="USD/year", not_yet_supported="Plan 27 D9"
+        None,
+        description="Health: out-of-pocket maximum. With it or coinsurance_pct the policy caps the person's "
+        "medical costs (healthcare.medical_costs): the deductible, then coinsurance, at most this a year.",
+        unit="USD/year",
+        core="Insurance.oop_max_annual",
     )
     coinsurance_pct: NonNegativePercent | None = spec_field(
-        None, description="Health coinsurance.", unit="percent", not_yet_supported="Plan 27 D9"
+        None,
+        description="Health: the person's share of costs above the deductible (100 when unset).",
+        unit="percent",
+        core="Insurance.coinsurance_pct",
+        le=100,
+    )
+    benefit_pct: NonNegativePercent | None = spec_field(
+        None,
+        description="Disability: share of pre-disability pay replaced (paid after a 'disability' event).",
+        unit="percent",
+        core="Insurance.benefit_pct",
+        le=100,
+    )
+    benefit_max_monthly: NonNegativeMoney | None = spec_field(
+        None, description="Disability: monthly benefit cap.", unit="USD/month", core="Insurance.benefit_max_monthly"
+    )
+    elimination_months: int = spec_field(
+        3,
+        description="Disability: months before benefits start.",
+        unit="months",
+        core="Insurance.elimination_months",
+        ge=0,
+    )
+    benefit_end_age: AgeFloat | None = spec_field(
+        None,
+        description="Disability: age benefits stop (coverage_end_age, else 65, when unset).",
+        unit="age",
+        core="Insurance.benefit_end_age",
+    )
+    benefits_taxable: bool = spec_field(
+        False,
+        description="Disability: premiums paid by the employer or pre-tax, so benefits are taxable (else tax-free).",
+        core="Insurance.benefits_taxable",
     )
 
 
@@ -1718,9 +2009,30 @@ class SocialSecurity(SpecModel):
         unit="age",
     )
     pia_override_monthly: NonNegativeMoney | None = spec_field(
-        None, description="PIA from the SSA statement.", unit="USD/month", not_yet_supported="Plan 27 D10"
+        None,
+        description="The benefit at full retirement age from the SSA statement, in today's dollars (wage-indexed "
+        "to age 62, then COLAs), instead of computing it from the earnings record.",
+        unit="USD/month",
+        core="SocialSecurity.pia_override",
     )
-    spousal_benefit: bool = spec_field(False, description="Model the spousal benefit.", not_yet_supported="Plan 27 D10")
+    spousal_benefit: bool = spec_field(
+        False,
+        description="Pay the spousal benefit once both spouses claim: half the spouse's PIA less the person's own, "
+        "reduced for each month before full retirement age.",
+        core="SocialSecurity.spousal_benefit",
+    )
+    fra_from_birth_year: bool = spec_field(
+        False,
+        description="Full retirement age by birth year (66 and 6 months for 1957, ...) instead of the configured "
+        "67 (the validator warns for births before 1960).",
+        core="SocialSecurity.fra_from_birth_year",
+    )
+    earnings_test: bool = spec_field(
+        True,
+        description="Withhold benefits claimed before full retirement age while earnings exceed the year's exempt "
+        "amount ($1 per $2; $1 per $3 in the year of FRA), recomputing the reduction at FRA.",
+        core="SocialSecurity.earnings_test",
+    )
 
     @field_validator("earnings_history")
     @classmethod
@@ -1729,8 +2041,11 @@ class SocialSecurity(SpecModel):
 
     @model_validator(mode="after")
     def _one_history(self) -> "SocialSecurity":
-        if self.earnings_history is not None and self.assumed_career_start_age is not None:
+        given = [self.earnings_history is not None, self.assumed_career_start_age is not None]
+        if sum(given) > 1:
             raise ValueError("give either earnings_history or assumed_career_start_age, not both")
+        if self.pia_override_monthly is not None and any(given):
+            raise ValueError("pia_override_monthly replaces the earnings record: give one or the other")
         return self
 
 
@@ -1738,6 +2053,13 @@ class Healthcare(SpecModel):
     """Opt-in healthcare cost agents."""
 
     medical_costs: bool = spec_field(False, description="Age-banded out-of-pocket medical costs.", core="MedicalCosts")
+    medical_costs_annual: NonNegativeMoney | None = spec_field(
+        None,
+        description="The person's own yearly medical cost (start-year dollars, medical inflation) instead of the "
+        "configured age bands; implies medical_costs.",
+        unit="USD/year",
+        core="MedicalCosts.annual_cost",
+    )
     medicare: bool = spec_field(
         False, description="Medicare premiums and IRMAA from the eligibility age.", core="Medicare"
     )
@@ -1790,7 +2112,17 @@ class Child(SpecModel):
         description="Birth year (future years are planned births).", unit="year", core="Child.birth_year"
     )
     cost_override_annual: NonNegativeMoney | None = spec_field(
-        None, description="Per-child cost instead of the config bands.", unit="USD/year", not_yet_supported="Plan 27 D6"
+        None,
+        description="This child's yearly cost while a dependent (start-year dollars) instead of the configured "
+        "childcare and school-age bands (not counted as dependent care: use care_expenses_annual).",
+        unit="USD/year",
+        core="Child.cost_annual",
+    )
+    college_cost_annual: NonNegativeMoney | None = spec_field(
+        None,
+        description="This child's yearly college cost (start-year dollars) instead of the configured band.",
+        unit="USD/year",
+        core="Child.college_cost_annual",
     )
     care_expenses_annual: NonNegativeMoney = spec_field(
         0.0,
@@ -2015,7 +2347,7 @@ class Person(SpecModel):
     spending: Spending = spec_field(description="Living spending.")
     jobs: list[Job] = spec_field(default_factory=list, description="Jobs (W-2).")
     accounts: list[Account] = spec_field(default_factory=list, description="Accounts, discriminated by 'kind'.")
-    debts: list[Debt] = spec_field(default_factory=list, description="Debts (car, student, credit_card).")
+    debts: list[Debt] = spec_field(default_factory=list, description="Debts (car, student, credit_card, heloc).")
     housing: list[Housing] = spec_field(default_factory=list, description="Homes and rentals.")
     insurance: list[Insurance] = spec_field(default_factory=list, description="Insurance policies.")
     social_security: SocialSecurity | None = spec_field(None, description="Social Security benefits.")
@@ -2230,6 +2562,48 @@ class ConvertToRothEvent(EventBase):
         return self
 
 
+class RefinanceEvent(EventBase):
+    """Refinance a mortgage (``debt`` is the home's id) or a car or student loan (Plan 27 D7): a new loan
+    for the balance (plus any cash-out, and the costs when financed) at the new rate and term."""
+
+    action: Literal["refinance"]
+    debt: Identifier = spec_field(description="Id of the home (its mortgage) or of the car / student loan.")
+    rate_pct: NonNegativePercent = spec_field(description="New APR.", unit="percent")
+    term_years: int | None = spec_field(None, description="New term in years.", unit="years", ge=1)
+    term_months: int | None = spec_field(None, description="New term in months.", unit="months", ge=1)
+    costs: NonNegativeMoney = spec_field(0.0, description="Closing costs.", unit="USD")
+    finance_costs: bool = spec_field(False, description="Roll the costs into the new loan (else paid in cash).")
+    cash_out: NonNegativeMoney = spec_field(0.0, description="Cash taken out above the balance.", unit="USD")
+    cash_out_for_improvements: bool = spec_field(
+        False,
+        description="The cash-out pays for improvements to the home (acquisition debt: its interest is deductible).",
+    )
+
+    @model_validator(mode="after")
+    def _one_term(self) -> "RefinanceEvent":
+        if (self.term_years is None) == (self.term_months is None):
+            raise ValueError("refinance needs exactly one of term_years or term_months")
+        return self
+
+
+class HelocDrawEvent(EventBase):
+    """Draw on a home equity line: to the bank, or spent on improvements to the home securing it."""
+
+    action: Literal["heloc_draw"]
+    heloc: Identifier = spec_field(description="Id of the home equity line (a 'heloc' debt).")
+    amount: NonNegativeMoney = spec_field(description="Amount drawn (up to the available credit).", unit="USD")
+    for_improvements: bool = spec_field(
+        False, description="Spent on improvements (cost basis; deductible interest) instead of paid to the bank."
+    )
+
+
+class DisabilityEvent(EventBase):
+    """The person becomes disabled: every job stops and each disability policy with a benefit_pct opens a
+    claim (benefits from the end of its elimination period to its benefit end age)."""
+
+    action: Literal["disability"]
+
+
 class ClaimSocialSecurityEvent(EventBase):
     """Claim Social Security (sets the claiming age; the person needs social_security)."""
 
@@ -2257,7 +2631,10 @@ Event = Annotated[
     | ContributeEvent
     | ConvertToRothEvent
     | ClaimSocialSecurityEvent
-    | DieEvent,
+    | DieEvent
+    | RefinanceEvent
+    | HelocDrawEvent
+    | DisabilityEvent,
     Field(discriminator="action"),
 ]
 
@@ -2278,6 +2655,9 @@ EVENT_ACTIONS: tuple[str, ...] = (
     "convert_to_roth",
     "claim_social_security",
     "die",
+    "refinance",
+    "heloc_draw",
+    "disability",
 )
 
 

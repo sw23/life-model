@@ -19,8 +19,8 @@ the builder then constructs, for all people at each step:
    stock plans;
 4. other accounts in kind order: brokerage, traditional_ira, roth_ira, hsa, inherited_pretax,
    pension, annuity, daf, trust;
-5. debts (car, student, credit_card), housing (homes, then rentals), insurance (life, then general
-   policies);
+5. debts (car, student, credit_card), housing (homes, then rentals), home equity lines (they need
+   their home), insurance (life, then general policies);
 6. children, then 529 plans (which reference children);
 7. healthcare agents (medical costs, Medicare, long-term care), then Social Security;
 8. giving; marriages already in effect at the start; events (a ``LifeEvents`` agent, last).
@@ -28,10 +28,10 @@ the builder then constructs, for all people at each step:
 Within one step, items are ordered by ``(id, canonical JSON)``, so two items without ids still have
 a deterministic order. Shuffling any list in a spec therefore yields an identical model.
 
-Undocumented core workarounds the builder relies on (each documented on its schema field; Plan 27
-turns them into real constructor arguments, and this module switches over then):
-
-* a loan in progress: ``loan_amount=original_amount, principal=balance``.
+Plan 27 replaced the undocumented core workarounds the builder used to rely on (brokerage opening lots via
+``deposit_with_basis``; a loan in progress as ``loan_amount=original_amount, principal=balance``) with
+real constructor arguments: ``BrokerageAccount(lots=)`` and the loans' statement inputs (origination,
+current balance, months remaining).
 
 Standing savings policies (``contribution_plans``, ``savings_policy``, ``roth_conversion``) are attached
 after every account exists (they reference accounts by id).
@@ -106,7 +106,7 @@ ACCOUNT_KIND_ORDER = (
     "trust",
     "529",
 )
-DEBT_KIND_ORDER = ("car", "student", "credit_card")
+DEBT_KIND_ORDER = ("car", "student", "credit_card", "heloc")
 HOUSING_KIND_ORDER = ("home", "rental")
 INSURANCE_KIND_ORDER = (
     "life",
@@ -407,7 +407,11 @@ class _Builder:
         from ..people.types import GenderAtBirth, MortalityMode
 
         spending = Spending(
-            model=self.model, base=p.spending.amount_annual, yearly_increase=_growth(p.spending.growth_pct)
+            model=self.model,
+            base_annual=p.spending.amount_annual,
+            growth_pct=_growth(p.spending.growth_pct),
+            categories=_spending_lines(p.spending.categories),
+            schedule=[tuple(step) for step in p.spending.schedule] if p.spending.schedule else None,
         )
         person = Person(
             family=self.family,
@@ -691,17 +695,29 @@ class _Builder:
             from ..account.pension import Pension
 
             pension = Pension(
-                person=person,
+                owner=person,
                 company=account.company,
                 vesting_years=account.vesting_years,
-                benefit_amount=account.benefit_annual,
+                benefit_annual=account.benefit_annual,
                 start_age=account.start_age,
-                cola_percent=account.cola_pct,
-                survivor_percent=account.survivor_pct,
+                cola_pct=account.cola_pct,
+                survivor_pct=account.survivor_pct,
                 years_of_service=account.years_of_service,
-                benefit_multiplier=account.benefit_multiplier_pct,
-                final_salary=account.final_salary_annual,
+                benefit_multiplier_pct=account.benefit_multiplier_pct,
+                final_salary_annual=account.final_salary_annual,
                 job=self.job_agent(person_spec, account.job) if account.job is not None else None,
+                salary_history=account.salary_history_annual,
+                final_average_years=account.final_average_years,
+                normal_retirement_age=account.normal_retirement_age,
+                early_reduction_pct_per_year=account.early_retirement_reduction_pct or 0.0,
+                survivor_reduction=account.survivor_reduction_pct,
+                employee_basis=account.employee_basis,
+                lump_sum=account.lump_sum_option,
+                lump_sum_amount=account.lump_sum_amount,
+                lump_sum_rate_pct=account.lump_sum_rate_pct,
+                rollover_account=self.built.items[account.rollover_account]
+                if account.rollover_account is not None
+                else None,
             )
             pension.accrues_service = account.accrues_service
             return pension
@@ -710,18 +726,23 @@ class _Builder:
 
             joint = self.person(account.joint_annuitant) if account.joint_annuitant is not None else None
             return Annuity(
-                person=person,
+                owner=person,
                 annuity_type=AnnuityType[account.annuity_type.upper()],
-                initial_balance=account.balance,
-                interest_rate=account.interest_pct,
+                balance=account.balance,
+                rate_pct=account.interest_pct,
                 payout_type=AnnuityPayoutType[account.payout_type.upper()],
                 payout_start_age=account.payout_start_age,
-                monthly_payout=account.payout_monthly,
+                payout_monthly=account.payout_monthly,
                 period_certain_years=account.period_certain_years,
                 surrender_charge_years=account.surrender_charge_years,
-                surrender_charge_rate=account.surrender_charge_pct,
+                surrender_charge_pct=account.surrender_charge_pct,
                 joint_annuitant=joint,
-                survivor_percent=account.survivor_pct,
+                survivor_pct=account.survivor_pct,
+                basis=account.basis,
+                purchase_year=account.purchase_year,
+                qualified=account.qualified,
+                in_payout=account.in_payout,
+                cola_pct=account.cola_pct,
             )
         if kind == "daf":
             from ..charity.daf import DonorAdvisedFund
@@ -750,48 +771,76 @@ class _Builder:
 
     # --- debts, housing, insurance ---
 
+    @staticmethod
+    def _loan_terms(loan: Any) -> dict[str, Any]:
+        """The statement inputs every amortizing loan takes (Plan 27 D1/D7)."""
+        return {
+            "original_amount": loan.original_amount,
+            "term_years": loan.term_years,
+            "rate_pct": loan.rate_pct,
+            "current_balance": loan.balance,
+            "payment_monthly": loan.payment_monthly,
+            "term_months": loan.term_months,
+            "origination": loan.origination,
+            "payments_made": loan.payments_made,
+            "remaining_months": loan.remaining_months,
+            "extra_principal_monthly": loan.extra_principal_monthly,
+        }
+
+    @staticmethod
+    def _remember_loan(agent, loan: Any):
+        """Provenance for the extractor: the statement fields as entered."""
+        agent.spec_loan_inputs = {name: getattr(loan, name) for name in s._LoanTerms.model_fields}
+        return agent
+
     def build_debt(self, person, debt: Any):
         if debt.kind == "car":
             from ..debt.car_loan import CarLoan
 
-            # Workaround: loan_amount=original, principal=current (Plan 27 D1/D7).
-            return CarLoan(
-                person=person,
-                loan_amount=debt.original_amount,
-                length_years=debt.term_years,
-                yearly_interest_rate=debt.rate_pct,
-                name=debt.name,
-                principal=debt.balance,
-                monthly_payment=debt.payment_monthly,
-            )
+            return self._remember_loan(CarLoan(owner=person, name=debt.name, **self._loan_terms(debt)), debt)
         if debt.kind == "student":
             from ..debt.student_loan import StudentLoan, StudentLoanRepaymentPlan, StudentLoanType
 
-            return StudentLoan(
-                person=person,
+            loan = StudentLoan(
+                owner=person,
                 loan_type=StudentLoanType[debt.loan_type.upper()],
-                loan_amount=debt.original_amount,
-                yearly_interest_rate=debt.rate_pct,
-                length_years=debt.term_years,
                 school_name=debt.school,
-                principal=debt.balance,
-                monthly_payment=debt.payment_monthly,
                 in_deferment=debt.in_deferment,
                 repayment_plan=StudentLoanRepaymentPlan[debt.repayment_plan.upper()],
+                deferment_until=debt.deferment_until,
+                qualifying_payments=debt.qualifying_payments,
+                **self._loan_terms(debt),
             )
+            return self._remember_loan(loan, debt)
         if debt.kind == "credit_card":
             from ..debt.credit_card import CreditCard, CreditCardType, PaymentStrategy
 
             return CreditCard(
-                person=person,
-                card_name=debt.name,
+                owner=person,
+                name=debt.name,
                 credit_limit=debt.credit_limit,
-                current_balance=debt.balance,
-                yearly_interest_rate=debt.rate_pct,
-                minimum_payment_percent=debt.minimum_payment_pct,
+                balance=debt.balance,
+                rate_pct=debt.rate_pct,
+                minimum_payment_pct=debt.minimum_payment_pct,
                 card_type=CreditCardType[debt.card_type.upper()] if debt.card_type is not None else None,
                 payment_strategy=PaymentStrategy(debt.payment_strategy),
-                fixed_payment=debt.payment_monthly,
+                payment_monthly=debt.payment_monthly,
+                spending_charge_pct=debt.spending_charged_pct,
+            )
+        if debt.kind == "heloc":
+            from ..debt.credit_card import PaymentStrategy
+            from ..debt.heloc import HomeEquityLine
+
+            return HomeEquityLine(
+                owner=person,
+                home=self.built.items[debt.home],
+                credit_limit=debt.credit_limit,
+                balance=debt.balance,
+                rate_pct=debt.rate_pct,
+                improvement_balance=debt.improvement_balance,
+                payment_strategy=PaymentStrategy(debt.payment_strategy),
+                payment_monthly=debt.payment_monthly,
+                name=debt.name,
             )
         raise NotImplementedError(f"debt kind {debt.kind!r} is not supported by the builder")
 
@@ -801,45 +850,57 @@ class _Builder:
         mortgage = None
         if home.mortgage is not None:
             m = home.mortgage
+            terms = self._loan_terms(m)
             mortgage = Mortgage(
-                loan_amount=m.original_amount,
-                start_date=m.start_year if m.start_year is not None else self.model.start_year,
-                length_years=m.term_years,
-                yearly_interest_rate=m.rate_pct,
-                principal=m.balance,
-                monthly_payment=m.payment_monthly,
+                start_year=m.start_year if m.start_year is not None else self.model.year,
+                escrow_monthly=m.escrow_monthly,
+                **terms,
             )
+            self._remember_loan(mortgage, m)
+            mortgage.spec_start_year = m.start_year
         e = home.expenses
         expenses = HomeExpenses(
             model=self.model,
-            property_tax_percent=e.property_tax_pct,
-            home_insurance_percent=e.insurance_pct,
-            maintenance_amount=e.maintenance_annual,
-            maintenance_increase=e.maintenance_growth_pct,
-            improvement_amount=e.improvement_annual,
-            improvement_increase=e.improvement_growth_pct,
-            hoa_amount=e.hoa_monthly * 12,
-            hoa_increase=e.hoa_growth_pct,
+            property_tax_pct=e.property_tax_pct,
+            insurance_pct=e.insurance_pct,
+            maintenance_annual=e.maintenance_annual,
+            maintenance_growth_pct=_growth(e.maintenance_growth_pct),
+            improvement_annual=e.improvement_annual,
+            improvement_growth_pct=_growth(e.improvement_growth_pct),
+            hoa_annual=e.hoa_monthly * 12,
+            hoa_growth_pct=_growth(e.hoa_growth_pct),
+            property_tax_annual=e.property_tax_annual,
+            property_tax_growth_pct=_growth(e.property_tax_growth_pct),
+            assessed_value=e.assessed_value,
+            assessment_growth_cap_pct=e.assessment_growth_cap_pct,
+            insurance_annual=e.insurance_annual,
+            insurance_growth_pct=_growth(e.insurance_growth_pct),
         )
         return Home(
-            person=person,
+            owner=person,
             name=home.name,
             purchase_price=home.purchase_price,
-            value_yearly_increase=_growth(home.value_growth_pct),
+            value_growth_pct=_growth(home.value_growth_pct),
             down_payment=home.down_payment,
             mortgage=cast(Mortgage, mortgage),  # core accepts None (no mortgage)
             expenses=expenses,
             purchase=home.purchase if purchase is None else purchase,
+            current_value=home.current_value,
+            cost_basis=home.cost_basis,
+            purchase_year=home.purchase_year,
+            pmi=home.pmi,
+            pmi_monthly=home.pmi_monthly,
+            closing_cost_percent=home.closing_cost_pct,
         )
 
     def build_rental(self, person, rental: s.Rental):
         from ..housing.apartment import Apartment
 
         return Apartment(
-            person=person,
+            owner=person,
             name=rental.name,
-            monthly_rent=rental.rent_monthly,
-            yearly_increase=_growth(rental.rent_growth_pct),
+            rent_monthly=rental.rent_monthly,
+            rent_growth_pct=_growth(rental.rent_growth_pct),
         )
 
     def build_housing(self, person, item: Any):
@@ -858,31 +919,42 @@ class _Builder:
             else:
                 increase = policy.premium_increase_pct
             return LifeInsurance(
-                person=person,
+                owner=person,
                 policy_type=LifeInsuranceType[policy.policy.upper()],
                 death_benefit=policy.death_benefit,
-                monthly_premium=policy.premium_monthly,
+                premium_monthly=policy.premium_monthly,
                 term_years=policy.term_years,
                 premium_increase_rate=increase,
-                cash_value_growth_rate=policy.cash_value_growth_pct,
-                loan_interest_rate=policy.loan_interest_pct,
+                cash_value_growth_pct=policy.cash_value_growth_pct,
+                loan_interest_pct=policy.loan_interest_pct,
                 max_missed_payments=policy.max_missed_payments,
                 beneficiary=self.person(policy.beneficiary) if policy.beneficiary is not None else None,
+                issue_year=policy.issue_year,
+                cash_value=policy.cash_value or 0.0,
+                loan_balance=policy.loan_balance or 0.0,
+                premiums_paid=policy.premiums_paid,
             )
         from ..insurance.general_insurance import Insurance, InsuranceType
 
         kind = "LONG_TERM_CARE" if policy.kind == "ltc" else policy.kind.upper()
         return Insurance(
-            person=person,
+            owner=person,
             insurance_type=InsuranceType[kind],
             company=policy.company,
-            annual_premium=policy.premium_annual,
+            premium_annual=policy.premium_annual,
             coverage_amount=policy.coverage_amount,
             deductible=policy.deductible,
             coverage_start_age=policy.coverage_start_age,
             coverage_end_age=policy.coverage_end_age,
-            premium_increase_rate=policy.premium_increase_pct,
+            premium_increase_pct=policy.premium_increase_pct,
             max_claims_per_year=policy.max_claims_per_year,
+            oop_max_annual=policy.oop_max_annual,
+            coinsurance_pct=policy.coinsurance_pct,
+            benefit_pct=policy.benefit_pct,
+            benefit_max_monthly=policy.benefit_max_monthly,
+            elimination_months=policy.elimination_months,
+            benefit_end_age=policy.benefit_end_age,
+            benefits_taxable=policy.benefits_taxable,
         )
 
     # --- SS, healthcare, giving ---
@@ -915,7 +987,15 @@ class _Builder:
             history = self.synthetic_earnings(person_spec, ss.assumed_career_start_age)
         else:
             history = sorted((ss.earnings_history or {}).items())
-        agent = SocialSecurity(person, withdrawal_start_age=claim_age, income_history=history)
+        agent = SocialSecurity(
+            person,
+            claim_age=claim_age,
+            earnings_history=history,
+            pia_override_monthly=ss.pia_override_monthly,
+            fra_from_birth_year=ss.fra_from_birth_year,
+            spousal_benefit=ss.spousal_benefit,
+            earnings_test=ss.earnings_test,
+        )
         if ss.assumed_career_start_age is not None:
             # Provenance for the extractor: the record was synthesized, not entered.
             agent.spec_synthesized_history = (ss.assumed_career_start_age, len(history))
@@ -1013,10 +1093,13 @@ class _Builder:
         late = ("bank", "401k", *LATE_ACCOUNT_KINDS)
         for p, i, item in each("accounts", lambda a: a.kind not in late):
             self._register(p, "accounts", i, item, self.build_account(self.person(p.id), p, item))
-        for p, i, item in each("debts"):
+        for p, i, item in each("debts", lambda d: d.kind != "heloc"):
             self._register(p, "debts", i, item, self.build_debt(self.person(p.id), item))
         for p, i, item in each("housing"):
             self._register(p, "housing", i, item, self.build_housing(self.person(p.id), item))
+        # Home equity lines are secured by a home, so they follow housing.
+        for p, i, item in each("debts", lambda d: d.kind == "heloc"):
+            self._register(p, "debts", i, item, self.build_debt(self.person(p.id), item))
         for p, i, item in each("insurance"):
             self._register(p, "insurance", i, item, self.build_insurance(self.person(p.id), item))
         for p in people:
@@ -1036,6 +1119,8 @@ class _Builder:
                     care_expenses_annual=child.care_expenses_annual,
                     interest_annual=child.interest_annual,
                     dividends_annual=child.dividends_annual,
+                    cost_annual=child.cost_override_annual,
+                    college_cost_annual=child.college_cost_annual,
                 ),
             )
         for p, i, item in each("accounts", lambda a: a.kind in LATE_ACCOUNT_KINDS):
@@ -1043,8 +1128,8 @@ class _Builder:
         for p in people:
             if p.healthcare is not None:
                 person = self.person(p.id)
-                if p.healthcare.medical_costs:
-                    MedicalCosts(person)
+                if p.healthcare.medical_costs or p.healthcare.medical_costs_annual is not None:
+                    MedicalCosts(person, annual_cost=p.healthcare.medical_costs_annual)
                 if p.healthcare.medicare:
                     Medicare(person)
                 if p.healthcare.long_term_care:
@@ -1075,6 +1160,26 @@ class _Builder:
 
             self.built.life_events = LifeEvents(self.model, life_events)
         return self.built
+
+
+def _spending_lines(categories: "dict[str, s.SpendingCategory] | None"):
+    """The core ``SpendingLine`` of each spec spending category (Plan 27 D6)."""
+    if not categories:
+        return None
+    from ..people.person import SpendingLine
+
+    lines = {}
+    for name, category in categories.items():
+        monthly = category.amount_monthly is not None
+        lines[name] = SpendingLine(
+            amount=float(category.amount_monthly if monthly else category.amount_annual),
+            period="monthly" if monthly else "annual",
+            growth_pct=_growth(category.growth_pct),
+            start_year=category.start_year,
+            end_year=category.end_year,
+            essential=category.essential,
+        )
+    return lines
 
 
 #: Earliest year a synthesized earnings record may start (SSA quarter-of-coverage table start).
