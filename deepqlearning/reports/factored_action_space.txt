@@ -1,0 +1,94 @@
+Factored standing-policy actions (Plan 32 D8/D9) - PPO on financial:basic, retirement_security
+=================================================================================================
+
+Action space. MultiDiscrete nvec = [7, 7, 4, 3, 4, 6, 5, 3, 3, 4]: ten slots (pretax_401k_rate,
+roth_401k_rate, ira_contribution, hsa_contribution, sweep_policy, spending_adjust, withdrawal_order,
+retire, claim_social_security, roth_conversion), index 0 = NO_CHANGE in every slot, 46 mask entries.
+The joint space is 2,540,160 actions, so FlattenPolicies(mode="auto") uses capped sequential sub-steps
+(Discrete(37): commit + 36 (slot, value) pairs, at most 3 changes per decision) for DQN. PPO consumes the
+MultiDiscrete space natively (one masked categorical head per slot). The flat Discrete(52) space stays
+the env default.
+
+Runs (seeds 0-4 pre-registered; protocol n=200 per condition, master_seed 12345, factored baselines):
+  year:    python -m deepqlearning.train --env financial:basic --algo ppo --action-space factored \
+             --decision-interval year --total-env-steps 200000 --num-envs 8 \
+             --reward-preset retirement_security --protocol-eval --protocol-n-eval 200 --seed N
+  quarter: same with --decision-interval quarter --total-env-steps 800000 --set gamma=0.9975 \
+             --set gae_lambda=0.987 --set n_steps=512 --set train.eval_freq_steps=20000
+Per-seed results and the pooled verdicts are in algorithm_sweep.txt; seed 0's protocol report, pooled
+report and analysis are in factored_ppo_year/ and factored_ppo_quarter/.
+
+Pooled paired gap to the best factored heuristic (contribution_waterfall), train condition, t95 over seeds:
+  factored PPO, yearly decisions:    -0.66 [-1.56, +0.24]  (1/5 runs above the bar on mean)
+  factored PPO, quarterly decisions: -0.79 [-2.65, +1.08]  (2/5)
+For comparison on the same engine and seeds (flat space, bar = always_max_401k 35.30):
+  flat PPO:  -0.57 [-1.37, +0.22]  (0/5)        flat DQN: +0.19 [+0.01, +0.38]  (4/5)
+At yearly decisions returns are comparable across the spaces: the best factored heuristic scores 35.31 and
+the best flat one 35.30; mean agent return over the five seeds is 34.64 for factored PPO, 34.72 for flat
+PPO and 35.49 for flat DQN. Quarterly returns are on their own scale (months/12 weighting; accrual stops at
+the death quarter) and are compared only with the quarterly heuristics (bar 34.94).
+
+What PPO learned (seed 0, 50 greedy episodes; modal standing policy in force by age, with the share of
+decisions holding it when below 100%; full tables in policy_vector_by_age.txt). "age" is the env's
+decision age (the age during the period just simulated) and the vector is the one in force after that
+decision, i.e. going into the next period: row 64 shows the household retired in the January it turns 65.
+
+Yearly decisions (factored_ppo_year/policy_vector_by_age.txt):
+  age  pretax          roth            ira             hsa             sweep           spend           order           retired         ss              conversion
+  25   15              15              traditional_max none            hold_cash       hold            default         no              not_yet         to_bracket_22
+  30   15              15              traditional_max none            hold_cash       hold            default         no              not_yet         to_bracket_22
+  35   15              15              traditional_max none            hold_cash       hold            default         no              not_yet         to_bracket_22
+  40   15 98%          15              traditional_max none            hold_cash       hold            default         no              not_yet         to_bracket_22
+  45   15 87%          15              traditional_max none            hold_cash       hold            default         no              not_yet         to_bracket_22 94%
+  50   15 67%          15 98%          traditional_max 98% none            hold_cash       hold            default         no              not_yet         to_bracket_22 91%
+  55   15 62%          15              traditional_max none            hold_cash       hold            default         no              not_yet         to_bracket_22 87%
+  60   15 61%          15              traditional_max none            hold_cash       hold            default         no              not_yet         to_bracket_22 75%
+  62   15 66%          15              traditional_max none            hold_cash       hold            default         no              not_yet 56%     to_bracket_22 63%
+  63   3 56%           15              traditional_max 85% none            hold_cash       hold            default         no              not_yet 54%     to_bracket_22 61%
+  64   0               0               none            none            hold_cash       hold            default         yes             now 51%         to_bracket_22 66%
+  65   0               0               none            none            hold_cash       hold            default         yes             now 68%         none
+  66   0               0               none            none            hold_cash       hold            brokerage_first yes             now 85%         none
+  70   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none
+  75   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none
+  80   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none
+  85   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none
+  90   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none 89%
+  95   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none 75%
+
+Quarterly decisions (factored_ppo_quarter/policy_vector_by_age.txt):
+  age  pretax          roth            ira             hsa             sweep           spend           order           retired         ss              conversion
+  25   0               15              traditional_max none            hold_cash       hold            default         no              not_yet         none
+  30   0               15              traditional_max none            hold_cash       hold            default         no              not_yet         none
+  35   0               15              traditional_max none            hold_cash       hold            default         no              not_yet         none
+  40   0               15              traditional_max 97% none            hold_cash 96%   hold            default         no              not_yet         none
+  45   0               15              traditional_max 88% none            hold_cash 61%   hold            default         no              not_yet         none
+  50   0               15 97%          traditional_max 69% none            sweep_to_bonds 79% hold            default 99%     no 98%          not_yet         none
+  55   0               15 93%          traditional_max 44% none            sweep_to_bonds 98% hold            default 93%     no 93%          not_yet         none
+  60   0               15 69%          none 56%        none            sweep_to_bonds 99% hold            default 77%     no 69%          not_yet         none
+  62   0               0 52%           none 79%        none            sweep_to_bonds  hold            default 63%     yes 52%         now             none 99%
+  63   0               0 59%           none 77%        none            sweep_to_bonds 99% hold            default 50%     yes 59%         now             none 93%
+  64   0               0 73%           none 84%        none            sweep_to_bonds 97% hold            brokerage_first 51% yes 73%         now             none 90%
+  65   0               0               none            none            sweep_to_bonds 93% hold            default 53%     yes             now             none 84%
+  66   0               0               none            none            sweep_to_bonds 89% hold            default 61%     yes             now             none 84%
+  70   0               0               none            none            sweep_to_bonds 90% hold            default 63%     yes             now             none 85%
+  75   0               0               none            none            sweep_to_bonds 75% hold            default 56%     yes             now             none 68%
+  80   0               0               none            none            sweep_to_bonds 54% hold            brokerage_first 49% yes             now             none 54%
+  85   0               0               none            none            sweep_to_bonds 68% hold            brokerage_first 52% yes             now             none 66%
+  90   0               0               none            none            sweep_to_bonds 58% hold            brokerage_first 42% yes             now             none 58%
+  95   0               0               none            none            sweep_to_bonds 77% hold            brokerage_first 77% yes             now             none 77%
+
+Reading. The yearly agent defers 15% of pay pre-tax and 15% Roth (30% in all, inside the 402(g) limit),
+funds a traditional IRA to the limit from the bank, runs a standing conversion to the top of the 22%
+bracket while working, holds cash (no sweep), claims Social Security when it retires at the household's
+age (65) and switches the waterfall to taxable-then-pre-tax-then-Roth (brokerage_first) in retirement. It
+matches the contribution-waterfall heuristic on the train seeds (paired gap +0.00 [-0.00, +0.01]) with a
+slightly higher median estate. The quarterly agent instead defers 15% Roth and nothing pre-tax, funds the
+traditional IRA, sweeps surplus cash into the bond fund from its 50s, and claims at retirement; it beats the
+quarterly bar on mean (+0.22) but with a 2.5% ruin rate and a wide CI. Neither verdict is INTELLIGENT, and
+two of the five yearly seeds and one quarterly seed are well below the bar.
+
+Default. The factored space stays opt-in: on the same engine, seeds and protocol, factored PPO does not do
+better than flat PPO (pooled -0.66 vs -0.57; per-seed spread is wider) and neither beats its bar, while flat
+DQN is the only configuration whose pooled interval clears zero. The factored space's gains are
+interpretability (standing policies a planner recognizes, reported per year) and the adviser/spec
+vocabulary, not return; switching the default would also orphan the committed flat configs and reports.

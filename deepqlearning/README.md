@@ -112,8 +112,9 @@ stages one `(slot, value)` change or commits (`Discrete(37)`), at most `flatten_
 
 **Learning quality is open work.** The tests check that every algorithm trains end to end
 without diverging; none asserts that an algorithm learns a good policy, since the financial
-environment has no known optimal policy. Pooled over five pre-registered seeds, neither DQN nor
-PPO beats always maxing the pre-tax 401k (see the algorithm sweep below).
+environment has no known optimal policy. Pooled over five pre-registered seeds, flat DQN beats always
+maxing the pre-tax 401k by a hair (+0.19, t95 [+0.01, +0.38]) and partly by spending more; PPO, flat or
+factored, does not beat its bar (see the algorithm sweep below).
 
 ## 🎯 The financial objective — what "good" means
 
@@ -397,39 +398,50 @@ the bar, so it carries training-seed variance.
 
 ### Committed reports and the algorithm sweep (default preset)
 
-Every committed report was regenerated on the retirement-income world (Social Security, employer
-match, starting balances, economy-linked 401k growth, scenario overlays, after-tax bequest; see the
-fidelity notes above) with `--protocol-n-eval 200`. Seeds 0-4 were fixed before the sweep ran;
-`reports/algorithm_sweep.txt` lists every run and the pooled verdicts, and
-`reports/retirement_security/` (DQN) and `reports/retirement_security_ppo/` (PPO) hold the seed-0
-protocol report, the pooled report, and the policy-analysis artifacts. Reproduce one run with
+Every committed report was regenerated on the Plan 32 monthly engine (an env step runs twelve monthly
+model steps; the flat yearly env is bit-identical to driving the model with `step_year()`), with
+`--protocol-n-eval 200`. Seeds 0-4 were fixed before the sweeps ran. `reports/algorithm_sweep.txt` lists
+every run, the pooled verdicts and the comparison with the previous (annual-engine) sweep;
+`reports/retirement_security/` (flat DQN) and `reports/retirement_security_ppo/` (flat PPO) hold the
+seed-0 protocol report, the pooled report and the policy-analysis artifacts;
+`reports/factored_ppo_year/` and `reports/factored_ppo_quarter/` hold the same for PPO on the factored
+space, with the **learned policy vector by age** instead of the action heatmap, and
+`reports/factored_action_space.txt` summarizes them. Reproduce one run with
 
 ```bash
 python -m deepqlearning.train --env financial:basic --algo dqn --total-env-steps 200000 \
     --num-envs 8 --reward-preset retirement_security --protocol-eval --protocol-n-eval 200 --seed 0
 ```
 
-Train condition, mean return of the agent vs `always_max_401k` (33.50, the best policy in the bar),
-with the paired-gap 95% CI:
+Train condition, pooled over the five seeds: the paired gap of the agent's mean return to the best
+policy in the bar (flat bar: `always_max_401k`, 35.30; factored bar: `contribution_waterfall`, 35.31;
+quarterly factored bar 34.94), Student-t 95% interval over seeds:
 
-| Seed | DQN | PPO |
-|---|---|---|
-| 0 | 34.48, gap [-0.61, +2.27] | 33.50, gap [-0.00, +0.01] |
-| 1 | 33.20, gap [-0.37, -0.23] | 33.40, gap [-0.65, +0.23] |
-| 2 | 33.59, gap [+0.02, +0.18] — passes | 33.42, gap [-0.61, +0.24] |
-| 3 | 30.78, gap [-4.89, -0.76] | 33.44, gap [-0.07, -0.05] |
-| 4 | 33.49, gap [-0.03, -0.00] | 34.30, gap [+0.63, +0.98] — passes |
-| **Pooled (t95 over seeds)** | **-0.39 [-2.11, +1.33]: not intelligent** | **+0.11 [-0.36, +0.59]: not intelligent** |
+| Configuration | Pooled gap | Runs above the bar | Previous sweep (annual engine) |
+|---|---|---|---|
+| DQN, flat, yearly | **+0.19 [+0.01, +0.38]: passes** | 4/5 | -0.39 [-2.11, +1.33] |
+| PPO, flat, yearly | -0.57 [-1.37, +0.22] | 0/5 | +0.11 [-0.36, +0.59] |
+| PPO, factored, yearly | -0.66 [-1.56, +0.24] | 1/5 | — |
+| PPO, factored, quarterly | -0.79 [-2.65, +1.08] | 2/5 | — |
 
-One run per algorithm clears the paired per-run bar, and pooling over the pre-registered seeds says
-neither algorithm reliably beats always maxing the 401k. Most runs converge to, or near, that
-policy. Two runs that beat it on mean return did so partly by **spending more**: DQN seed 0 has the
-highest mean return but a 4% ruin rate and a median estate of $564k against always-max's $966k
-(`protocol_table.txt`). The objective rewards consumption, so that trade can be rational under it,
-but it is not the "save smarter" behavior the planner bar is about.
+The flat DQN sweep is the Plan 32 regression check: no regression against the committed reports (the
+absolute returns moved with the engine, e.g. the bar from 33.50 to 35.30, so the comparison is the gap
+to the bar). DQN's pooled interval now clears zero, but narrowly, and the winning runs again do it
+partly by **spending more**: seed 0 has a 0.5% ruin rate and a median estate of $850k against
+always-max's $1.07M (`protocol_table.txt`). Flat PPO lands just under the bar on every seed.
 
-An independent Stable-Baselines3 cross-check (`reports/sb3_cross_check/`, seed 0, 200k timesteps,
-no action masking, n=50) agrees: SB3 PPO 34.49 and SB3 DQN 34.17, both with no ruin, against
+**Factored space: not the default.** On the same engine, seeds and protocol, factored PPO scores like
+flat PPO (mean agent return over the seeds 34.64 vs 34.72; the best factored and flat heuristics are
+35.31 and 35.30) with a wider spread across seeds, and neither beats its bar, while flat DQN is the
+only configuration whose pooled interval clears zero. What the factored space buys is interpretability
+— the yearly agent's policy reads as "defer 15% pre-tax and 15% Roth, fund a traditional IRA, convert to
+the top of the 22% bracket while working, claim at retirement, draw taxable before pre-tax before Roth"
+(`reports/factored_ppo_year/policy_vector_by_age.txt`) — and the shared vocabulary with the adviser,
+not return. It stays opt-in (`--action-space factored`).
+
+An independent Stable-Baselines3 cross-check (`reports/sb3_cross_check/`, run on the annual engine before
+Plan 32 and not regenerated; seed 0, 200k timesteps,
+no action masking, n=50) found the same pattern then: SB3 PPO 34.49 and SB3 DQN 34.17, both with no ruin, against
 always-max's 34.66 on the same 50 seeds.
 
 ## 🏋️ Training-stack features

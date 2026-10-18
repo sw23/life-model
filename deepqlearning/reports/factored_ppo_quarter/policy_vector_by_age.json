@@ -1,0 +1,3102 @@
+{
+  "ages": [
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40,
+    41,
+    42,
+    43,
+    44,
+    45,
+    46,
+    47,
+    48,
+    49,
+    50,
+    51,
+    52,
+    53,
+    54,
+    55,
+    56,
+    57,
+    58,
+    59,
+    60,
+    61,
+    62,
+    63,
+    64,
+    65,
+    66,
+    67,
+    68,
+    69,
+    70,
+    71,
+    72,
+    73,
+    74,
+    75,
+    76,
+    77,
+    78,
+    79,
+    80,
+    81,
+    82,
+    83,
+    84,
+    85,
+    86,
+    87,
+    88,
+    89,
+    90,
+    91,
+    92,
+    93,
+    94,
+    95,
+    96
+  ],
+  "by_age": {
+    "25": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "15",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "traditional_max",
+        "share": 1.0
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "hold_cash",
+        "share": 1.0
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 1.0
+      },
+      "retire": {
+        "value": "no",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "not_yet",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 1.0
+      }
+    },
+    "26": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "15",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "traditional_max",
+        "share": 1.0
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "hold_cash",
+        "share": 1.0
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 1.0
+      },
+      "retire": {
+        "value": "no",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "not_yet",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 1.0
+      }
+    },
+    "27": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "15",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "traditional_max",
+        "share": 1.0
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "hold_cash",
+        "share": 1.0
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 1.0
+      },
+      "retire": {
+        "value": "no",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "not_yet",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 1.0
+      }
+    },
+    "28": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "15",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "traditional_max",
+        "share": 1.0
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "hold_cash",
+        "share": 1.0
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 1.0
+      },
+      "retire": {
+        "value": "no",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "not_yet",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 1.0
+      }
+    },
+    "29": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "15",
+        "share": 0.995
+      },
+      "ira_contribution": {
+        "value": "traditional_max",
+        "share": 0.995
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "hold_cash",
+        "share": 1.0
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 1.0
+      },
+      "retire": {
+        "value": "no",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "not_yet",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 1.0
+      }
+    },
+    "30": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "15",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "traditional_max",
+        "share": 1.0
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "hold_cash",
+        "share": 1.0
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 1.0
+      },
+      "retire": {
+        "value": "no",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "not_yet",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 1.0
+      }
+    },
+    "31": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "15",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "traditional_max",
+        "share": 1.0
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "hold_cash",
+        "share": 1.0
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 1.0
+      },
+      "retire": {
+        "value": "no",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "not_yet",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 1.0
+      }
+    },
+    "32": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "15",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "traditional_max",
+        "share": 1.0
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "hold_cash",
+        "share": 1.0
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 1.0
+      },
+      "retire": {
+        "value": "no",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "not_yet",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 1.0
+      }
+    },
+    "33": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "15",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "traditional_max",
+        "share": 1.0
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "hold_cash",
+        "share": 1.0
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 1.0
+      },
+      "retire": {
+        "value": "no",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "not_yet",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 1.0
+      }
+    },
+    "34": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "15",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "traditional_max",
+        "share": 1.0
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "hold_cash",
+        "share": 1.0
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 1.0
+      },
+      "retire": {
+        "value": "no",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "not_yet",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 1.0
+      }
+    },
+    "35": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "15",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "traditional_max",
+        "share": 1.0
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "hold_cash",
+        "share": 1.0
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 1.0
+      },
+      "retire": {
+        "value": "no",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "not_yet",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 1.0
+      }
+    },
+    "36": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "15",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "traditional_max",
+        "share": 1.0
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "hold_cash",
+        "share": 1.0
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 1.0
+      },
+      "retire": {
+        "value": "no",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "not_yet",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 1.0
+      }
+    },
+    "37": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "15",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "traditional_max",
+        "share": 1.0
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "hold_cash",
+        "share": 1.0
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 1.0
+      },
+      "retire": {
+        "value": "no",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "not_yet",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 1.0
+      }
+    },
+    "38": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "15",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "traditional_max",
+        "share": 1.0
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "hold_cash",
+        "share": 1.0
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 1.0
+      },
+      "retire": {
+        "value": "no",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "not_yet",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 1.0
+      }
+    },
+    "39": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "15",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "traditional_max",
+        "share": 0.985
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "hold_cash",
+        "share": 0.995
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 1.0
+      },
+      "retire": {
+        "value": "no",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "not_yet",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 1.0
+      }
+    },
+    "40": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "15",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "traditional_max",
+        "share": 0.974
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "hold_cash",
+        "share": 0.964
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 1.0
+      },
+      "retire": {
+        "value": "no",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "not_yet",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 1.0
+      }
+    },
+    "41": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "15",
+        "share": 0.995
+      },
+      "ira_contribution": {
+        "value": "traditional_max",
+        "share": 0.959
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "hold_cash",
+        "share": 0.923
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 1.0
+      },
+      "retire": {
+        "value": "no",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "not_yet",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 1.0
+      }
+    },
+    "42": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "15",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "traditional_max",
+        "share": 0.927
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "hold_cash",
+        "share": 0.87
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 1.0
+      },
+      "retire": {
+        "value": "no",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "not_yet",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 1.0
+      }
+    },
+    "43": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "15",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "traditional_max",
+        "share": 0.911
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "hold_cash",
+        "share": 0.786
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 1.0
+      },
+      "retire": {
+        "value": "no",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "not_yet",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 1.0
+      }
+    },
+    "44": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "15",
+        "share": 0.995
+      },
+      "ira_contribution": {
+        "value": "traditional_max",
+        "share": 0.864
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "hold_cash",
+        "share": 0.707
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 1.0
+      },
+      "retire": {
+        "value": "no",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "not_yet",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 1.0
+      }
+    },
+    "45": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "15",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "traditional_max",
+        "share": 0.878
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "hold_cash",
+        "share": 0.612
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 1.0
+      },
+      "retire": {
+        "value": "no",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "not_yet",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 1.0
+      }
+    },
+    "46": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "15",
+        "share": 0.995
+      },
+      "ira_contribution": {
+        "value": "traditional_max",
+        "share": 0.857
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "hold_cash",
+        "share": 0.503
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 1.0
+      },
+      "retire": {
+        "value": "no",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "not_yet",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 1.0
+      }
+    },
+    "47": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "15",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "traditional_max",
+        "share": 0.832
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "sweep_to_bonds",
+        "share": 0.576
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 1.0
+      },
+      "retire": {
+        "value": "no",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "not_yet",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 1.0
+      }
+    },
+    "48": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "15",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "traditional_max",
+        "share": 0.793
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "sweep_to_bonds",
+        "share": 0.679
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 1.0
+      },
+      "retire": {
+        "value": "no",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "not_yet",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 1.0
+      }
+    },
+    "49": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "15",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "traditional_max",
+        "share": 0.766
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "sweep_to_bonds",
+        "share": 0.717
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 0.984
+      },
+      "retire": {
+        "value": "no",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "not_yet",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 1.0
+      }
+    },
+    "50": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "15",
+        "share": 0.973
+      },
+      "ira_contribution": {
+        "value": "traditional_max",
+        "share": 0.687
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "sweep_to_bonds",
+        "share": 0.791
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 0.989
+      },
+      "retire": {
+        "value": "no",
+        "share": 0.978
+      },
+      "claim_social_security": {
+        "value": "not_yet",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 1.0
+      }
+    },
+    "51": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "15",
+        "share": 0.967
+      },
+      "ira_contribution": {
+        "value": "traditional_max",
+        "share": 0.633
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "sweep_to_bonds",
+        "share": 0.839
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 0.989
+      },
+      "retire": {
+        "value": "no",
+        "share": 0.967
+      },
+      "claim_social_security": {
+        "value": "not_yet",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 1.0
+      }
+    },
+    "52": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "15",
+        "share": 0.956
+      },
+      "ira_contribution": {
+        "value": "traditional_max",
+        "share": 0.583
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "sweep_to_bonds",
+        "share": 0.906
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 0.972
+      },
+      "retire": {
+        "value": "no",
+        "share": 0.956
+      },
+      "claim_social_security": {
+        "value": "not_yet",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 1.0
+      }
+    },
+    "53": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "15",
+        "share": 0.956
+      },
+      "ira_contribution": {
+        "value": "traditional_max",
+        "share": 0.572
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "sweep_to_bonds",
+        "share": 0.961
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 0.961
+      },
+      "retire": {
+        "value": "no",
+        "share": 0.956
+      },
+      "claim_social_security": {
+        "value": "not_yet",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 1.0
+      }
+    },
+    "54": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "15",
+        "share": 0.933
+      },
+      "ira_contribution": {
+        "value": "traditional_max",
+        "share": 0.517
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "sweep_to_bonds",
+        "share": 0.978
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 0.939
+      },
+      "retire": {
+        "value": "no",
+        "share": 0.933
+      },
+      "claim_social_security": {
+        "value": "not_yet",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 1.0
+      }
+    },
+    "55": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "15",
+        "share": 0.933
+      },
+      "ira_contribution": {
+        "value": "traditional_max",
+        "share": 0.439
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "sweep_to_bonds",
+        "share": 0.978
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 0.928
+      },
+      "retire": {
+        "value": "no",
+        "share": 0.933
+      },
+      "claim_social_security": {
+        "value": "not_yet",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 1.0
+      }
+    },
+    "56": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "15",
+        "share": 0.872
+      },
+      "ira_contribution": {
+        "value": "traditional_max",
+        "share": 0.417
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "sweep_to_bonds",
+        "share": 0.978
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 0.894
+      },
+      "retire": {
+        "value": "no",
+        "share": 0.872
+      },
+      "claim_social_security": {
+        "value": "not_yet",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 1.0
+      }
+    },
+    "57": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "15",
+        "share": 0.828
+      },
+      "ira_contribution": {
+        "value": "none",
+        "share": 0.406
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "sweep_to_bonds",
+        "share": 0.978
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 0.85
+      },
+      "retire": {
+        "value": "no",
+        "share": 0.828
+      },
+      "claim_social_security": {
+        "value": "not_yet",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 1.0
+      }
+    },
+    "58": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "15",
+        "share": 0.794
+      },
+      "ira_contribution": {
+        "value": "none",
+        "share": 0.511
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "sweep_to_bonds",
+        "share": 0.978
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 0.85
+      },
+      "retire": {
+        "value": "no",
+        "share": 0.8
+      },
+      "claim_social_security": {
+        "value": "not_yet",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 1.0
+      }
+    },
+    "59": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "15",
+        "share": 0.744
+      },
+      "ira_contribution": {
+        "value": "none",
+        "share": 0.54
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "sweep_to_bonds",
+        "share": 0.977
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 0.812
+      },
+      "retire": {
+        "value": "no",
+        "share": 0.744
+      },
+      "claim_social_security": {
+        "value": "not_yet",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 1.0
+      }
+    },
+    "60": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "15",
+        "share": 0.688
+      },
+      "ira_contribution": {
+        "value": "none",
+        "share": 0.557
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "sweep_to_bonds",
+        "share": 0.989
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 0.767
+      },
+      "retire": {
+        "value": "no",
+        "share": 0.688
+      },
+      "claim_social_security": {
+        "value": "not_yet",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 1.0
+      }
+    },
+    "61": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "15",
+        "share": 0.601
+      },
+      "ira_contribution": {
+        "value": "none",
+        "share": 0.601
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "sweep_to_bonds",
+        "share": 1.0
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 0.694
+      },
+      "retire": {
+        "value": "no",
+        "share": 0.618
+      },
+      "claim_social_security": {
+        "value": "not_yet",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 1.0
+      }
+    },
+    "62": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "0",
+        "share": 0.524
+      },
+      "ira_contribution": {
+        "value": "none",
+        "share": 0.793
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "sweep_to_bonds",
+        "share": 1.0
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 0.634
+      },
+      "retire": {
+        "value": "yes",
+        "share": 0.524
+      },
+      "claim_social_security": {
+        "value": "now",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 0.988
+      }
+    },
+    "63": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "0",
+        "share": 0.591
+      },
+      "ira_contribution": {
+        "value": "none",
+        "share": 0.774
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "sweep_to_bonds",
+        "share": 0.994
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 0.5
+      },
+      "retire": {
+        "value": "yes",
+        "share": 0.591
+      },
+      "claim_social_security": {
+        "value": "now",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 0.927
+      }
+    },
+    "64": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "0",
+        "share": 0.726
+      },
+      "ira_contribution": {
+        "value": "none",
+        "share": 0.835
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "sweep_to_bonds",
+        "share": 0.97
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "brokerage_first",
+        "share": 0.512
+      },
+      "retire": {
+        "value": "yes",
+        "share": 0.726
+      },
+      "claim_social_security": {
+        "value": "now",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 0.902
+      }
+    },
+    "65": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "sweep_to_bonds",
+        "share": 0.933
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 0.53
+      },
+      "retire": {
+        "value": "yes",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "now",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 0.841
+      }
+    },
+    "66": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "sweep_to_bonds",
+        "share": 0.892
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 0.614
+      },
+      "retire": {
+        "value": "yes",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "now",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 0.842
+      }
+    },
+    "67": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "sweep_to_bonds",
+        "share": 0.901
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 0.612
+      },
+      "retire": {
+        "value": "yes",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "now",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 0.836
+      }
+    },
+    "68": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "sweep_to_bonds",
+        "share": 0.917
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 0.639
+      },
+      "retire": {
+        "value": "yes",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "now",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 0.84
+      }
+    },
+    "69": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "sweep_to_bonds",
+        "share": 0.906
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 0.655
+      },
+      "retire": {
+        "value": "yes",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "now",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 0.892
+      }
+    },
+    "70": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "sweep_to_bonds",
+        "share": 0.897
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 0.632
+      },
+      "retire": {
+        "value": "yes",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "now",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 0.853
+      }
+    },
+    "71": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "sweep_to_bonds",
+        "share": 0.83
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 0.607
+      },
+      "retire": {
+        "value": "yes",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "now",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 0.793
+      }
+    },
+    "72": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "sweep_to_bonds",
+        "share": 0.806
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 0.659
+      },
+      "retire": {
+        "value": "yes",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "now",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 0.806
+      }
+    },
+    "73": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "sweep_to_bonds",
+        "share": 0.81
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 0.603
+      },
+      "retire": {
+        "value": "yes",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "now",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 0.769
+      }
+    },
+    "74": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "sweep_to_bonds",
+        "share": 0.775
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 0.583
+      },
+      "retire": {
+        "value": "yes",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "now",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 0.75
+      }
+    },
+    "75": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "sweep_to_bonds",
+        "share": 0.752
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 0.564
+      },
+      "retire": {
+        "value": "yes",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "now",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 0.684
+      }
+    },
+    "76": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "sweep_to_bonds",
+        "share": 0.686
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 0.514
+      },
+      "retire": {
+        "value": "yes",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "now",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 0.629
+      }
+    },
+    "77": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "sweep_to_bonds",
+        "share": 0.6
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 0.51
+      },
+      "retire": {
+        "value": "yes",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "now",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 0.55
+      }
+    },
+    "78": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "sweep_to_bonds",
+        "share": 0.521
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 0.511
+      },
+      "retire": {
+        "value": "yes",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "now",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 0.511
+      }
+    },
+    "79": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "sweep_to_bonds",
+        "share": 0.552
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "brokerage_first",
+        "share": 0.483
+      },
+      "retire": {
+        "value": "yes",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "now",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 0.552
+      }
+    },
+    "80": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "sweep_to_bonds",
+        "share": 0.538
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "brokerage_first",
+        "share": 0.487
+      },
+      "retire": {
+        "value": "yes",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "now",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 0.538
+      }
+    },
+    "81": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "sweep_to_bonds",
+        "share": 0.579
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "brokerage_first",
+        "share": 0.461
+      },
+      "retire": {
+        "value": "yes",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "now",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 0.566
+      }
+    },
+    "82": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "sweep_to_bonds",
+        "share": 0.681
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "brokerage_first",
+        "share": 0.507
+      },
+      "retire": {
+        "value": "yes",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "now",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 0.667
+      }
+    },
+    "83": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "sweep_to_bonds",
+        "share": 0.692
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "brokerage_first",
+        "share": 0.446
+      },
+      "retire": {
+        "value": "yes",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "now",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 0.677
+      }
+    },
+    "84": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "sweep_to_bonds",
+        "share": 0.651
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "brokerage_first",
+        "share": 0.444
+      },
+      "retire": {
+        "value": "yes",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "now",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 0.635
+      }
+    },
+    "85": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "sweep_to_bonds",
+        "share": 0.679
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "brokerage_first",
+        "share": 0.518
+      },
+      "retire": {
+        "value": "yes",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "now",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 0.661
+      }
+    },
+    "86": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "sweep_to_bonds",
+        "share": 0.692
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "brokerage_first",
+        "share": 0.462
+      },
+      "retire": {
+        "value": "yes",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "now",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 0.692
+      }
+    },
+    "87": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "sweep_to_bonds",
+        "share": 0.673
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 0.429
+      },
+      "retire": {
+        "value": "yes",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "now",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 0.673
+      }
+    },
+    "88": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "sweep_to_bonds",
+        "share": 0.646
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 0.458
+      },
+      "retire": {
+        "value": "yes",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "now",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 0.646
+      }
+    },
+    "89": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "sweep_to_bonds",
+        "share": 0.609
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "brokerage_first",
+        "share": 0.435
+      },
+      "retire": {
+        "value": "yes",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "now",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 0.609
+      }
+    },
+    "90": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "sweep_to_bonds",
+        "share": 0.581
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "brokerage_first",
+        "share": 0.419
+      },
+      "retire": {
+        "value": "yes",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "now",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 0.581
+      }
+    },
+    "91": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "sweep_to_bonds",
+        "share": 0.615
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "default",
+        "share": 0.462
+      },
+      "retire": {
+        "value": "yes",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "now",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 0.654
+      }
+    },
+    "92": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "sweep_to_bonds",
+        "share": 0.571
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "brokerage_first",
+        "share": 0.571
+      },
+      "retire": {
+        "value": "yes",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "now",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 0.571
+      }
+    },
+    "93": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "sweep_to_bonds",
+        "share": 0.75
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "brokerage_first",
+        "share": 0.75
+      },
+      "retire": {
+        "value": "yes",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "now",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 0.75
+      }
+    },
+    "94": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "sweep_to_bonds",
+        "share": 0.75
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "brokerage_first",
+        "share": 0.75
+      },
+      "retire": {
+        "value": "yes",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "now",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 0.75
+      }
+    },
+    "95": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "sweep_to_bonds",
+        "share": 0.769
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "brokerage_first",
+        "share": 0.769
+      },
+      "retire": {
+        "value": "yes",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "now",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 0.769
+      }
+    },
+    "96": {
+      "pretax_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "roth_401k_rate": {
+        "value": "0",
+        "share": 1.0
+      },
+      "ira_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "hsa_contribution": {
+        "value": "none",
+        "share": 1.0
+      },
+      "sweep_policy": {
+        "value": "sweep_to_bonds",
+        "share": 1.0
+      },
+      "spending_adjust": {
+        "value": "hold",
+        "share": 1.0
+      },
+      "withdrawal_order": {
+        "value": "brokerage_first",
+        "share": 1.0
+      },
+      "retire": {
+        "value": "yes",
+        "share": 1.0
+      },
+      "claim_social_security": {
+        "value": "now",
+        "share": 1.0
+      },
+      "roth_conversion": {
+        "value": "none",
+        "share": 1.0
+      }
+    }
+  }
+}
