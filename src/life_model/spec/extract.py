@@ -7,8 +7,9 @@
 
 Every field is read from agent state (balances, rates, overrides) as it is *now*, so extracting a
 freshly built model reproduces its spec (``dumps(spec_from_model(build_model(x))) ==
-dumps(canonical(x))`` for the shipped examples) and extracting after ``run()`` gives the end
-state. It also works on models constructed directly in Python, which is how existing code migrates
+dumps(canonical(x))`` for the shipped examples), and extracting after some steps gives the current
+state as a fresh start: ``meta.start_year`` is the next year to simulate (ages and balances are the
+current ones) and pending events are re-timed to their remaining years. It also works on models constructed directly in Python, which is how existing code migrates
 to specs.
 
 What cannot be read from agents comes from small provenance records the builder leaves on the
@@ -60,7 +61,13 @@ class _Extractor:
         self.config = model.config
         household = getattr(model, "household", None)
         self.source_meta: s.Meta | None = household.spec.meta if household is not None else None
-        self.build_time = list(getattr(model, "household_build_time_events", []) or [])
+        # After the model has stepped, the spec describes the current state as a fresh start: the
+        # start year is the next year to simulate, and the build-time events are already part of the
+        # people's state (fixed death age, claiming age).
+        self.stepped = bool(model.simulated_years)
+        self.start = model.year
+        self.build_time = [] if self.stepped else list(getattr(model, "household_build_time_events", []) or [])
+        self.spec_built = household is not None
         self.person_ids: dict[int, str] = {}
         self.item_ids: dict[int, str] = {}
 
@@ -124,8 +131,8 @@ class _Extractor:
             name=src.name if src is not None else "household",
             description=src.description if src is not None else None,
             as_of=src.as_of if src is not None else None,
-            start_year=self.model.start_year,
-            end_year=self.model.end_year,
+            start_year=self.start,
+            end_year=max(self.model.end_year, self.start),
             seed=src.seed if src is not None else None,
             scenario=self.config.scenario,
             default_state=src.default_state if src is not None else None,
@@ -265,7 +272,9 @@ class _Extractor:
                     type=bank.type,
                     balance=bank.balance,
                     interest_pct=_growth(bank._interest_rate_override),
-                    primary=index == 0 and len(banks) > 1,
+                    primary=getattr(bank, "spec_primary", False)
+                    if self.spec_built
+                    else (index == 0 and len(banks) > 1),
                 )
             )
         for account in person.all_retirement_accounts:
@@ -287,11 +296,7 @@ class _Extractor:
             lots = account.lots
             if not lots:
                 balance, spec_lots = None, None
-            elif (
-                len(lots) == 1
-                and lots[0].value == lots[0].cost_basis
-                and lots[0].acquired_year == self.model.start_year
-            ):
+            elif len(lots) == 1 and lots[0].value == lots[0].cost_basis and lots[0].acquired_year == self.start:
                 balance, spec_lots = lots[0].value, None
             else:
                 balance = None
@@ -502,7 +507,7 @@ class _Extractor:
 
     def housing(self, person) -> list:
         out: list = []
-        start = self.model.start_year
+        start = self.start
         for home in person.homes:
             mortgage = None
             if home.mortgage is not None:
@@ -636,7 +641,7 @@ class _Extractor:
                 donation_type=d.donation_type.name.lower(),
                 tax_deductible=d.tax_deductible,
                 frequency_years=d.frequency_years,
-                start_year=_none_if(d.start_year, self.model.start_year),
+                start_year=d.start_year if d.start_year > self.start else None,
                 end_year=_none_if(d.end_year, self.model.end_year),
             )
             for d in person.donations
@@ -670,17 +675,39 @@ class _Extractor:
         return s.Relationships(marriages=marriages)
 
     def pending_sources(self) -> list:
+        """The spec entries behind the not-yet-fired ``LifeEvent`` objects.
+
+        Before the first step they are returned as written. Afterwards an event is re-timed to its
+        remaining years (``at: {year}``, and ``until`` for a recurring expense), because its anchors
+        or earlier years may already have fired.
+        """
         from ..lifeevents import LifeEvents
 
-        sources, seen = [], set()
+        years: dict[int, list[int]] = {}
+        sources: list = []
         for agent in self.model.agents:
             if isinstance(agent, LifeEvents):
                 for life_event in agent.life_events:
                     source = getattr(life_event, "spec_source", None)
-                    if source is not None and id(source) not in seen:
-                        seen.add(id(source))
+                    if source is None:
+                        continue
+                    if id(source) not in years:
+                        years[id(source)] = []
                         sources.append(source)
-        return sources
+                    years[id(source)].append(life_event.year)
+        if not self.stepped:
+            return sources
+        retimed = []
+        for source in sources:
+            pending = years[id(source)]
+            if isinstance(source, s.Marriage):
+                retimed.append(source.model_copy(update={"year": min(pending)}))
+                continue
+            update: dict[str, Any] = {"at": s.At(year=min(pending))}
+            if isinstance(source, s.RecurringExpenseEvent):
+                update["until"] = s.At(year=max(pending))
+            retimed.append(source.model_copy(update=update))
+        return retimed
 
     def events(self) -> list:
         events = [source for source in self.pending_sources() if not isinstance(source, s.Marriage)]

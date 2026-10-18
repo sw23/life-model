@@ -255,20 +255,24 @@ def create_model(
     meta = spec.meta
     if config is None:
         config = FinancialConfig()
-    scenario = meta.scenario if apply_economy else None
-    model = model_cls(
+    if apply_economy:
+        # Applied to the config *before* the model exists: the EconomyModel captures the config's
+        # economy section (and caches the first year's rates) at construction.
+        if meta.scenario is not None:
+            from ..config.scenarios import get_scenario
+
+            config.apply_scenario(meta.scenario, get_scenario(meta.scenario))
+        overrides = economy_overrides(spec.economy)
+        if overrides:
+            # Keep the scenario name: the economy block refines the scenario rather than replacing it.
+            config.apply_scenario(cast(str, config.scenario), {"economy": overrides})
+    return model_cls(
         end_year=meta.end_year,
         start_year=meta.start_year,
         seed=meta.seed if seed is None else seed,
         config=config,
-        scenario=scenario,
         collect_data=collect_data,
     )
-    overrides = economy_overrides(spec.economy) if apply_economy else {}
-    if overrides:
-        # Keep the scenario name: the economy block refines the scenario rather than replacing it.
-        model.config.apply_scenario(cast(str, model.config.scenario), {"economy": overrides})
-    return model
 
 
 def build_household(
@@ -355,11 +359,15 @@ class _Builder:
         self.built.items[key] = agent
         if getattr(item, "id", None) is not None:
             agent.spec_id = item.id
+        if getattr(item, "primary", False):
+            agent.spec_primary = True  # provenance for the extractor
 
     def person(self, pid: str):
         return self.built.people[pid]
 
     def job_agent(self, person_spec: s.Person, job_id: str | None):
+        if job_id is None:
+            raise ValueError(f"{person_spec.id}: a 401k needs a job id (standalone plans are Plan 27 D3)")
         for index, job in enumerate(person_spec.jobs):
             if job.id == job_id:
                 return self.built.items[job.id or f"{person_spec.id}.jobs[{index}]"]

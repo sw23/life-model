@@ -133,18 +133,26 @@ def not_yet_supported_findings(spec: s.HouseholdSpec) -> list[Finding]:
                         "not_yet_supported",
                     )
                 )
-    for p_index, person in enumerate(spec.people):
-        for a_index, account in enumerate(person.accounts):
-            if isinstance(account, s.Job401k) and account.job is None:
-                findings.append(
-                    Finding(
-                        ERROR,
-                        f"people[{p_index}].accounts[{a_index}].job",
-                        "A 401k without a job (an old-employer plan) is not yet supported (Plan 27 D3).",
-                        "Reference one of the person's jobs, or roll it into a traditional_ira for now.",
-                        "not_yet_supported",
-                    )
+    located = [
+        (f"people[{p_index}].accounts[{a_index}]", account)
+        for p_index, person in enumerate(spec.people)
+        for a_index, account in enumerate(person.accounts)
+    ] + [
+        (f"events[{e_index}].account", e.account)
+        for e_index, e in enumerate(spec.events)
+        if isinstance(e, s.AddAccountEvent)
+    ]
+    for account_path, account in located:
+        if isinstance(account, s.Job401k) and account.job is None:
+            findings.append(
+                Finding(
+                    ERROR,
+                    f"{account_path}.job",
+                    "A 401k without a job (an old-employer plan) is not yet supported (Plan 27 D3).",
+                    "Reference one of the person's jobs, or roll it into a traditional_ira for now.",
+                    "not_yet_supported",
                 )
+            )
     return findings
 
 
@@ -385,6 +393,9 @@ class _SpecChecker:
             for j, account in enumerate(p.accounts):
                 apath = f"{path}.accounts[{j}]"
                 self.check_account_refs(account, apath, job_ids, child_ids)
+            for e_index, event in enumerate(self.spec.events):
+                if isinstance(event, s.AddAccountEvent) and event.person == p.id:
+                    self.check_account_refs(event.account, f"events[{e_index}].account", job_ids, child_ids)
             for j, item in enumerate(p.housing):
                 if isinstance(item, s.Rental) and "rent_growth_pct" not in item.model_fields_set:
                     self.warn(
@@ -545,12 +556,16 @@ class _SpecChecker:
                     self.error(f"{path}.job", f"unknown job {event.job!r}", code="unknown_reference")
                 if event.job is None and event.new_job is None:
                     self.error(path, "change_job needs 'job' (to change or stop) and/or 'new_job'")
+
+            def is_kind(item_id, model_type) -> bool:
+                return isinstance(item_ids.get(item_id, (None, None, None))[2], model_type)
+
             if isinstance(event, s.MoveEvent):
-                if event.end_rental is not None and item_ids.get(event.end_rental, (None, None))[1] != "housing":
+                if event.end_rental is not None and not is_kind(event.end_rental, s.Rental):
                     self.error(f"{path}.end_rental", f"unknown rental {event.end_rental!r}", code="unknown_reference")
-                if event.sell_home is not None and item_ids.get(event.sell_home, (None, None))[1] != "housing":
+                if event.sell_home is not None and not is_kind(event.sell_home, s.Home):
                     self.error(f"{path}.sell_home", f"unknown home {event.sell_home!r}", code="unknown_reference")
-            if isinstance(event, s.SellHomeEvent) and item_ids.get(event.home, (None, None))[1] != "housing":
+            if isinstance(event, s.SellHomeEvent) and not is_kind(event.home, s.Home):
                 self.error(f"{path}.home", f"unknown home {event.home!r}", code="unknown_reference")
             if isinstance(event, s.ContributeEvent):
                 target = item_ids.get(event.account)
@@ -570,9 +585,12 @@ class _SpecChecker:
                 person = self.people.get(event.person)
                 if person is not None and person.social_security is None:
                     self.error(path, f"{person.name} has no social_security to claim.", code="unknown_reference")
-                age = event.at.age
+                from .events import threshold_age
+
+                own_age = event.at.person is None or event.at.person == event.person
+                age = event.at.age if own_age else None
                 if age is None and year is not None and person is not None:
-                    age = person.age + (year - self.year_at_age(person, person.age))
+                    age = threshold_age(person.age, self.start, year)
                 if age is not None and age < min_claim:
                     self.error(
                         f"{path}.at",

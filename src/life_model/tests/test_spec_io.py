@@ -170,7 +170,18 @@ class TestExamples(unittest.TestCase):
                 self.assertEqual(model.year, 2036)
                 after = spec_from_model(model)
                 self.assertIsInstance(after, HouseholdSpec)
-                self.assertEqual(after.meta.start_year, 2026)
+                self.assertEqual(after.meta.start_year, 2036)
+
+    def test_extract_mid_run_is_a_valid_fresh_start(self):
+        for name in RUNNABLE_EXAMPLES:
+            with self.subTest(example=name):
+                model = build_model(load_example(name))
+                for _ in range(5):
+                    model.step()
+                after = spec_from_model(model)
+                self.assertEqual(after.meta.start_year, 2031)
+                self.assertEqual([f for f in validate_spec(after) if f.level == "error"], [])
+                build_model(after, check=False)
 
     def test_married_homeowners_meets_the_acceptance_household(self):
         spec = load_example("married_homeowners")

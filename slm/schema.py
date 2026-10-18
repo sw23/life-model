@@ -54,7 +54,7 @@ class HouseholdProfile(StrictModel):
     person_retirement_age: int = Field(ge=0)
     person_gender: str
     initial_salary: float = Field(ge=0)
-    initial_bank_balance: float
+    initial_bank_balance: float = Field(ge=0)
     initial_spending: float = Field(ge=0)
     economy_scenario: str | None = None
     # Household composition. ``children_ages`` are the ages (at the start year) of modeled child

@@ -109,7 +109,7 @@ class TestSpecErrors(unittest.TestCase):
             for name, info in model.model_fields.items()
             if isinstance(info.json_schema_extra, dict) and NYS_KEY in info.json_schema_extra
         ]
-        self.assertGreater(len(marked), 30)
+        self.assertTrue(marked)  # shrinks as later plans flip fields on
         bank = spec_of(minimal()).people[0].accounts[0]
         flagged = bank.model_copy(update={"compounding": "monthly"})
         spec = spec_of(minimal())
@@ -135,6 +135,34 @@ class TestSpecErrors(unittest.TestCase):
         found = codes(validate_spec(data), ERROR)
         self.assertEqual(found.count("duplicate_id"), 1)
         self.assertEqual(found.count("unknown_reference"), 6)
+
+    def test_event_targets_must_have_the_right_kind(self):
+        data = minimal()
+        data["people"][0]["housing"] = [{"kind": "rental", "id": "apt", "rent_monthly": 900, "rent_growth_pct": 3}]
+        data["events"] = [{"at": 2027, "person": "alex", "action": "sell_home", "home": "apt"}]
+        self.assertEqual(codes(validate_spec(data)), ["unknown_reference"])
+
+    def test_event_added_accounts_are_checked(self):
+        data = minimal()
+        data["events"] = [
+            {"at": 2027, "person": "alex", "action": "add_account", "account": {"kind": "401k"}},
+            {"at": 2027, "person": "alex", "action": "add_account", "account": {"kind": "401k", "job": "nope"}},
+            {"at": 2027, "person": "alex", "action": "add_account", "account": {"kind": "529", "beneficiary": "kid"}},
+        ]
+        self.assertEqual(
+            sorted(codes(validate_spec(data))), ["not_yet_supported", "unknown_reference", "unknown_reference"]
+        )
+
+    def test_claim_age_relative_to_another_person(self):
+        data = _couple()
+        data["people"][0]["age"] = 60
+        data["people"][1]["age"] = 65
+        data["people"][0]["social_security"] = {"claim_age": 67}
+        data["meta"]["end_year"] = 2040
+        data["events"] = [
+            {"at": {"age": 65, "person": "bo"}, "person": "alex", "action": "claim_social_security"},
+        ]
+        self.assertIn("ss_claim_too_early", codes(validate_spec(data)))
 
     def test_relative_cycle(self):
         data = minimal()

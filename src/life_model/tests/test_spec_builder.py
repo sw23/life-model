@@ -126,6 +126,12 @@ class TestFieldMapping(unittest.TestCase):
         self.assertEqual(model.config.scenario, "recession")
         self.assertEqual(model.config.economy.inflation, 4.5)
         self.assertEqual(model.config.economy.stochastic.equity_vol, 20)
+        # The simulation's economy (not just the config) runs on the overrides.
+        self.assertEqual(model.economy.inflation(2026), 4.5)
+        fixed = minimal()
+        fixed["economy"] = {"mode": "fixed", "equity_return_pct": 1.5, "inflation_pct": 9}
+        economy = build(fixed).model.economy
+        self.assertEqual((economy.rate("equity_return", 2026), economy.inflation(2027)), (1.5, 9))
         a = LifeModel(seed=5).random.random()
         self.assertEqual(build(minimal() | {"meta": data["meta"]}).model.random.random(), a)
         self.assertEqual(build(data, seed=9).model.random.random(), LifeModel(seed=9).random.random())
@@ -458,11 +464,32 @@ class TestEventActions(unittest.TestCase):
         ]
         built = build(data)
         alex = built.people["alex"]
-        self.assertEqual(alex.social_security.withdrawal_start_age, 70)
+        self.assertEqual(alex.social_security.withdrawal_start_age, 70)  # an age is the engine's age
         self.assertEqual(alex.mortality_mode, MortalityMode.FIXED_AGE)
-        # The inverse of get_year_at_age: the age whose get_year_at_age is 2060.
-        self.assertEqual(alex.get_year_at_age(alex.death_age), 2060)
         self.assertIsNone(built.life_events)
+        # A year takes effect in that year: the person is alive through 2059 and dies in 2060.
+        model = built.model
+        while model.year < 2060:
+            model.step()
+        self.assertFalse(alex.is_deceased)
+        model.step()
+        self.assertTrue(alex.is_deceased)
+
+    def test_claim_by_year_starts_benefits_that_year(self):
+        data = minimal(retirement_age=62, jobs=[])
+        data["people"][0]["age"] = 60
+        data["people"][0]["social_security"] = {
+            "claim_age": 67,
+            "earnings_history": {y: 60000 for y in range(1990, 2026)},
+        }
+        data["events"] = [{"at": 2029, "person": "alex", "action": "claim_social_security"}]
+        model = build(data).model
+        incomes = {}
+        for _ in range(5):
+            year = model.year
+            model.step()
+            incomes[year] = model.household.people["alex"].stat_ss_income
+        self.assertEqual([y for y, v in incomes.items() if v > 0], [2029, 2030])
 
 
 if __name__ == "__main__":
