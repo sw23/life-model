@@ -39,18 +39,20 @@ AGENT_ID = "rl_agent"
 #: Social Security (only artificial test households with start ages near 119 reach that).
 FIRST_BEND_POINT_YEAR = 1979
 
-#: Env config keys that describe the household's *construction* (read by :func:`household_spec`).
+#: The ``FinancialLifeEnv`` defaults of the env config keys that describe the household's
+#: *construction* (read by :func:`household_spec`; a test keeps them equal to the env's defaults).
 #: The episode's policy knobs (retirement spending ratio, savings boost, employer match, bequest tax
 #: rate) are applied by the environment itself and are not part of the spec.
-SPEC_ENV_KEYS = (
-    "start_year",
-    "person_max_age",
-    "account_growth",
-    "spending_growth",
-    "salary_growth",
-    "social_security",
-    "career_start_age",
-)
+SPEC_ENV_DEFAULTS: dict[str, Any] = {
+    "start_year": 2025,
+    "person_max_age": 119,
+    "account_growth": None,
+    "spending_growth": None,
+    "salary_growth": None,
+    "social_security": True,
+    "career_start_age": 22,
+}
+SPEC_ENV_KEYS = tuple(SPEC_ENV_DEFAULTS)
 
 #: Retirement savings as a multiple of salary by age: the planner benchmark the starting balances
 #: are calibrated to (linear between knots, 0 at the start of a career, flat after 67).
@@ -276,7 +278,7 @@ def _growth(value: float | None) -> float | str:
 
 
 def household_spec(
-    household: dict[str, Any], env_config: dict[str, Any], *, config: FinancialConfig | None = None
+    household: dict[str, Any], env_config: dict[str, Any] | None = None, *, config: FinancialConfig | None = None
 ) -> HouseholdSpec:
     """The ``HouseholdSpec`` of one RL episode household.
 
@@ -284,7 +286,8 @@ def household_spec(
     account, a job with a 401k, a brokerage account, a traditional and a Roth IRA and an HSA, plus
     the optional children, healthcare costs and Social Security. ``household`` holds the episode's
     resolved household values (``person_start_age``, ``initial_salary``, ...); ``env_config`` the
-    env-level construction settings (:data:`SPEC_ENV_KEYS`); ``config`` the financial config used
+    env-level construction settings (:data:`SPEC_ENV_KEYS`, defaulting to the env's defaults);
+    ``config`` the financial config used
     to clip the Social Security claiming age (the packaged defaults when None).
 
     Social Security uses a synthesized earnings record (``assumed_career_start_age``): a flat real
@@ -292,6 +295,7 @@ def household_spec(
     The named economy scenario is recorded in ``meta.scenario``; the environment applies it itself
     (as a stochastic overlay), so it builds with ``apply_economy=False``.
     """
+    env_config = {**SPEC_ENV_DEFAULTS, **(env_config or {})}
     start_year = int(env_config["start_year"])
     start_age = int(household["person_start_age"])
     gender = household["person_gender"]

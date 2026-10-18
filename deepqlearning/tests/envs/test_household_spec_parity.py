@@ -22,7 +22,13 @@ import numpy as np
 from deepqlearning.envs.financial import environment
 from deepqlearning.envs.financial.actions import ActionType, decode_flat_action
 from deepqlearning.envs.financial.environment import FinancialLifeEnv, FinancialLifeEnvGenerator
-from deepqlearning.envs.financial.scenarios import AGENT_ID, HOUSEHOLD_SCENARIOS, EpisodeSampler, household_spec
+from deepqlearning.envs.financial.scenarios import (
+    AGENT_ID,
+    HOUSEHOLD_SCENARIOS,
+    SPEC_ENV_DEFAULTS,
+    EpisodeSampler,
+    household_spec,
+)
 from life_model.account.bank import BankAccount
 from life_model.account.brokerage import BrokerageAccount
 from life_model.account.hsa import HealthSavingsAccount, HSAType
@@ -229,6 +235,10 @@ class TestHouseholdSpecParity(unittest.TestCase):
                     self.assertEqual(validate_spec(sampler.sample_spec(rng, env_config)), [])
             point = household_spec({**env_config, **sampler.point_household()}, env_config)
             self.assertEqual(validate_spec(point), [])
+
+    def test_spec_env_defaults_match_the_environment(self):
+        env_config = FinancialLifeEnv().config
+        self.assertEqual({key: env_config[key] for key in SPEC_ENV_DEFAULTS}, SPEC_ENV_DEFAULTS)
 
     def test_sample_spec_matches_sample(self):
         env_config = FinancialLifeEnv().config

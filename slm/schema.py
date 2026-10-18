@@ -20,11 +20,14 @@ Every rationale figure is a copy of a number in ``scored_alternatives``, so fait
 established at data-generation time, by construction.
 """
 
-from typing import Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import Field
 
 from life_model.config.models import StrictModel
+
+if TYPE_CHECKING:
+    from life_model.spec import HouseholdSpec
 
 SCHEMA_VERSION = 2
 
@@ -37,7 +40,14 @@ class ChatMessage(StrictModel):
 
 
 class HouseholdProfile(StrictModel):
-    """Structured household state at the decision point (mirrors the RL episode household)."""
+    """Structured household state at the decision point: the LM-facing subset of a ``HouseholdSpec``.
+
+    The household composition (ages, salary, spending, balances, children, healthcare, Social
+    Security) is a projection of the episode's :class:`life_model.spec.HouseholdSpec`
+    (:meth:`from_household_spec` / :meth:`to_household_spec`). The plan context the adviser reasons
+    about but core cannot express yet (the scenario label, the employer match offer and the
+    retirement spending ratio, all applied by the RL environment) travels alongside it.
+    """
 
     scenario: str
     person_start_age: int = Field(ge=0)
@@ -63,6 +73,89 @@ class HouseholdProfile(StrictModel):
     initial_401k_pretax: float = Field(default=0.0, ge=0)
     initial_401k_roth: float = Field(default=0.0, ge=0)
     initial_brokerage: float = Field(default=0.0, ge=0)
+
+    def to_household(self) -> dict[str, Any]:
+        """The RL environment household dict (``FinancialLifeEnv`` config keys) for this profile."""
+        from life_model.people.person import GenderAtBirth
+
+        household: dict[str, Any] = {
+            "person_start_age": self.person_start_age,
+            "person_retirement_age": self.person_retirement_age,
+            "person_gender": GenderAtBirth[self.person_gender.upper()],
+            "initial_salary": self.initial_salary,
+            "initial_bank_balance": self.initial_bank_balance,
+            "initial_spending": self.initial_spending,
+            "children_ages": list(self.children_ages),
+            "models_healthcare": self.models_healthcare,
+            "ss_claim_age": self.ss_claim_age,
+            "retirement_spending_ratio": self.retirement_spending_ratio,
+            "employer_match_rate": self.employer_match_rate,
+            "employer_match_cap": self.employer_match_cap,
+            "initial_401k_pretax": self.initial_401k_pretax,
+            "initial_401k_roth": self.initial_401k_roth,
+            "initial_brokerage": self.initial_brokerage,
+        }
+        if self.economy_scenario is not None:
+            household["economy_scenario"] = self.economy_scenario
+        return household
+
+    def to_household_spec(self) -> "HouseholdSpec":
+        """The profile's household as a ``HouseholdSpec`` (the RL episode household it describes).
+
+        ``ss_claim_age=None`` (Social Security not modeled) builds a spec without Social Security.
+        """
+        from deepqlearning.envs.financial.scenarios import household_spec
+
+        env_config: dict[str, Any] = {"household_scenario": self.scenario}
+        if self.ss_claim_age is None:
+            env_config["social_security"] = False
+        return household_spec(self.to_household(), env_config)
+
+    @classmethod
+    def from_household_spec(
+        cls,
+        spec: "HouseholdSpec",
+        *,
+        scenario: str | None = None,
+        retirement_spending_ratio: float = 1.0,
+        employer_match_rate: float = 0.0,
+        employer_match_cap: float = 0.0,
+    ) -> "HouseholdProfile":
+        """Project a single-person ``HouseholdSpec`` onto the adviser's profile.
+
+        Reads the person's age, retirement age, gender, first job's salary, spending, first bank
+        account, 401k and brokerage balances, children (ages at the start year), healthcare flag and
+        Social Security claiming age, and ``meta.scenario`` as the economic outlook. The plan context
+        (``scenario`` label, match offer, retirement spending ratio) is passed in.
+        """
+        if len(spec.people) != 1:
+            raise ValueError(f"HouseholdProfile describes one person; the spec has {len(spec.people)}")
+        (person,) = spec.people
+
+        def first(kind: str):
+            return next((a for a in person.accounts if a.kind == kind), None)
+
+        bank, k401, brokerage = first("bank"), first("401k"), first("brokerage")
+        ss = person.social_security
+        return cls(
+            scenario=scenario if scenario is not None else spec.meta.name,
+            person_start_age=person.age,
+            person_retirement_age=int(person.retirement_age),
+            person_gender=person.gender.capitalize(),
+            initial_salary=person.jobs[0].salary_annual if person.jobs else 0.0,
+            initial_bank_balance=bank.balance if bank is not None else 0.0,
+            initial_spending=person.spending.amount_annual,
+            economy_scenario=spec.meta.scenario,
+            children_ages=[spec.meta.start_year - child.birth_year for child in person.children],
+            models_healthcare=bool(person.healthcare is not None and person.healthcare.medical_costs),
+            ss_claim_age=int(ss.claim_age) if ss is not None and ss.claim_age is not None else None,
+            retirement_spending_ratio=retirement_spending_ratio,
+            employer_match_rate=employer_match_rate,
+            employer_match_cap=employer_match_cap,
+            initial_401k_pretax=k401.pretax_balance if k401 is not None else 0.0,
+            initial_401k_roth=k401.roth_balance if k401 is not None else 0.0,
+            initial_brokerage=(brokerage.balance or 0.0) if brokerage is not None else 0.0,
+        )
 
 
 class ScoredCandidate(StrictModel):
