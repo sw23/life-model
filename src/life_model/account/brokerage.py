@@ -6,6 +6,7 @@ import html
 from dataclasses import dataclass
 
 from ..base_classes import Investment
+from ..ledger import FlowKind
 from ..people.person import Person
 from ..tax.income import IncomeType
 
@@ -112,10 +113,14 @@ class BrokerageAccount(Investment):
 
         self._accrue_to_lots(appreciation)
         self.balance += appreciation
+        self._post_growth(appreciation)
 
         if dividend > 0:
             self.person.income.add(IncomeType.QUALIFIED_DIVIDEND, dividend, source="dividend")
             self.deposit(dividend)
+            self.model.ledger.post(
+                dividend, FlowKind.DIVIDEND, to_account=self, source="dividends (reinvested)", agent=self.person
+            )
 
         growth = appreciation + dividend
         self.stat_growth_history.append(growth)

@@ -7,7 +7,8 @@ import math
 import warnings
 from typing import TYPE_CHECKING
 
-from ..model import round_money
+from ..ledger import FlowKind, debt_label
+from ..model import Event, EventKind, round_money
 from ..tax.credits import child_tax_credit_parts
 from ..tax.deductions import deductible_charity, senior_deduction, settle_charitable_carryforwards
 from ..tax.federal import FilingStatus, get_federal_standard_deduction
@@ -467,7 +468,15 @@ class TaxUnit:
             amount -= member.withdraw_from_pretax_accounts(amount)
         return amount
 
-    def pay_bills(self, amount: float) -> float:
+    def pay_bills(
+        self,
+        amount: float,
+        *,
+        kind: "FlowKind | str" = FlowKind.SPENDING,
+        cause: str | None = None,
+        sink: str | None = None,
+        to_account=None,
+    ) -> float:
         """Pay ``amount`` now through the household waterfall. Returns the unpaid shortfall.
 
         The immediate-payment entry point (a home's down payment, an estate tax, any mid-year
@@ -475,27 +484,44 @@ class TaxUnit:
         only what is still unpaid. Gains, pre-tax distributions and penalties this creates are on the
         members' ledgers, so the year's settlement taxes them (and sizes any further draw for that
         tax). Year-end settlement funds its bills with the sized version of the same order.
+
+        What is paid is posted to the ledger as ``kind`` (keyword-only), out to ``sink`` or, for a
+        purchase of a household asset, into ``to_account``. The shortfall is not posted: a caller
+        that carries it as debt books it with :meth:`Person.add_debt`.
         """
-        remaining = self._pay_from_banks(amount)
-        for source in self.withdrawal_order[1:]:
-            if remaining <= 0:
-                break
-            self._raise_cash(source, remaining)
-            remaining = self._pay_from_banks(remaining)
+        cause = cause or sink or "bill payment"
+        post = {"kind": kind, "cause": cause, "sink": sink, "to_account": to_account}
+        with self.members[0].model.ledger.caused_by(f"raise cash for {cause}"):
+            remaining = self._pay_from_banks(amount, **post)
+            for source in self.withdrawal_order[1:]:
+                if remaining <= 0:
+                    break
+                self._raise_cash(source, remaining)
+                remaining = self._pay_from_banks(remaining, **post)
         return max(0.0, remaining)
 
-    def _pay_from_banks(self, amount: float) -> float:
-        """Pay ``amount`` from every member's bank accounts, in member order. Returns the shortfall."""
+    def _pay_from_banks(self, amount: float, **post) -> float:
+        """Pay ``amount`` from every member's bank accounts, in member order. Returns the shortfall.
+        ``post`` (``kind``, ``sink``, ``to_account``, ``cause``) posts the payment to the ledger."""
         for member in self.members:
             if amount <= 0:
                 return 0.0
-            amount = member.deduct_from_bank_accounts(amount)
+            amount = member.deduct_from_bank_accounts(amount, **post)
         return amount
+
+    def _payer_account(self):
+        """The account settlement posts the household's bills from: the first member bank account,
+        else the head's cash pocket (the per-account split of the payment is not tracked)."""
+        for member in self.members:
+            if member.bank_accounts:
+                return member.bank_accounts[0]
+        return self.members[0].cash_destination
 
     def _raise_cash(self, source: str, amount: float) -> float:
         """Move up to ``amount`` from ``source`` (a non-bank waterfall step) into members' banks,
         posting whatever the draw makes taxable. Unsized: the caller accounts for any tax. Returns
         the amount raised."""
+        before = self._source_balances(source)
         raised = 0.0
         for member in self.members:
             if raised >= amount:
@@ -515,7 +541,43 @@ class TaxUnit:
                 raised += got
             else:  # pragma: no cover - validated in __init__
                 raise ValueError(f"Unknown withdrawal source {source!r}")
+        self._log_draws(source, before)
         return raised
+
+    @staticmethod
+    def _source_balance(member: "Person", source: str) -> float:
+        """What ``member`` holds in a waterfall source (to measure what a step drew)."""
+        if source == "brokerage":
+            return member.brokerage_balance
+        if source == "pretax":
+            return member.pretax_account_balance
+        roth_401k = sum(a.roth_balance for a in member.all_retirement_accounts)
+        return roth_401k + sum(a.balance for a in member.roth_iras)
+
+    def _source_balances(self, source: str) -> dict[int, float]:
+        return {m.unique_id: self._source_balance(m, source) for m in self.members}
+
+    def _log_draws(self, source: str, before: dict[int, float], *, target: float | None = None) -> None:
+        """Log a typed event per member for what a waterfall step drew (a forced brokerage sale, a
+        pre-tax withdrawal with the solver's target, or a Roth withdrawal), with the ledger's cause."""
+        model = self.members[0].model
+        cause = model.ledger.current_cause or "pay bills"
+        for member in self.members:
+            drawn = before[member.unique_id] - self._source_balance(member, source)
+            if drawn < 0.005:
+                continue
+            details = {"target": target} if target is not None else {}
+            if source == "brokerage":
+                kind, accounts = EventKind.FORCED_SALE, member.brokerage_accounts
+            elif source == "pretax":
+                kind = EventKind.PRETAX_WITHDRAWAL
+                accounts = [*member.all_retirement_accounts, *member.traditional_iras, *member.hsas]
+            else:
+                kind, accounts = EventKind.WITHDRAWAL, [*member.roth_iras, *member.all_retirement_accounts]
+            account = accounts[0] if len(accounts) == 1 else None
+            model.event_log.add(
+                Event(kind, person=member, amount=drawn, account=account, cause=cause, source=source, **details)
+            )
 
     @staticmethod
     def _under_retirement_age(member: "Person") -> bool:
@@ -537,7 +599,9 @@ class TaxUnit:
             if source == "bank":
                 continue
             if source == "brokerage":
+                before = self._source_balances("brokerage")
                 self._draw_from_brokerage(bills)
+                self._log_draws("brokerage", before)
                 # Net capital gains and losses once — after the brokerage sale — so brokerage gains
                 # net with RSU vests and any loss carryforward before later steps read the tax bases.
                 self._apply_capital_loss_netting()
@@ -546,7 +610,9 @@ class TaxUnit:
                 # Size and perform any pre-tax withdrawal against the tax and penalty it triggers.
                 gross = self._size_gross_withdrawal(bills)
                 if gross > 0:
+                    before = self._source_balances("pretax")
                     self.withdraw_from_pretax_accounts(gross)
+                    self._log_draws("pretax", before, target=gross)
             else:
                 gap = bills + self.get_income_taxes_due().total - self.bank_account_balance
                 # Sub-cent gaps are fixed-point residue from the sized steps, not a real shortfall.
@@ -731,11 +797,18 @@ class TaxUnit:
                 remaining -= take
 
     def settle_year(self):
-        """Settle the tax year for this unit: taxes, spending, housing, and debt."""
+        """Settle the tax year for this unit: taxes, spending, housing, and debt.
+
+        Every bill and tax is posted to the ledger by line (``_BillLine``), from the household's
+        payer account (:meth:`_payer_account`), once the year's payment is made.
+        """
         spending_by_member: dict[int, float] = {}
         housing_by_member: dict[int, float] = {}
         interest_by_member: dict[int, float] = {}
         debt_payment_by_member: dict[int, float] = {}
+        model = self.members[0].model
+        year = model.year
+        bill_lines: list[_BillLine] = []
 
         # Personal debt carried by members is settled exactly once (fixes double-pay / phantom
         # debt): zero it here and fold it into this year's bills.
@@ -746,10 +819,30 @@ class TaxUnit:
         carried_interest_by_member = {m.unique_id: m.debt * debt_rate for m in self.members}
         existing_debt += sum(carried_interest_by_member.values())
         for member in self.members:
+            if member.debt:
+                carried = member.debt + carried_interest_by_member[member.unique_id]
+                cause = "repay unpaid bills carried from last year"
+                bill_lines.append(
+                    _BillLine(carried, FlowKind.DEBT_SERVICE, member, cause, to_account=debt_label(member))
+                )
+                bill_lines.append(
+                    _BillLine(
+                        carried_interest_by_member[member.unique_id],
+                        FlowKind.DEBT_SERVICE,
+                        member,
+                        "interest on unpaid bills",
+                        from_account=debt_label(member),
+                        sink="interest on unpaid bills",
+                    )
+                )
             member.debt = 0
 
         for member in self.members:
             spending_by_member[member.unique_id] = member.spending.get_yearly_spending()
+            for category, amount in member.spending.year_spending_lines().items():
+                kind = FlowKind.PREMIUM if category.endswith("premium") else FlowKind.SPENDING
+                sink = "living expenses" if category == "base" else category.replace("_", " ")
+                bill_lines.append(_BillLine(amount, kind, member, sink, sink=sink))
 
             member_housing = 0.0
             member_interest = 0.0
@@ -759,13 +852,21 @@ class TaxUnit:
                 member_housing += home.make_yearly_payment()
                 if home.mortgage is not None:
                     member_interest += home.mortgage.interest_paid_this_year
+                bill_lines.extend(self._housing_lines(member, home))
             for apartment in member.apartments:
                 member_housing += apartment.yearly_rent
+                rent = f"rent: {apartment.name}"
+                bill_lines.append(_BillLine(apartment.yearly_rent, FlowKind.HOUSING, member, rent, sink=rent))
 
             # Service the member's personal debts (car loans, credit cards, student loans). Each
             # debt accrues 12 months of interest and receives 12 scheduled payments internally; the
             # cash paid is folded into this year's bills, the interest into the interest statistic.
-            member_debt_paid, member_debt_interest = member.debt_service.service_year()
+            member_debt_paid = 0.0
+            member_debt_interest = 0.0
+            for debt, paid, interest, before, after in member.debt_service.service_year_detail():
+                member_debt_paid += paid
+                member_debt_interest += interest
+                bill_lines.extend(_loan_lines(member, debt, paid, interest, before, after, FlowKind.DEBT_SERVICE))
             member_interest += member_debt_interest
 
             # Above-the-line student-loan interest deduction (IRC §221): the interest actually paid
@@ -792,14 +893,15 @@ class TaxUnit:
         # Roth) moves into the banks only what bills + taxes still need. Proceeds land in the bank,
         # so each step sizes against the topped-up balance and does nothing once it is covered.
         self._draw_hsa_for_medical(bills)
-        taxes = self._fund_bills(bills)
+        with model.ledger.caused_by(f"fund {year} bills and taxes"):
+            taxes = self._fund_bills(bills)
 
         # The year's return, from exactly the taxes about to be paid and the ledger they came from.
         tax_return = build_tax_return(self, taxes)
-        model = self.members[0].model
         model.tax_returns[(tax_return.year, tax_return.unit_id)] = tax_return
         for member in self.members:
             member.tax_returns[tax_return.year] = tax_return
+        bill_lines.extend(self._tax_lines(taxes))
 
         # Record this year's AGI on every member. Each member records the AGI of the
         # return they filed — the unit's full AGI, not a per-member split — because Medicare/IRMAA
@@ -808,7 +910,6 @@ class TaxUnit:
         # gross income less above-the-line adjustments only: the standard/itemized deductions come
         # after AGI, so subtracting them (as this once did) understated MAGI and the surcharges.
         agi = self.agi()
-        year = self.members[0].model.year
         for member in self.members:
             member.agi_history[year] = agi
 
@@ -821,13 +922,16 @@ class TaxUnit:
         # source has already been drawn into the banks as far as it could be). Refundable credits
         # can make the net due negative (a refund): deposit it instead of "paying" a negative bill
         # (which would create negative debt).
+        payer = self._payer_account()
         net_due = bills + taxes.total
         if net_due >= 0:
             shortfall = round_money(max(0.0, self._pay_from_banks(net_due)))
         else:
-            self.members[0].receive_cash(-net_due, source="refundable tax credits")
+            self.members[0].receive_cash(-net_due, source="refundable tax credits", post=False)
             shortfall = 0.0
-        self.members[0].debt += shortfall
+        for line in bill_lines:
+            line.post(model.ledger, payer)
+        self.members[0].add_debt(shortfall, to_account=payer, cause=f"unpaid {year} bills and taxes")
 
         self._record_stats(taxes, spending_by_member, housing_by_member, interest_by_member, tax_return)
         # Which deduction the return took: the itemized amount (split like the income taxes), or 0
@@ -835,6 +939,61 @@ class TaxUnit:
         shares = self._member_shares() if len(self.members) > 1 else {self.members[0].unique_id: 1.0}
         for member in self.members:
             member.stat_itemized_deductions = itemized_claimed * shares[member.unique_id]
+
+    def _housing_lines(self, member: "Person", home) -> "list[_BillLine]":
+        """The ledger lines of a home's year of payments (``home.year_payment``)."""
+        lines = []
+        payment = dict(home.year_payment)
+        mortgage_paid = payment.pop("mortgage", 0.0)
+        interest = payment.pop("mortgage_interest", 0.0)
+        before = payment.pop("mortgage_principal_before", None)
+        for name, amount in payment.items():
+            sink = f"{name.replace('_', ' ')}: {home.name}"
+            lines.append(_BillLine(amount, FlowKind.HOUSING, member, sink, sink=sink))
+        if home.mortgage is not None and before is not None:
+            lines.extend(
+                _loan_lines(
+                    member, home.mortgage, mortgage_paid, interest, before, home.mortgage.principal, FlowKind.HOUSING
+                )
+            )
+        return lines
+
+    def _tax_lines(self, taxes: TaxesDue) -> "list[_BillLine]":
+        """The year's taxes as ledger lines: they sum to ``taxes.total``."""
+        head = self.members[0]
+        federal = taxes.federal - taxes.penalties - taxes.credits
+        lines = [
+            _BillLine(federal, FlowKind.TAX, head, "federal income tax", sink="IRS: federal income tax"),
+            _BillLine(
+                taxes.niit, FlowKind.TAX, head, "net investment income tax", sink="IRS: net investment income tax"
+            ),
+            _BillLine(taxes.state, FlowKind.TAX, head, "state income tax", sink=f"state income tax ({self.state})"),
+        ]
+        for member in self.members:
+            for source, amount in member.income.penalties_by_source.items():
+                cause = f"additional tax: {source.replace('_', ' ')}"
+                lines.append(_BillLine(amount, FlowKind.PENALTY, member, cause, sink=f"IRS: {cause}"))
+                member.model.event_log.add(
+                    Event(EventKind.PENALTY, person=member, amount=amount, cause=source.replace("_", " "))
+                )
+        for index, member in enumerate(self.members):
+            if index < len(taxes.ss_by_worker):
+                lines.append(
+                    _BillLine(
+                        taxes.ss_by_worker[index],
+                        FlowKind.TAX,
+                        member,
+                        "social security tax",
+                        sink="IRS: social security tax",
+                    )
+                )
+            if index < len(taxes.medicare_by_worker):
+                lines.append(
+                    _BillLine(
+                        taxes.medicare_by_worker[index], FlowKind.TAX, member, "medicare tax", sink="IRS: medicare tax"
+                    )
+                )
+        return lines
 
     def _size_gross_withdrawal(self, bills: float) -> float:
         """Pure fixed-point solve for the pre-tax withdrawal needed to cover bills + taxes.
@@ -923,3 +1082,81 @@ class TaxUnit:
             member.stat_tax_credits = credits
             member.stat_tax_penalties = penalties
             member.stat_taxes_paid = federal + state + ss + medicare + niit - credits
+
+
+class _BillLine:
+    """One line of a settlement's bills, posted from the payer account once the year is paid.
+
+    ``to_account`` makes it a transfer (a loan's principal, repaying carried debt), ``from_account``
+    overrides the payer (a liability charged with capitalized interest), and a line with
+    ``source`` is an inflow (a loan reduced by someone else).
+    """
+
+    __slots__ = ("amount", "cause", "from_account", "kind", "member", "sink", "source", "to_account")
+
+    def __init__(self, amount, kind, member, cause, *, sink=None, to_account=None, from_account=None, source=None):
+        self.amount = amount
+        self.kind = kind
+        self.member = member
+        self.cause = cause
+        self.sink = sink
+        self.to_account = to_account
+        self.from_account = from_account
+        self.source = source
+
+    def post(self, ledger, payer) -> None:
+        if self.source is not None:
+            ledger.post(
+                self.amount,
+                self.kind,
+                to_account=self.to_account,
+                source=self.source,
+                cause=self.cause,
+                agent=self.member,
+            )
+            return
+        ledger.post(
+            self.amount,
+            self.kind,
+            from_account=self.from_account if self.from_account is not None else payer,
+            to_account=self.to_account,
+            sink=self.sink,
+            cause=self.cause,
+            agent=self.member,
+        )
+
+
+def _loan_lines(member, loan, paid: float, interest: float, before: float, after: float, kind) -> "list[_BillLine]":
+    """A loan's year: interest paid (out), principal paid (a transfer into the loan), and any change in
+    the balance the payments don't explain: interest capitalized (more debt) or principal relief
+    (an income-driven plan's match, forgiveness)."""
+    name = getattr(loan, "name", None) or getattr(loan, "school_name", None) or type(loan).__name__
+    principal_paid = paid - interest
+    lines = [
+        _BillLine(interest, kind, member, f"interest: {name}", sink=f"interest: {name}"),
+        _BillLine(principal_paid, kind, member, f"principal: {name}", to_account=loan),
+    ]
+    unexplained = after - (before - principal_paid)
+    if unexplained > 0.005:
+        lines.append(
+            _BillLine(
+                unexplained,
+                kind,
+                member,
+                f"interest capitalized: {name}",
+                from_account=loan,
+                sink=f"interest capitalized: {name}",
+            )
+        )
+    elif unexplained < -0.005:
+        lines.append(
+            _BillLine(
+                -unexplained,
+                FlowKind.BENEFIT,
+                member,
+                f"loan relief: {name}",
+                to_account=loan,
+                source="lender / loan program relief",
+            )
+        )
+    return lines

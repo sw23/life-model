@@ -5,6 +5,7 @@
 
 from collections.abc import Callable
 from datetime import datetime
+from enum import Enum
 from math import e as const_e
 from typing import ClassVar
 
@@ -13,6 +14,7 @@ import pandas as pd
 from pandas.io.formats.style import Styler
 
 from .config.financial_config import FinancialConfig
+from .ledger import LEDGER_COLUMNS, CashFlowLedger
 from .registry import ModelRegistries
 
 
@@ -61,19 +63,162 @@ class MoneyStat(Stat):
         super().__init__(name, title, FMT_MONEY)
 
 
+class EventKind(str, Enum):
+    """What an :class:`Event` records. Detail kinds (:attr:`is_detail`) are the year-by-year mechanics
+    (every RMD, forced sale, solver withdrawal, penalty and shortfall); they are kept on the log and in
+    ``RunResult.events``/``explain`` but left out of the event log's notebook table, which shows the
+    life story."""
+
+    NOTE = "note"  #: Free-text event (what ``Event(message)`` creates).
+    LIFE_EVENT_FIRED = "life_event_fired"
+    RETIRED = "retired"
+    RETIREMENT_AGE = "retirement_age"
+    MARRIED = "married"
+    DIED = "died"
+    HOME_BOUGHT = "home_bought"
+    HOME_SOLD = "home_sold"
+    POLICY_LAPSED = "policy_lapsed"
+    ANNUITIZED = "annuitized"
+    INHERITANCE = "inheritance"
+    FORCED_SALE = "forced_sale"
+    PRETAX_WITHDRAWAL = "pretax_withdrawal"
+    WITHDRAWAL = "withdrawal"
+    RMD = "rmd"
+    PENALTY = "penalty"
+    SHORTFALL_DEBT = "shortfall_debt"
+
+    @property
+    def is_detail(self) -> bool:
+        return self in _DETAIL_KINDS
+
+
+_DETAIL_KINDS = frozenset(
+    {
+        EventKind.FORCED_SALE,
+        EventKind.PRETAX_WITHDRAWAL,
+        EventKind.WITHDRAWAL,
+        EventKind.RMD,
+        EventKind.PENALTY,
+        EventKind.SHORTFALL_DEBT,
+    }
+)
+
+
 class Event:
-    def __init__(self, message: str):
+    def __init__(
+        self,
+        kind: "EventKind | str | None" = None,
+        year: int | None = None,
+        person=None,
+        amount: float | None = None,
+        account=None,
+        cause: str | None = None,
+        message: str | None = None,
+        **details,
+    ):
         """Event
 
+        ``Event("free text")`` (a plain string first argument) is a :attr:`EventKind.NOTE` with that
+        message, as events have always been. A typed event passes an :class:`EventKind` first, plus
+        what it is about; its message is generated when not given.
+
         Args:
-            message (str): Event description.
+            kind (EventKind | str): The event's kind, or (legacy) its message.
+            year (int, optional): Year; stamped by :meth:`EventLog.add` when None.
+            person (Person | str, optional): Who it is about (stored as name and agent id).
+            amount (float, optional): Dollar amount involved.
+            account (agent | str, optional): Account involved (stored as its ledger label and name).
+            cause (str, optional): Why it happened.
+            message (str, optional): Display text (generated from the fields when None).
+            **details: Extra kind-specific fields (e.g. ``target`` on a pre-tax withdrawal).
         """
-        self.message = message
-        # Stamped with the model year when the event is added to an EventLog.
-        self.year: int | None = None
+        if isinstance(kind, EventKind):
+            self.kind = kind
+        elif kind is None:
+            self.kind = EventKind.NOTE
+        else:
+            # Legacy: Event("free text").
+            self.kind = EventKind.NOTE
+            message = kind if message is None else message
+        self.year = year
+        self.person_name: str | None = getattr(person, "name", person)
+        self.person_id: int | None = getattr(person, "unique_id", None)
+        self.amount = amount
+        from .ledger import account_label, describe_account
+
+        self.account: str | None = account_label(account)
+        self.account_name: str | None = (
+            None if account is None else account if isinstance(account, str) else describe_account(account)
+        )
+        self.cause = cause
+        self.details = details
+        self.message = message if message is not None else self._auto_message()
+
+    def _auto_message(self) -> str:
+        who = self.person_name or "Someone"
+        amount = f"${self.amount:,.0f}" if self.amount is not None else ""
+        account = self.account_name or "an account"
+        because = f" to {self.cause}" if self.cause else ""
+        target = self.details.get("target")
+        if self.kind == EventKind.FORCED_SALE:
+            return f"{who} sold {amount} of {account}{because}"
+        if self.kind == EventKind.PRETAX_WITHDRAWAL:
+            sized = f" (solver target {target:,.0f})" if target is not None else ""
+            return f"{who} withdrew {amount} pre-tax from {account}{sized}{because}"
+        if self.kind == EventKind.WITHDRAWAL:
+            return f"{who} withdrew {amount} from {account}{because}"
+        if self.kind == EventKind.RMD:
+            return f"{who} took a {amount} required minimum distribution from {account}"
+        if self.kind == EventKind.PENALTY:
+            return f"{who} owes {amount} of additional tax ({self.cause})"
+        if self.kind == EventKind.SHORTFALL_DEBT:
+            return f"{who} carried {amount} of unpaid bills as debt ({self.cause})"
+        parts = [self.kind.value.replace("_", " "), who]
+        if amount:
+            parts.append(amount)
+        if self.cause:
+            parts.append(f"({self.cause})")
+        return " ".join(parts)
+
+    @property
+    def is_detail(self) -> bool:
+        """Whether this is a detail event (hidden from :meth:`EventLog._repr_html_`)."""
+        return self.kind.is_detail
+
+    def to_dict(self) -> dict:
+        """The event as a flat dict (``details`` are serialized as a JSON string)."""
+        import json
+
+        return {
+            "year": self.year,
+            "kind": self.kind.value,
+            "person": self.person_name,
+            "person_id": self.person_id,
+            "amount": self.amount,
+            "account": self.account,
+            "account_name": self.account_name,
+            "cause": self.cause,
+            "message": self.message,
+            "details": json.dumps(self.details, default=str) if self.details else None,
+        }
 
     def _repr_html_(self):
         return f"<tr><td>{self.year}</td><td>{self.message}</td></tr>\n"
+
+
+#: Columns of :meth:`EventLog.to_frame` (and ``RunResult.events``).
+EVENT_COLUMNS = (
+    "year",
+    "kind",
+    "person",
+    "person_id",
+    "amount",
+    "account",
+    "account_name",
+    "cause",
+    "message",
+    "details",
+)
 
 
 class EventLog:
@@ -87,15 +232,31 @@ class EventLog:
         self.list = []
 
     def _repr_html_(self):
+        # The life story: detail events (RMDs, forced sales, ...) are omitted, which keeps this table
+        # exactly as it was before events were typed. Use :meth:`to_frame` for everything.
         table = "<table>"
         table += "<tr><th>Year:</th><th>Event:</th></tr>\n"
-        table += "".join(x._repr_html_() for x in self.list)
+        table += "".join(x._repr_html_() for x in self.list if not x.is_detail)
         table += "</table>"
         return table
 
     def add(self, event: Event):
-        event.year = self.model.year
+        if event.year is None or event.kind == EventKind.NOTE:
+            # Stamped with the year it was logged (as always for free-text events).
+            event.year = self.model.year
         self.list.append(event)
+
+    def of_kind(self, *kinds: "EventKind | str") -> list[Event]:
+        """The logged events of the given kinds."""
+        wanted = {EventKind(k) for k in kinds}
+        return [event for event in self.list if event.kind in wanted]
+
+    def for_year(self, year: int) -> list[Event]:
+        return [event for event in self.list if event.year == year]
+
+    def to_frame(self) -> "pd.DataFrame":
+        """Every logged event (detail kinds included), one row each (columns: :data:`EVENT_COLUMNS`)."""
+        return pd.DataFrame([event.to_dict() for event in self.list], columns=list(EVENT_COLUMNS))
 
 
 def _optional_attribute(name: str) -> Callable:
@@ -230,6 +391,11 @@ class LifeModel(mesa.Model):
         self.event_log = EventLog(self)
         #: Every settled return, keyed ``(year, unit_id)`` (see :mod:`life_model.tax.return_record`).
         self.tax_returns: dict = {}
+        #: Append-only record of every money movement (see :mod:`life_model.ledger`).
+        self.ledger = CashFlowLedger(self)
+        #: Balance sheets around each simulated year and the ledger range posted during it, keyed by
+        #: year (recorded when collecting data; read by :mod:`life_model.checks`).
+        self.balance_sheets: dict = {}
         self.simulated_years = []
         self._stages = list(self.STAGES)
         #: The stage currently executing (one of ``STAGES``), or None outside ``step()`` (model
@@ -254,6 +420,7 @@ class LifeModel(mesa.Model):
                     **{x.title: _optional_attribute(x.name) for x in self.STATS},
                     **{x.title: _optional_attribute(x.name) for x in self.EXTRA_STATS},
                 },
+                tables={"Ledger": list(LEDGER_COLUMNS)},
             )
 
     @classmethod
@@ -321,18 +488,39 @@ class LifeModel(mesa.Model):
             return
 
         self.simulated_years.append(self.year)
+        track = self.datacollector is not None
+        if track:
+            from .ledger import household_balance_sheet
+
+            opening = household_balance_sheet(self)
+            ledger_start = len(self.ledger)
 
         # Execute each stage in a deterministic, priority-ordered sequence per stage. The agent list
-        # is snapshotted per stage: an agent created during a stage first runs in the next stage.
+        # is snapshotted per stage: an agent created during a stage first runs in the next stage, and
+        # an agent removed during a stage (a decedent's pension, say) does not run the rest of it.
+        agents = self.agents
         for stage in self._stages:
             self.current_stage = stage
-            for agent in sorted(self.agents, key=lambda a: a.STEP_PRIORITY.get(stage, 0)):
-                getattr(agent, stage)()
+            for agent in sorted(agents, key=lambda a: a.STEP_PRIORITY.get(stage, 0)):
+                if agent in agents:
+                    getattr(agent, stage)()
         self.current_stage = None
 
         # Collect after the stages so row Year=Y holds year-Y flows and balances
         # (skipped entirely when the model was built with collect_data=False).
-        if self.datacollector is not None:
+        if track:
+            from .checks import YearBalances
+
+            closing = household_balance_sheet(self)
+            self.balance_sheets[self.year] = YearBalances(
+                year=self.year,
+                opening=opening,
+                closing=closing,
+                ledger_start=ledger_start,
+                ledger_end=len(self.ledger),
+            )
+            for record in self.ledger.to_records(ledger_start):
+                self.datacollector.add_table_row("Ledger", record)
             self.datacollector.collect(self)
 
         self.year += 1

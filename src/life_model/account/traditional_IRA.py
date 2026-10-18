@@ -6,7 +6,9 @@
 from typing import ClassVar
 
 from ..base_classes import TaxAdvantagedAccount, TaxTreatment
+from ..ledger import FlowKind
 from ..limits import required_min_distrib, rmd_start_age
+from ..model import Event, EventKind
 from ..people.person import Person
 from ..tax.income import IncomeType
 
@@ -48,12 +50,12 @@ class TraditionalIRA(TaxAdvantagedAccount):
         self.stat_required_min_distrib = 0
         self.model.registries.traditional_iras.register(person, self)
 
-    def contribute(self, amount: float) -> float:
+    def contribute(self, amount: float, **kwargs) -> float:
         """Contribute pre-tax dollars, recording an above-the-line deduction for the amount.
 
         Deductibility phase-outs for owners covered by a workplace plan are not modeled.
         """
-        actual = super().contribute(amount)
+        actual = super().contribute(amount, **kwargs)
         self.person.income.add_deduction(actual, source="ira_deduction")
         return actual
 
@@ -64,9 +66,13 @@ class TraditionalIRA(TaxAdvantagedAccount):
         start_age = rmd_start_age(birth_year, config=config, year=self.model.year)
         rmd = self.withdraw(required_min_distrib(self.person.age, self.balance, config=config, start_age=start_age))
         if rmd > 0:
-            self.person.deposit_into_bank_account(rmd)
+            self.person.deposit_into_bank_account(
+                rmd, kind=FlowKind.RMD, from_account=self, cause=f"{self.model.year} required minimum distribution"
+            )
             self.person.income.add(IncomeType.PRETAX_DISTRIBUTION, rmd, source="rmd")
         self.stat_required_min_distrib = rmd
+        if rmd > 0:
+            self.model.event_log.add(Event(EventKind.RMD, person=self.person, amount=rmd, account=self))
 
     def annual_contribution_limit(self) -> float:
         if self._contribution_limit_override is not None:

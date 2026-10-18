@@ -6,8 +6,9 @@
 from typing import TYPE_CHECKING, ClassVar, Optional
 
 from ..account.job401k import Job401kAccount
+from ..ledger import FlowKind, cash_label, debt_label
 from ..limits import federal_retirement_age
-from ..model import Event, LifeModel, LifeModelAgent
+from ..model import Event, EventKind, LifeModel, LifeModelAgent
 from ..services.debt_service import DebtService
 from ..services.payment_service import PaymentService
 from ..services.tax_calculation_service import TaxCalculationService
@@ -293,9 +294,13 @@ class Person(LifeModelAgent):
         amount = min(amount, self.unreimbursed_medical_expenses)
         if amount <= 0:
             return 0.0
-        withdrawn = amount - self._withdraw_sequence((hsa.withdraw_medical for hsa in self.hsas), amount)
+        withdrawn = self._draw_to_bank(
+            [(hsa, hsa.withdraw_medical) for hsa in self.hsas],
+            amount,
+            FlowKind.WITHDRAWAL,
+            "qualified medical reimbursement (tax-free)",
+        )
         self.hsa_medical_reimbursed += withdrawn
-        self.receive_cash(withdrawn, source="HSA medical reimbursement")
         return withdrawn
 
     def medical_expense_deduction_with(self, additional_income: float = 0.0) -> float:
@@ -533,8 +538,20 @@ class Person(LifeModelAgent):
             remaining -= withdraw(remaining)
         return remaining
 
-    def deduct_from_bank_accounts(self, amount: float) -> float:
+    def deduct_from_bank_accounts(
+        self,
+        amount: float,
+        *,
+        kind: "FlowKind | str | None" = None,
+        sink: str | None = None,
+        to_account=None,
+        cause: str | None = None,
+    ) -> float:
         """Deducts money from bank accounts.
+
+        A bare call is a primitive: it moves money without posting it, for callers that post the
+        flow themselves. Pass ``kind`` (keyword-only) to post what was paid to the ledger: to
+        ``to_account`` (a household account: a transfer) or out to ``sink`` (an outflow).
 
         Args:
             amount (float): Amount to deduct.
@@ -542,7 +559,81 @@ class Person(LifeModelAgent):
         Returns:
             float: Amount that could not be deducted.
         """
-        return self._withdraw_sequence((account.withdraw for account in self.bank_accounts), amount)
+        remaining = amount
+        for account in self.bank_accounts:
+            if remaining <= 0:
+                break
+            taken = account.withdraw(remaining)
+            remaining -= taken
+            if kind is not None and taken > 0:
+                self.model.ledger.post(
+                    taken,
+                    kind,
+                    from_account=account,
+                    to_account=to_account,
+                    sink=None if to_account is not None else (sink or cause),
+                    cause=cause,
+                    agent=self,
+                )
+        return remaining
+
+    @property
+    def cash_destination(self):
+        """Where :meth:`receive_cash` puts money: the first bank account, else the cash pocket."""
+        if self.bank_accounts:
+            return self.bank_accounts[0]
+        label = cash_label(self)
+        self.model.ledger.name_label(label, f"{self.name}'s cash")
+        return label
+
+    def add_debt(
+        self,
+        amount: float,
+        *,
+        cause: str | None = None,
+        kind: "FlowKind | str" = FlowKind.BORROW,
+        to_account=None,
+        sink: str | None = None,
+    ) -> None:
+        """Carry ``amount`` of unpaid bills as debt (``self.debt``), posting it: money borrowed into
+        ``to_account`` (a transfer) or an outflow to ``sink`` financed by the debt."""
+        if amount <= 0:
+            return
+        self.debt += amount
+        self.model.event_log.add(
+            Event(EventKind.SHORTFALL_DEBT, person=self, amount=amount, cause=cause or "unpaid bills")
+        )
+        label = debt_label(self)
+        self.model.ledger.name_label(label, f"{self.name}'s unpaid-bills debt")
+        self.model.ledger.post(
+            amount,
+            kind,
+            from_account=label,
+            to_account=to_account,
+            sink=None if to_account is not None else (sink or cause or "unpaid bills"),
+            cause=cause,
+            agent=self,
+        )
+
+    def _draw_to_bank(self, draws, amount: float, kind: "FlowKind | str", cause: str | None = None) -> float:
+        """Take up to ``amount`` from ``draws`` (``(account, withdraw_callable)`` pairs, in order) into
+        this person's bank, posting one transfer per account. Returns the amount drawn."""
+        destination = self.cash_destination
+        # The caller's reason (e.g. "fund 2031 bills and taxes") wins over the generic one.
+        cause = self.model.ledger.current_cause or cause
+        remaining = amount
+        for account, withdraw in draws:
+            if remaining <= 0:
+                break
+            taken = withdraw(remaining)
+            remaining -= taken
+            if taken > 0:
+                self.model.ledger.post(
+                    taken, kind, from_account=account, to_account=destination, cause=cause, agent=self
+                )
+        drawn = amount - remaining
+        self.receive_cash(drawn, post=False)
+        return drawn
 
     def deduct_from_pretax_401ks(self, amount: float) -> float:
         """Deducts money from pre-tax 401ks.
@@ -588,9 +679,11 @@ class Person(LifeModelAgent):
     def withdraw_tax_free_from_roth_iras(self, amount: float) -> float:
         """Withdraw up to ``amount`` of tax-free Roth IRA money (basis before 59.5, everything from
         59.5) into the bank. Returns the amount withdrawn."""
-        withdrawn = amount - self.deduct_from_roth_iras(amount)
-        self.receive_cash(withdrawn, source="Roth IRA")
-        return withdrawn
+        draws = [
+            (account, lambda remaining, a=account: a.withdraw(min(remaining, a.tax_free_withdrawable())))
+            for account in self.roth_iras
+        ]
+        return self._draw_to_bank(draws, amount, FlowKind.WITHDRAWAL, "tax-free Roth IRA withdrawal")
 
     def withdraw_from_pretax_401ks(self, amount: float) -> float:
         """Withdraws money from pre-tax 401ks into the bank account.
@@ -603,11 +696,15 @@ class Person(LifeModelAgent):
         Returns:
             float: Amount actually withdrawn (may be less than requested if funds are short).
         """
-        withdrawn = amount - self.deduct_from_pretax_401ks(amount)
+        withdrawn = self._draw_to_bank(
+            [(account, account.deduct_pretax) for account in self.all_retirement_accounts],
+            amount,
+            FlowKind.WITHDRAWAL,
+            "pre-tax 401k withdrawal",
+        )
         # Pre-tax 401k distributions are ordinary income but are NOT FICA wages.
         self.income.add(IncomeType.PRETAX_DISTRIBUTION, withdrawn, source="401k")
         self._charge_early_withdrawal_penalty(withdrawn)
-        self.receive_cash(withdrawn)
         return withdrawn
 
     @property
@@ -726,9 +823,12 @@ class Person(LifeModelAgent):
         Returns:
             float: Amount actually withdrawn.
         """
-        withdrawn = amount - self.deduct_from_roth_401ks(amount)
-        self.receive_cash(withdrawn)
-        return withdrawn
+        return self._draw_to_bank(
+            [(account, account.deduct_roth) for account in self.all_retirement_accounts],
+            amount,
+            FlowKind.WITHDRAWAL,
+            "Roth 401k withdrawal",
+        )
 
     def withdraw_from_traditional_iras(self, amount: float) -> float:
         """Withdraws money from Traditional IRAs into the bank account.
@@ -739,10 +839,14 @@ class Person(LifeModelAgent):
         Returns:
             float: Amount actually withdrawn.
         """
-        withdrawn = amount - self._withdraw_sequence((acct.withdraw for acct in self.traditional_iras), amount)
+        withdrawn = self._draw_to_bank(
+            [(acct, acct.withdraw) for acct in self.traditional_iras],
+            amount,
+            FlowKind.WITHDRAWAL,
+            "Traditional IRA withdrawal",
+        )
         self.income.add(IncomeType.PRETAX_DISTRIBUTION, withdrawn, source="ira")
         self._charge_early_withdrawal_penalty(withdrawn)
-        self.receive_cash(withdrawn)
         return withdrawn
 
     def withdraw_from_roth_iras(self, amount: float) -> float:
@@ -754,9 +858,9 @@ class Person(LifeModelAgent):
         Returns:
             float: Amount actually withdrawn.
         """
-        withdrawn = amount - self._withdraw_sequence((acct.withdraw for acct in self.roth_iras), amount)
-        self.receive_cash(withdrawn)
-        return withdrawn
+        return self._draw_to_bank(
+            [(acct, acct.withdraw) for acct in self.roth_iras], amount, FlowKind.WITHDRAWAL, "Roth IRA withdrawal"
+        )
 
     def withdraw_from_hsas(self, amount: float) -> float:
         """Withdraws money from HSAs into the bank account as a non-medical distribution.
@@ -767,9 +871,12 @@ class Person(LifeModelAgent):
         Returns:
             float: Amount actually withdrawn.
         """
-        withdrawn = amount - self._withdraw_sequence((acct.withdraw_non_medical for acct in self.hsas), amount)
-        self.receive_cash(withdrawn)
-        return withdrawn
+        return self._draw_to_bank(
+            [(acct, acct.withdraw_non_medical) for acct in self.hsas],
+            amount,
+            FlowKind.WITHDRAWAL,
+            "non-medical HSA withdrawal",
+        )
 
     def withdraw_from_brokerage_accounts(self, amount: float) -> float:
         """Withdraws money from brokerage accounts into the bank account.
@@ -781,14 +888,12 @@ class Person(LifeModelAgent):
         Returns:
             float: Amount actually withdrawn.
         """
-        remaining = amount
-        for account in self.brokerage_accounts:
-            if remaining <= 0:
-                break
-            remaining -= account.withdraw(remaining)
-        withdrawn = amount - remaining
-        self.receive_cash(withdrawn)
-        return withdrawn
+        return self._draw_to_bank(
+            [(account, account.withdraw) for account in self.brokerage_accounts],
+            amount,
+            FlowKind.SALE,
+            "brokerage sale",
+        )
 
     @property
     def brokerage_balance(self) -> float:
@@ -815,18 +920,42 @@ class Person(LifeModelAgent):
             remaining -= take
         return long_term, short_term
 
-    def receive_cash(self, amount: float, source: str = "income"):
+    def receive_cash(
+        self,
+        amount: float,
+        source: str = "income",
+        *,
+        kind: "FlowKind | str | None" = None,
+        from_account=None,
+        cause: str | None = None,
+        post: bool = True,
+    ):
         """Receive cash into the person's primary bank account.
 
         If the person has no bank account, the cash is held in an untracked ``cash`` bucket and a
         warning event is logged once, rather than raising mid-simulation.
 
+        The receipt is posted to the ledger (keyword-only options): a transfer from ``from_account``
+        when the money came from another household account, else an inflow from ``source`` of
+        ``kind`` (default ``other``). ``post=False`` is for callers that posted it themselves.
+
         Args:
             amount (float): Amount of cash received.
-            source (str, optional): Description of where the cash came from (for the warning event).
+            source (str, optional): Description of where the cash came from (the inflow's
+                counterparty, and the warning event).
         """
         if amount <= 0:
             return
+        if post:
+            self.model.ledger.post(
+                amount,
+                kind or (FlowKind.TRANSFER if from_account is not None else FlowKind.OTHER),
+                from_account=from_account,
+                to_account=self.cash_destination,
+                source=source,
+                cause=cause,
+                agent=self,
+            )
         if self.bank_accounts:
             self.bank_accounts[0].balance += amount
         else:
@@ -837,13 +966,14 @@ class Person(LifeModelAgent):
                 )
                 self._warned_no_bank_account = True
 
-    def deposit_into_bank_account(self, amount: float):
-        """Deposits money into the primary bank account (see receive_cash).
+    def deposit_into_bank_account(self, amount: float, source: str = "income", **kwargs):
+        """Deposits money into the primary bank account (see :meth:`receive_cash`, which takes the
+        same keyword-only ledger options).
 
         Args:
             amount (float): Amount to deposit.
         """
-        self.receive_cash(amount)
+        self.receive_cash(amount, source, **kwargs)
 
     def pay_bills(self, spending_balance: float) -> float:
         """Pays bills from this person's own accounts using the payment service.
@@ -902,7 +1032,7 @@ class Person(LifeModelAgent):
                 vacated_family.members = []
             spouse.get_married(self, False)
             event_str = f"{self.name} and {spouse.name} got married at age {self.age} and {spouse.age}"
-            self.model.event_log.add(Event(event_str))
+            self.model.event_log.add(Event(EventKind.MARRIED, person=self, message=event_str, spouse=spouse.name))
 
     def add_child(self, name: str, birth_year: int | None = None) -> "Child":
         """Add a child dependent to this person.
@@ -984,7 +1114,13 @@ class Person(LifeModelAgent):
 
         retirement_age = federal_retirement_age(self.model.config)
         if not self._retirement_age_event_logged and self.age >= int(retirement_age):
-            self.model.event_log.add(Event(f"{self.name} reached retirement age (age {retirement_age})"))
+            self.model.event_log.add(
+                Event(
+                    EventKind.RETIREMENT_AGE,
+                    person=self,
+                    message=f"{self.name} reached retirement age (age {retirement_age})",
+                )
+            )
             self._retirement_age_event_logged = True
 
     def die(self):
@@ -1006,7 +1142,7 @@ class Person(LifeModelAgent):
         if self.is_deceased:
             return
         self.is_deceased = True
-        self.model.event_log.add(Event(f"{self.name} died at age {self.age}"))
+        self.model.event_log.add(Event(EventKind.DIED, person=self, message=f"{self.name} died at age {self.age}"))
 
         # 1. Earned income stops immediately (jobs retire).
         for job in list(self.jobs):
@@ -1016,10 +1152,11 @@ class Person(LifeModelAgent):
         spouse = self.spouse if (self.spouse is not None and not self.spouse.is_deceased) else None
         inheritor = spouse if spouse is not None else self._find_beneficiary()
 
-        # 2. Life-insurance death benefits pay out to the beneficiary; policies then close.
+        # 2. Life-insurance death benefits pay out to the beneficiary; policies then close (a
+        #    whole-life policy's cash value is absorbed by the death benefit).
         for policy in list(self.life_insurance_policies):
             policy.process_death_benefit()
-            policy.is_active = False
+            policy.close(f"{self.name}'s death: cash value absorbed by the death benefit")
 
         # 3. Settle annuities: life-only stops; period-certain (with payments left) and
         #    joint-and-survivor continue to the inheritor.
@@ -1048,6 +1185,9 @@ class Person(LifeModelAgent):
         #     to the residual inheritor if no beneficiary survives; an irrevocable trust survives
         #     with its own registry entry and keeps growing.
         self._settle_trusts_on_death(inheritor)
+
+        if inheritor is None:
+            self._dissolve_estate()
 
         if spouse is not None:
             self._apply_survivor_adjustments(spouse)
@@ -1095,7 +1235,9 @@ class Person(LifeModelAgent):
         cost = healthcare.funeral_cost * self.model.economy.cumulative_inflation(self.model.year)
         for medical in self.medical_costs:
             cost += healthcare.final_year_medical_multiplier * medical.annual_cost()
-        unpaid = self.deduct_from_bank_accounts(cost)
+        unpaid = self.deduct_from_bank_accounts(
+            cost, kind=FlowKind.SPENDING, sink="end-of-life costs", cause=f"{self.name}'s end-of-life costs"
+        )
         self._unpaid_final_expenses = unpaid
         self.model.event_log.add(
             Event(f"{self.name}'s estate paid ${cost - unpaid:,.0f} in end-of-life costs (funeral + final medical)")
@@ -1114,7 +1256,7 @@ class Person(LifeModelAgent):
         if unpaid <= 0:
             return
         self._unpaid_final_expenses = 0.0
-        inheritor.spending.add_expense(unpaid)
+        inheritor.spending.add_expense(unpaid, category="end_of_life")
         self.model.event_log.add(
             Event(f"{inheritor.name} pays ${unpaid:,.0f} of {self.name}'s end-of-life costs from the estate")
         )
@@ -1192,8 +1334,9 @@ class Person(LifeModelAgent):
         per-beneficiary apportionment of who pays), even when a designation created the liability.
         """
         gross_estate = self._gross_estate_value()
-        # End-of-life costs still owed are a debt of the estate (deductible, IRC §2053).
-        taxable_base = max(0.0, gross_estate - self._marital_share(is_spouse) - self._unpaid_final_expenses)
+        # End-of-life costs still owed, and unpaid bills carried as debt, are debts of the estate
+        # (deductible, IRC §2053).
+        taxable_base = max(0.0, gross_estate - self._marital_share(is_spouse) - self._unpaid_final_expenses - self.debt)
 
         self._step_up_taxable_basis()
         self._transfer_designated_accounts()
@@ -1202,10 +1345,19 @@ class Person(LifeModelAgent):
             self._liquidate_pretax_to(inheritor)
 
         self._reassign_owned_agents(inheritor)
+        self._pass_cash_and_debt_to(inheritor)
 
         self._apply_estate_tax(inheritor, taxable_base)
 
-        self.model.event_log.add(Event(f"{self.name}'s estate transferred to {inheritor.name}"))
+        self.model.event_log.add(
+            Event(
+                EventKind.INHERITANCE,
+                person=inheritor,
+                amount=gross_estate,
+                cause=f"estate of {self.name}",
+                message=f"{self.name}'s estate transferred to {inheritor.name}",
+            )
+        )
 
     def _marital_share(self, is_spouse: bool) -> float:
         """Value of the estate passing to the surviving spouse (sheltered by the unlimited
@@ -1225,7 +1377,7 @@ class Person(LifeModelAgent):
         share = 0.0
         passing_outside_residual = 0.0
         for acct in self._owned_financial_agents():
-            beneficiary = getattr(acct, "beneficiary", None)
+            beneficiary = self._designated_beneficiary(acct)
             if beneficiary is None or beneficiary.is_deceased or beneficiary is self:
                 continue
             balance = getattr(acct, "balance", 0.0)
@@ -1246,6 +1398,13 @@ class Person(LifeModelAgent):
             share += max(0.0, residual)
         return share
 
+    @staticmethod
+    def _designated_beneficiary(account) -> Optional["Person"]:
+        """The person an account is designated to pass to at death, if any. A 529 plan's
+        ``beneficiary`` is the student (a ``Child``), not a designation, so only a ``Person`` counts."""
+        beneficiary = getattr(account, "beneficiary", None)
+        return beneficiary if isinstance(beneficiary, Person) else None
+
     def _transfer_designated_accounts(self):
         """Route each account with a designated surviving beneficiary directly to that person.
 
@@ -1259,7 +1418,7 @@ class Person(LifeModelAgent):
 
         spouse = self.spouse if (self.spouse is not None and not self.spouse.is_deceased) else None
         for acct in self._owned_financial_agents():
-            beneficiary = getattr(acct, "beneficiary", None)
+            beneficiary = self._designated_beneficiary(acct)
             if beneficiary is None or beneficiary.is_deceased or beneficiary is self:
                 continue
             if beneficiary is not spouse:
@@ -1272,7 +1431,7 @@ class Person(LifeModelAgent):
                     pretax = acct.balance
                     acct.balance = 0.0
                 if pretax > 0:
-                    self._distribute_inherited_pretax(pretax, beneficiary)
+                    self._distribute_inherited_pretax(pretax, beneficiary, [(acct, pretax)])
             acct.person = beneficiary
             if hasattr(acct, "owner"):
                 acct.owner = beneficiary
@@ -1281,7 +1440,16 @@ class Person(LifeModelAgent):
             for reg in self.model.registries.iter_registries():
                 if reg.unregister(self, acct):
                     reg.register(beneficiary, acct)
-            self.model.event_log.add(Event(f"{self.name}'s designated account transferred to {beneficiary.name}"))
+            self.model.event_log.add(
+                Event(
+                    EventKind.INHERITANCE,
+                    person=beneficiary,
+                    amount=acct.balance,
+                    account=acct,
+                    cause=f"designated beneficiary of {self.name}",
+                    message=f"{self.name}'s designated account transferred to {beneficiary.name}",
+                )
+            )
 
     def _gross_estate_value(self) -> float:
         """Approximate transferable estate value (account balances plus home equity).
@@ -1312,28 +1480,47 @@ class Person(LifeModelAgent):
         from ..account.traditional_IRA import TraditionalIRA
 
         total_pretax = 0.0
+        sources = []
         for acct in self._owned_financial_agents():
             if isinstance(acct, Job401kAccount):
+                sources.append((acct, acct.pretax_balance))
                 total_pretax += acct.pretax_balance
                 acct.pretax_balance = 0.0
             elif isinstance(acct, TraditionalIRA):
+                sources.append((acct, acct.balance))
                 total_pretax += acct.balance
                 acct.balance = 0.0
-        self._distribute_inherited_pretax(total_pretax, inheritor)
+        self._distribute_inherited_pretax(total_pretax, inheritor, sources)
 
-    def _distribute_inherited_pretax(self, amount: float, beneficiary: "Person"):
+    def _distribute_inherited_pretax(
+        self, amount: float, beneficiary: "Person", sources: "list[tuple[object, float]] | None" = None
+    ):
         """Pass ``amount`` of inherited pre-tax money to a non-spouse ``beneficiary`` per the
-        configured ``estate.inherited_pretax_mode`` (see ``_liquidate_pretax_to``)."""
+        configured ``estate.inherited_pretax_mode`` (see ``_liquidate_pretax_to``). ``sources`` are
+        the ``(account, amount)`` pairs it was taken from (posted as the inheritance's origin)."""
         if amount <= 0:
             return
+        sources = [(account, taken) for account, taken in (sources or []) if taken > 0]
+        cause = f"estate of {self.name}"
         mode = self.model.config.estate.inherited_pretax_mode
         if mode == "lump_sum":
             beneficiary.income.add(IncomeType.PRETAX_DISTRIBUTION, amount, source="inherited")
-            beneficiary.receive_cash(amount, source=f"inherited retirement from {self.name}")
+            destination = beneficiary.cash_destination
+            beneficiary.receive_cash(amount, source=f"inherited retirement from {self.name}", post=False)
         else:  # "ten_year"
             from ..account.inherited import InheritedPretaxAccount
 
-            InheritedPretaxAccount(beneficiary, balance=amount, decedent_name=self.name)
+            with self.model.ledger.moving_balances():
+                destination = InheritedPretaxAccount(beneficiary, balance=amount, decedent_name=self.name)
+        for account, taken in sources:
+            self.model.ledger.post(
+                taken,
+                FlowKind.INHERITANCE,
+                from_account=account,
+                to_account=destination,
+                cause=cause,
+                agent=beneficiary,
+            )
 
     def _reassign_owned_agents(self, inheritor: "Person"):
         """Reassign ownership of every owned agent (accounts, homes, jobs, insurance, debts) to
@@ -1349,6 +1536,59 @@ class Person(LifeModelAgent):
                 if hasattr(item, "owner"):
                     item.owner = inheritor
         self.model.registries.transfer_owner(self, inheritor)
+
+    def _pass_cash_and_debt_to(self, inheritor: "Person") -> None:
+        """Hand the cash the decedent held outside any bank, and the unpaid bills they carried as
+        debt, to the inheritor (both used to vanish with the decedent)."""
+        cause = f"estate of {self.name}"
+        if self.cash:
+            inheritor.receive_cash(self.cash, kind=FlowKind.INHERITANCE, from_account=cash_label(self), cause=cause)
+            self.cash = 0.0
+        if self.debt:
+            debt = self.debt
+            self.debt = 0
+            inheritor.debt += debt
+            self.model.ledger.name_label(debt_label(inheritor), f"{inheritor.name}'s unpaid-bills debt")
+            self.model.ledger.post(
+                debt,
+                FlowKind.INHERITANCE,
+                from_account=debt_label(inheritor),
+                to_account=debt_label(self),
+                cause=cause,
+                agent=inheritor,
+            )
+
+    def _dissolve_estate(self) -> None:
+        """With no one to inherit, whatever the decedent still holds leaves the household: assets are
+        dissolved and debts discharged (posted so the books still balance)."""
+        from ..base_classes import FinancialAccount
+        from ..ledger import owned_lines
+
+        cause = f"estate of {self.name} dissolved (no beneficiary)"
+        for label, value, agent in owned_lines(self.model, self):
+            if value > 0:
+                self.model.ledger.post(
+                    value, FlowKind.FORFEIT, from_account=label, sink="dissolved estate", cause=cause, agent=self
+                )
+            else:
+                self.model.ledger.post(
+                    -value,
+                    FlowKind.FORFEIT,
+                    to_account=label,
+                    source="debts discharged with the estate",
+                    cause=cause,
+                    agent=self,
+                )
+            # Accounts leave the simulation with their owner; empty them so nothing left behind
+            # (a pledge, a ghost agent) can spend money that has left the books.
+            if isinstance(agent, FinancialAccount):
+                if hasattr(agent, "pretax_balance"):
+                    agent.pretax_balance = 0.0
+                    agent.roth_balance = 0.0
+                else:
+                    agent.balance = 0.0
+        self.cash = 0.0
+        self.debt = 0
 
     def _settle_trusts_on_death(self, inheritor: Optional["Person"]):
         """Settle this person's trusts at death: revocable trusts pay out to their beneficiaries
@@ -1377,7 +1617,11 @@ class Person(LifeModelAgent):
         if estate_tax > 0:
             from .tax_unit import TaxUnit
 
-            inheritor.debt += TaxUnit.for_member(inheritor).pay_bills(estate_tax)
+            cause = f"estate tax on {self.name}'s estate"
+            unpaid = TaxUnit.for_member(inheritor).pay_bills(
+                estate_tax, kind=FlowKind.TAX, sink="IRS: estate tax", cause=cause
+            )
+            inheritor.add_debt(unpaid, kind=FlowKind.TAX, sink="IRS: estate tax", cause=cause)
             self.model.event_log.add(Event(f"Estate tax of ${estate_tax:,.0f} paid on {self.name}'s estate"))
 
     def _apply_survivor_adjustments(self, spouse: "Person"):
@@ -1433,6 +1677,8 @@ class Spending(LifeModelAgent):
         self.base = base
         self._yearly_increase_override = yearly_increase
         self.one_time_expenses = 0
+        #: This year's one-time expenses by category (they sum to ``one_time_expenses``).
+        self.one_time_by_category: dict[str, float] = {}
 
     @property
     def yearly_increase(self) -> float:
@@ -1445,13 +1691,28 @@ class Spending(LifeModelAgent):
     def yearly_increase(self, value: float | None) -> None:
         self._yearly_increase_override = value
 
-    def add_expense(self, amount: float):
+    def add_expense(self, amount: float, *, category: str = "one_time"):
         """Adds a one-time expense.
 
         Args:
             amount (float): Amount of expense to add.
+            category (str, optional): What it is for (``"medical"``, ``"dependents"``,
+                ``"insurance_premium"``, ...), shown on the ledger and in ``explain``. Keyword-only.
         """
         self.one_time_expenses += amount
+        self.one_time_by_category[category] = self.one_time_by_category.get(category, 0.0) + amount
+
+    def year_spending_lines(self) -> dict[str, float]:
+        """This year's spending by category: ``base`` plus each one-time category (any amount added
+        to ``one_time_expenses`` directly is reported as ``one_time``). Sums to
+        :meth:`get_yearly_spending`."""
+        lines = {"base": self.base} if self.base else {}
+        for category, amount in self.one_time_by_category.items():
+            lines[category] = lines.get(category, 0.0) + amount
+        untracked = self.one_time_expenses - sum(self.one_time_by_category.values())
+        if abs(untracked) > 1e-9:
+            lines["one_time"] = lines.get("one_time", 0.0) + untracked
+        return lines
 
     def get_yearly_spending(self) -> float:
         """Gets yearly spending."""
@@ -1470,3 +1731,4 @@ class Spending(LifeModelAgent):
         # it has been spent do we clear one-time expenses and apply the yearly increase.
         self.base += self.base * (self.yearly_increase / 100)
         self.one_time_expenses = 0
+        self.one_time_by_category = {}

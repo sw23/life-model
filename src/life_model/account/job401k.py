@@ -8,8 +8,9 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, ClassVar
 
 from ..base_classes import RetirementAccount
+from ..ledger import FlowKind
 from ..limits import required_min_distrib, rmd_start_age
-from ..model import Event
+from ..model import Event, EventKind
 from ..tax.income import IncomeType
 
 if TYPE_CHECKING:
@@ -79,6 +80,7 @@ class Job401kAccount(RetirementAccount):
         self.job: Job | None = job
         self.pretax_balance = pretax_balance
         self.roth_balance = roth_balance
+        self.model.ledger.post_opening(self, pretax_balance + roth_balance)
         self.pretax_contrib_percent = pretax_contrib_percent
         self.roth_contrib_percent = roth_contrib_percent
         if company_match_percent and match_tiers is not None:
@@ -174,6 +176,14 @@ class Job401kAccount(RetirementAccount):
         self.unvested_match = 0.0
         if forfeited > 0:
             self.pretax_balance -= forfeited
+            self.model.ledger.post(
+                forfeited,
+                FlowKind.FORFEIT,
+                from_account=self,
+                sink=self.job.company if self.job is not None else "employer",
+                cause="unvested 401k match forfeited",
+                agent=self.person,
+            )
             self.model.event_log.add(
                 Event(f"{self.person.name} forfeited ${forfeited:,.0f} of unvested 401k match on leaving")
             )
@@ -246,6 +256,7 @@ class Job401kAccount(RetirementAccount):
         self.unvested_match = min(self.unvested_match * (1 + rate), self.pretax_balance)
         growth = pretax_growth + roth_growth
         self.stat_growth_history.append(growth)
+        self._post_growth(growth)
         return growth
 
     def pre_step(self):
@@ -266,10 +277,19 @@ class Job401kAccount(RetirementAccount):
         required_min_dist_amount = self.deduct_pretax(
             required_min_distrib(self.person.age, self.pretax_balance, config=config, start_age=start_age)
         )
-        self.person.deposit_into_bank_account(required_min_dist_amount)
+        self.person.deposit_into_bank_account(
+            required_min_dist_amount,
+            kind=FlowKind.RMD,
+            from_account=self,
+            cause=f"{self.model.year} required minimum distribution",
+        )
         # RMDs are ordinary income, not FICA wages.
         self.person.income.add(IncomeType.PRETAX_DISTRIBUTION, required_min_dist_amount, source="rmd")
         self.stat_required_min_distrib = required_min_dist_amount
+        if required_min_dist_amount > 0:
+            self.model.event_log.add(
+                Event(EventKind.RMD, person=self.person, amount=required_min_dist_amount, account=self)
+            )
 
     def deduct_pretax(self, amount: float):
         """Deduct from pre-tax balance

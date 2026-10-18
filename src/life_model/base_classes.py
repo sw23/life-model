@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 from enum import Enum
 from typing import TYPE_CHECKING, ClassVar, Optional
 
+from .ledger import FlowKind
 from .limits import federal_retirement_age
 from .model import LifeModelAgent
 
@@ -37,12 +38,18 @@ class FinancialAccount(LifeModelAgent, ABC):
     that don't expose the keyword can have ``account.beneficiary`` assigned directly.
     """
 
+    #: Whether the balance is the household's (counted in net worth and the conservation check).
+    #: False for a donor-advised fund, whose money has been given away.
+    IN_NET_WORTH: ClassVar[bool] = True
+
     def __init__(self, person: "Person", balance: float = 0, *, beneficiary: Optional["Person"] = None):
         super().__init__(person.model)
         self.person = person
         self._balance = float(balance)
         self.beneficiary = beneficiary
         self.stat_balance_history = []
+        if self.IN_NET_WORTH:
+            self.model.ledger.post_opening(self, self._balance)
 
     @property
     def balance(self) -> float:
@@ -125,6 +132,8 @@ class Loan(LifeModelAgent, ABC):
         self.stat_balance_history = []
         self.stat_yearly_principal_payment_history = []
         self.stat_yearly_interest_payment_history = []
+        # A loan taken out mid-run financed something outside the balance sheet (a car, tuition).
+        self.model.ledger.post_opening(self, self.principal, liability=True)
 
     @property
     def monthly_interest_rate(self) -> float:
@@ -291,7 +300,13 @@ class Investment(FinancialAccount, ABC):
         growth = self.calculate_growth()
         self.balance += growth
         self.stat_growth_history.append(growth)
+        self._post_growth(growth)
         return growth
+
+    def _post_growth(self, growth: float) -> None:
+        """Post a year's market growth of this account to the ledger."""
+        if self.IN_NET_WORTH:
+            self.model.ledger.post(growth, FlowKind.GROWTH, to_account=self, source="market", agent=self.person)
 
     def step(self):
         """Apply growth and track statistics"""
@@ -355,8 +370,14 @@ class TaxAdvantagedAccount(Investment, ABC):
             if account is not self and account.limit_group == self.limit_group
         )
 
-    def contribute(self, amount: float) -> float:
-        """Contribute up to the remaining annual limit. Returns the amount actually contributed."""
+    def contribute(
+        self, amount: float, *, from_account=None, source: str = "contribution from outside the model"
+    ) -> float:
+        """Contribute up to the remaining annual limit. Returns the amount actually contributed.
+
+        The money comes from ``from_account`` (a household account label or agent, already debited
+        by the caller) when given; otherwise it is posted as new money from ``source``.
+        """
         if amount <= 0:
             return 0.0
         actual = min(amount, self.remaining_contribution_room())
@@ -364,6 +385,14 @@ class TaxAdvantagedAccount(Investment, ABC):
             self.balance += actual
             self.contributions_ytd += actual
             self.contribution_basis += actual
+            self.model.ledger.post(
+                actual,
+                FlowKind.CONTRIBUTION,
+                from_account=from_account,
+                to_account=self,
+                source=None if from_account is not None else source,
+                agent=self.person,
+            )
         return actual
 
     @property

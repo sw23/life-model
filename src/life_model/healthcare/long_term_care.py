@@ -83,7 +83,7 @@ class LongTermCare(LifeModelAgent):
     def _charge_care_year(self):
         """Charge this year's care cost through the bill path, net of any LTC insurance offset."""
         gross = self.config.annual_cost * self._medical_inflation_factor()
-        self.person.spending.add_expense(gross)
+        self.person.spending.add_expense(gross, category="long_term_care")
 
         # Offset with active LTC policies via the claim machinery. The loss is already charged
         # through the bill path, so the claim only credits the payout (charge_loss=False). The

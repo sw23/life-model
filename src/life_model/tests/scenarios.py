@@ -257,9 +257,115 @@ def renter_buys_home(seed: int = 3, start_year: int = 2026, years: int = 45) -> 
     return model
 
 
+def everything_stochastic(seed: int, start_year: int = 2026, years: int = 50) -> LifeModel:
+    """Stochastic economy *and* stochastic mortality over many products: whole life with a policy
+    loan, annuity deposits/withdrawals, a credit card charged mid-run, an income-driven student
+    loan, a 529 paying for college, insurance claims, donations, a DAF, trusts, lump-sum inherited
+    IRAs, and a loner whose estate dissolves with no heir."""
+    config = _stochastic_config()
+    config.apply_scenario("lump_sum_heirs", {"estate": {"inherited_pretax_mode": "lump_sum"}})
+    model = LifeModel(start_year=start_year, end_year=start_year + years - 1, seed=seed, config=config)
+    family = Family(model)
+    ana = Person(
+        family,
+        "Ana",
+        52,
+        62,
+        Spending(model, base=48000, yearly_increase=None),
+        mortality_mode=MortalityMode.STOCHASTIC,
+        gender=GenderAtBirth.FEMALE,
+    )
+    raj = Person(
+        family,
+        "Raj",
+        55,
+        64,
+        Spending(model, base=36000, yearly_increase=None),
+        mortality_mode=MortalityMode.STOCHASTIC,
+        gender=GenderAtBirth.MALE,
+    )
+    ana.get_married(raj)
+    teen = ana.add_child("Teo", birth_year=start_year - 15)
+    Plan529(ana, beneficiary=teen, balance=60000)
+    BankAccount(ana, "Bank", balance=50000)
+    BankAccount(raj, "Bank", balance=20000)
+    BrokerageAccount(raj, "Brokerage", balance=300000)
+    job = Job(ana, "Hospital", "Doctor", Salary(model, base=210000, yearly_increase=None, yearly_bonus=5))
+    Job401kAccount(job, pretax_balance=400000, pretax_contrib_percent=10, match_tiers=[(100, 4)])
+    StockPlan(job, signon_value=40000, refresher_value=20000, disposition="sell")
+    raj_job = Job(raj, "School", "Teacher", Salary(model, base=70000, yearly_increase=None))
+    Job401kAccount(raj_job, pretax_balance=150000, roth_contrib_percent=5)
+    TraditionalIRA(raj, balance=80000)
+    HealthSavingsAccount(ana, HSAType.FAMILY, balance=20000)
+    SocialSecurity(ana, withdrawal_start_age=67, income_history=EARNINGS_HISTORY)
+    SocialSecurity(raj, withdrawal_start_age=65, income_history=EARNINGS_HISTORY[3:])
+    _home(model, raj, price=650000, principal=300000)
+    policy = LifeInsurance(raj, LifeInsuranceType.WHOLE, death_benefit=300000, monthly_premium=350)
+    annuity = Annuity(ana, AnnuityType.FIXED, initial_balance=100000)
+    card = CreditCard(ana, "Amex", credit_limit=30000, current_balance=2000)
+    from ..debt.student_loan import StudentLoanRepaymentPlan
+
+    StudentLoan(
+        raj,
+        StudentLoanType.FEDERAL_UNSUBSIDIZED,
+        loan_amount=40000,
+        yearly_interest_rate=6.0,
+        length_years=10,
+        school_name="Night school",
+        repayment_plan=StudentLoanRepaymentPlan.REPAYMENT_ASSISTANCE_PLAN,
+    )
+    car_insurance = Insurance(
+        ana, InsuranceType.AUTO, "AutoCo", annual_premium=1800, coverage_amount=40000, deductible=1000
+    )
+    Donation(ana, "Shelter", annual_amount=3000)
+    daf = DonorAdvisedFund(ana, "Giving fund", balance=0)
+    gift_trust = Trust(raj, TrustType.IRREVOCABLE, [teen and ana], name="Gift trust")
+    MedicalCosts(ana)
+    MedicalCosts(raj)
+    Medicare(raj)
+
+    loner_family = Family(model)
+    loner = Person(
+        loner_family,
+        "Lou",
+        74,
+        65,
+        Spending(model, base=30000, yearly_increase=None),
+        mortality_mode=MortalityMode.FIXED_AGE,
+        death_age=80,
+    )
+    BankAccount(loner, "Bank", balance=40000)
+    BrokerageAccount(loner, "Brokerage", balance=250000)
+    old_job = Job(loner, "Mill", "Retired", Salary(model, base=0))
+    old_job.retired = True
+    Job401kAccount(old_job, pretax_balance=200000)
+    _home(model, loner, price=300000, principal=60000)
+    CarLoan(loner, loan_amount=15000, length_years=5, yearly_interest_rate=7, name="Truck")
+    SocialSecurity(loner, withdrawal_start_age=70, income_history=EARNINGS_HISTORY)
+
+    LifeEvents(
+        model,
+        [
+            LifeEvent(start_year + 1, "Card purchase", card.charge, 8000),
+            LifeEvent(start_year + 2, "Annuity top-up", annuity.deposit, 20000),
+            LifeEvent(start_year + 3, "Fender bender", car_insurance.file_claim, 6000, "Collision"),
+            LifeEvent(start_year + 4, "Policy loan", policy.take_loan, 5000),
+            LifeEvent(start_year + 5, "DAF gift", daf.contribute, 15000),
+            LifeEvent(start_year + 5, "Fund trust", gift_trust.fund, 25000),
+            LifeEvent(start_year + 6, "Annuity withdrawal", annuity.withdraw, 10000),
+            LifeEvent(start_year + 8, "Trust gift", gift_trust.distribute, 5000, ana),
+            LifeEvent(start_year + 9, "Repay policy loan", policy.repay_loan, 2000),
+            LifeEvent(start_year + 12, "Drop policy", policy.drop_policy),
+            LifeEvent(start_year + 14, "Surrender annuity", annuity.surrender),
+        ],
+    )
+    return model
+
+
 SCENARIOS = {
     "married_homeowners": married_homeowners,
     "stochastic_retiree": lambda: stochastic_retiree(seed=11),
     "mortality_and_estate": mortality_and_estate,
     "renter_buys_home": renter_buys_home,
+    "everything_stochastic": lambda: everything_stochastic(seed=5),
 }

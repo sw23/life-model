@@ -65,7 +65,7 @@ class MedicalCosts(LifeModelAgent):
             return
         cost = self.annual_cost()
         self.stat_medical_costs = cost
-        self.person.spending.add_expense(cost)
+        self.person.spending.add_expense(cost, category="medical")
 
     def _repr_html_(self):
         return (

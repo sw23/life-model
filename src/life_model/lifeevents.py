@@ -20,7 +20,7 @@ import warnings
 from collections.abc import Callable
 from typing import ClassVar
 
-from .model import Event, LifeModelAgent
+from .model import Event, EventKind, LifeModelAgent
 
 #: Stages a life event may fire in.
 LIFE_EVENT_STAGES = ("pre_step", "events", "post_step")
@@ -34,7 +34,7 @@ class LifeEventRecord(Event):
     """
 
     def __init__(self, life_event: "LifeEvent", stage: str):
-        super().__init__(f"Life event: {life_event.name}")
+        super().__init__(EventKind.LIFE_EVENT_FIRED, message=f"Life event: {life_event.name}", stage=stage)
         self.name = life_event.name
         self.scheduled_year = life_event.year
         self.stage = stage
@@ -137,13 +137,15 @@ class LifeEvent:
         self.event_args = event_args
         self.stage = stage
 
-    def eval_event(self, year) -> bool:
+    def eval_event(self, year, *, model=None) -> bool:
         """Run the event if it is scheduled for ``year`` (regardless of stage). Returns whether it ran.
 
         Kept for direct callers; the engine fires events through :class:`LifeEvents`, which also
-        logs them.
+        logs them. Pass ``model`` (keyword-only) to log the firing on its event log too.
         """
         if self.year == year:
             self.event(*self.event_args)
+            if model is not None:
+                model.event_log.add(LifeEventRecord(self, getattr(model, "current_stage", None) or "direct"))
             return True
         return False

@@ -6,7 +6,8 @@
 import html
 
 from ..base_classes import Loan
-from ..model import Event, LifeModel, LifeModelAgent
+from ..ledger import FlowKind
+from ..model import Event, EventKind, LifeModel, LifeModelAgent
 from ..people.person import Person
 from ..tax.federal import FilingStatus
 from ..tax.income import IncomeType
@@ -56,6 +57,9 @@ class Home(LifeModelAgent):
         self.total_improvements: float = 0.0
         self.sold: bool = False
 
+        #: This year's housing payment by line (see :meth:`make_yearly_payment`).
+        self.year_payment: dict[str, float] = {}
+
         # Bind the mortgage to this owner (a Mortgage is constructed before its Home, so it defers
         # agent registration until the Home adopts it).
         if self.mortgage is not None:
@@ -66,6 +70,11 @@ class Home(LifeModelAgent):
 
         if purchase:
             self.buy()
+        else:
+            # A home that simply appears mid-run (not bought) brings its value and its mortgage.
+            self.model.ledger.post_opening(self, self.home_value)
+            if self.mortgage is not None:
+                self.model.ledger.post_opening(self.mortgage, self.mortgage.principal, liability=True)
 
     @property
     def value_yearly_increase(self) -> float:
@@ -117,12 +126,41 @@ class Home(LifeModelAgent):
 
         closing_costs = self.purchase_price * (self.model.config.housing.closing_cost_percent / 100)
         cash_needed = self.down_payment + closing_costs
-        shortfall = TaxUnit.for_member(self.person).pay_bills(cash_needed)
-        self.person.debt += shortfall
+        ledger = self.model.ledger
+        cause = f"purchase of {self.name}"
+        unit = TaxUnit.for_member(self.person)
+        # The down payment buys equity (a transfer into the home); the mortgage lends the rest of
+        # the price (borrowed into the home); closing costs are spent.
+        with ledger.caused_by(cause):
+            unpaid = unit.pay_bills(self.down_payment, kind=FlowKind.HOUSING, to_account=self, cause=cause)
+            self.person.add_debt(unpaid, to_account=self, cause=cause)
+            unpaid = unit.pay_bills(closing_costs, kind=FlowKind.HOUSING, sink="closing costs", cause=cause)
+            self.person.add_debt(unpaid, kind=FlowKind.HOUSING, sink="closing costs", cause=cause)
+        principal = self.mortgage.principal if self.mortgage is not None else 0.0
+        if self.mortgage is not None:
+            ledger.post(
+                principal, FlowKind.BORROW, from_account=self.mortgage, to_account=self, cause=cause, agent=self.person
+            )
+        # A price not covered by the down payment plus the mortgage is value from outside the model.
+        gap = self.home_value - self.down_payment - principal
+        if abs(gap) > 0.005:
+            ledger.post(
+                gap,
+                FlowKind.OPENING_BALANCE,
+                to_account=self,
+                source="price not covered by down payment and mortgage",
+                cause=cause,
+                agent=self.person,
+            )
         self.model.event_log.add(
             Event(
-                f"{self.person.name} bought {self.name} for ${self.purchase_price:,.0f} (down + closing "
-                f"${cash_needed:,.0f})"
+                EventKind.HOME_BOUGHT,
+                person=self.person,
+                amount=self.purchase_price,
+                account=self,
+                cause=cause,
+                message=f"{self.person.name} bought {self.name} for ${self.purchase_price:,.0f} (down + closing "
+                f"${cash_needed:,.0f})",
             )
         )
 
@@ -156,18 +194,51 @@ class Home(LifeModelAgent):
             self.person.income.add(IncomeType.LONG_TERM_CAPITAL_GAIN, taxable_gain, source="home_sale")
 
         net_proceeds = sale_price - selling_costs - mortgage_payoff
+        ledger = self.model.ledger
+        cause = f"sale of {self.name}"
+        # The home's value leaves the balance sheet: selling costs are spent, the mortgage is paid
+        # off from the price, and the rest arrives as cash.
+        ledger.post(
+            selling_costs, FlowKind.HOUSING, from_account=self, sink="selling costs", cause=cause, agent=self.person
+        )
         if self.mortgage is not None:
+            ledger.post(
+                mortgage_payoff,
+                FlowKind.HOUSING,
+                from_account=self,
+                to_account=self.mortgage,
+                cause=f"{cause}: mortgage payoff",
+                agent=self.person,
+            )
             self.mortgage.principal = 0.0
             self.model.registries.mortgages.unregister(self.person, self.mortgage)
         if net_proceeds > 0:
-            self.person.receive_cash(net_proceeds, source=f"sale of {self.name}")
+            self.person.receive_cash(net_proceeds, source=cause, kind=FlowKind.SALE, from_account=self, cause=cause)
+        elif net_proceeds < 0:
+            # Underwater: the sale price doesn't cover the payoff and selling costs. The owner brings
+            # the difference to closing (through the household waterfall; whatever can't be raised
+            # becomes debt) instead of the lender writing it off.
+            from ..people.tax_unit import TaxUnit
+
+            shortfall = -net_proceeds
+            unpaid = TaxUnit.for_member(self.person).pay_bills(
+                shortfall, kind=FlowKind.HOUSING, to_account=self, cause=f"{cause}: underwater payoff"
+            )
+            self.person.add_debt(unpaid, to_account=self, cause=f"{cause}: underwater payoff")
 
         self.sold = True
         self.model.registries.homes.unregister(self.person, self)
         self.model.event_log.add(
             Event(
-                f"{self.person.name} sold {self.name} for ${sale_price:,.0f} "
-                f"(net ${net_proceeds:,.0f}, taxable gain ${taxable_gain:,.0f})"
+                EventKind.HOME_SOLD,
+                person=self.person,
+                amount=sale_price,
+                account=self,
+                cause=cause,
+                message=f"{self.person.name} sold {self.name} for ${sale_price:,.0f} "
+                f"(net ${net_proceeds:,.0f}, taxable gain ${taxable_gain:,.0f})",
+                net_proceeds=net_proceeds,
+                taxable_gain=taxable_gain,
             )
         )
         return net_proceeds
@@ -185,8 +256,15 @@ class Home(LifeModelAgent):
         self.total_improvements += self.expenses.improvement_amount
         pmi_paid = self._pmi_for_year()
         mortgage_paid = 0.0
+        self.year_payment = self.expenses.year_lines()
+        if pmi_paid:
+            self.year_payment["pmi"] = pmi_paid
         if self.mortgage is not None:
+            principal_before = self.mortgage.principal
             mortgage_paid = self.mortgage.make_yearly_payment(self.mortgage.monthly_payment, extra_to_principal)
+            self.year_payment["mortgage"] = mortgage_paid
+            self.year_payment["mortgage_interest"] = self.mortgage.interest_paid_this_year
+            self.year_payment["mortgage_principal_before"] = principal_before
         return expenses_paid + pmi_paid + mortgage_paid
 
     def _repr_html_(self):
@@ -196,9 +274,14 @@ class Home(LifeModelAgent):
     def post_step(self):
         # Appreciate at year end (consume-then-advance): property tax for the year is assessed
         # on the beginning-of-year value during the step stage.
-        if self.sold:
+        if self.sold or self.person.is_deceased:
+            # A home left behind by a decedent with no heir is off every balance sheet.
             return
-        self.home_value += self.home_value * (self.value_yearly_increase / 100)
+        appreciation = self.home_value * (self.value_yearly_increase / 100)
+        self.home_value += appreciation
+        self.model.ledger.post(
+            appreciation, FlowKind.GROWTH, to_account=self, source="housing market", agent=self.person
+        )
 
 
 class HomeExpenses(LifeModelAgent):
@@ -244,6 +327,17 @@ class HomeExpenses(LifeModelAgent):
             spending_amount += self.home.home_value * (self.home_insurance_percent / 100)
         spending_amount += self.maintenance_amount + self.improvement_amount + self.hoa_amount
         return spending_amount
+
+    def year_lines(self) -> dict[str, float]:
+        """:meth:`get_yearly_spending` by line (property tax, insurance, maintenance, improvements, HOA)."""
+        lines = {}
+        if self.home is not None:
+            lines["property_tax"] = self.home.home_value * (self.property_tax_percent / 100)
+            lines["home_insurance"] = self.home.home_value * (self.home_insurance_percent / 100)
+        lines["maintenance"] = self.maintenance_amount
+        lines["improvements"] = self.improvement_amount
+        lines["hoa"] = self.hoa_amount
+        return {name: amount for name, amount in lines.items() if amount}
 
     def post_step(self):
         # Escalators run after the year's expenses have been paid (consume-then-advance).

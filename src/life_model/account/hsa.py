@@ -5,6 +5,7 @@
 from enum import Enum
 
 from ..base_classes import TaxAdvantagedAccount, TaxTreatment
+from ..ledger import FlowKind
 from ..people.person import Person
 
 
@@ -70,13 +71,14 @@ class HealthSavingsAccount(TaxAdvantagedAccount):
             base += hsa_config.catch_up_amount
         return base
 
-    def contribute(self, amount: float) -> float:
+    def contribute(self, amount: float, **kwargs) -> float:
         """Contribute up to the remaining limit; the owner's contribution is deductible.
 
         Employer contributions (see :meth:`step`) never entered the owner's income, so they are
-        not deducted.
+        not deducted. ``kwargs`` (``from_account``, ``source``) say where the money came from (see
+        :meth:`TaxAdvantagedAccount.contribute`).
         """
-        actual = super().contribute(amount)
+        actual = super().contribute(amount, **kwargs)
         self.person.income.add_deduction(actual, source="hsa_deduction")
         return actual
 
@@ -121,4 +123,11 @@ class HealthSavingsAccount(TaxAdvantagedAccount):
                 self.balance += employer_room
                 self.contributions_ytd += employer_room
                 self.contribution_basis += employer_room
+                self.model.ledger.post(
+                    employer_room,
+                    FlowKind.CONTRIBUTION,
+                    to_account=self,
+                    source="employer HSA contribution",
+                    agent=self.person,
+                )
         super().step()

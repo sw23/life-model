@@ -32,3 +32,41 @@ Output changes no test pinned:
 * `compute_taxes`' local `adjusted_gross_income` was renamed: the value was the post-deduction
   taxable income (the `DEFAULT` flat state base on the single-earner wrapper path), never AGI. No
   number changed.
+
+## Task 3 — cash-flow ledger and the conservation check
+
+The conservation check (`life_model.checks`) found these places where money was created or
+destroyed without a flow. Each was fixed with a failing test first (`test_ledger.py`,
+`TestMoneyConservationBugs`); the symptom column shows the base commit's behaviour.
+
+| # | Bug | Symptom on the base commit | Fix |
+| --- | --- | --- | --- |
+| 1 | Social Security kept paying a dead person. `SocialSecurity` is not a `Benefit`, so `die()` never removed it. | A single 70-year-old dying at 72 accumulated $117,988 of benefits in a cash pocket nobody owned (`person.cash`), and income ledger entries nobody filed. | `SocialSecurity.pre_step` stops once its person is deceased. |
+| 2 | A decedent's carried unpaid-bills debt (`person.debt`) vanished at death: the estate transfer moved accounts, homes and loans but not `debt`. | $49,000 of debt stayed on the dead person; the heir never paid it. | The debt passes to the inheritor (`Person._pass_cash_and_debt_to`) and reduces the taxable estate (IRC §2053). |
+| 3 | Cash a decedent held outside any bank account (`person.cash`) vanished at death. | $25,000 stayed with the dead person; the heir got nothing. | The cash passes to the inheritor. |
+| 4 | Selling an underwater home (price < mortgage payoff + selling costs) silently wrote the difference off: the mortgage was zeroed and nobody paid. | A $300k sale against a $320k mortgage and $18k of selling costs left the owner's bank at $100,000 (should be $62,000). | `Home.sell` charges the shortfall through the household waterfall (any remainder becomes debt). |
+| 5 | Agents removed during a stage still ran the rest of that stage (the engine snapshots the agent list). `die()` removes a decedent's pensions "so nothing of theirs steps again", but a survivor pension still paid the survivor in the year she died. | $10,000 paid to a dead widow's cash pocket. | `LifeModel.step` skips agents removed earlier in the same stage. |
+| 6 | With no heir, a decedent's dissolved accounts kept their balances after removal, and their `Donation` kept spending them every year (reported in the `Charity` column). | $3,000 a year of `Charity` from a dead donor's removed account (and the account's balance spent from beyond the grave). | Dissolution (`Person._dissolve_estate`) posts the estate leaving and empties the accounts; `Donation` stops when its donor is dead. |
+| 7 | A whole-life policy that ended (death, lapse, expiry) kept its cash value and loan balance: surrendering it later paid the stale cash value out again (money created), and repaying its loan paid off a loan the death benefit or lapse had already settled (money destroyed). | A $16,951 surrender of a policy whose insured had died; a $2,000 repayment of an extinguished loan. | `LifeInsurance.close` settles the policy (cash value and loan to 0); `drop_policy`/`repay_loan` do nothing on an ended policy. |
+| 8 | (Crash, not money.) A person who died owning a 529 plan with a living spouse crashed `die()`: the plan's `beneficiary` is the student (a `Child`), which the estate code read as a designated `Person`. | `AttributeError: 'Child' object has no attribute 'is_deceased'`. | Only a `Person` beneficiary counts as a designation (`Person._designated_beneficiary`). |
+
+No existing test's expected value changed.
+
+Output changes no test pinned (base vs. this branch, model frames of the four whole-household
+scenarios in `tests/scenarios.py` plus stochastic seeds 1, 5, 11): every pre-existing column is
+identical except `Charity` in a stochastic run where a donor died without an heir (bug 6: from the
+death year on, the column drops by the $3,000 pledge). `Life Ins Cash Value` on a policy that lapsed
+because its loan exceeded its cash value now reads 0 after the lapse (it used to keep the stale
+cash value). Runs that hit bug 8 used to crash and now complete.
+
+## Task 4 — typed events
+
+No existing test's expected value changed. `Event("text")` still builds a free-text event (kind
+`note`); existing events keep their exact message text and are now typed (`married`, `died`,
+`retired`, `retirement_age`, `home_bought`, `home_sold`, `policy_lapsed`, `annuitized`,
+`inheritance`, `life_event_fired`). New *detail* events — `forced_sale`, `pretax_withdrawal` (with
+the solver's `target`), `withdrawal` (Roth draws by the waterfall), `rmd`, `penalty`,
+`shortfall_debt` — are appended to `model.event_log.list` but left out of
+`EventLog._repr_html_`, so the notebook's event table is byte-identical to the base commit's
+(checked by running the notebook's scenario on both trees). Code that iterates
+`event_log.list` sees the extra entries.
