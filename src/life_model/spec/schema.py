@@ -344,18 +344,29 @@ class Spending(SpecModel):
 
 
 class Payroll(SpecModel):
-    """Pre-tax payroll deductions (Plan 27 D3; the dependent-care FSA is supported since Plan 31)."""
+    """Pre-tax payroll deductions from the pay stub (Plan 27 D3; see :mod:`life_model.work.payroll`)."""
 
     CORE_CLASS = "PayrollDeductions"
 
     health_premium_monthly: NonNegativeMoney = spec_field(
-        0.0, description="Health premium.", unit="USD/month", not_yet_supported="Plan 27 D3"
+        0.0,
+        description="Employee share of the health premium out of each paycheck (pre-tax §125: excluded from "
+        "wages and FICA).",
+        unit="USD/month",
+        core="PayrollDeductions.health_premium_monthly",
     )
     dental_vision_monthly: NonNegativeMoney = spec_field(
-        0.0, description="Dental/vision.", unit="USD/month", not_yet_supported="Plan 27 D3"
+        0.0,
+        description="Dental and vision premiums out of each paycheck (pre-tax §125).",
+        unit="USD/month",
+        core="PayrollDeductions.dental_vision_monthly",
     )
     fsa_annual: NonNegativeMoney = spec_field(
-        0.0, description="Health FSA.", unit="USD/year", not_yet_supported="Plan 27 D3"
+        0.0,
+        description="Health FSA election (pre-tax, up to the year's §125(i) limit; it pays medical bills the "
+        "spending already carries, so take-home cash is unchanged).",
+        unit="USD/year",
+        core="PayrollDeductions.fsa_annual",
     )
     dependent_care_fsa_annual: NonNegativeMoney = spec_field(
         0.0,
@@ -365,24 +376,56 @@ class Payroll(SpecModel):
         core="PayrollDeductions.dependent_care_fsa_annual",
     )
     hsa_employee_annual: NonNegativeMoney = spec_field(
-        0.0, description="Employee HSA.", unit="USD/year", not_yet_supported="Plan 27 D3"
+        0.0,
+        description="Employee HSA contributions through payroll (pre-tax §125, W-2 box 12 W) into the person's "
+        "first HSA, within the HSA limit.",
+        unit="USD/year",
+        core="PayrollDeductions.hsa_employee_annual",
     )
     hsa_employer_annual: NonNegativeMoney = spec_field(
-        0.0, description="Employer HSA.", unit="USD/year", not_yet_supported="Plan 27 D3"
+        0.0,
+        description="Employer HSA contributions (never wages), paid a twelfth a month while the job pays.",
+        unit="USD/year",
+        core="PayrollDeductions.hsa_employer_annual",
     )
     commuter_monthly: NonNegativeMoney = spec_field(
-        0.0, description="Commuter benefit.", unit="USD/month", not_yet_supported="Plan 27 D3"
+        0.0,
+        description="Transit / parking through payroll, excluded from wages and FICA up to the year's §132(f) "
+        "monthly limit.",
+        unit="USD/month",
+        core="PayrollDeductions.commuter_monthly",
     )
 
 
 class StockGrant(SpecModel):
-    """An existing (already granted, partly unvested) equity grant (Plan 27 D1)."""
+    """An existing (already granted, partly unvested) equity grant (Plan 27 D1). Vests before the start are
+    taken as done (a vest happens in January; a run starting later in the year has had that year's)."""
 
-    grant_year: Year = spec_field(description="Year granted.", unit="year")
-    value: NonNegativeMoney = spec_field(description="Grant value at grant.", unit="USD")
-    vesting_schedule_pct: list[NonNegativePercent] = spec_field(
-        description="Percent vesting each year.", unit="percent"
+    CORE_CLASS = "StockGrant"
+
+    grant_year: Year = spec_field(description="Year granted.", unit="year", core="StockGrant.grant_year")
+    value: NonNegativeMoney = spec_field(
+        description="Grant value at grant (the award's dollar value).", unit="USD", core="StockGrant.value_at_grant"
     )
+    vesting_schedule_pct: list[NonNegativePercent] = spec_field(
+        description="Percent vesting 1, 2, ... years after the grant year (must sum to 100).",
+        unit="percent",
+        core="StockGrant.schedule",
+    )
+    unvested_value: NonNegativeMoney | None = spec_field(
+        None,
+        description="Current market value of the still-unvested shares, from the equity statement (revalues the "
+        "grant); unset keeps it at its grant value.",
+        unit="USD",
+        core="StockGrant.unvested_value",
+    )
+
+    @field_validator("vesting_schedule_pct")
+    @classmethod
+    def _sums_to_100(cls, value: list[float]) -> list[float]:
+        if not value or abs(sum(value) - 100.0) > 1e-4:
+            raise ValueError(f"vesting schedule must sum to 100 percent, got {sum(value) if value else 0}")
+        return value
 
 
 class StockOption(SpecModel):
@@ -460,10 +503,38 @@ class StockPlan(SpecModel):
         typical_above_one=True,
     )
     existing_grants: list[StockGrant] | None = spec_field(
-        None, description="Grants made before the start year with unvested shares.", not_yet_supported="Plan 27 D1"
+        None,
+        description="Grants made before the start year with unvested shares (their real grant years).",
+        core="StockPlan.existing_grants",
     )
     espp_discount_pct: NonNegativePercent | None = spec_field(
-        None, description="ESPP purchase discount.", unit="percent", not_yet_supported="Plan 27 PR B"
+        None,
+        description="ESPP purchase discount (at most 15, IRC §423(b)(6)); with espp_contribution_pct it adds an "
+        "employee stock purchase plan.",
+        unit="percent",
+        core="ESPP.discount_pct",
+        le=15,
+    )
+    espp_contribution_pct: NonNegativePercent | None = spec_field(
+        None,
+        description="ESPP contribution, percent of gross pay (after tax), buying at each purchase month within the "
+        "$25,000-a-year §423(b)(8) limit; the discount is W-2 income (not FICA).",
+        unit="percent",
+        core="ESPP.contribution_pct",
+        le=100,
+    )
+    espp_purchase_months: list[Annotated[int, Field(ge=1, le=12)]] = spec_field(
+        default_factory=lambda: [6, 12], description="Months the ESPP buys in.", core="ESPP.purchase_months"
+    )
+    espp_lookback: bool = spec_field(
+        False,
+        description="The ESPP price uses the lower of the offering-start and purchase prices.",
+        core="ESPP.lookback",
+    )
+    espp_disposition: Literal["sell", "hold"] = spec_field(
+        "sell",
+        description="Sell ESPP shares at purchase, or hold them in the first brokerage account.",
+        core="ESPP.disposition",
     )
     options: list[StockOption] = spec_field(
         default_factory=list, description="Stock options (ISO / NSO) to exercise.", core="StockPlan.options"
@@ -498,28 +569,51 @@ class Job(SpecModel):
         0.0, description="Yearly bonus as a percent of base salary.", unit="percent", core="Salary.yearly_bonus"
     )
     stock_plan: StockPlan | None = spec_field(None, description="RSU plan attached to this job.")
-    start_year: Year | None = spec_field(
-        None, description="First year the job pays.", unit="year", not_yet_supported="Plan 27 D3"
+    start_year: Year | YearMonth | None = spec_field(
+        None,
+        description="First year (or YYYY-MM month) the job pays; unset: from the start.",
+        unit="year",
+        core="Job.start_year",
     )
-    end_year: Year | None = spec_field(
-        None, description="Last year the job pays.", unit="year", not_yet_supported="Plan 27 D3"
+    end_year: Year | YearMonth | None = spec_field(
+        None,
+        description="Last year (its December, or the YYYY-MM month) the job pays; then the job ends (no more pay, "
+        "match or vests; unvested match is forfeited).",
+        unit="year",
+        core="Job.end_year",
     )
     bonus_fixed_annual: NonNegativeMoney | None = spec_field(
-        None, description="Fixed-dollar bonus.", unit="USD/year", not_yet_supported="Plan 27 D3"
+        None,
+        description="Fixed-dollar yearly bonus (added to any bonus_pct target).",
+        unit="USD/year",
+        core="Bonus.fixed_annual",
+    )
+    bonus_range_pct: tuple[NonNegativePercent, NonNegativePercent] | None = spec_field(
+        None,
+        description="Payout range of the bonus as percents of target, e.g. [50, 150]: each year's multiplier is "
+        "drawn between them (seeded).",
+        unit="percent",
+        core="Bonus.range_pct",
+    )
+    signon_bonus: NonNegativeMoney = spec_field(
+        0.0, description="One-time sign-on bonus with the first paycheck.", unit="USD", core="Bonus.signon"
     )
     raises: list[tuple[int, float]] | None = spec_field(
-        None, description="(year, raise percent) schedule.", not_yet_supported="Plan 27 D3"
-    )
-    payroll: Payroll | None = spec_field(
         None,
-        description="Pre-tax payroll deductions (the dependent-care FSA; the others are Plan 27 D3).",
-        core="Job.payroll",
+        description="(year, raise percent) pairs: the raise taking effect in each listed year (raise_pct applies to "
+        "the others).",
+        core="Salary.raises",
     )
+    payroll: Payroll | None = spec_field(None, description="Pre-tax payroll deductions.", core="Job.payroll")
 
 
 # --- Accounts ------------------------------------------------------------------------------------
 
-_ALLOCATION_DESC = "Asset allocation in percent by asset class, e.g. {equity: 70, bond: 30}."
+_ALLOCATION_DESC = (
+    "Asset allocation in percent by asset class (equity, bond, cash; sums to 100), e.g. {equity: 70, bond: 30}: "
+    "the account grows at the blend of the economy's returns, rebalanced yearly. A numeric growth_pct overrides it."
+)
+_EXPENSE_DESC = "Fund expense ratio (percent a year), netted out of the return."
 
 
 class MatchTier(SpecModel):
@@ -562,29 +656,81 @@ class BankAccount(SpecModel):
         core="BankAccount.compounding",
     )
     reserve: bool = spec_field(
-        False, description="Emergency reserve not drawn for ordinary bills.", not_yet_supported="Plan 27 D2/D4"
+        False,
+        description="An emergency reserve: income is not deposited here and the waterfall draws it only after every "
+        "other source.",
+        core="BankAccount.reserve",
     )
 
 
 class FixedIncomeAccount(SpecModel):
-    """A CD, Treasury, I-bond or bond fund holding (Plan 27 D2).
+    """A CD, Treasury, I bond or bond fund holding (Plan 27 D2; see :mod:`life_model.account.fixed_income`).
 
-    Until it lands, statements with these are often entered as a bank account named "Bonds"; the
-    validator warns about that stand-in because it is spent like checking.
+    A bank account named "Bonds" is spent like checking; this keeps the instrument's own rules: a CD's
+    interest and early-withdrawal penalty, a Treasury's state-exempt coupon and maturity, an I bond's
+    composite rate, lock and tax deferral, a bond fund's distributions and average-cost basis.
     """
 
-    NOT_YET_SUPPORTED = "Plan 27 D2"
-    CORE_CLASS = "FixedIncomeHolding (Plan 27)"
+    CORE_CLASS = "FixedIncomeHolding"
 
     kind: Literal["fixed_income"]
     id: Identifier | None = _id_field("account")
-    instrument: Literal["cd", "treasury", "i_bond", "bond_fund"] = spec_field(description="Instrument type.")
-    face: NonNegativeMoney = spec_field(description="Face value / current value.", unit="USD")
-    rate_pct: Percent = spec_field(description="Coupon or yield.", unit="percent")
-    maturity: YearMonth | None = spec_field(None, description="Maturity month.", unit="YYYY-MM")
-    state_tax_exempt: bool = spec_field(False, description="Interest exempt from state tax (Treasuries).")
-    early_withdrawal_penalty_months: int = spec_field(0, description="CD penalty in months of interest.", ge=0)
-    reserve: bool = spec_field(True, description="Not drawn by the waterfall unless all else is exhausted.")
+    instrument: Literal["cd", "treasury", "i_bond", "bond_fund"] = spec_field(
+        description="Instrument type.", core="FixedIncomeHolding.kind"
+    )
+    name: str | None = spec_field(None, description="Issuer or fund name.", core="FixedIncomeHolding.name")
+    face: NonNegativeMoney = spec_field(
+        description="Current value on the statement (a Treasury's face).", unit="USD", core="FixedIncomeHolding.face"
+    )
+    rate_pct: Percent = spec_field(
+        description="A CD's APR, a Treasury's coupon, an I bond's fixed rate, or a fund's distribution yield.",
+        unit="percent",
+        core="FixedIncomeHolding.rate_pct",
+    )
+    maturity: YearMonth | None = spec_field(
+        None,
+        description="Maturity month (unset: never; an I bond's is 30 years).",
+        unit="YYYY-MM",
+        core="FixedIncomeHolding.maturity",
+    )
+    purchased: YearMonth | None = spec_field(
+        None,
+        description="Purchase / issue month (an I bond's lock, penalty and rate resets; a fund's holding period). "
+        "Defaults to the first simulated month.",
+        unit="YYYY-MM",
+        core="FixedIncomeHolding.purchased",
+    )
+    state_tax_exempt: bool | None = spec_field(
+        None,
+        description="Interest exempt from state tax (default: true for Treasuries and I bonds).",
+        core="FixedIncomeHolding.state_tax_exempt",
+    )
+    tax_exempt: bool = spec_field(
+        False, description="Interest exempt from federal tax (a municipal fund).", core="FixedIncomeHolding.tax_exempt"
+    )
+    early_withdrawal_penalty_months: int = spec_field(
+        0,
+        description="CD penalty in months of interest.",
+        ge=0,
+        core="FixedIncomeHolding.early_withdrawal_penalty_months",
+    )
+    reserve: bool = spec_field(
+        True,
+        description="Not drawn by the waterfall unless all else is exhausted (false: drawn right after the bank).",
+        core="FixedIncomeHolding.reserve",
+    )
+    accrued_interest: NonNegativeMoney = spec_field(
+        0.0,
+        description="An I bond's interest included in face (taxed at redemption).",
+        unit="USD",
+        core="FixedIncomeHolding.accrued_interest",
+    )
+    cost_basis: NonNegativeMoney | None = spec_field(
+        None,
+        description="A bond fund's cost basis (defaults to face).",
+        unit="USD",
+        core="FixedIncomeHolding.cost_basis",
+    )
 
 
 class TaxLot(SpecModel):
@@ -595,14 +741,16 @@ class TaxLot(SpecModel):
     acquired_year: Year | None = spec_field(
         None, description="Year acquired (long-term once held a year). Defaults to the start year.", unit="year"
     )
+    acquired_month: Annotated[int, Field(ge=1, le=12)] | None = spec_field(
+        None, description="Month acquired (defaults to January of an earlier year, else the first simulated month)."
+    )
 
 
 class BrokerageAccount(SpecModel):
     """A taxable brokerage account.
 
-    Enter either ``balance`` (one lot with no embedded gain) or ``lots``. Lots with embedded gains
-    are built through the undocumented core workaround ``BrokerageAccount.deposit_with_basis``
-    (one call per lot on an account opened empty); Plan 27 D1 adds a ``lots=`` constructor argument.
+    Enter either ``balance`` (one lot with no embedded gain) or ``lots`` (the statement's tax lots with
+    their basis and acquisition dates, ``BrokerageAccount(lots=)``).
     """
 
     CORE_CLASS = "BrokerageAccount"
@@ -619,30 +767,30 @@ class BrokerageAccount(SpecModel):
     )
     lots: list[TaxLot] | None = spec_field(
         None,
-        description="Opening tax lots (value, cost basis, acquired year), built via deposit_with_basis.",
-        core="BrokerageAccount.deposit_with_basis",
+        description="Opening tax lots (value, cost basis, acquired year and month).",
+        core="BrokerageAccount.lots",
     )
     growth_pct: GrowthPct = spec_field(
         "economy",
         description="Total annual return; 'economy' follows the equity return (and varies under stochastic runs).",
         unit="percent",
-        core="BrokerageAccount.growth_rate",
+        core="BrokerageAccount.growth_pct",
         typical_above_one=True,
     )
     dividend_yield_pct: NonNegativePercent | None = spec_field(
         None,
         description="Qualified-dividend yield carved out of the return; defaults to the configured yield.",
         unit="percent",
-        core="BrokerageAccount.dividend_yield",
+        core="BrokerageAccount.dividend_yield_pct",
     )
-    allocation_pct: dict[str, float] | None = spec_field(
-        None, description=_ALLOCATION_DESC, unit="percent", not_yet_supported="Plan 27 D5"
+    allocation_pct: dict[Literal["equity", "bond", "cash"], float] | None = spec_field(
+        None, description=_ALLOCATION_DESC, unit="percent", core="Investment.allocation"
     )
     expense_ratio_pct: NonNegativePercent | None = spec_field(
-        None, description="Fund expense ratio.", unit="percent", not_yet_supported="Plan 27 D5"
+        None, description=_EXPENSE_DESC, unit="percent", core="Investment.expense_ratio_pct"
     )
     reinvest_dividends: bool = spec_field(
-        True, description="False pays dividends to the bank instead.", not_yet_supported="Plan 27 item 1"
+        True, description="False pays dividends to the bank instead.", core="BrokerageAccount.reinvest_dividends"
     )
 
     @model_validator(mode="after")
@@ -661,8 +809,8 @@ class Job401k(SpecModel):
     id: Identifier | None = _id_field("account")
     job: Identifier | None = spec_field(
         None,
-        description="Id of the person's job offering the plan. A standalone (old-employer) plan without a job "
-        "is NOT YET SUPPORTED (Plan 27 D3).",
+        description="Id of the person's job offering the plan. Unset: a standalone (old-employer) plan, which grows, "
+        "pays RMDs and is drawn by the waterfall but takes no contributions.",
         core="Job401kAccount.job",
     )
     pretax_balance: NonNegativeMoney = spec_field(
@@ -675,21 +823,21 @@ class Job401k(SpecModel):
         0.0,
         description="Pre-tax deferral, percent of plan pay (base salary, plus bonus with match_on_bonus).",
         unit="percent",
-        core="Job401kAccount.pretax_contrib_percent",
+        core="Job401kAccount.pretax_contrib_pct",
         typical_above_one=True,
     )
     roth_contrib_pct: NonNegativePercent = spec_field(
         0.0,
         description="Roth deferral, percent of plan pay (base salary, plus bonus with match_on_bonus).",
         unit="percent",
-        core="Job401kAccount.roth_contrib_percent",
+        core="Job401kAccount.roth_contrib_pct",
         typical_above_one=True,
     )
     growth_pct: GrowthPct = spec_field(
         "economy",
         description="Annual return; 'economy' follows the equity return.",
         unit="percent",
-        core="Job401kAccount.average_growth",
+        core="Job401kAccount.growth_pct",
         typical_above_one=True,
     )
     match_tiers: list[MatchTier] | None = spec_field(
@@ -722,13 +870,40 @@ class Job401k(SpecModel):
         typical_above_one=True,
     )
     after_tax_balance: NonNegativeMoney | None = spec_field(
-        None, description="After-tax (non-Roth) bucket.", unit="USD", not_yet_supported="Plan 27 D3"
+        None,
+        description="After-tax (non-Roth) bucket: contributions plus their earnings (pre-tax money).",
+        unit="USD",
+        core="Job401kAccount.after_tax_balance",
+    )
+    after_tax_basis: NonNegativeMoney | None = spec_field(
+        None,
+        description="After-tax contributions in after_tax_balance (defaults to all of it).",
+        unit="USD",
+        core="Job401kAccount.after_tax_basis",
+    )
+    after_tax_contrib_pct: NonNegativePercent = spec_field(
+        0.0,
+        description="After-tax (non-Roth) contributions, percent of plan pay (outside 402(g), inside 415(c)).",
+        unit="percent",
+        core="Job401kAccount.after_tax_contrib_pct",
+    )
+    in_plan_roth_conversion: bool = spec_field(
+        False,
+        description="Convert each after-tax contribution to Roth as it is made (the mega backdoor).",
+        core="Job401kAccount.in_plan_roth_conversion",
     )
     roth_basis: NonNegativeMoney | None = spec_field(
-        None, description="Roth contribution basis.", unit="USD", not_yet_supported="Plan 27 D3"
+        None,
+        description="Roth contributions in roth_balance: a Roth distribution before 59.5 is taxed and penalized on "
+        "its earnings share. Unset treats the whole Roth balance as basis.",
+        unit="USD",
+        core="Job401kAccount.roth_basis",
     )
-    allocation_pct: dict[str, float] | None = spec_field(
-        None, description=_ALLOCATION_DESC, unit="percent", not_yet_supported="Plan 27 D5"
+    allocation_pct: dict[Literal["equity", "bond", "cash"], float] | None = spec_field(
+        None, description=_ALLOCATION_DESC, unit="percent", core="Investment.allocation"
+    )
+    expense_ratio_pct: NonNegativePercent | None = spec_field(
+        None, description=_EXPENSE_DESC, unit="percent", core="Investment.expense_ratio_pct"
     )
 
     @model_validator(mode="after")
@@ -760,12 +935,22 @@ class TraditionalIRA(SpecModel):
         core="TraditionalIRA.contribution_limit",
     )
     nondeductible_basis: NonNegativeMoney | None = spec_field(
-        None, description="Form 8606 after-tax basis.", unit="USD", not_yet_supported="Plan 27 D1"
+        None,
+        description="Form 8606 basis (line 14 of the last filed 8606): distributions and conversions recover it pro "
+        "rata across the person's traditional IRAs.",
+        unit="USD",
+        core="TraditionalIRA.nondeductible_basis",
+    )
+    allocation_pct: dict[Literal["equity", "bond", "cash"], float] | None = spec_field(
+        None, description=_ALLOCATION_DESC, unit="percent", core="Investment.allocation"
+    )
+    expense_ratio_pct: NonNegativePercent | None = spec_field(
+        None, description=_EXPENSE_DESC, unit="percent", core="Investment.expense_ratio_pct"
     )
 
 
 class RothIRA(SpecModel):
-    """A Roth IRA. The whole opening balance is treated as contribution basis (Plan 27 item 3)."""
+    """A Roth IRA. Withdrawals follow the Roth ordering: contributions, then conversions, then earnings."""
 
     CORE_CLASS = "RothIRA"
 
@@ -786,10 +971,23 @@ class RothIRA(SpecModel):
         core="RothIRA.contribution_limit",
     )
     contribution_basis: NonNegativeMoney | None = spec_field(
-        None, description="Contribution basis (withdrawable any time).", unit="USD", not_yet_supported="Plan 27 D1"
+        None,
+        description="Regular contributions in the balance (withdrawable tax- and penalty-free any time). Unset: the "
+        "whole balance less conversion_basis (no earnings).",
+        unit="USD",
+        core="RothIRA.contribution_basis",
     )
     conversion_basis: NonNegativeMoney | None = spec_field(
-        None, description="Conversion basis.", unit="USD", not_yet_supported="Plan 27 D1"
+        None,
+        description="Converted amounts in the balance (assumed more than five years old: tax- and penalty-free).",
+        unit="USD",
+        core="RothIRA.conversion_basis",
+    )
+    allocation_pct: dict[Literal["equity", "bond", "cash"], float] | None = spec_field(
+        None, description=_ALLOCATION_DESC, unit="percent", core="Investment.allocation"
+    )
+    expense_ratio_pct: NonNegativePercent | None = spec_field(
+        None, description=_EXPENSE_DESC, unit="percent", core="Investment.expense_ratio_pct"
     )
 
 
@@ -813,8 +1011,8 @@ class HealthSavingsAccount(SpecModel):
     )
     employer_contribution_annual: NonNegativeMoney | None = spec_field(
         None,
-        description="Employer contribution per year (continues after retirement until Plan 27 D3). Defaults to "
-        "the configured amount.",
+        description="Employer contribution per year, at each year start while the person has an active job "
+        "(prefer the job's payroll.hsa_employer_annual, paid per paycheck). Defaults to the configured amount.",
         unit="USD/year",
         core="HealthSavingsAccount.employer_contribution",
     )
@@ -825,7 +1023,16 @@ class HealthSavingsAccount(SpecModel):
         core="HealthSavingsAccount.contribution_limit",
     )
     basis: NonNegativeMoney | None = spec_field(
-        None, description="Contribution basis.", unit="USD", not_yet_supported="Plan 27 D1"
+        None,
+        description="Contribution basis (informational: HSA distributions are tax-free for medical costs).",
+        unit="USD",
+        core="HealthSavingsAccount.basis",
+    )
+    allocation_pct: dict[Literal["equity", "bond", "cash"], float] | None = spec_field(
+        None, description=_ALLOCATION_DESC, unit="percent", core="Investment.allocation"
+    )
+    expense_ratio_pct: NonNegativePercent | None = spec_field(
+        None, description=_EXPENSE_DESC, unit="percent", core="Investment.expense_ratio_pct"
     )
 
 
@@ -855,7 +1062,17 @@ class Plan529(SpecModel):
         None, description="Lifetime limit override.", unit="USD", core="Plan529.lifetime_contribution_limit"
     )
     basis: NonNegativeMoney | None = spec_field(
-        None, description="Contribution basis.", unit="USD", not_yet_supported="Plan 27 D1"
+        None,
+        description="Contributions in the balance; the rest is earnings, taxed and penalized pro rata on a "
+        "non-qualified withdrawal. Unset: the whole balance.",
+        unit="USD",
+        core="Plan529.basis",
+    )
+    allocation_pct: dict[Literal["equity", "bond", "cash"], float] | None = spec_field(
+        None, description=_ALLOCATION_DESC, unit="percent", core="Investment.allocation"
+    )
+    expense_ratio_pct: NonNegativePercent | None = spec_field(
+        None, description=_EXPENSE_DESC, unit="percent", core="Investment.expense_ratio_pct"
     )
 
 
@@ -1602,19 +1819,96 @@ class Child(SpecModel):
 
 
 class ContributionPlan(SpecModel):
-    """A recurring contribution (Plan 27 D4)."""
+    """A recurring contribution (Plan 27 D4; ``life_model.policies.ContributionPlan``)."""
 
-    account: Identifier = spec_field(description="Target account id.")
-    amount_annual: NonNegativeMoney | None = spec_field(None, description="Dollars per year.", unit="USD/year")
-    pay_pct: NonNegativePercent | None = spec_field(None, description="Percent of pay.", unit="percent")
-    source: Literal["bank", "payroll"] = spec_field("bank", description="Where the money comes from.")
+    CORE_CLASS = "ContributionPlan"
+
+    account: Identifier = spec_field(
+        description="Target account id (a 401k, IRA, HSA, brokerage, 529, bank or fixed income)."
+    )
+    amount_annual: NonNegativeMoney | None = spec_field(
+        None,
+        description="Dollars per year, spread over the months.",
+        unit="USD/year",
+        core="ContributionPlan.amount_annual",
+    )
+    max_out: bool = spec_field(
+        False,
+        description="Contribute the account's annual limit (instead of amount_annual / pay_pct).",
+        core="ContributionPlan.amount_annual",
+    )
+    pay_pct: NonNegativePercent | None = spec_field(
+        None, description="Percent of gross pay.", unit="percent", core="ContributionPlan.pct_of_pay", le=100
+    )
+    source: Literal["bank", "payroll"] = spec_field(
+        "bank",
+        description="'bank' (moved after the month's bills, never more than the bank holds) or 'payroll' (a 401k "
+        "deferral, or a pre-tax HSA deferral).",
+        core="ContributionPlan.source",
+    )
+    bucket: Literal["pretax", "roth", "after_tax"] | None = spec_field(
+        None, description="For a 401k: which bucket (default pretax).", core="ContributionPlan.bucket"
+    )
+    months: Annotated[int, Field(ge=1, le=12)] | list[Annotated[int, Field(ge=1, le=12)]] = spec_field(
+        12,
+        description="Contribute in the first n months of each year (12: monthly), or in the listed months.",
+        core="ContributionPlan.months",
+    )
+
+    @model_validator(mode="after")
+    def _one_amount(self) -> "ContributionPlan":
+        given = [self.amount_annual is not None, self.pay_pct is not None, self.max_out]
+        if sum(given) != 1:
+            raise ValueError("give exactly one of amount_annual, pay_pct or max_out")
+        return self
 
 
 class SavingsPolicy(SpecModel):
-    """Surplus sweep above a cash floor (Plan 27 D4)."""
+    """Surplus sweep above a cash floor, once a year after the taxes are paid (Plan 27 D4)."""
 
-    cash_floor: NonNegativeMoney = spec_field(description="Cash kept in the bank.", unit="USD")
-    sweep_to: Identifier = spec_field(description="Account receiving the surplus.")
+    CORE_CLASS = "SavingsPolicy"
+
+    cash_floor: NonNegativeMoney = spec_field(
+        description="Cash kept in the person's (non-reserve) bank accounts.",
+        unit="USD",
+        core="SavingsPolicy.cash_floor",
+    )
+    sweep_to: Identifier = spec_field(
+        description="Account receiving the surplus (brokerage, fixed income, bank, or a tax-advantaged account "
+        "within its room).",
+        core="SavingsPolicy.sweep_to",
+    )
+
+
+class RothConversion(SpecModel):
+    """A standing Roth conversion every December before the year's taxes (Plan 27)."""
+
+    CORE_CLASS = "RothConversionPolicy"
+
+    fill_bracket_pct: Percent | None = spec_field(
+        None,
+        description="Convert enough to fill the return's ordinary taxable income to the top of this bracket (12, "
+        "22, ...).",
+        unit="percent",
+        core="RothConversionPolicy.fill_bracket_pct",
+    )
+    amount_annual: NonNegativeMoney | None = spec_field(
+        None,
+        description="Or convert this many dollars a year.",
+        unit="USD/year",
+        core="RothConversionPolicy.amount_annual",
+    )
+    source: Identifier | None = spec_field(
+        None, description="Source account id (a traditional IRA, or a 401k in plan); default every traditional IRA."
+    )
+    target: Identifier | None = spec_field(None, description="Roth IRA id (default the first, opened if needed).")
+    until_age: Age | None = spec_field(None, description="Stop converting once the person reaches this age.")
+
+    @model_validator(mode="after")
+    def _one_of(self) -> "RothConversion":
+        if (self.fill_bracket_pct is None) == (self.amount_annual is None):
+            raise ValueError("give exactly one of fill_bracket_pct or amount_annual")
+        return self
 
 
 class SelfEmployment(SpecModel):
@@ -1730,10 +2024,15 @@ class Person(SpecModel):
     children: list[Child] = spec_field(default_factory=list, description="Child dependents.")
     self_employment: SelfEmployment | None = spec_field(None, description="Self-employment income (Schedule C).")
     contribution_plans: list[ContributionPlan] | None = spec_field(
-        None, description="Recurring contributions.", not_yet_supported="Plan 27 D4"
+        None, description="Recurring contributions (person.add_contribution_plan).", core="ContributionPlan"
     )
     savings_policy: SavingsPolicy | None = spec_field(
-        None, description="Surplus sweep above a cash floor.", not_yet_supported="Plan 27 D4"
+        None, description="Surplus sweep above a cash floor (person.savings_policy).", core="SavingsPolicy"
+    )
+    roth_conversion: RothConversion | None = spec_field(
+        None,
+        description="A standing yearly Roth conversion (person.roth_conversion_policy).",
+        core="RothConversionPolicy",
     )
 
     @model_validator(mode="before")
@@ -1906,13 +2205,29 @@ class ContributeEvent(EventBase):
 
 
 class ConvertToRothEvent(EventBase):
-    """Roth conversion (Plan 27)."""
-
-    NOT_YET_SUPPORTED = "Plan 27 item 3"
+    """Convert pre-tax money to a Roth IRA (``life_model.policies.convert_to_roth``): pro rata to the traditional
+    IRAs' Form 8606 basis, the taxable part is ordinary income this year (no 10% additional tax). A
+    ``fill_bracket_pct`` conversion happens in December of the event's year (it needs the year's income)."""
 
     action: Literal["convert_to_roth"]
-    amount: NonNegativeMoney = spec_field(description="Amount converted.", unit="USD")
-    source: Identifier | None = spec_field(None, description="Source account id.")
+    amount: NonNegativeMoney | None = spec_field(None, description="Amount converted.", unit="USD")
+    fill_bracket_pct: Percent | None = spec_field(
+        None,
+        description="Or convert enough to fill ordinary taxable income to the top of this bracket.",
+        unit="percent",
+    )
+    source: Identifier | None = spec_field(
+        None,
+        description="Source account id (a traditional IRA, or a 401k: an in-plan rollover); default every "
+        "traditional IRA.",
+    )
+    target: Identifier | None = spec_field(None, description="Roth IRA id (default the first, opened if needed).")
+
+    @model_validator(mode="after")
+    def _one_of(self) -> "ConvertToRothEvent":
+        if (self.amount is None) == (self.fill_bracket_pct is None):
+            raise ValueError("convert_to_roth needs exactly one of amount or fill_bracket_pct")
+        return self
 
 
 class ClaimSocialSecurityEvent(EventBase):
@@ -1967,7 +2282,7 @@ EVENT_ACTIONS: tuple[str, ...] = (
 
 
 #: Payment sources of the household waterfall (``people.tax_unit.DEFAULT_WITHDRAWAL_ORDER``).
-WithdrawalSource = Literal["bank", "brokerage", "roth_basis", "pretax", "roth_earnings"]
+WithdrawalSource = Literal["bank", "fixed_income", "brokerage", "roth_basis", "pretax", "roth_earnings", "reserve"]
 
 
 # --- Top level -----------------------------------------------------------------------------------
@@ -1986,8 +2301,9 @@ class HouseholdSpec(SpecModel):
     withdrawal_order: list[WithdrawalSource] | None = spec_field(
         None,
         description="Household payment waterfall: the order sources are drawn to pay bills and taxes, across "
-        "every member. Each source exactly once, starting with 'bank'. Defaults to bank, brokerage, roth_basis, "
-        "pretax, roth_earnings.",
+        "every member. Each source exactly once, starting with 'bank'. Defaults to bank, fixed_income, brokerage, "
+        "roth_basis, pretax, roth_earnings, reserve (fixed_income and reserve may be left out: they then take those "
+        "places).",
         core="Family.withdrawal_order",
     )
     events: list[Event] = spec_field(default_factory=list, description="Dated life events.")

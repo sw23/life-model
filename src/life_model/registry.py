@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     # (ruff does not count those as uses; mypy needs them resolved).
     from .account.bank import BankAccount  # noqa: F401
     from .account.brokerage import BrokerageAccount  # noqa: F401
+    from .account.fixed_income import FixedIncomeHolding  # noqa: F401
     from .account.hsa import HealthSavingsAccount  # noqa: F401
     from .account.job401k import Job401kAccount  # noqa: F401
     from .account.pension import Pension  # noqa: F401
@@ -185,6 +186,10 @@ class PensionRegistry(PersonRegistry["Pension"]):
     """Registry for managing Pension (defined-benefit) relationships"""
 
 
+class FixedIncomeRegistry(PersonRegistry["FixedIncomeHolding"]):
+    """Registry for managing fixed-income holdings (CDs, Treasuries, I bonds, bond funds; Plan 27 D2)"""
+
+
 class TrustRegistry(PersonRegistry["Trust"]):
     """Registry for managing Trust relationships (keyed by the grantor)"""
 
@@ -217,6 +222,7 @@ class ModelRegistries:
         self.long_term_care = LongTermCareRegistry()
         self.children = ChildRegistry()
         self.pensions = PensionRegistry()
+        self.fixed_income = FixedIncomeRegistry()
         # Trusts are keyed by their grantor. They are deliberately kept out of iter_registries so
         # the generic estate reassignment does not move them; death handling for trusts is explicit
         # (revocable trusts pay out, irrevocable trusts survive) — see Person.die.
@@ -248,6 +254,7 @@ class ModelRegistries:
         self.long_term_care.clear(owner)
         self.children.clear(owner)
         self.pensions.clear(owner)
+        self.fixed_income.clear(owner)
         self.trusts.clear(owner)
 
     def iter_registries(self) -> list[Registry]:
@@ -277,6 +284,7 @@ class ModelRegistries:
             self.long_term_care,
             self.children,
             self.pensions,
+            self.fixed_income,
         ]
 
     def transfer_owner(self, old_owner: "Person", new_owner: "Person") -> None:

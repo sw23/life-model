@@ -6,6 +6,7 @@
 import html
 from typing import ClassVar
 
+from .._compat import legacy_signature
 from ..base_classes import FinancialAccount
 from ..economy import annual_to_monthly
 from ..ledger import FlowKind
@@ -37,15 +38,17 @@ class BankAccount(FinancialAccount):
     # Accrue interest before tax-unit settlement (0) so the interest is on this year's return.
     STEP_PRIORITY: ClassVar[dict[str, int]] = {"step": -10}
 
+    @legacy_signature(("owner", "company", "type", "balance", "interest_rate"), {"interest_rate": "interest_pct"})
     def __init__(
         self,
         owner: Person,
-        company: str,
+        *,
+        company: str = "Bank",
         type: str = "Bank",
         balance: float = 0,
-        interest_rate: float | None = None,
-        *,
+        interest_pct: float | None = None,
         compounding: str | None = None,
+        reserve: bool = False,
     ):
         """Class modeling bank accounts
 
@@ -54,15 +57,22 @@ class BankAccount(FinancialAccount):
             company (str): Company at which the bank account belongs.
             type (str, optional): Type of account. Defaults to 'Bank'.
             balance (float, optional): Balance of account. Defaults to 0.
-            interest_rate (float, optional): Nominal annual interest rate (APR, percent). Defers to
-                the economy's cash yield each year if None.
+            interest_pct (float, optional): Nominal annual interest rate (APR, percent); deprecated
+                alias ``interest_rate``. Defers to the economy's cash yield each year if None.
             compounding (str, optional): ``"monthly"`` or ``"annual"`` compounding of
-                ``interest_rate``. Defaults to the configured ``accounts.bank.compound_rate``
-                (monthly). Keyword-only.
+                ``interest_pct``. Defaults to the configured ``accounts.bank.compound_rate`` (monthly).
+            reserve (bool, optional): An emergency reserve (Plan 27 D2/D4): income is not deposited here
+                and the household waterfall draws it only after every other source (the ``reserve``
+                step). Defaults to False.
+
+        Every argument after ``owner`` is keyword-only (positional use is deprecated, Plan 27 D8).
         """
+        interest_rate = interest_pct
         super().__init__(owner, balance)
         self.company = company
         self.type = type
+        #: Whether this is an emergency reserve (drawn last by the waterfall, never receives income).
+        self.reserve = reserve
         bank_config = self.model.config.accounts.bank
         # An explicit interest_rate overrides the economy; None defers to the
         # economy's cash yield, re-read each year.

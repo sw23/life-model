@@ -598,11 +598,17 @@ class Job401kContribLimitConfig(StrictModel):
     catch_up_amount: int = Field(ge=0)
     # 415(c) overall annual-additions limit (employee + employer, per employer plan).
     annual_additions_limit: int = Field(ge=0)
+    # SECURE 2.0 §109 (IRC §414(v)(2)(E)): the larger catch-up for ages 60-63 (by the end of the year).
+    # None (before 2025, or a config without it) keeps the regular catch-up at every age.
+    super_catch_up_amount: int | None = Field(default=None, ge=0)
+    super_catch_up_ages: tuple[int, int] = (60, 63)
 
 
 class IRAConfig(StrictModel):
     contribution_limit: int = Field(ge=0)
-    default_growth_rate: float = Field(ge=0)
+    #: Deprecated and ignored (Plan 27 D8): growth follows the economy or the account's own rate. Removed
+    #: from the packaged defaults; still accepted in an overlay for one release.
+    default_growth_rate: float | None = Field(default=None, ge=0)
 
 
 class RetirementConfig(StrictModel):
@@ -665,12 +671,16 @@ class SocialSecurityConfig(StrictModel):
 
 
 class BankAccountConfig(StrictModel):
-    default_interest_rate: float = Field(ge=0)
+    #: Deprecated and ignored (Plan 27 D8): cash earns the economy's cash yield or the account's own rate.
+    #: Removed from the packaged defaults; still accepted in an overlay for one release.
+    default_interest_rate: float | None = Field(default=None, ge=0)
     compound_rate: int = Field(ge=1)
 
 
 class BrokerageAccountConfig(StrictModel):
-    default_growth_rate: float
+    #: Deprecated and ignored (Plan 27 D8): growth follows the economy or the account's own rate. Removed
+    #: from the packaged defaults; still accepted in an overlay for one release.
+    default_growth_rate: float | None = None
     # Share of the growth rate paid out as qualified dividends rather than accruing as untaxed
     # price appreciation. Defaults to 0 so accounts are pure-appreciation unless opted in.
     dividend_yield: float = Field(default=0.0, ge=0)
@@ -694,7 +704,9 @@ class HSAAccountConfig(StrictModel):
 class Plan529Config(StrictModel):
     annual_contribution_limit: int = Field(ge=0)
     lifetime_contribution_limit: int = Field(ge=0)
-    default_growth_rate: float = Field(ge=0)
+    #: Deprecated and ignored (Plan 27 D8): growth follows the economy or the account's own rate. Removed
+    #: from the packaged defaults; still accepted in an overlay for one release.
+    default_growth_rate: float | None = Field(default=None, ge=0)
     qualified_expense_penalty: float = Field(ge=0, le=100)
 
 
@@ -965,6 +977,14 @@ class YearlyTaxParameters(StrictModel):
     qcd_limit: float | None = Field(default=None, ge=0)
     ltc_premium_limits: list[LTCPremiumLimit] | None = None
     compensation_limit: float | None = Field(default=None, ge=0)
+    # Plan 27 (payroll and contributions). Each optional: None leaves the limit off.
+    #: IRC §414(v)(2)(E) catch-up for ages 60-63 (2025+).
+    limit_401k_catch_up_60_63: int | None = Field(default=None, ge=0)
+    #: IRC §125(i) health FSA salary reduction limit (a year).
+    limit_health_fsa: int | None = Field(default=None, ge=0)
+    #: IRC §132(f)(2) monthly qualified transportation fringe exclusion (transit and vanpool; parking has
+    #: the same limit).
+    limit_commuter_monthly: int | None = Field(default=None, ge=0)
 
 
 class StochasticEconomyConfig(StrictModel):

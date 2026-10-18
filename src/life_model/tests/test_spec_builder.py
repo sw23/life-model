@@ -30,7 +30,7 @@ from ..spec import (
     populate_model,
 )
 from ..tax.federal import FilingStatus
-from .spec_helpers import fixture_config, minimal, spec_of
+from .spec_helpers import fixture_config, minimal, not_yet_supported, spec_of
 
 
 def build(data: dict, **kwargs):
@@ -279,10 +279,8 @@ class TestBuildChecks(unittest.TestCase):
             build_model(spec_of(data))
 
     def test_not_yet_supported_is_rejected_even_without_checks(self):
-        data = minimal()
-        data["people"][0]["accounts"][0]["reserve"] = True
         with self.assertRaises(SpecValidationError):
-            build_model(spec_of(data), check=False)
+            build_model(spec_of(not_yet_supported()), check=False)
         data = minimal(accounts=[])  # an ordinary error is skipped with check=False
         build_model(spec_of(data), check=False)
 

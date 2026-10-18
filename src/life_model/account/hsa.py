@@ -4,6 +4,7 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 from enum import Enum
 
+from .._compat import legacy_signature
 from ..base_classes import TaxAdvantagedAccount, TaxTreatment
 from ..ledger import FlowKind
 from ..people.person import Person
@@ -22,36 +23,66 @@ class HealthSavingsAccount(TaxAdvantagedAccount):
     tax_treatment = TaxTreatment.HSA
     is_rmd_eligible = False
 
+    @legacy_signature(
+        ("person", "hsa_type", "balance", "contribution_limit", "employer_contribution"),
+        {
+            "person": "owner",
+            "contribution_limit": "contribution_limit_annual",
+            "employer_contribution": "employer_contribution_annual",
+            "growth_rate": "growth_pct",
+        },
+    )
     def __init__(
         self,
-        person: Person,
-        hsa_type: HSAType,
-        balance: float = 0,
-        contribution_limit: float | None = None,
-        employer_contribution: float | None = None,
+        owner: Person,
         *,
-        growth_rate: float | None = None,
+        hsa_type: HSAType = HSAType.INDIVIDUAL,
+        balance: float = 0,
+        contribution_limit_annual: float | None = None,
+        employer_contribution_annual: float | None = None,
+        growth_pct: float | None = None,
+        basis: float | None = None,
+        allocation: "dict[str, float] | None" = None,
+        expense_ratio_pct: float = 0.0,
     ):
         """Models a Health Savings Account (HSA).
 
         The HSA grows like any other investment (monthly), uses the correct self-only/family
-        contribution limit (including the age-55 catch-up), counts employer contributions against
-        that limit, and deposits the employer contribution once per year, at the start of the year.
+        contribution limit (including the age-55 catch-up), and counts employer contributions against
+        that limit. Payroll contributions (employee and employer, Plan 27 D3) come through the job's
+        :class:`~life_model.work.payroll.PayrollDeductions`.
 
         Args:
-            person: The person who owns this HSA
-            hsa_type: Type of HSA (Individual or Family)
-            balance: Current HSA balance
-            growth_rate: Expected annual growth rate percentage. Defers to the economy's equity
-                return when None (HSAs are typically invested).
-            contribution_limit: Override for the annual contribution limit. Uses the year/age/tier
-                indexed limit when None.
-            employer_contribution: Annual employer contribution. Uses configured default if None.
+            owner: The person who owns this HSA (deprecated alias ``person``).
+            hsa_type: Type of HSA (Individual or Family).
+            balance: Current HSA balance.
+            contribution_limit_annual: Override for the annual contribution limit (deprecated alias
+                ``contribution_limit``). Uses the year/age/tier indexed limit when None.
+            employer_contribution_annual: A yearly employer contribution deposited at each year start
+                while the owner has an active W-2 job (deprecated alias ``employer_contribution``; prefer
+                ``PayrollDeductions(hsa_employer_annual=)``, paid per paycheck). Uses the configured
+                default if None.
+            growth_pct: Expected annual growth rate percentage (deprecated alias ``growth_rate``).
+                Defers to the economy's equity return when None (HSAs are typically invested).
+            basis: Contribution basis (Plan 27 D1); the whole balance when None. Informational: every
+                HSA distribution is tax-free for medical costs and fully taxable otherwise.
+            allocation: Target allocation in percent by asset class (Plan 27 D5).
+            expense_ratio_pct: Fund expense ratio (percent a year).
         """
+        person = owner
+        contribution_limit = contribution_limit_annual
+        employer_contribution = employer_contribution_annual
         hsa_config = person.model.config.accounts.hsa
         if employer_contribution is None:
             employer_contribution = hsa_config.default_employer_contribution
-        super().__init__(person, balance, growth_rate)
+        super().__init__(
+            person,
+            balance,
+            growth_pct,
+            basis=basis,
+            allocation=allocation,
+            expense_ratio_pct=expense_ratio_pct,
+        )
         self.hsa_type = hsa_type
         self._contribution_limit_override = contribution_limit
         self.employer_contribution = employer_contribution
@@ -117,18 +148,39 @@ class HealthSavingsAccount(TaxAdvantagedAccount):
         desc += "</ul>"
         return desc
 
+    def credit_payroll(self, amount: float) -> None:
+        """Credit payroll HSA money (employee and employer; a negative true-up claws it back): counted
+        against the limit, never an above-the-line deduction (it was kept out of wages). The job posts it."""
+        self.balance += amount
+        self.contributions_ytd += amount
+        self.contribution_basis = max(0.0, self.contribution_basis + amount)
+
+    def receive_employer_contribution(self, amount: float, employer: str) -> float:
+        """Deposit up to ``amount`` of employer money (counted against the limit; never in the owner's
+        income). Returns what was deposited."""
+        employer_room = min(amount, self.remaining_contribution_room())
+        if employer_room <= 0:
+            return 0.0
+        self.balance += employer_room
+        self.contributions_ytd += employer_room
+        self.contribution_basis += employer_room
+        self.model.ledger.post(
+            employer_room,
+            FlowKind.CONTRIBUTION,
+            to_account=self,
+            source=employer,
+            cause="employer HSA contribution",
+            agent=self.person,
+        )
+        return employer_room
+
     def on_year_start(self):
-        """Add the employer contribution (once per year, at its start, counted against the limit)."""
-        if self.employer_contribution > 0:
-            employer_room = min(self.employer_contribution, self.remaining_contribution_room())
-            if employer_room > 0:
-                self.balance += employer_room
-                self.contributions_ytd += employer_room
-                self.contribution_basis += employer_room
-                self.model.ledger.post(
-                    employer_room,
-                    FlowKind.CONTRIBUTION,
-                    to_account=self,
-                    source="employer HSA contribution",
-                    agent=self.person,
-                )
+        """Add the legacy yearly employer contribution (at the year start, counted against the limit).
+        Plan 27 D3: it stops once the owner's jobs have all ended (an owner modeled without any job keeps
+        receiving it, the legacy behavior)."""
+        if self.employer_contribution <= 0:
+            return
+        jobs = [job for job in self.person.jobs if job.kind == "w2"]
+        if jobs and not any(job.is_active_in(self.model.year) for job in jobs):
+            return
+        self.receive_employer_contribution(self.employer_contribution, "employer HSA contribution")

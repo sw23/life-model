@@ -77,7 +77,7 @@ and anything not green gets a likely cause:
 | `unmodeled_credit` / `unmodeled_deduction` | a credit or deduction the engine does not compute (foreign tax credit, ACA premium tax credit, energy credits, ...) or computes from an input the spec lacks (care or college costs, a child's income) | add the input (`children[].care_expenses_annual`, `payroll.dependent_care_fsa_annual`, ...); otherwise none yet (Plan 31 task 6 adds the premium tax credit) |
 | `unit_mismatch` | off by 12x or 100x | a monthly amount entered as annual, or a fraction as a percent |
 | `timing` | withholding, estimated payments, the refund or balance due | none yet (taxes settle as a year-end lump; Plan 31 D3) |
-| `missing_input` | needs a spec field the engine does not take yet | none yet (Plan 27: payroll deductions, basis) |
+| `missing_input` | needs a spec field the engine does not take yet | none yet (a 1099-B's per-sale basis, the 1098 lines) |
 | `unmodeled_line` | a line with no engine equivalent | none |
 | `propagated` | a total off only because a line it adds up is off | fix the line it names (`follows 1040 line 2b`) |
 | `unexplained` | none of the above | investigate |
@@ -109,8 +109,8 @@ Every `TaxReturn` field maps onto the year's lines; since Plan 31 each credit ha
 | NIIT, Additional Medicare Tax, early-distribution and HSA additional taxes | Schedule 2; 1040 line 23 |
 
 Not modeled yet: withholding, estimated payments and the refund (Plan 31 task 6, `timing`), the ACA
-premium tax credit, the foreign tax credit, Form 8606 basis recovery on distributions (Plan 27 D1:
-nondeductible contributions are recorded as basis, distributions are still fully taxable).
+premium tax credit and the foreign tax credit. Form 8606 basis is recovered pro rata on distributions and
+Roth conversions (Plan 27: 8606 lines 2 and 14, 1099-R box 2a); Treasury coupons are 1099-INT box 3.
 
 ## Household goldens
 
@@ -143,7 +143,7 @@ events, tax returns), not engine internals, and run at each year end, after Dece
 | `monthly_conservation` | The same for each month of the year (catches money that appears in one month and leaves in another). |
 | `continuity` | Between two years and between two months (outside `step()`), net worth moved only by posted ledger entries. |
 | `no_negative_balances` | At no month end an asset below zero or a liability below zero. |
-| `no_draw_above_cash_floor` | No waterfall brokerage sale or pre-tax withdrawal in a month the tax unit ends with cash above its floor, not counting money that arrived after the month's last draw (a year-end insurance payout, a refund) (the floor is $0 until Plan 27 adds one). The waterfall pays each month's bills, so a sale in a lean month is fine when later pay refills the bank. |
+| `no_draw_above_cash_floor` | No waterfall brokerage sale or pre-tax withdrawal in a month the tax unit ends with cash above its floor, not counting money that arrived after the month's last draw (a year-end insurance payout, a refund) (the floor is $0: the waterfall spends all bank cash, and `SavingsPolicy.cash_floor` only limits the yearly sweep). The waterfall pays each month's bills, so a sale in a lean month is fine when later pay refills the bank. |
 | `contribution_limits` | 402(g) deferrals (+ catch-up), 415(c) additions per plan, IRA and HSA contributions within the year's limits. |
 | `no_income_after_job_end` | No wages, bonus or vests from an employer after the job ended. |
 | `fica_wage_base` | Social Security tax = 6.2% of wages up to the wage base, per worker; no payroll tax without wages. |

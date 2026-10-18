@@ -205,6 +205,25 @@ income credit (§32), AMT exemptions (§55), the kiddie tax (§1(g)), qualified 
 retirement-limits notice for the IRA and Roth phase-outs, saver's credit ceilings, the QCD limit and
 §401(a)(17). The §25A phase-outs, §21/§129 amounts and the 2026 charitable rules are statutory.
 
+### Payroll and contribution limits (Plan 27)
+
+| Key | What | Source |
+|---|---|---|
+| `limit_401k_catch_up_60_63` | §414(v)(2)(E) catch-up at ages 60-63 ($11,250 in 2025 and 2026; the regular catch-up otherwise) | IRS Notices 2024-80, 2025-67 |
+| `limit_health_fsa` | §125(i) health FSA salary-reduction limit ($3,200 / $3,300 / $3,400 for 2024-2026) | Rev. Procs. 2023-34 §3.16, 2024-40, 2025-32 |
+| `limit_commuter_monthly` | §132(f) monthly transit / parking exclusion ($315 / $325 / $340) | Rev. Procs. 2023-34 §3.17, 2024-40, 2025-32 |
+
+`limit_ira_catch_up` (§219(b)(5)(B), $1,000; $1,100 from 2026) is read since Plan 27 (it was validated
+but unread). Statutory rules sit in the code: the §423(b)(8) $25,000 ESPP limit and the §423(b)(6) 15%
+maximum discount (`work/stock.py`), and the I bond rules from TreasuryDirect (12-month lock, the
+three-month interest forfeiture before five years, 30-year maturity, the composite rate formula;
+`account/fixed_income.py`). Past 2026 the IRA catch-up is rounded down to $100 (§219(b)(5)(C)), the
+health FSA down to $50 (§125(i)(2)) and the commuter limit down to $5 (§132(f)(6)); the 60-63 catch-up
+is rounded to $500 (`TODO(verify)`: its post-2025 rounding rule). The dead keys
+`accounts.brokerage.default_growth_rate`, `accounts.bank.default_interest_rate`,
+`retirement.ira.default_growth_rate` and `accounts.plan_529.default_growth_rate` were removed from the
+packaged defaults (Plan 27 D8); an overlay that still sets them is accepted and ignored for one release.
+
 ### Projection rule for years outside the table
 
 `tax_year(year)` never fails for an out-of-range year; it projects:
@@ -256,7 +275,7 @@ remains.
 
 `accounts.brokerage.dividend_yield` splits a brokerage account's return into untaxed
 price appreciation and a taxable qualified dividend that is reinvested at full basis.
-The yield is carved *out of* `default_growth_rate` rather than added on top, so total
+The yield is carved *out of* the total return rather than added on top, so total
 return is unchanged — only the tax character of that slice moves. It defaults to `0`,
 which keeps accounts pure-appreciation.
 
@@ -268,10 +287,11 @@ false` on a state pack for the exceptions.
 Contribution limits are enforced per person per year and reset at year end:
 
 - `retirement.job_401k_contrib_limit` — the 402(g) elective-deferral limit (`base`, plus
-  `catch_up_amount` from `catch_up_age`), shared across all of a person's jobs, and the 415(c)
-  `annual_additions_limit` that caps employee plus employer money per plan.
+  `catch_up_amount` from `catch_up_age`, or the larger `super_catch_up_amount` at ages 60-63), shared
+  across all of a person's jobs, and the 415(c) `annual_additions_limit` that caps employee plus
+  employer money (including after-tax contributions) per plan.
 - `retirement.ira.contribution_limit` — one limit shared by a person's Roth and Traditional
-  IRAs.
+  IRAs, plus the year's `limit_ira_catch_up` from age 50.
 - `accounts.hsa` — `contribution_limit` (self-only) or `contribution_limit_family`, plus
   `catch_up_amount` from `catch_up_age`. Employer contributions count against the same limit.
 
@@ -285,9 +305,12 @@ statutory additional taxes are settled as federal tax with the year's return:
 - `accounts.hsa.non_medical_penalty_rate` (20%) on non-medical HSA distributions before
   `accounts.hsa.non_medical_penalty_age` (65).
 
-When a year's bills exceed the bank balance, settlement sells brokerage holdings first, then
-draws pre-tax 401ks and Traditional IRAs, sizing the draw to cover the tax and penalty it
-triggers.
+When a year's bills exceed the bank balance, settlement redeems non-reserve fixed income, sells
+brokerage holdings, then draws pre-tax 401ks and Traditional IRAs, sizing the draw to cover the tax and
+penalty it triggers; emergency reserves come last. A traditional IRA distribution (or Roth conversion) is
+tax-free in proportion to the owner's Form 8606 basis (`nondeductible_basis`) over the value of all their
+traditional IRAs (the pro-rata rule); after-tax 401(k) money and Roth 401(k) money before 59.5 are taxed
+on their earnings share.
 
 ## Stock compensation
 

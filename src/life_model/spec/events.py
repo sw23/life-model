@@ -169,7 +169,7 @@ def compile_events(builder: "_Builder", timing: EventTiming) -> list[LifeEvent]:
         month = timing.month_of(event)
         depth = timing.depth(event)
         for offset, life_event in enumerate(_compile_one(builder, timing, event, year)):
-            life_event.month = month
+            life_event.month = getattr(life_event, "fixed_month", None) or month
             compiled.append(((life_event.year, life_event.month or 0, depth, index, offset), life_event))
 
     compiled.sort(key=lambda pair: pair[0])
@@ -231,6 +231,18 @@ def _compile_one(builder: "_Builder", timing: EventTiming, event, year: int) -> 
     if action == "contribute":
         name = _name(event, f"{person.name} contributes ${event.amount:,.0f}")
         return [_life_event(year, name, event, _contribute, builder, person, event.account, event.amount)]
+
+    if action == "convert_to_roth":
+        what = (
+            f"${event.amount:,.0f}"
+            if event.amount is not None
+            else f"to the top of the {event.fill_bracket_pct:g}% bracket"
+        )
+        name = _name(event, f"{person.name} converts {what} to Roth")
+        life_event = _life_event(year, name, event, _convert_to_roth, builder, person, event)
+        if event.fill_bracket_pct is not None:
+            life_event.fixed_month = 12  # it needs the year's income: December, before the year's taxes
+        return [life_event]
 
     raise NotImplementedError(f"event action {action!r} is not supported by the builder")
 
@@ -342,3 +354,16 @@ def _contribute(builder: "_Builder", person, account_id: str, amount: float) -> 
     else:
         person.deduct_from_bank_accounts(available)
         account.deposit(available)
+
+
+def _convert_to_roth(builder: "_Builder", person, event: s.ConvertToRothEvent) -> None:
+    from ..policies import convert_to_roth
+
+    items = builder.built.items
+    convert_to_roth(
+        person,
+        event.amount,
+        fill_bracket_pct=event.fill_bracket_pct,
+        source=items[event.source] if event.source is not None else None,
+        target=items[event.target] if event.target is not None else None,
+    )

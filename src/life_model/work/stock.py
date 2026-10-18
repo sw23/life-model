@@ -17,6 +17,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, ClassVar
 
+from .._compat import legacy_signature
 from ..ledger import FlowKind
 from ..model import LifeModelAgent
 
@@ -129,6 +130,12 @@ class StockGrant:
     price_index_at_grant: float = 1.0
     #: Fractions already vested, so a partial career leaves the rest unrecognized.
     vested_fraction: float = field(default=0.0)
+    #: The last year whose vest has happened (an existing grant's vests before the simulation started).
+    vested_through_year: int | None = None
+    #: An existing grant's current market value of its unvested part (from the equity statement): sets
+    #: ``price_index_at_grant`` so the unvested shares are worth that now (Plan 27 D1). None keeps the
+    #: grant valued at its grant value.
+    unvested_value: float | None = None
 
     def fraction_vesting_in(self, year: int) -> float:
         """Fraction of the award vesting in ``year``."""
@@ -137,6 +144,49 @@ class StockGrant:
     @property
     def unvested_fraction(self) -> float:
         return max(0.0, 1.0 - self.vested_fraction)
+
+
+#: IRC §423(b)(8): at most $25,000 of stock (valued when the option is granted, the offering date) may
+#: accrue per calendar year under an employee stock purchase plan.
+# vintage: statutory, source: 26 U.S.C. §423(b)(8) (Cornell LII, fetched 2026-10-18)
+ESPP_ANNUAL_LIMIT = 25_000.0
+#: IRC §423(b)(6): the purchase price may be no less than 85% of fair market value (a 15% discount).
+# vintage: statutory, source: 26 U.S.C. §423(b)(6)
+ESPP_MAX_DISCOUNT_PCT = 15.0
+
+
+@dataclass
+class ESPP:
+    """An employee stock purchase plan (IRC §423) attached to a :class:`StockPlan` (Plan 27 D3).
+
+    ``contribution_pct`` of each month's gross pay is set aside after tax and buys company stock at the
+    end of each offering period (``purchase_months``, default June and December) at ``discount_pct`` off the
+    price then (with ``lookback``, off the lower of the offering-start and purchase prices), within the
+    §423(b)(8) $25,000-a-year limit. The discount (fair market value less the price paid) is ordinary
+    compensation income on the W-2, not FICA wages (§3121(a)(22)): the plan models every sale as a
+    disqualifying disposition. ``disposition="sell"`` sells at purchase (the cash, contributions plus the
+    discount, lands in the bank); ``"hold"`` keeps the shares in the plan's brokerage account at a basis of
+    their market value. Simplification: the contributions leave the bank at the purchase, not out of each
+    paycheck.
+    """
+
+    contribution_pct: float
+    discount_pct: float = ESPP_MAX_DISCOUNT_PCT
+    purchase_months: tuple[int, ...] = (6, 12)
+    lookback: bool = False
+    disposition: str = "sell"
+
+    def __post_init__(self):
+        if not 0 <= self.contribution_pct <= 100:
+            raise ValueError("ESPP contribution_pct must be 0-100")
+        if not 0 <= self.discount_pct <= ESPP_MAX_DISCOUNT_PCT:
+            raise ValueError(f"ESPP discount_pct must be 0-{ESPP_MAX_DISCOUNT_PCT:g} (IRC §423(b)(6))")
+        if self.disposition not in ("sell", "hold"):
+            raise ValueError("ESPP disposition must be 'sell' or 'hold'")
+        months = tuple(sorted({int(m) for m in self.purchase_months}))
+        if not months or any(not 1 <= m <= 12 for m in months):
+            raise ValueError("ESPP purchase_months must be months 1-12")
+        object.__setattr__(self, "purchase_months", months)
 
 
 @dataclass
@@ -202,6 +252,7 @@ class StockPlan(LifeModelAgent):
     # year, in the first month of the year (quarterly vesting is a later plan's).
     STEP_PRIORITY: ClassVar[dict[str, int]] = {"pre_step": 5}
 
+    @legacy_signature(("job",), {"refresher_growth_percent": "refresher_growth_pct", "growth_rate": "growth_pct"})
     def __init__(
         self,
         job: "Job",
@@ -209,13 +260,15 @@ class StockPlan(LifeModelAgent):
         signon_value: float = 0.0,
         refresher_value: float = 0.0,
         refresher_start_year: int = 1,
-        refresher_growth_percent: float = 0.0,
+        refresher_growth_pct: float = 0.0,
         schedule: VestingSchedule | None = None,
         signon_schedule: VestingSchedule | None = None,
         disposition: str = "sell",
-        growth_rate: float | None = None,
+        growth_pct: float | None = None,
         brokerage_account: "BrokerageAccount | None" = None,
         options: "Sequence[StockOption] | None" = None,
+        existing_grants: "Sequence[StockGrant] | None" = None,
+        espp: "ESPP | None" = None,
     ):
         """Stock compensation plan attached to a job.
 
@@ -225,7 +278,8 @@ class StockPlan(LifeModelAgent):
             refresher_value: Dollar value of each annual refresher grant.
             refresher_start_year: Years after the plan starts before the first refresher is issued.
                 Defaults to 1 (the first anniversary).
-            refresher_growth_percent: Yearly percentage growth applied to ``refresher_value``.
+            refresher_growth_pct: Yearly percentage growth applied to ``refresher_value`` (deprecated alias
+                ``refresher_growth_percent``).
             schedule: Vesting schedule for refresher grants. Defaults to the configured preset.
             signon_schedule: Vesting schedule for the sign-on grant. Defaults to ``schedule``.
             disposition: What happens to vested shares. ``"sell"`` (default) sells at vest, which
@@ -234,12 +288,20 @@ class StockPlan(LifeModelAgent):
                 appreciation is taxed on eventual sale. Holding risks the entire position to save
                 the rate spread on the *appreciation only* — the tax on the vest value itself is
                 unavoidable either way.
-            growth_rate: Annual percentage growth of the company's stock. Defers to the economy's
-                equity return when None, which ties company stock to the broad market.
+            growth_pct: Annual percentage growth of the company's stock (deprecated alias ``growth_rate``).
+                Defers to the economy's equity return when None, which ties company stock to the broad
+                market.
             brokerage_account: Where ``disposition="hold"`` deposits vested shares. Defaults to the
                 owner's first brokerage account, resolved at vest time.
             options: Stock options (ISO / NSO) to exercise in planned years (:class:`StockOption`).
+            existing_grants: Grants made before the simulation started that still have unvested shares
+                (:class:`StockGrant` with its real ``grant_year``; Plan 27 D1). The vests before the start
+                are taken as done, and ``unvested_value`` (the statement's current value of the unvested
+                shares) revalues the grant.
+            espp: An employee stock purchase plan (:class:`ESPP`).
         """
+        refresher_growth_percent = refresher_growth_pct
+        growth_rate = growth_pct
         super().__init__(job.owner.model)
         if disposition not in ("sell", "hold"):
             raise ValueError(f"Unknown disposition {disposition!r}; expected 'sell' or 'hold'")
@@ -271,6 +333,19 @@ class StockPlan(LifeModelAgent):
         self.stat_stock_unvested = 0.0
         self.stat_gross_income = 0.0
 
+        for grant in existing_grants or ():
+            self._add_existing_grant(grant)
+        self.espp = espp
+        if espp is not None and job.kind != "w2":
+            raise ValueError("an ESPP is for W-2 jobs")
+        # ESPP: pay set aside since the last purchase, the offering-start price index, and the year's
+        # §423(b)(8) usage (stock value at the offering date).
+        self._espp_pay = 0.0
+        self._espp_offering_index = self.price_index
+        self._espp_year_usage: tuple[int, float] = (self.model.year, 0.0)
+        #: ESPP discount income recognized so far (all years).
+        self.espp_discount_total = 0.0
+
         if signon_value > 0:
             self.grants.append(
                 StockGrant(
@@ -282,6 +357,26 @@ class StockPlan(LifeModelAgent):
             )
 
         job.stock_plan = self
+
+    def _add_existing_grant(self, grant: StockGrant) -> None:
+        """Add a grant made before the simulation started (see ``existing_grants``)."""
+        start_year = self.model.year
+        if grant.vested_through_year is None:
+            # Vests happen in January; a run starting later in the year has had this year's vest.
+            through = start_year - 1 if self.model.month == 1 else start_year
+            grant.vested_through_year = through
+            if grant.vested_fraction == 0:
+                grant.vested_fraction = sum(
+                    grant.schedule.fraction_for_year(year - grant.grant_year)
+                    for year in range(grant.grant_year + 1, through + 1)
+                )
+        if grant.unvested_value is not None:
+            unvested = grant.value_at_grant * grant.unvested_fraction
+            if grant.unvested_value <= 0 or unvested <= 0:
+                raise ValueError("an existing grant's unvested_value and unvested part must be positive")
+            # Worth unvested_value at the plan's current price index (1.0 at the start).
+            grant.price_index_at_grant = self.price_index * unvested / grant.unvested_value
+        self.grants.append(grant)
 
     @property
     def growth_rate(self) -> float:
@@ -314,6 +409,8 @@ class StockPlan(LifeModelAgent):
         return new_grant
 
     def pre_step(self):
+        if self.espp is not None:
+            self._espp_month()
         if not self.model.is_year_start:
             return
         if self.job.retired:
@@ -409,7 +506,10 @@ class StockPlan(LifeModelAgent):
         """Vest every live grant's slice for this year and return the total market value."""
         total = 0.0
         for grant in self.grants:
+            if grant.vested_through_year is not None and grant.vested_through_year >= self.model.year:
+                continue
             fraction = grant.fraction_vesting_in(self.model.year)
+            grant.vested_through_year = self.model.year
             if fraction <= 0:
                 continue
             revaluation = self.price_index / grant.price_index_at_grant
@@ -440,6 +540,76 @@ class StockPlan(LifeModelAgent):
         account.deposit_with_basis(vested, cost_basis=vested)
         self.model.ledger.post(
             vested, FlowKind.VEST, to_account=account, source=company, cause="RSU vest (held)", agent=self.owner
+        )
+
+    # --- ESPP ---
+
+    def _current_price_index(self) -> float:
+        """The stock's price index this month (the index advances at each year start; within the year it
+        is interpolated at the stock's monthly rate)."""
+        months = self.model.month - 1
+        return self.price_index * (1 + self.growth_rate / 100) ** (months / 12)
+
+    def _espp_month(self) -> None:
+        """Set aside this month's ESPP contribution and buy at the end of an offering period."""
+        espp = self.espp
+        job = self.job
+        if job.retired:
+            self._espp_pay = 0.0
+            return
+        booked = job._booked_this_month()
+        if booked is not None:
+            self._espp_pay += booked.gross * espp.contribution_pct / 100
+        if self.model.month in espp.purchase_months and self._espp_pay > 0:
+            self._espp_purchase()
+
+    def _espp_purchase(self) -> None:
+        espp = self.espp
+        owner = self.owner
+        year = self.model.year
+        now = self._current_price_index()
+        start = self._espp_offering_index
+        price = (min(start, now) if espp.lookback else now) * (1 - espp.discount_pct / 100)
+        contributions = min(self._espp_pay, owner.spendable_bank_balance)
+        self._espp_pay = 0.0
+        self._espp_offering_index = now
+        if price <= 0 or contributions <= 0:
+            return
+        # §423(b)(8): stock valued at the offering date, at most $25,000 a calendar year.
+        used_year, used = self._espp_year_usage
+        used = used if used_year == year else 0.0
+        offering_value = contributions * start / price
+        if used + offering_value > ESPP_ANNUAL_LIMIT:
+            contributions *= max(0.0, ESPP_ANNUAL_LIMIT - used) / offering_value
+            offering_value = contributions * start / price
+        self._espp_year_usage = (year, used + offering_value)
+        if contributions <= 0:
+            return
+        market_value = contributions * now / price
+        discount = market_value - contributions
+        company = self.job.company
+        # A disqualifying disposition: the discount is compensation on the W-2, not FICA wages (§3121(a)(22)).
+        owner.income.add_wages(ordinary_amount=discount, fica_wages=0.0, source="espp")
+        self.espp_discount_total += discount
+        self.stat_gross_income += discount
+        account = self.brokerage_account
+        if account is None and owner.brokerage_accounts:
+            account = owner.brokerage_accounts[0]
+        if espp.disposition == "sell" or account is None:
+            owner.receive_cash(discount, source=company, kind=FlowKind.VEST, cause="ESPP purchase and sale (discount)")
+            return
+        shortfall = owner.deduct_from_bank_accounts(
+            contributions, kind=FlowKind.TRANSFER, to_account=account, cause="ESPP purchase"
+        )
+        paid = contributions - shortfall
+        account.deposit_with_basis(paid * now / price, cost_basis=paid * now / price)
+        self.model.ledger.post(
+            paid * now / price - paid,
+            FlowKind.VEST,
+            to_account=account,
+            source=company,
+            cause="ESPP purchase discount (held)",
+            agent=owner,
         )
 
     def _repr_html_(self):

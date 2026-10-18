@@ -361,6 +361,7 @@ class FinancialConfig:
                     update={
                         "base": params.limit_401k_base,
                         "catch_up_amount": params.limit_401k_catch_up,
+                        "super_catch_up_amount": params.limit_401k_catch_up_60_63,
                         **({"annual_additions_limit": params.limit_415c} if params.limit_415c is not None else {}),
                     }
                 ),
@@ -400,7 +401,7 @@ class FinancialConfig:
         Bracket rates and the RMD start age are structural and left unchanged; only dollar
         thresholds and limits are scaled. Rounding bases follow published IRS/SSA conventions
         (standard deduction & HSA to the nearest $50, brackets to the nearest $50, retirement
-        limits to the nearest $500, the IRA catch-up and gift exclusion to the nearest $1,000,
+        limits to the nearest $500, the gift exclusion to the nearest $1,000, the IRA catch-up down to $100,
         and the Social Security wage base to the nearest $300).
         """
 
@@ -428,7 +429,17 @@ class FinancialConfig:
         data["limit_401k_base"] = round_to(data["limit_401k_base"] * factor, 500)
         data["limit_401k_catch_up"] = round_to(data["limit_401k_catch_up"] * factor, 500)
         data["limit_ira"] = round_to(data["limit_ira"] * factor, 500)
-        data["limit_ira_catch_up"] = round_to(data["limit_ira_catch_up"] * factor, 1000)
+        # §219(b)(5)(C): the IRA catch-up is indexed, rounded down to a multiple of $100 (SECURE 2.0 §108).
+        data["limit_ira_catch_up"] = math.floor(data["limit_ira_catch_up"] * factor / 100) * 100
+        if data.get("limit_401k_catch_up_60_63") is not None:
+            # TODO(verify): rounding of the §414(v)(2)(E) amount after 2025 (assumed $500 steps, like §414(v)).
+            data["limit_401k_catch_up_60_63"] = round_to(data["limit_401k_catch_up_60_63"] * factor, 500)
+        if data.get("limit_health_fsa") is not None:
+            # §125(i)(2): indexed, rounded down to a multiple of $50.
+            data["limit_health_fsa"] = math.floor(data["limit_health_fsa"] * factor / 50) * 50
+        if data.get("limit_commuter_monthly") is not None:
+            # §132(f)(6): indexed, rounded down to a multiple of $5.
+            data["limit_commuter_monthly"] = math.floor(data["limit_commuter_monthly"] * factor / 5) * 5
         data["limit_hsa_self"] = round_to(data["limit_hsa_self"] * factor, 50)
         data["limit_hsa_family"] = round_to(data["limit_hsa_family"] * factor, 50)
         data["gift_exclusion"] = round_to(data["gift_exclusion"] * factor, 1000)
@@ -507,7 +518,12 @@ class FinancialConfig:
     def get_job_401k_contrib_limit(self, age: int) -> int:
         """Get 401k contribution limit based on age"""
         limit = self._model.retirement.job_401k_contrib_limit
-        return limit.base + (limit.catch_up_amount if age >= limit.catch_up_age else 0)
+        if age < limit.catch_up_age:
+            return limit.base
+        low, high = limit.super_catch_up_ages
+        if limit.super_catch_up_amount is not None and low <= age <= high:
+            return limit.base + max(limit.catch_up_amount, limit.super_catch_up_amount)
+        return limit.base + limit.catch_up_amount
 
     def get_job_401k_annual_additions_limit(self) -> int:
         """Get the 415(c) overall annual-additions limit (employee + employer, per plan)."""

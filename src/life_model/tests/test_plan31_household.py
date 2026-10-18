@@ -368,12 +368,12 @@ class TestSpecFields(unittest.TestCase):
         self.assertEqual(spec.people[0].jobs[0].payroll.dependent_care_fsa_annual, 5000)
         self.assertEqual(spec.people[0].jobs[0].stock_plan.options[0].exercise_cost, 1000)
 
-    def test_other_payroll_items_are_still_not_supported(self):
+    def test_other_payroll_items_are_supported_since_plan_27(self):
         from ..spec.validate import validate_spec
         from .spec_helpers import minimal, spec_of
 
         spec = spec_of(minimal(jobs=[{"company": "Co", "salary_annual": 1, "payroll": {"fsa_annual": 500}}]))
-        self.assertIn("not_yet_supported", [f.code for f in validate_spec(spec)])
+        self.assertNotIn("not_yet_supported", [f.code for f in validate_spec(spec)])
 
 
 class TestValidatorWarnings(unittest.TestCase):

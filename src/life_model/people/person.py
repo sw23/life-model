@@ -175,6 +175,12 @@ class Person(LifeModelAgent):
         # across all of the person's jobs so two jobs can't each use the full 402(g) limit. Reset in
         # post_step.
         self._elective_deferrals_ytd = 0.0
+        # Standing savings policies (Plan 27 D4; see life_model.policies).
+        self._contribution_plans: list = []
+        self._savings_policy = None
+        self._roth_conversion_policy = None
+        #: Roth conversions made this year (reset at year end).
+        self.roth_conversions_ytd = 0.0
 
         self.stat_money_spent = 0.0
         self.stat_taxes_paid = 0.0
@@ -189,6 +195,79 @@ class Person(LifeModelAgent):
         self.debt_service = DebtService(self)
 
         self.family.members.append(self)
+
+    # --- standing savings policies (Plan 27 D4) ---
+
+    @property
+    def contribution_plans(self) -> tuple:
+        """This person's recurring contributions (:class:`~life_model.policies.ContributionPlan`)."""
+        return tuple(self._contribution_plans)
+
+    def add_contribution_plan(self, plan):
+        """Start (or replace) a recurring contribution: a plan for the same account (and 401(k) bucket)
+        replaces the existing one. Takes effect from the next contribution (a 401(k) percent from the
+        next paycheck). Returns ``plan``."""
+        from ..policies import PolicyRunner
+
+        if plan.account.person is not self:
+            raise ValueError(f"{self.name} does not own the plan's account")
+        self.remove_contribution_plan(plan.account, bucket=plan.bucket)
+        plan.person = self
+        self._contribution_plans.append(plan)
+        plan.apply_401k_election()
+        PolicyRunner.for_model(self.model).watch(self)
+        return plan
+
+    def remove_contribution_plan(self, plan_or_account, *, bucket: str | None = None) -> None:
+        """Stop a recurring contribution (the plan, or every plan into that account / 401(k) bucket). A
+        401(k) plan's percent drops to 0."""
+        keep = []
+        for plan in self._contribution_plans:
+            match = plan is plan_or_account or (
+                plan.account is plan_or_account and (bucket is None or plan.bucket == bucket)
+            )
+            if match:
+                if plan.is_401k:
+                    setattr(plan.account, f"{plan.bucket}_contrib_percent", 0.0)
+            else:
+                keep.append(plan)
+        self._contribution_plans = keep
+
+    def payroll_contribution_plans(self, job) -> tuple:
+        """Payroll HSA plans paid through ``job`` (the person's first W-2 job paying this month)."""
+        plans = [p for p in self._contribution_plans if p.source == "payroll" and not p.is_401k]
+        if not plans:
+            return ()
+        payer = next((j for j in self.jobs if j.kind == "w2" and not j.retired and j.pays_this_month), None)
+        return tuple(plans) if payer is job else ()
+
+    @property
+    def savings_policy(self):
+        """The surplus sweep (:class:`~life_model.policies.SavingsPolicy`), or None (cash is held)."""
+        return self._savings_policy
+
+    @savings_policy.setter
+    def savings_policy(self, policy) -> None:
+        from ..policies import PolicyRunner
+
+        if policy is not None and policy.sweep_to is not None and policy.sweep_to.person is not self:
+            raise ValueError(f"{self.name} does not own the sweep account")
+        self._savings_policy = policy
+        if policy is not None:
+            PolicyRunner.for_model(self.model).watch(self)
+
+    @property
+    def roth_conversion_policy(self):
+        """The standing Roth conversion (:class:`~life_model.policies.RothConversionPolicy`), or None."""
+        return self._roth_conversion_policy
+
+    @roth_conversion_policy.setter
+    def roth_conversion_policy(self, policy) -> None:
+        from ..policies import PolicyRunner
+
+        self._roth_conversion_policy = policy
+        if policy is not None:
+            PolicyRunner.for_model(self.model).watch(self)
 
     @property
     def jobs(self):
@@ -616,7 +695,8 @@ class Person(LifeModelAgent):
             float: Amount that could not be deducted.
         """
         remaining = amount
-        for account in self.bank_accounts:
+        # Emergency-reserve accounts last.
+        for account in sorted(self.bank_accounts, key=lambda a: bool(getattr(a, "reserve", False))):
             if remaining <= 0:
                 break
             taken = account.withdraw(remaining)
@@ -634,10 +714,26 @@ class Person(LifeModelAgent):
         return remaining
 
     @property
+    def primary_bank_account(self):
+        """The bank account income is paid into: the first that is not an emergency reserve (else the
+        first), or None without a bank account."""
+        accounts = self.bank_accounts
+        for account in accounts:
+            if not getattr(account, "reserve", False):
+                return account
+        return accounts[0] if accounts else None
+
+    @property
+    def spendable_bank_balance(self) -> float:
+        """Bank balances the waterfall's ``bank`` step spends (reserve accounts excluded)."""
+        return sum(a.balance for a in self.bank_accounts if not getattr(a, "reserve", False))
+
+    @property
     def cash_destination(self):
-        """Where :meth:`receive_cash` puts money: the first bank account, else the cash pocket."""
-        if self.bank_accounts:
-            return self.bank_accounts[0]
+        """Where :meth:`receive_cash` puts money: the primary bank account, else the cash pocket."""
+        primary = self.primary_bank_account
+        if primary is not None:
+            return primary
         label = cash_label(self)
         self.model.ledger.name_label(label, f"{self.name}'s cash")
         return label
@@ -774,13 +870,39 @@ class Person(LifeModelAgent):
     @property
     def pretax_account_balance(self) -> float:
         """Combined balance of the taxable-on-withdrawal sources settlement draws: 401k pre-tax
-        sub-balances, Traditional IRAs, and HSAs (non-medical use)."""
-        return sum(balance for balance, _penalty in self._pretax_sources())
+        sub-balances (and after-tax buckets), Traditional IRAs, and HSAs (non-medical use)."""
+        return sum(balance for balance, _fraction, _penalty in self._pretax_draw_sources())
+
+    @property
+    def pretax_taxable_capacity(self) -> float:
+        """The taxable income draining every pre-tax source would produce (balances less basis)."""
+        return sum(balance * fraction for balance, fraction, _penalty in self._pretax_draw_sources())
+
+    def prospective_taxable(self, amount: float) -> float:
+        """The taxable income a pre-tax draw of ``amount`` would produce, walking the sources in the
+        order :meth:`withdraw_from_pretax_accounts` drains them (side-effect free). Equal to ``amount``
+        unless a source holds basis (after-tax 401(k) money, nondeductible IRA contributions)."""
+        taxable = 0.0
+        remaining = amount
+        for balance, fraction, _penalty in self._pretax_draw_sources():
+            if remaining <= 0:
+                break
+            take = min(remaining, balance)
+            taxable += take * fraction
+            remaining -= take
+        return taxable + max(0.0, remaining)
 
     def _pretax_sources(self) -> list[tuple[float, float]]:
-        """``(balance, penalty_rate)`` for each taxable source, in draw order: pre-tax 401ks, then
-        Traditional IRAs (10% before 59.5), then HSAs as non-medical distributions (20% before 65).
-        Every one is fully taxable as ordinary income."""
+        """``(taxable capacity, penalty_rate)`` for each taxable source, in draw order (see
+        :meth:`_pretax_draw_sources`)."""
+        return [(balance * fraction, penalty) for balance, fraction, penalty in self._pretax_draw_sources()]
+
+    def _pretax_draw_sources(self) -> list[tuple[float, float, float]]:
+        """``(balance, taxable_fraction, penalty_rate)`` for each pre-tax source, in draw order: pre-tax
+        401ks, after-tax 401k buckets (the earnings share is taxable), Traditional IRAs (pro rata to
+        basis; 10% before 59.5), then HSAs as non-medical distributions (20% before 65)."""
+        from ..account.traditional_IRA import ira_basis_ratio
+
         config = self.model.config
         retirement_penalty = (
             config.retirement.early_withdrawal_penalty_rate
@@ -793,15 +915,20 @@ class Person(LifeModelAgent):
             if self.age_years_fractional < hsa_config.non_medical_penalty_age
             else 0.0
         )
+        accounts = self.all_retirement_accounts
+        after_tax = sum(a.after_tax_balance for a in accounts)
+        after_tax_earnings = sum(a.after_tax_balance * a.after_tax_earnings_fraction for a in accounts)
         return [
-            (sum(a.pretax_balance for a in self.all_retirement_accounts), retirement_penalty),
-            (sum(a.balance for a in self.traditional_iras), retirement_penalty),
-            (sum(a.balance for a in self.hsas), hsa_penalty),
+            (sum(a.pretax_balance for a in accounts), 1.0, retirement_penalty),
+            (after_tax, after_tax_earnings / after_tax if after_tax > 0 else 0.0, retirement_penalty),
+            (sum(a.balance for a in self.traditional_iras), 1.0 - ira_basis_ratio(self), retirement_penalty),
+            (sum(a.balance for a in self.hsas), 1.0, hsa_penalty),
         ]
 
     def prospective_penalty(self, amount: float) -> float:
-        """Additional tax a settlement draw of ``amount`` would incur, walking the sources in the
-        order :meth:`withdraw_from_pretax_accounts` drains them (side-effect free)."""
+        """Additional tax a settlement draw producing ``amount`` of taxable income would incur, walking
+        the sources' taxable capacity in the order :meth:`withdraw_from_pretax_accounts` drains them
+        (side-effect free)."""
         penalty = 0.0
         remaining = amount
         for balance, rate in self._pretax_sources():
@@ -821,6 +948,8 @@ class Person(LifeModelAgent):
             float: Amount actually withdrawn.
         """
         withdrawn = self.withdraw_from_pretax_401ks(amount)
+        if amount - withdrawn > 0:
+            withdrawn += self.withdraw_from_after_tax_401ks(amount - withdrawn)
         if amount - withdrawn > 0:
             withdrawn += self.withdraw_from_traditional_iras(amount - withdrawn)
         if amount - withdrawn > 0:
@@ -876,6 +1005,42 @@ class Person(LifeModelAgent):
         """Get all brokerage accounts for this person from the registry."""
         return self.model.registries.brokerage_accounts.get_items(self)
 
+    @property
+    def fixed_income_holdings(self):
+        """CDs, Treasuries, I bonds and bond funds (Plan 27 D2) owned by this person."""
+        return self.model.registries.fixed_income.get_items(self)
+
+    def fixed_income_balance(self, *, reserve: bool) -> float:
+        """What the waterfall can redeem now from this person's reserve (or non-reserve) holdings."""
+        return sum(h.redeemable for h in self.fixed_income_holdings if h.reserve == reserve)
+
+    def reserve_bank_balance(self) -> float:
+        """Balances of this person's emergency-reserve bank accounts."""
+        return sum(a.balance for a in self.bank_accounts if getattr(a, "reserve", False))
+
+    def redeem_fixed_income(self, amount: float, *, reserve: bool) -> float:
+        """Redeem up to ``amount`` of cash from this person's reserve (or non-reserve) holdings into the
+        bank (shortest maturity first). Returns the cash raised."""
+        holdings = sorted(
+            (h for h in self.fixed_income_holdings if h.reserve == reserve and h.redeemable > 0),
+            key=lambda h: (h.maturity or (9999, 12), h.name, h.unique_id),
+        )
+        return self._draw_to_bank(
+            [(h, h.redeem) for h in holdings], amount, FlowKind.WITHDRAWAL, "fixed-income redemption"
+        )
+
+    def draw_reserves(self, amount: float) -> float:
+        """Move up to ``amount`` from emergency reserves into the primary bank: reserve bank accounts
+        first, then reserve fixed-income holdings. Returns the cash raised."""
+        primary = self.primary_bank_account
+        reserves = [
+            a for a in self.bank_accounts if getattr(a, "reserve", False) and a.balance > 0 and a is not primary
+        ]
+        raised = self._draw_to_bank([(a, a.withdraw) for a in reserves], amount, FlowKind.TRANSFER, "reserve draw")
+        if amount - raised > 0:
+            raised += self.redeem_fixed_income(amount - raised, reserve=True)
+        return raised
+
     def withdraw_from_roth_401ks(self, amount: float) -> float:
         """Withdraws money from Roth 401ks into the bank account.
 
@@ -886,7 +1051,7 @@ class Person(LifeModelAgent):
             float: Amount actually withdrawn.
         """
         return self._draw_to_bank(
-            [(account, account.deduct_roth) for account in self.all_retirement_accounts],
+            [(account, account.distribute_roth) for account in self.all_retirement_accounts],
             amount,
             FlowKind.WITHDRAWAL,
             "Roth 401k withdrawal",
@@ -901,15 +1066,24 @@ class Person(LifeModelAgent):
         Returns:
             float: Amount actually withdrawn.
         """
-        withdrawn = self._draw_to_bank(
-            [(acct, acct.withdraw) for acct in self.traditional_iras],
+        # Each account posts the taxable share (pro rata to Form 8606 basis) and the penalty itself.
+        return self._draw_to_bank(
+            [(acct, acct.distribute) for acct in self.traditional_iras],
             amount,
             FlowKind.WITHDRAWAL,
             "Traditional IRA withdrawal",
         )
-        self.income.add(IncomeType.PRETAX_DISTRIBUTION, withdrawn, source="ira")
-        self._charge_early_withdrawal_penalty(withdrawn)
-        return withdrawn
+
+    def withdraw_from_after_tax_401ks(self, amount: float) -> float:
+        """Withdraw from 401(k) after-tax buckets into the bank: the contributions come back tax-free,
+        the earnings share is ordinary income (plus the 10% additional tax before 59.5). Returns the
+        amount withdrawn."""
+        return self._draw_to_bank(
+            [(acct, acct.distribute_after_tax) for acct in self.all_retirement_accounts if acct.after_tax_balance > 0],
+            amount,
+            FlowKind.WITHDRAWAL,
+            "after-tax 401k withdrawal",
+        )
 
     def withdraw_from_roth_iras(self, amount: float) -> float:
         """Withdraws money from Roth IRAs into the bank account.
@@ -1018,8 +1192,9 @@ class Person(LifeModelAgent):
                 cause=cause,
                 agent=self,
             )
-        if self.bank_accounts:
-            self.bank_accounts[0].balance += amount
+        primary = self.primary_bank_account
+        if primary is not None:
+            primary.balance += amount
         else:
             self.cash += amount
             if not self._warned_no_bank_account:
@@ -1783,6 +1958,7 @@ class Person(LifeModelAgent):
         self.income.clear()
         self.hsa_medical_reimbursed = 0.0
         self._elective_deferrals_ytd = 0.0
+        self.roth_conversions_ytd = 0.0
 
 
 class Spending(LifeModelAgent):

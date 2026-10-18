@@ -92,6 +92,8 @@ class _Extractor:
         explicit = getattr(agent, "spec_id", None)
         if explicit is not None:
             return explicit
+        if generated is None:
+            generated = self.item_ids.get(id(agent))
         if generated is not None:
             self.item_ids[id(agent)] = generated
         return generated
@@ -189,6 +191,7 @@ class _Extractor:
                 mortality = record["previous"]["mortality"].value
                 death_age = record["previous"]["death_age"]
         default_state = self.source_meta.default_state if self.source_meta is not None else None
+        self.name_policy_accounts(person, pid)
         jobs, job_ids = self.jobs(person)
         referenced = {id(plan.beneficiary) for plan in person.plan_529s if plan.beneficiary is not None}
         children = [
@@ -227,7 +230,54 @@ class _Extractor:
             giving=_sorted(self.giving(person)),
             children=_sorted(children),
             self_employment=self.self_employment(person, job_ids),
+            **self.policies(person),
         )
+
+    # --- standing policies (Plan 27 D4) ---
+
+    def name_policy_accounts(self, person, pid: str) -> None:
+        """Give every account a policy references an id (so the policy can name it)."""
+        referenced = [plan.account for plan in person.contribution_plans]
+        if person.savings_policy is not None and person.savings_policy.sweep_to is not None:
+            referenced.append(person.savings_policy.sweep_to)
+        rc = person.roth_conversion_policy
+        if rc is not None:
+            referenced += [a for a in (rc.source, rc.target) if a is not None]
+        for n, account in enumerate(referenced, start=1):
+            if getattr(account, "spec_id", None) is None and id(account) not in self.item_ids:
+                self.item_ids[id(account)] = f"{pid}_account{n}"
+
+    def policies(self, person) -> dict:
+        from ..policies import MAX
+
+        plans = [
+            s.ContributionPlan(
+                account=cast(str, self.item_id(plan.account)),
+                amount_annual=None if plan.amount_annual in (None, MAX) else float(plan.amount_annual),
+                max_out=plan.amount_annual == MAX,
+                pay_pct=plan.pct_of_pay,
+                source=cast(Any, plan.source),
+                bucket=cast(Any, plan.bucket),
+                months=len(plan.months) if plan.months == tuple(range(1, len(plan.months) + 1)) else list(plan.months),
+            )
+            for plan in person.contribution_plans
+        ]
+        out: dict[str, Any] = {"contribution_plans": plans or None}
+        policy = person.savings_policy
+        if policy is not None and policy.sweep_to is not None:
+            out["savings_policy"] = s.SavingsPolicy(
+                cash_floor=policy.cash_floor, sweep_to=cast(str, self.item_id(policy.sweep_to))
+            )
+        rc = person.roth_conversion_policy
+        if rc is not None:
+            out["roth_conversion"] = s.RothConversion(
+                fill_bracket_pct=rc.fill_bracket_pct,
+                amount_annual=rc.amount_annual,
+                source=self.item_id(rc.source) if rc.source is not None else None,
+                target=self.item_id(rc.target) if rc.target is not None else None,
+                until_age=rc.until_age,
+            )
+        return out
 
     def self_employment(self, person, job_ids: dict[int, str]) -> s.SelfEmployment | None:
         """The person's (first active) self-employed job as the spec's ``self_employment``."""
@@ -265,16 +315,30 @@ class _Extractor:
             if job.kind == "self_employed":
                 continue  # extracted as the person's self_employment
             payroll = None
-            if job.payroll is not None and job.payroll.dependent_care_fsa_annual:
-                payroll = s.Payroll(dependent_care_fsa_annual=job.payroll.dependent_care_fsa_annual)
+            if job.payroll is not None:
+                from dataclasses import asdict
+
+                values = asdict(job.payroll)
+                if any(values.values()):
+                    payroll = s.Payroll(**values)
+            salary = job.salary
+            bonus = salary.bonus_plan
             jobs.append(
                 s.Job(
                     id=job_id,
                     company=job.company,
                     role=job.role,
-                    salary_annual=job.salary.base,
-                    raise_pct=_growth(job.salary._yearly_increase_override),
-                    bonus_pct=job.salary.yearly_bonus,
+                    salary_annual=salary.base,
+                    raise_pct=_growth(salary._yearly_increase_override),
+                    bonus_pct=bonus.target_pct if bonus is not None else salary.yearly_bonus,
+                    bonus_fixed_annual=bonus.fixed_annual if bonus is not None and bonus.fixed_annual else None,
+                    bonus_range_pct=bonus.range_pct if bonus is not None else None,
+                    signon_bonus=bonus.signon if bonus is not None and not job._signon_paid else 0.0,
+                    raises=sorted((y, p) for y, p in salary.raises.items() if y > self.start) or None,
+                    start_year=_job_month(job.start, first=True)
+                    if job.start is not None and job.start > (self.start, self.model.month)
+                    else None,
+                    end_year=_job_month(job.end, first=False) if job.end is not None else None,
                     stock_plan=self.stock_plan(job.stock_plan) if job.stock_plan is not None else None,
                     payroll=payroll,
                 )
@@ -289,8 +353,34 @@ class _Extractor:
         schedule = _none_if(_pcts(plan.schedule), _pcts(default))
         signon_schedule = _pcts(plan.signon_schedule)
         signon = 0.0
-        if self.model.year == plan.start_year and plan.grants:
-            signon = plan.grants[0].value_at_grant
+        signon_grant = None
+        if self.model.year == plan.start_year:
+            # The sign-on grant: issued in the plan's first year and not yet vesting (existing grants were
+            # given their pre-start vests).
+            signon_grant = next(
+                (g for g in reversed(plan.grants) if g.grant_year == plan.start_year and g.vested_through_year is None),
+                None,
+            )
+            if signon_grant is not None:
+                signon = signon_grant.value_at_grant
+        existing = []
+        for grant in plan.grants:
+            if grant is signon_grant or grant.unvested_fraction <= 1e-12:
+                continue
+            existing.append(
+                s.StockGrant(
+                    grant_year=grant.grant_year,
+                    value=grant.value_at_grant,
+                    vesting_schedule_pct=cast(list[float], _pcts(grant.schedule)),
+                    unvested_value=None
+                    if abs(plan.price_index - grant.price_index_at_grant) < 1e-12
+                    else round(
+                        grant.value_at_grant * grant.unvested_fraction * plan.price_index / grant.price_index_at_grant,
+                        2,
+                    ),
+                )
+            )
+        espp = plan.espp
         return s.StockPlan(
             signon_value=signon,
             refresher_value=plan.refresher_value,
@@ -311,6 +401,12 @@ class _Extractor:
                 for o in plan.options
                 if not o.exercised and o.exercise_year >= self.model.year
             ],
+            existing_grants=existing or None,
+            espp_contribution_pct=espp.contribution_pct if espp is not None else None,
+            espp_discount_pct=espp.discount_pct if espp is not None else None,
+            espp_purchase_months=list(espp.purchase_months) if espp is not None else [6, 12],
+            espp_lookback=espp.lookback if espp is not None else False,
+            espp_disposition=cast(Any, espp.disposition) if espp is not None else "sell",
         )
 
     # --- accounts ---
@@ -337,6 +433,32 @@ class _Extractor:
                     primary=getattr(bank, "spec_primary", False)
                     if self.spec_built
                     else (index == 0 and len(banks) > 1),
+                    reserve=bank.reserve,
+                )
+            )
+        for holding in person.fixed_income_holdings:
+            if holding.matured:
+                continue
+            out.append(
+                s.FixedIncomeAccount(
+                    kind="fixed_income",
+                    id=self.item_id(holding),
+                    instrument=holding.kind,
+                    name=None if holding.name == _DEFAULT_FIXED_NAMES[holding.kind] else holding.name,
+                    face=holding.balance,
+                    rate_pct=holding.rate_pct,
+                    maturity=_ym(holding.maturity)
+                    if holding.maturity is not None and holding.kind != "i_bond"
+                    else None,
+                    purchased=None if holding.purchased == (self.start, self.model.month) else _ym(holding.purchased),
+                    state_tax_exempt=None
+                    if holding.state_tax_exempt == (holding.kind in ("treasury", "i_bond"))
+                    else holding.state_tax_exempt,
+                    tax_exempt=holding.tax_exempt,
+                    early_withdrawal_penalty_months=holding.early_withdrawal_penalty_months,
+                    reserve=holding.reserve,
+                    accrued_interest=holding.accrued_interest,
+                    cost_basis=None if abs(holding.cost_basis - holding.balance) < 0.005 else holding.cost_basis,
                 )
             )
         for account in person.all_retirement_accounts:
@@ -357,18 +479,35 @@ class _Extractor:
                     else [s.MatchTier(match_pct=rate, up_to_pay_pct=width) for rate, width in account.match_tiers],
                     match_on_bonus=account.match_on_bonus,
                     match_vesting_years=account.match_vesting_years,
+                    after_tax_balance=account.after_tax_balance or None,
+                    after_tax_basis=None
+                    if abs(account.after_tax_basis - account.after_tax_balance) < 0.005
+                    else account.after_tax_basis,
+                    after_tax_contrib_pct=account.after_tax_contrib_percent,
+                    in_plan_roth_conversion=account.in_plan_roth_conversion,
+                    roth_basis=account.roth_basis,
+                    **_invest(account),
                 )
             )
         for account in person.brokerage_accounts:
             lots = account.lots
             if not lots:
                 balance, spec_lots = None, None
-            elif len(lots) == 1 and lots[0].value == lots[0].cost_basis and lots[0].acquired_year == self.start:
+            elif (
+                len(lots) == 1
+                and lots[0].value == lots[0].cost_basis
+                and (lots[0].acquired_year, lots[0].acquired_month) == (self.start, self.model.month)
+            ):
                 balance, spec_lots = lots[0].value, None
             else:
                 balance = None
                 spec_lots = [
-                    s.TaxLot(value=lot.value, cost_basis=lot.cost_basis, acquired_year=lot.acquired_year)
+                    s.TaxLot(
+                        value=lot.value,
+                        cost_basis=lot.cost_basis,
+                        acquired_year=lot.acquired_year,
+                        acquired_month=self._lot_month(lot),
+                    )
                     for lot in lots
                 ]
             out.append(
@@ -380,6 +519,8 @@ class _Extractor:
                     lots=spec_lots,
                     growth_pct=_growth(account._growth_rate_override),
                     dividend_yield_pct=account._dividend_yield_override,
+                    reinvest_dividends=account.reinvest_dividends,
+                    **_invest(account),
                 )
             )
         for account in person.traditional_iras:
@@ -390,6 +531,8 @@ class _Extractor:
                     balance=account.balance,
                     growth_pct=_growth(account._growth_rate_override),
                     contribution_limit_annual=account._contribution_limit_override,
+                    nondeductible_basis=account.nondeductible_basis or None,
+                    **_invest(account),
                 )
             )
         for account in person.roth_iras:
@@ -400,6 +543,11 @@ class _Extractor:
                     balance=account.balance,
                     growth_pct=_growth(account._growth_rate_override),
                     contribution_limit_annual=account._contribution_limit_override,
+                    contribution_basis=None
+                    if abs(account.contribution_basis + account.conversion_basis - account.balance) < 0.005
+                    else account.contribution_basis,
+                    conversion_basis=account.conversion_basis or None,
+                    **_invest(account),
                 )
             )
         for account in person.hsas:
@@ -414,6 +562,10 @@ class _Extractor:
                         account.employer_contribution, cfg.accounts.hsa.default_employer_contribution
                     ),
                     contribution_limit_annual=account._contribution_limit_override,
+                    basis=None
+                    if abs(account.contribution_basis - account.balance) < 0.005
+                    else account.contribution_basis,
+                    **_invest(account),
                 )
             )
         for agent in self.model.agents:
@@ -524,9 +676,16 @@ class _Extractor:
                     lifetime_contribution_limit=_none_if(
                         plan.lifetime_contribution_limit, plan_cfg.lifetime_contribution_limit
                     ),
+                    basis=None if abs(plan.total_contributions - plan.balance) < 0.005 else plan.total_contributions,
+                    **_invest(plan),
                 )
             )
         return out
+
+    def _lot_month(self, lot) -> int | None:
+        """A lot's acquisition month, or None when it is the builder's default for its year."""
+        default = self.model.month if lot.acquired_year == self.start else 1
+        return None if lot.acquired_month == default else lot.acquired_month
 
     # --- debts, housing, insurance ---
 
@@ -790,6 +949,30 @@ class _Extractor:
         events = [source for source in self.pending_sources() if not isinstance(source, s.Marriage)]
         events += [record["event"] for record in self.build_time]
         return _sorted(events)
+
+
+_DEFAULT_FIXED_NAMES = {"cd": "CD", "treasury": "Treasury", "i_bond": "I bond", "bond_fund": "Bond fund"}
+
+
+def _ym(month: "tuple[int, int]") -> str:
+    return f"{month[0]:04d}-{month[1]:02d}"
+
+
+def _job_month(month: "tuple[int, int]", *, first: bool) -> "int | str":
+    """A job's start / end month as the spec writes it (a bare year for January / December)."""
+    if month[1] == (1 if first else 12):
+        return month[0]
+    return _ym(month)
+
+
+def _invest(account) -> dict:
+    """The allocation / expense-ratio spec fields of an investment account (omitted at their defaults)."""
+    out: dict[str, Any] = {}
+    if account.allocation is not None:
+        out["allocation_pct"] = {k: round(v * 100, 10) for k, v in account.allocation.items()}
+    if account.expense_ratio_pct:
+        out["expense_ratio_pct"] = account.expense_ratio_pct
+    return out
 
 
 def spec_from_model(model) -> s.HouseholdSpec:
