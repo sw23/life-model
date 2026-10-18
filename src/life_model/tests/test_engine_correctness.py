@@ -122,11 +122,11 @@ class TestRetirementCrossing(unittest.TestCase):
         job = Job(person, "Co", "Dev", Salary(model=model, base=50000))
 
         model.step_year()  # age 65 -> below 65.5, still working
-        self.assertEqual(person.age, 65)
+        self.assertEqual(person.age_in(2020), 65)
         self.assertFalse(job.retired)
 
         model.step_year()  # age 66 -> crosses 65.5, retires
-        self.assertEqual(person.age, 66)
+        self.assertEqual(person.age_in(2021), 66)
         self.assertTrue(job.retired)
 
 

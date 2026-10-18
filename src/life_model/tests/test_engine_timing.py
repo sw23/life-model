@@ -108,9 +108,11 @@ class TestAgeSemantics(unittest.TestCase):
         late = _worker(model, name="Late", age=30)  # built between steps: 30 during 2027
         model.add_agent_stat("Age", "age")
         model.step_year()  # 2027
-        self.assertEqual(late.age, 30)
+        self.assertEqual(late.age_in(2027), 30)
         model.step_year()  # 2028
-        self.assertEqual(late.age, 31)
+        self.assertEqual(late.age_in(2028), 31)
+        # Between steps the model is at the next month to simulate, and ``age`` is the age then.
+        self.assertEqual((model.year, late.age), (2029, 32))
 
 
 def _frame(model):

@@ -61,7 +61,7 @@ class Person(LifeModelAgent):
         self,
         family: Family,
         name: str,
-        age: int,
+        age: int | None,
         retirement_age: float,
         spending: "Spending",
         *,
@@ -69,15 +69,21 @@ class Person(LifeModelAgent):
         mortality_mode: MortalityMode = MortalityMode.IMMORTAL,
         death_age: int | None = None,
         state: str | None = None,
+        birth: str | None = None,
     ):
         """Person
+
+        Ages are exact: the person has a birth month (``birth``, or January of the year that makes
+        them ``age`` now), :attr:`age` is their completed years in the current month and
+        :attr:`age_years_fractional` drives thresholds such as 59.5.
 
         Args:
             family (Family): Family of which the person is a part.
             name (str): Person's name.
-            age (int): Person's age *during the year the person is created* (for a person built
-                before the run, the first simulated year): the collected ``Age`` for that year
-                equals this value, and the person turns ``age + 1`` the following year.
+            age (int): Person's age (completed years) in the month the person is created — for a
+                person built before the run, the first simulated month. Without ``birth`` the birth
+                month is assumed to be January, so the person is ``age`` for the rest of that year and
+                turns ``age + 1`` the following January. May be None when ``birth`` is given.
             retirement_age (float): Person's retirement age.
             spending (Spending): Person's spending habits.
             gender (GenderAtBirth, optional): Gender at birth, used for the mortality table. Defaults
@@ -88,14 +94,31 @@ class Person(LifeModelAgent):
             state (str, optional): Two-letter state of residence for state income tax. Defaults to
                 ``None``, which falls back to ``config.tax.state.default_state``. A
                 single state applies to the whole tax unit (no part-year/multi-state).
+            birth (str, optional): Birth month ``"YYYY-MM"`` (keyword-only). When given with
+                ``age``, the two must agree.
         """
         super().__init__(family.model)
         self.family = family
         self.name = name
-        self.age = age
-        # The simulated year ``age`` applies to. ``pre_step`` advances ``age`` only when the model
-        # has moved past this year, so a person is ``age`` for the whole of their first year.
-        self._age_year = self.model.year
+        self._death_month_index = None
+        if birth is not None:
+            from ..model import parse_year_month
+
+            #: Birth year and month (exact ages; see :attr:`age`).
+            self.birth_year, self.birth_month = parse_year_month(birth)
+            if age is not None and self.age != age:
+                raise ValueError(
+                    f"{name}: birth {birth} makes them {self.age} in {self.model.year}-{self.model.month:02d}, "
+                    f"not {age}"
+                )
+        elif age is None:
+            raise ValueError(f"{name}: give an age or a birth month")
+        else:
+            self.birth_year, self.birth_month = self.model.year - age, 1
+            #: Whether the birth month was assumed (January) because only an age was given.
+            self.birth_month_assumed = True
+        if birth is not None:
+            self.birth_month_assumed = False
         self.retirement_age = retirement_age
         self.spending = spending
         if getattr(spending, "person", None) is None:
@@ -105,6 +128,8 @@ class Person(LifeModelAgent):
         self.mortality_mode = mortality_mode
         self.death_age = death_age
         self.is_deceased = False
+        # The absolute month (``LifeModel.month_index``) of death; ages stop advancing then.
+        self._death_month_index: int | None = None
         # Optional explicit estate beneficiary (a Person). When unset, the estate passes to the
         # surviving spouse, then to the first surviving family member.
         self.estate_beneficiary: Person | None = None
@@ -1061,11 +1086,37 @@ class Person(LifeModelAgent):
             birth_year = self.model.year
         return Child(self, name, birth_year)
 
+    @property
+    def months_old(self) -> int:
+        """Completed months of life at the start of the current model month (frozen at the month of
+        death)."""
+        from ..model import month_index
+
+        now = self._death_month_index if self._death_month_index is not None else self.model.month_index
+        return now - month_index(self.birth_year, self.birth_month)
+
+    @property
+    def age(self) -> int:
+        """Completed years of age in the current model month (the person turns a year older in their
+        birth month)."""
+        return self.months_old // 12
+
+    @age.setter
+    def age(self, value: int) -> None:
+        # Re-date the birth (keeping the birth month) so the person is ``value`` this month.
+        self.birth_year += self.age - int(value)
+
+    @property
+    def age_years_fractional(self) -> float:
+        """Exact age in years this month (``59.5`` six months after the 59th birthday): what
+        age thresholds such as the 59.5 early-withdrawal age compare against."""
+        return self.months_old / 12
+
     def get_year_at_age(self, age: int) -> int:
-        """Gets the simulated year during which the person is ``age``.
+        """Gets the year in which the person turns ``age`` (the whole year for a January birth).
 
         ``get_year_at_age(a) == start_year + (a - constructor_age)`` for a person built before the
-        run, and the answer does not change as the simulation advances.
+        run without a ``birth``, and the answer does not change as the simulation advances.
 
         Args:
             age (int): Age of the person.
@@ -1073,11 +1124,21 @@ class Person(LifeModelAgent):
         Returns:
             int: Year at the given age.
         """
-        return self._age_year + (age - self.age)
+        return self.birth_year + int(age)
+
+    def get_period_at_age(self, age: float) -> tuple[int, int]:
+        """``(year, month)`` of the first month in which :attr:`age_years_fractional` reaches ``age``."""
+        import math
+
+        from ..model import month_index
+
+        index = month_index(self.birth_year, self.birth_month) + math.ceil(round(age * 12, 9))
+        return index // 12, index % 12 + 1
 
     def age_in(self, year: int) -> int:
-        """The person's age during ``year`` (the inverse of :meth:`get_year_at_age`)."""
-        return self.age + (year - self._age_year)
+        """The age the person reaches during ``year`` (their age at its end; the inverse of
+        :meth:`get_year_at_age`)."""
+        return year - self.birth_year
 
     def pre_step(self):
         # This year's waterfall accumulators start over (they are collected at year end).
@@ -1085,11 +1146,6 @@ class Person(LifeModelAgent):
         self.stat_pretax_withdrawals = 0.0
         if self.is_deceased:
             return
-        # Advance to this year's age. The constructor age already is the creation year's age, so
-        # nothing happens in that year (D1: no off-by-one between ``age`` and the calendar).
-        if self.model.year > self._age_year:
-            self.age += self.model.year - self._age_year
-            self._age_year = self.model.year
         # A surviving spouse files jointly for the year of the death, then switches to single the
         # following year (qualifying-widow treatment is a documented simplification, not modeled).
         if self._widowed_year is not None and self.model.year > self._widowed_year:
@@ -1154,6 +1210,7 @@ class Person(LifeModelAgent):
         if self.is_deceased:
             return
         self.is_deceased = True
+        self._death_month_index = self.model.month_index
         self.model.event_log.add(Event(EventKind.DIED, person=self, message=f"{self.name} died at age {self.age}"))
 
         # 1. Earned income stops immediately (jobs retire).
