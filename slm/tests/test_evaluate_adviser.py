@@ -85,7 +85,10 @@ def test_rationale_of_matches_build_rationale():
     household = _sample_households(["basic"], 1, 5)[0][1]
     seeds = _trial_seeds(5, 0, 4)
     scored = score_household(household, seeds, "retirement_security")
-    chosen = argmax_candidate(scored).decision
+    # rationale_of explains the training label. The label is the evidence-backed plan when it is within
+    # noise of the best, which need not be the argmax (Plan 31's tax changes made them differ for this
+    # sampled household: argmax save0_split, label save0_roth); the test used to assume they coincide.
+    chosen = label_decision(scored)
     assert rationale_of(scored) == build_rationale(scored, chosen)
 
 

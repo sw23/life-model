@@ -17,7 +17,8 @@ green, the likely cause:
 * ``input_difference``: both have it but the amounts differ (a spec input, such as a salary or a
   balance, differs from the document);
 * ``unmodeled_credit`` / ``unmodeled_deduction``: a credit or deduction the engine does not compute
-  yet (Plan 31: EITC, dependent care, education, the §63(f) amount for 65+...);
+  yet (the foreign tax credit, the ACA premium tax credit (Plan 31 task 6), energy credits...), or one
+  it computes from an input the spec lacks (care expenses, education expenses);
 * ``unit_mismatch``: off by a factor of 12 or 100 (a monthly amount entered as annual, a fraction
   entered as a percent);
 * ``timing``: withholding, estimated payments and the refund/balance due (the engine settles taxes
@@ -32,8 +33,11 @@ Line mapping (``TaxReturn`` field -> line) follows each year's forms (``life_mod
 line tables). Notable conventions: line 16 is ordinary plus preferential tax (the engine computes
 the exact rate schedule; the IRS Tax Table below $100,000 taxes the midpoint of a $50 row, so line
 16 and the totals after it have a wider green tolerance); line 23 adds the NIIT, the Additional
-Medicare Tax and additional taxes on early distributions (Schedule 2); lines 19/28 are the
-nonrefundable/refundable credits.
+Medicare Tax, additional taxes on early distributions and self-employment tax (Schedule 2); each
+credit goes to its own line (Plan 31): line 19 / 28 the child tax credit and the additional child tax
+credit (Schedule 8812), line 20 the Schedule 3 credits (dependent care line 2, education line 3,
+saver's line 4, prior-year minimum tax line 6b), line 27 (27a) the earned income credit, line 29 the
+refundable American opportunity credit; line 17 is AMT and line 16 includes the Form 8814 tax.
 """
 
 import json
@@ -250,15 +254,19 @@ def form_1040_lines(r: "TaxReturn") -> dict[str, float]:
     from .spec.actuals import line_table_year
 
     year = line_table_year(r.year)
-    deduction = r.deduction - r.senior_deduction  # standard or itemized (line 12 / 12e)
-    tax = r.ordinary_tax + r.preferential_tax
+    # Standard (with §63(f)) or itemized (after §68): line 12 / 12e.
+    deduction = r.deduction - r.senior_deduction - r.qbi_deduction - r.charitable_deduction_non_itemizer
+    tax = r.ordinary_tax + r.preferential_tax + r.kiddie_tax
     line_18 = tax + r.amt
-    credits_nonrefundable = r.nonrefundable_credits
-    line_22 = max(line_18 - credits_nonrefundable, 0.0)
-    other_taxes = r.niit + r.additional_medicare_tax + r.total_penalties
+    line_19 = r.credits_nonrefundable.get("child_tax_credit", 0.0)
+    line_20 = r.nonrefundable_credits - line_19
+    line_22 = max(line_18 - line_19 - line_20, 0.0)
+    other_taxes = r.niit + r.additional_medicare_tax + r.total_penalties + r.self_employment_tax
     total_tax = line_22 + other_taxes
+    refundable = r.credits_refundable
     lines = {
-        "1a": r.wages,
+        "1a": r.wages - r.taxable_dependent_care_benefits,
+        "1e": r.taxable_dependent_care_benefits,
         "1z": r.wages,
         "2a": r.tax_exempt_interest,
         "2b": r.taxable_interest,
@@ -270,32 +278,33 @@ def form_1040_lines(r: "TaxReturn") -> dict[str, float]:
         "5b": r.pensions_and_annuities,
         "6a": r.social_security_gross,
         "6b": r.social_security_taxable,
-        "8": r.other_income,
+        "8": r.other_income + r.business_income,
         "9": r.total_income,
         "10": r.total_adjustments,
         "15": r.taxable_income,
         "16": tax,
         "17": r.amt,
         "18": line_18,
-        "19": credits_nonrefundable,
-        "20": 0.0,
-        "21": credits_nonrefundable,
+        "19": line_19,
+        "20": line_20,
+        "21": line_19 + line_20,
         "22": line_22,
         "23": other_taxes,
-        "28": r.refundable_credits,
-        "29": 0.0,
+        "28": refundable.get("child_tax_credit", 0.0),
+        "29": refundable.get("education_credits", 0.0),
         "31": 0.0,
     }
+    eitc = refundable.get("earned_income_credit", 0.0)
     if year == 2024:
         lines.update(
             {
                 "7": r.capital_gain_or_loss,
                 "11": r.agi,
                 "12": deduction,
-                "13": 0.0,
+                "13": r.qbi_deduction,
                 "14": r.deduction,
                 "24": total_tax,
-                "27": 0.0,
+                "27": eitc,
             }
         )
     else:
@@ -306,15 +315,22 @@ def form_1040_lines(r: "TaxReturn") -> dict[str, float]:
                 "11b": r.agi,
                 "12e": deduction,
                 "14": r.deduction,
-                "27a": 0.0,
+                "27a": eitc,
                 "30": 0.0,
             }
         )
         if year == 2025:
-            lines.update({"13a": 0.0, "13b": r.senior_deduction, "24": total_tax})
+            lines.update({"13a": r.qbi_deduction, "13b": r.senior_deduction, "24": total_tax})
         else:
             lines.update(
-                {"12f": 0.0, "13a": r.senior_deduction, "13b": 0.0, "24a": total_tax, "24b": 0.0, "24c": total_tax}
+                {
+                    "12f": r.charitable_deduction_non_itemizer,
+                    "13a": r.senior_deduction,
+                    "13b": r.qbi_deduction,
+                    "24a": total_tax,
+                    "24b": 0.0,
+                    "24c": total_tax,
+                }
             )
     return lines
 
@@ -327,17 +343,51 @@ def schedule_lines(r: "TaxReturn") -> dict[str, dict[str, float]]:
     hsa_penalty = r.penalties.get("hsa_non_medical", 0.0)
     retirement_penalties = r.total_penalties - hsa_penalty
     adjustments = r.adjustments
+    nonrefundable = r.credits_nonrefundable
+    refundable = r.credits_refundable
+    other_8z = sum(amount for source, amount in r.other_income_by_source.items() if source != "hsa")
     schedules: dict[str, dict[str, float]] = {
         "1": {
+            "3": r.business_income,
             "8f": r.other_income_by_source.get("hsa", 0.0),
+            "8z": other_8z,
             "9": r.other_income,
-            "10": r.other_income,
+            "10": r.other_income + r.business_income,
             "13": adjustments.get("hsa_deduction", 0.0),
+            "15": adjustments.get("se_tax_deduction", 0.0),
+            "16": adjustments.get("self_employed_plan", 0.0),
             "20": adjustments.get("ira_deduction", 0.0),
             "21": adjustments.get("student_loan_interest", 0.0),
             "26": r.total_adjustments,
         },
-        "3": {"1": 0.0, "2": 0.0, "3": 0.0, "4": 0.0, "8": 0.0, "9": 0.0, "15": 0.0},
+        "3": {
+            "1": 0.0,
+            "2": nonrefundable.get("dependent_care_credit", 0.0),
+            "3": nonrefundable.get("education_credits", 0.0),
+            "4": nonrefundable.get("savers_credit", 0.0),
+            "6b": nonrefundable.get("minimum_tax_credit", 0.0),
+            "7": nonrefundable.get("minimum_tax_credit", 0.0),
+            "8": r.nonrefundable_credits - nonrefundable.get("child_tax_credit", 0.0),
+            "9": 0.0,
+            "15": 0.0,
+        },
+        "8812": {
+            "14": nonrefundable.get("child_tax_credit", 0.0),
+            "27": refundable.get("child_tax_credit", 0.0),
+        },
+        "2441": {"11": nonrefundable.get("dependent_care_credit", 0.0), "26": r.taxable_dependent_care_benefits},
+        "8863": {
+            "8": refundable.get("education_credits", 0.0),
+            "19": nonrefundable.get("education_credits", 0.0),
+        },
+        "8880": {"12": nonrefundable.get("savers_credit", 0.0)},
+        "8995": {"1": r.qualified_business_income, "15": r.qbi_deduction},
+        "6251": {
+            "4": r.alternative_minimum_taxable_income,
+            "9": r.tentative_minimum_tax,
+            "11": r.amt,
+        },
+        "8814": {"15": r.kiddie_tax},
         "A": {
             "4": r.itemized_components.get("medical", 0.0),
             "5e": r.itemized_components.get("salt", 0.0),
@@ -346,11 +396,25 @@ def schedule_lines(r: "TaxReturn") -> dict[str, dict[str, float]]:
             "8e": r.itemized_components.get("mortgage_interest", 0.0),
             "10": r.itemized_components.get("mortgage_interest", 0.0),
             "11": r.itemized_components.get("charity", 0.0),
-            "14": r.itemized_components.get("charity", 0.0),
+            "12": r.itemized_components.get("charity_noncash", 0.0),
+            "14": r.itemized_components.get("charity", 0.0) + r.itemized_components.get("charity_noncash", 0.0),
             "17": r.itemized_deductions,
         },
         "B": {"2": r.taxable_interest, "4": r.taxable_interest, "6": r.ordinary_dividends},
     }
+    if any(line.self_employment_income for line in r.fica):
+        profit = sum(line.self_employment_income for line in r.fica)
+        net = sum(line.self_employment_net_earnings for line in r.fica)
+        schedules["SE"] = {
+            "2": profit,
+            "3": profit,
+            "4a": net,
+            "4c": net,
+            "6": net,
+            "12": r.self_employment_tax,
+            "13": r.self_employment_tax_deduction,
+        }
+        schedules["C"] = {"31": r.business_income}
     if r.capital_loss_deduction > 0:
         schedules["D"] = {"21": -r.capital_loss_deduction}
     else:
@@ -359,26 +423,31 @@ def schedule_lines(r: "TaxReturn") -> dict[str, dict[str, float]]:
             "15": r.long_term_gains,
             "16": r.short_term_gains + r.long_term_gains,
         }
+    total_other = r.niit + r.additional_medicare_tax + r.total_penalties + r.self_employment_tax
     if year == 2026:
+        se_medicare = r.additional_medicare_tax_self_employment
         schedules["2"] = {
             "2": r.amt,
             "3": r.amt,
+            "4": r.self_employment_tax,
             "5": retirement_penalties,
             "6": r.niit,
+            "11": se_medicare,
             "13c": hsa_penalty,
-            "17b": r.additional_medicare_tax,
-            "21": r.niit + r.additional_medicare_tax + r.total_penalties,
+            "17b": r.additional_medicare_tax - se_medicare,
+            "21": total_other,
         }
         schedules["1-A"] = {"15": 0.0, "27": 0.0, "36": 0.0, "43": r.senior_deduction, "44": r.senior_deduction}
     else:
         schedules["2"] = {
             "2": r.amt,
             "3": r.amt,
+            "4": r.self_employment_tax,
             "8": retirement_penalties,
             "11": r.additional_medicare_tax,
             "12": r.niit,
             "17c": hsa_penalty,
-            "21": r.niit + r.additional_medicare_tax + r.total_penalties,
+            "21": total_other,
         }
         if year == 2025:
             schedules["1-A"] = {"13": 0.0, "21": 0.0, "30": 0.0, "37": r.senior_deduction, "38": r.senior_deduction}
@@ -413,6 +482,8 @@ _1040_INPUTS = {
     "23": ("schedule 2:21",),
 }
 
+#: Schedules and forms of credits (a larger filed credit than simulated is an unmodeled credit or input).
+_CREDIT_SECTIONS = frozenset({"schedule 3", "schedule 8812", "schedule 2441", "schedule 8863", "schedule 8880"})
 _INCOME_LINES = frozenset({"1a", "1z", "2a", "2b", "3a", "3b", "4a", "4b", "5a", "5b", "6a", "7", "7a", "8"})
 _CREDIT_LINES = frozenset({"19", "20", "27", "27a", "28", "29", "30", "31"})
 _DEDUCTION_LINES = frozenset({"10", "12", "12e", "12f", "13", "13a", "13b", "14"})
@@ -498,6 +569,8 @@ def _employer_flows(sim: _Year, person, employer: str) -> dict[str, float]:
         if entry.agent_id != person.unique_id:
             continue
         if entry.kind in (FlowKind.WAGE.value, FlowKind.BONUS.value, FlowKind.VEST.value) and entry.source == employer:
+            if entry.cause and "ISO exercise spread (held)" in entry.cause:
+                continue  # a held ISO's bargain element is not wages (an AMT adjustment)
             gross += entry.amount
         elif entry.kind == FlowKind.CONTRIBUTION.value and isinstance(agents.get(entry.to_account), Job401kAccount):
             account = agents[entry.to_account]
@@ -512,7 +585,9 @@ def _employer_flows(sim: _Year, person, employer: str) -> dict[str, float]:
 def _w2_simulated(sim: _Year, person, employer: str) -> dict[str, float | None]:
     flows = _employer_flows(sim, person, employer)
     fica = sim.model.config_for_year(sim.year).tax.fica
-    gross = flows["gross"]
+    # A dependent-care FSA election is paid out of gross pay but excluded from boxes 1, 3 and 5 (box 10).
+    fsa = sum(job._ytd.fsa for job in person.jobs if job.company == employer and job._ytd_year == sim.year)
+    gross = flows["gross"] - fsa
     ss_wages = min(gross, fica.social_security_max_income)
     # Employers withhold the Additional Medicare Tax on wages over $200,000 whatever the filing status.
     medicare = gross * fica.medicare_rate / 100 + max(0.0, gross - 200000) * fica.medicare_additional_rate / 100
@@ -523,6 +598,7 @@ def _w2_simulated(sim: _Year, person, employer: str) -> dict[str, float | None]:
         "4": ss_wages * fica.social_security_rate / 100,
         "5": gross,
         "6": medicare,
+        "10": fsa,
         "12:D": flows["pretax"],
         "12:AA": flows["roth"],
     }
@@ -577,7 +653,9 @@ def _information_return_simulated(sim: _Year, item, r: "TaxReturn | None") -> di
         }
     if form == "1099-R":
         labels = labels or _owned_labels(sim, person, (TraditionalIRA, Job401kAccount))
-        paid = _account_flows(sim, labels, [FlowKind.RMD.value, FlowKind.WITHDRAWAL.value], inbound=False)
+        # A qualified charitable distribution (a gift straight from the IRA) is a distribution too.
+        kinds = [FlowKind.RMD.value, FlowKind.WITHDRAWAL.value, FlowKind.GIFT.value]
+        paid = _account_flows(sim, labels, kinds, inbound=False)
         return {"1": (paid, ""), "2a": (paid, ""), "4": (None, "timing")}
     if form == "SSA-1099":
         benefits = sum(
@@ -644,7 +722,7 @@ def _classify(item: ReconciliationLine, rows: dict[tuple[str, str], Reconciliati
         if line in _INCOME_LINES:
             return "missing_income_source" if abs(simulated) < 0.005 else "input_difference"
         return "unexplained"
-    if item.section == "schedule 3":
+    if item.section in _CREDIT_SECTIONS:
         return "unmodeled_credit" if actual > simulated else "unexplained"
     adjustment = item.section == "schedule 1" and int("".join(c for c in line if c.isdigit()) or 0) >= 11
     if (adjustment or item.section in ("schedule A", "schedule 1-A")) and actual > simulated:

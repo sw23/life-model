@@ -192,6 +192,7 @@ _SCHEDULE_3 = {
     "3": "Education credits",
     "4": "Retirement savings contributions credit",
     "5a": "Residential clean energy credit",
+    "6b": "Credit for prior year minimum tax (Form 8801)",
     "7": "Total other nonrefundable credits",
     "8": "Nonrefundable credits (to Form 1040 line 20)",
     "9": "Net premium tax credit",
@@ -209,6 +210,7 @@ _SCHEDULE_A = {
     "8e": "Total home mortgage interest",
     "10": "Total interest",
     "11": "Gifts by cash or check",
+    "12": "Gifts other than by cash or check",
     "14": "Total gifts to charity",
     "17": "Total itemized deductions",
 }
@@ -237,6 +239,27 @@ _SCHEDULE_1A_2026 = {
     "44": "Total additional deductions (to Form 1040 line 13a)",
 }
 
+#: The forms and schedules Plan 31 added (same line numbers 2024-2026 for the lines read).
+_PLAN_31_FORMS = {
+    "C": {"31": "Net profit or (loss)"},
+    "SE": {
+        "2": "Net profit from Schedule C",
+        "3": "Combine lines 1a, 1b and 2",
+        "4a": "Line 3 x 92.35%",
+        "4c": "Combine lines 4a and 4b",
+        "6": "Add lines 4c and 5b",
+        "12": "Self-employment tax",
+        "13": "Deduction for one-half of self-employment tax",
+    },
+    "8812": {"14": "Child tax credit and credit for other dependents", "27": "Additional child tax credit"},
+    "2441": {"11": "Credit for child and dependent care expenses", "26": "Taxable dependent care benefits"},
+    "8863": {"8": "Refundable American opportunity credit", "19": "Nonrefundable education credits"},
+    "8880": {"12": "Credit for qualified retirement savings contributions"},
+    "8995": {"1": "Qualified business income", "15": "Qualified business income deduction"},
+    "6251": {"4": "Alternative minimum taxable income", "9": "Tentative minimum tax", "11": "Alternative minimum tax"},
+    "8814": {"15": "Tax on the child's income (to Form 1040 line 16)"},
+}
+
 #: Schedule name -> line -> label, by tax year (the lines reconciliation reads; others are accepted).
 SCHEDULE_LINES: dict[int, dict[str, dict[str, str]]] = {
     2024: {
@@ -246,6 +269,7 @@ SCHEDULE_LINES: dict[int, dict[str, dict[str, str]]] = {
         "A": _SCHEDULE_A,
         "B": _SCHEDULE_B,
         "D": _SCHEDULE_D,
+        **_PLAN_31_FORMS,
     },
     2025: {
         "1": _SCHEDULE_1,
@@ -255,6 +279,7 @@ SCHEDULE_LINES: dict[int, dict[str, dict[str, str]]] = {
         "A": _SCHEDULE_A,
         "B": _SCHEDULE_B,
         "D": _SCHEDULE_D,
+        **_PLAN_31_FORMS,
     },
     2026: {
         "1": _SCHEDULE_1,
@@ -264,6 +289,7 @@ SCHEDULE_LINES: dict[int, dict[str, dict[str, str]]] = {
         "A": _SCHEDULE_A,
         "B": _SCHEDULE_B,
         "D": _SCHEDULE_D,
+        **_PLAN_31_FORMS,
     },
 }
 

@@ -43,6 +43,7 @@ see `AGENTS.md <https://github.com/sw23/life-model/blob/main/AGENTS.md>`_.
    Plan 26: engine timing and settlement <rebaseline-plan-26.md>
    Plan 28: explainable outputs <rebaseline-plan-28.md>
    Plan 29: reconciliation and calibration <rebaseline-plan-29.md>
+   Plan 31: tax completeness <rebaseline-plan-31.md>
    Plan 32: monthly engine <rebaseline-plan-32.md>
 
 Indices and tables

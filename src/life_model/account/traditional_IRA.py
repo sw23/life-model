@@ -30,6 +30,8 @@ class TraditionalIRA(TaxAdvantagedAccount):
         balance: float = 0,
         growth_rate: float | None = None,
         contribution_limit: float | None = None,
+        *,
+        nondeductible_basis: float = 0.0,
     ):
         """Models a Traditional IRA account for a person.
 
@@ -45,9 +47,14 @@ class TraditionalIRA(TaxAdvantagedAccount):
                 return when None.
             contribution_limit: Override for the annual contribution limit. Uses the configured
                 IRA limit when None. Note the IRA limit is shared across all of a person's IRAs.
+            nondeductible_basis: Form 8606 basis (nondeductible contributions) at the start. Plan 31 adds
+                the year's nondeductible contributions (the deduction phase-out) to it; distributions are
+                still fully taxable (the pro-rata rule lands with Plan 27 D1).
         """
         super().__init__(person, balance, growth_rate)
         self._contribution_limit_override = contribution_limit
+        #: Form 8606 line 14: nondeductible contributions not yet recovered.
+        self.nondeductible_basis = nondeductible_basis
         self.stat_required_min_distrib = 0
         # This year's required minimum distribution (set at the year start; paid in twelfths).
         self.rmd_for_year = 0.0
@@ -58,7 +65,8 @@ class TraditionalIRA(TaxAdvantagedAccount):
     def contribute(self, amount: float, **kwargs) -> float:
         """Contribute pre-tax dollars, recording an above-the-line deduction for the amount.
 
-        Deductibility phase-outs for owners covered by a workplace plan are not modeled.
+        At settlement the tax unit phases the deduction out for an owner (or spouse) covered by a
+        workplace plan (IRC §219(g)); the nondeductible part becomes ``nondeductible_basis``.
         """
         actual = super().contribute(amount, **kwargs)
         self.person.income.add_deduction(actual, source="ira_deduction")
@@ -66,7 +74,11 @@ class TraditionalIRA(TaxAdvantagedAccount):
 
     def on_year_start(self):
         # The year's RMD from the balance at the start of the year (the prior year-end balance).
-        self.rmd_for_year = required_rmd_for_year(self.person, self.balance)
+        required = required_rmd_for_year(self.person, self.balance)
+        # Qualified charitable distributions are made now, with the year's donations, and count toward
+        # the RMD (IRC §408(d)(8)); the rest of the RMD is paid in monthly twelfths.
+        qcd = self._make_qualified_charitable_distributions()
+        self.rmd_for_year = max(0.0, required - qcd)
 
     def pre_step(self):
         """Take this month's share of the year's required minimum distribution (ordinary income, no
@@ -88,6 +100,27 @@ class TraditionalIRA(TaxAdvantagedAccount):
         for person, amount in self._rmd_by_person.items():
             self.model.event_log.add(Event(EventKind.RMD, person=person, amount=amount, account=self))
         self._rmd_by_person = {}
+
+    #: Exact age from which a distribution may be a qualified charitable distribution (IRC §408(d)(8)(B)(ii)).
+    QCD_MIN_AGE = 70.5
+
+    def _make_qualified_charitable_distributions(self) -> float:
+        """Pay this year's QCD donations of the owner from this IRA (up to the year's per-person limit
+        across their IRAs), in the year's first month. The owner must be 70½ at the distribution (exact
+        age that month); a donor not yet 70½ gives in cash. Returns the amount distributed to charity."""
+        if self.person.is_deceased or self.person.age_years_fractional < self.QCD_MIN_AGE or self.balance <= 0:
+            return 0.0
+        limit = self.model.year_config.tax.federal.qcd_limit
+        if limit is None:
+            return 0.0
+        total = 0.0
+        for donation in self.person.donations:
+            make = getattr(donation, "make_qcd", None)
+            if make is None:
+                continue
+            room = limit - sum(getattr(d, "qcd_this_year", 0.0) for d in self.person.donations)
+            total += make(self, room)
+        return total
 
     def annual_contribution_limit(self) -> float:
         if self._contribution_limit_override is not None:

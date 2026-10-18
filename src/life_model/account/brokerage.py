@@ -249,6 +249,31 @@ class BrokerageAccount(Investment):
 
         return actual_withdrawal, long_term_gain, short_term_gain
 
+    def transfer_long_term_in_kind(self, amount: float) -> float:
+        """Give up to ``amount`` of long-term lots away in kind (a charitable gift of appreciated shares):
+        the lots leave the account without a sale, so no gain is realized. The most appreciated lots (by
+        gain per dollar) go first. Returns the market value transferred; nothing is posted (the caller
+        posts the gift)."""
+        if amount <= 0:
+            return 0.0
+        year = self.model.year
+        candidates = sorted(
+            (lot for lot in self.lots if year - lot.acquired_year >= 1 and lot.value > 0),
+            key=lambda lot: -(lot.gain / lot.value),
+        )
+        remaining = amount
+        for lot in candidates:
+            if remaining <= 0:
+                break
+            take = min(remaining, lot.value)
+            lot.cost_basis -= lot.cost_basis * (take / lot.value)
+            lot.value -= take
+            remaining -= take
+        self.lots = [lot for lot in self.lots if lot.value > 1e-9]
+        given = amount - remaining
+        self.balance -= given
+        return given
+
     def preview_gain(self, amount: float) -> tuple[float, float]:
         """Preview the gains selling ``amount`` would realize, WITHOUT mutating any lots.
 

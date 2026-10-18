@@ -33,9 +33,9 @@ W-2 Example Analytics (jane): box 1 = $95,000.00 - 401(k) $4,750.00 = $90,250.00
 | Schedule A line 8a | 1098 box 1 | $30,950.00 |
 | Schedule A line 8e | 8a | $30,950.00 |
 | Schedule A line 10 | 8e (no investment interest) | $30,950.00 |
-| Schedule A line 11 | cash gifts (well under 60% of AGI) | $6,000.00 |
+| Schedule A line 11 | cash gifts (within 60% of AGI) | $6,000.00 |
 | Schedule A line 14 | 11 + 12 + 13 | $6,000.00 |
-| Schedule A line 17 | 7 + 10 + 14 | $49,950.00 |
+| Schedule A line 17 | 5e/7 + 10 + 14 | $49,950.00 |
 | Form 1040 line 12e | Schedule A line 17 | $49,950.00 |
 | Form 1040 line 13a | no qualified business income | $0.00 |
 | Form 1040 line 13b | Schedule 1-A line 38 | $0.00 |
@@ -45,8 +45,9 @@ W-2 Example Analytics (jane): box 1 = $95,000.00 - 401(k) $4,750.00 = $90,250.00
 | Form 1040 line 16 | Tax Computation Worksheet (exact schedule) | $35,422.00 |
 | Form 1040 line 17 | no AMT (Schedule 2 line 3) | $0.00 |
 | Form 1040 line 18 | 16 + 17 | $35,422.00 |
-| | Schedule 8812: 2 x $2,200.00 = $4,400.00; MAGI under $400,000.00; limited by tax $35,422.00 | |
+| | Schedule 8812: 2 x $2,200.00 = $4,400.00; MAGI under $400,000.00; Credit Limit Worksheet A: line 18 less Schedule 3 lines 1-4 = $35,422.00 | |
 | Form 1040 line 19 | Schedule 8812 line 14 | $4,400.00 |
+| Form 8812 line 14 | smaller of line 12 and Credit Limit Worksheet A | $4,400.00 |
 | Form 1040 line 20 | Schedule 3 line 8: no other credits | $0.00 |
 | Form 1040 line 21 | 19 + 20 | $4,400.00 |
 | Form 1040 line 22 | 18 - 21 | $31,022.00 |

@@ -33,7 +33,8 @@ from ..spec.schema import NYS_KEY, At
 from .spec_helpers import minimal, spec_of
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-RUNNABLE_EXAMPLES = tuple(name for name in EXAMPLES if name != "self_employed")
+# Every packaged example is buildable since Plan 31 (self_employed was the not-yet-supported one).
+RUNNABLE_EXAMPLES = EXAMPLES
 
 
 class TestSchema(unittest.TestCase):
@@ -144,11 +145,15 @@ class TestExamples(unittest.TestCase):
             with self.subTest(example=name):
                 self.assertEqual([str(f) for f in validate_spec(load_example(name))], [])
 
-    def test_self_employed_is_marked_not_yet_supported(self):
-        findings = validate_spec(load_example("self_employed"))
+    def test_self_employed_is_supported(self):
+        """Plan 31 made the example buildable; a spec using a not-yet-supported field is still rejected."""
+        from .spec_helpers import not_yet_supported
+
+        self.assertEqual(validate_spec(load_example("self_employed")), [])
+        findings = validate_spec(HouseholdSpec.model_validate(not_yet_supported()))
         self.assertTrue(findings)
         self.assertTrue(all(f.code == "not_yet_supported" for f in findings), findings)
-        self.assertTrue(any("Plan 31" in f.message for f in findings))
+        self.assertTrue(any("Plan 27" in f.message for f in findings))
 
     def test_load_build_extract_dump_is_stable(self):
         for name in RUNNABLE_EXAMPLES:
@@ -231,7 +236,16 @@ class TestCli(unittest.TestCase):
 
         code, out = self._run("validate", str(example_path("married_homeowners")))
         self.assertEqual((code, out.strip()), (0, "no findings"))
-        code, out = self._run("validate", str(example_path("self_employed")))
+        import tempfile
+
+        import yaml
+
+        from .spec_helpers import not_yet_supported
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "unsupported.yaml"
+            path.write_text(yaml.safe_dump(not_yet_supported()), encoding="utf-8")
+            code, out = self._run("validate", str(path))
         self.assertEqual(code, 1)
         self.assertIn("not yet supported", out)
 

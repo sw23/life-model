@@ -1,0 +1,36 @@
+# Household golden (synthetic, not real data). See ../README.md.
+spec_version: 1
+meta:
+  name: Head of household with two children
+  description: 'Household golden (synthetic): a single parent with wages and two school-age children.'
+  as_of: 2024-01
+  start_year: 2024
+  end_year: 2024
+  seed: 1
+  default_state: TX
+people:
+- id: robin
+  name: Robin
+  age: 34
+  retirement_age: 67
+  spending:
+    amount_annual: 20000
+    growth_pct: 0
+  jobs:
+  - id: robin_job
+    company: Example County
+    salary_annual: 28000
+  accounts:
+  - kind: bank
+    id: robin_checking
+    company: Community Bank
+    type: Checking
+    balance: 25000
+    interest_pct: 0.0
+    compounding: annual
+    primary: true
+  children:
+  - name: Junior
+    birth_year: 2014
+  - name: Kit
+    birth_year: 2017

@@ -104,6 +104,23 @@ tax:
     charitable:
       cash_agi_limit_percent: 60.0
       carryforward_years: 5
+      # vintage: statutory, source: IRC §170(b)(1)(C)(i) (30% of AGI for long-term capital gain property)
+      property_agi_limit_percent: 30.0
+      # vintage: statutory, source: OBBBA (P.L. 119-21) §70424, IRC §170(p) ($1,000 / $2,000 joint, from 2026)
+      non_itemizer_first_year: 2026
+      non_itemizer_limit_single: 1000
+      non_itemizer_limit_joint: 2000
+      # vintage: statutory, source: OBBBA §70425, IRC §170(b)(1)(I) (0.5% of the contribution base, from 2026)
+      floor_first_year: 2026
+      floor_percent: 0.5
+      # vintage: statutory, source: OBBBA §70111, IRC §68 (2/37 limitation on itemized deductions, from 2026)
+      itemized_limit_first_year: 2026
+    # Credit switches (statutory). The education credits (IRC §25A: AOTC 100% of $2,000 + 25% of $2,000, 40%
+    # refundable, four years; LLC 20% of $10,000; both phased out over $80,000-$90,000 / $160,000-$180,000 of
+    # MAGI, not indexed since P.L. 116-260 §104) take the statutory defaults of config/models.py.
+    # vintage: statutory, source: IRC §25A(b), (c), (d), (i); SECURE 2.0 §103 (saver's credit through 2026)
+    credits:
+      education: {}
     # vintage: 2026, source: IRC §2010 unified credit (post-OBBBA ~$15M); §2001(c) top estate-tax rate 40%
     estate_tax_exemption: 15000000
     estate_tax_rate: 40.0  # percentage
@@ -590,7 +607,7 @@ debt:
     default_minimum_payment_percent: 2.0  # percentage
     default_minimum_payment_floor: 25.0  # dollars, typical card minimum-payment floor
   student_loan:
-    # vintage: 2025, source: IRC §221 above-the-line interest deduction (MAGI phase-out ignored)
+    # vintage: statutory, source: IRC §221(b)(1) above-the-line interest deduction cap (MAGI phase-out: tax_years)
     interest_deduction_limit: 2500  # dollars per year
     # vintage: 2026, source: One Big Beautiful Bill Act Repayment Assistance Plan; studentaid.gov.
     # Income-driven plan for federal loans made from July 2026 (opt in per loan).
@@ -637,7 +654,9 @@ dependents:
   # vintage: 2026, source: IRC §24(h)(2)/(5) (OBBBA), Rev. Proc. 2025-32.
   ctc_per_child: 2200
   ctc_refundable_max: 1700
-  ctc_qualifying_age_max: 17
+  # Oldest qualifying age, inclusive: a qualifying child "has not attained age 17" by year end.
+  # vintage: statutory, source: IRC §24(c)(1) (17 before Plan 31 gave the credit to 17-year-olds)
+  ctc_qualifying_age_max: 16
   # Phase-out thresholds are statutory and not inflation-indexed.
   # vintage: statutory, source: IRC §24(h)(3).
   ctc_phaseout_start:
@@ -645,6 +664,12 @@ dependents:
     married_filing_jointly: 400000
     head_of_household: 200000
   ctc_phaseout_rate: 5.0          # percent of modified AGI over threshold ($50 per $1,000)
+  # vintage: statutory, source: IRC §24(h)(4) credit for other dependents (permanent under OBBBA §70104)
+  odc_per_dependent: 500
+  # vintage: statutory, source: IRC §24(d)(1)(B)(i), §24(h)(6): the additional child tax credit is 15% of
+  # earned income over $2,500 (Schedule 8812 Part II-A), up to the refundable maximum per child
+  actc_earned_income_threshold: 2500
+  actc_rate: 15.0
 
 # Stock compensation defaults. These are modeling conventions rather than published figures, so
 # they carry no vintage stamp. A stock plan that names no schedule uses default_schedule; the
@@ -743,8 +768,8 @@ healthcare:
 
 # Year-indexed tax parameters (published values, 2022-2026). Accessed via
 # config.tax_year(year). Plan 29 moved the capital-gains brackets, Child Tax Credit amounts, SALT
-# cap, senior deduction and NIIT thresholds in (and records the §63(f) additional standard deduction
-# for Plan 31); 2022-2026 re-verified 2026-10-18 against Rev. Procs. 2021-45, 2022-38, 2023-34,
+# cap, senior deduction and NIIT thresholds in, and Plan 31 added the §63(f) amounts' use and the
+# per-year credit, phase-out, AMT, QBI, kiddie-tax, QCD and LTC-premium parameters (2024-2026); 2022-2026 re-verified 2026-10-18 against Rev. Procs. 2021-45, 2022-38, 2023-34,
 # 2024-40 and 2025-32, OBBBA (P.L. 119-21, govinfo), and IRS Notices 2022-55/2023-75/2024-80/2025-67
 # (see docs/rebaseline-plan-29.md). Years outside the table are projected: earliest entry
 # for prior years, frozen at the latest entry for future years, most-recent
@@ -814,7 +839,7 @@ tax_years:
     # vintage: statutory, source: IRC §1411(b) (never indexed)
     niit: {rate: 3.8, single: 200000, married_filing_jointly: 250000, head_of_household: 200000,
            married_filing_separately: 125000}
-    # vintage: 2022, source: IRS Rev. Proc. 2021-45 §3.15(3) (§63(f); recorded for Plan 31, not applied yet)
+    # vintage: 2022, source: IRS Rev. Proc. 2021-45 §3.15(3) (§63(f), per person 65+)
     additional_standard_deduction: {married: 1400, unmarried: 1750}
   2023:
     standard_deduction:
@@ -873,7 +898,7 @@ tax_years:
     # vintage: statutory, source: IRC §1411(b) (never indexed)
     niit: {rate: 3.8, single: 200000, married_filing_jointly: 250000, head_of_household: 200000,
            married_filing_separately: 125000}
-    # vintage: 2023, source: IRS Rev. Proc. 2022-38 §3.15(3) (§63(f); recorded for Plan 31, not applied yet)
+    # vintage: 2023, source: IRS Rev. Proc. 2022-38 §3.15(3) (§63(f), per person 65+)
     additional_standard_deduction: {married: 1500, unmarried: 1850}
   2024:
     standard_deduction:
@@ -932,8 +957,46 @@ tax_years:
     # vintage: statutory, source: IRC §1411(b) (never indexed)
     niit: {rate: 3.8, single: 200000, married_filing_jointly: 250000, head_of_household: 200000,
            married_filing_separately: 125000}
-    # vintage: 2024, source: IRS Rev. Proc. 2023-34 §3.15(3) (§63(f); recorded for Plan 31, not applied yet)
+    # vintage: 2024, source: IRS Rev. Proc. 2023-34 §3.15(3) (§63(f), per person 65+)
     additional_standard_deduction: {married: 1550, unmarried: 1950}
+    # vintage: 2024, source: IRS Rev. Proc. 2023-34 §3.06 (earned income credit table, §32(i) limit)
+    eitc:
+      earned_income_amount: [8260, 12390, 17400, 17400]
+      max_credit: [632, 4213, 6960, 7830]
+      phaseout_start: [10330, 22720, 22720, 22720]
+      phaseout_start_joint: [17250, 29640, 29640, 29640]
+      investment_income_limit: 11600
+    # vintage: statutory, source: IRC §21(a)(2) before OBBBA (35% less 1 point per $2,000 over $15,000, not
+    # below 20%); §129(a)(2)(A) $5,000 exclusion (not indexed)
+    dependent_care: {exclusion_limit: 5000, max_rate: 35, first_floor: 20}
+    # vintage: 2024, source: IRS Notice 2023-75 (§25B(b)(1) AGI limits of the 50% / 20% / 10% tiers)
+    savers_credit: {joint: [46000, 50000, 76500], head_of_household: [34500, 37500, 57375],
+                    other: [23000, 25000, 38250]}
+    # vintage: 2024, source: IRS Notice 2023-75 (§219(g) deduction and §408A(c)(3) Roth phase-outs)
+    ira_phaseouts:
+      traditional_single: {start: 77000, end: 87000}
+      traditional_joint: {start: 123000, end: 143000}
+      traditional_spouse_covered: {start: 230000, end: 240000}
+      roth_single: {start: 146000, end: 161000}
+      roth_joint: {start: 230000, end: 240000}
+    # vintage: 2024, source: IRS Rev. Proc. 2023-34 §3.30 (§221 phase-out)
+    student_loan_phaseout: {single: {start: 80000, end: 95000}, joint: {start: 165000, end: 195000}}
+    # vintage: 2024, source: IRS Rev. Proc. 2023-34 §3.11 (§55 exemptions, phase-out, 26%/28% breakpoint)
+    amt: {exemption_single: 85700, exemption_joint: 133300, exemption_separate: 66650,
+          phaseout_start_single: 609350, phaseout_start_joint: 1218700, phaseout_start_separate: 609350,
+          phaseout_rate: 25, breakpoint: 232600, breakpoint_separate: 116300}
+    # vintage: 2024, source: IRS Rev. Proc. 2023-34 §3.27 (§199A threshold; phase-in $50,000 / $100,000)
+    qbi: {threshold_single: 191950, threshold_joint: 383900, threshold_separate: 191950,
+          phase_in_single: 50000, phase_in_joint: 100000}
+    # vintage: 2024, source: IRS Rev. Proc. 2023-34 §3.02 (§1(g) kiddie tax amount)
+    kiddie_tax: {base_amount: 1300}
+    # vintage: 2024, source: IRS Notice 2023-75 (§408(d)(8) qualified charitable distribution limit)
+    qcd_limit: 105000
+    # vintage: 2024, source: IRS Rev. Proc. 2023-34 §3.28 (§213(d)(10) eligible LTC premiums by age)
+    ltc_premium_limits: [{max_age: 40, limit: 470}, {max_age: 50, limit: 880}, {max_age: 60, limit: 1760},
+                         {max_age: 70, limit: 4710}, {max_age: 200, limit: 5880}]
+    # vintage: 2024, source: IRS Notice 2023-75 (§401(a)(17) compensation limit)
+    compensation_limit: 345000
   2025:
     standard_deduction:
       single: 15750
@@ -991,8 +1054,46 @@ tax_years:
     # vintage: statutory, source: IRC §1411(b) (never indexed)
     niit: {rate: 3.8, single: 200000, married_filing_jointly: 250000, head_of_household: 200000,
            married_filing_separately: 125000}
-    # vintage: 2025, source: IRS Rev. Proc. 2024-40 §2.15(3) (§63(f); recorded for Plan 31, not applied yet)
+    # vintage: 2025, source: IRS Rev. Proc. 2024-40 §2.15(3) (§63(f), per person 65+)
     additional_standard_deduction: {married: 1600, unmarried: 2000}
+    # vintage: 2025, source: IRS Rev. Proc. 2024-40 §2.06 (earned income credit table, §32(i) limit)
+    eitc:
+      earned_income_amount: [8490, 12730, 17880, 17880]
+      max_credit: [649, 4328, 7152, 8046]
+      phaseout_start: [10620, 23350, 23350, 23350]
+      phaseout_start_joint: [17730, 30470, 30470, 30470]
+      investment_income_limit: 11950
+    # vintage: statutory, source: IRC §21(a)(2) before OBBBA (35% less 1 point per $2,000 over $15,000, not
+    # below 20%); §129(a)(2)(A) $5,000 exclusion (not indexed)
+    dependent_care: {exclusion_limit: 5000, max_rate: 35, first_floor: 20}
+    # vintage: 2025, source: IRS Notice 2024-80 (§25B(b)(1) AGI limits of the 50% / 20% / 10% tiers)
+    savers_credit: {joint: [47500, 51000, 79000], head_of_household: [35625, 38250, 59250],
+                    other: [23750, 25500, 39500]}
+    # vintage: 2025, source: IRS Notice 2024-80 (§219(g) deduction and §408A(c)(3) Roth phase-outs)
+    ira_phaseouts:
+      traditional_single: {start: 79000, end: 89000}
+      traditional_joint: {start: 126000, end: 146000}
+      traditional_spouse_covered: {start: 236000, end: 246000}
+      roth_single: {start: 150000, end: 165000}
+      roth_joint: {start: 236000, end: 246000}
+    # vintage: 2025, source: IRS Rev. Proc. 2024-40 §2.30 (§221 phase-out)
+    student_loan_phaseout: {single: {start: 85000, end: 100000}, joint: {start: 170000, end: 200000}}
+    # vintage: 2025, source: IRS Rev. Proc. 2024-40 §2.11 (§55 exemptions, phase-out, 26%/28% breakpoint)
+    amt: {exemption_single: 88100, exemption_joint: 137000, exemption_separate: 68500,
+          phaseout_start_single: 626350, phaseout_start_joint: 1252700, phaseout_start_separate: 626350,
+          phaseout_rate: 25, breakpoint: 239100, breakpoint_separate: 119550}
+    # vintage: 2025, source: IRS Rev. Proc. 2024-40 §2.27 (§199A threshold; phase-in $50,000 / $100,000)
+    qbi: {threshold_single: 197300, threshold_joint: 394600, threshold_separate: 197300,
+          phase_in_single: 50000, phase_in_joint: 100000}
+    # vintage: 2025, source: IRS Rev. Proc. 2024-40 §2.02 (§1(g) kiddie tax amount)
+    kiddie_tax: {base_amount: 1350}
+    # vintage: 2025, source: IRS Notice 2024-80 (§408(d)(8) qualified charitable distribution limit)
+    qcd_limit: 108000
+    # vintage: 2025, source: IRS Rev. Proc. 2024-40 §2.28 (§213(d)(10) eligible LTC premiums by age)
+    ltc_premium_limits: [{max_age: 40, limit: 480}, {max_age: 50, limit: 900}, {max_age: 60, limit: 1800},
+                         {max_age: 70, limit: 4810}, {max_age: 200, limit: 6020}]
+    # vintage: 2025, source: IRS Notice 2024-80 (§401(a)(17) compensation limit)
+    compensation_limit: 350000
   2026:
     standard_deduction:
       single: 16100
@@ -1050,5 +1151,47 @@ tax_years:
     # vintage: statutory, source: IRC §1411(b) (never indexed)
     niit: {rate: 3.8, single: 200000, married_filing_jointly: 250000, head_of_household: 200000,
            married_filing_separately: 125000}
-    # vintage: 2026, source: IRS Rev. Proc. 2025-32 §4.14(3) (§63(f); recorded for Plan 31, not applied yet)
+    # vintage: 2026, source: IRS Rev. Proc. 2025-32 §4.14(3) (§63(f), per person 65+)
     additional_standard_deduction: {married: 1650, unmarried: 2050}
+    # vintage: 2026, source: IRS Rev. Proc. 2025-32 §4.06 (earned income credit table, §32(i) limit)
+    eitc:
+      earned_income_amount: [8680, 13020, 18290, 18290]
+      max_credit: [664, 4427, 7316, 8231]
+      phaseout_start: [10860, 23890, 23890, 23890]
+      phaseout_start_joint: [18140, 31160, 31160, 31160]
+      investment_income_limit: 12200
+    # vintage: statutory, source: OBBBA (P.L. 119-21) §70405, IRC §21(a)(2) (50% less 1 point per $2,000 over
+    # $15,000, not below 35%; then 1 point per $2,000 ($4,000 joint) over $75,000 ($150,000), not below 20%);
+    # §70404, IRC §129(a)(2)(A) $7,500 exclusion (not indexed)
+    dependent_care: {exclusion_limit: 7500, max_rate: 50, first_floor: 35, second_start: 75000,
+                     second_start_joint: 150000, second_step: 2000, second_step_joint: 4000, second_floor: 20}
+    # vintage: 2026, source: IRS Notice 2025-67 (§25B(b)(1) AGI limits of the 50% / 20% / 10% tiers)
+    savers_credit: {joint: [48500, 52500, 80500], head_of_household: [36375, 39375, 60375],
+                    other: [24250, 26250, 40250]}
+    # vintage: 2026, source: IRS Notice 2025-67 (§219(g) deduction and §408A(c)(3) Roth phase-outs)
+    ira_phaseouts:
+      traditional_single: {start: 81000, end: 91000}
+      traditional_joint: {start: 129000, end: 149000}
+      traditional_spouse_covered: {start: 242000, end: 252000}
+      roth_single: {start: 153000, end: 168000}
+      roth_joint: {start: 242000, end: 252000}
+    # vintage: 2026, source: IRS Rev. Proc. 2025-32 §4.29 (§221 phase-out)
+    student_loan_phaseout: {single: {start: 85000, end: 100000}, joint: {start: 175000, end: 205000}}
+    # vintage: 2026, source: IRS Rev. Proc. 2025-32 §4.10 (§55 exemptions, phase-out, breakpoint); phase-out
+    # rate 50% from OBBBA §70107 (IRC §55(d)(4)(A)(ii)(IV)), which also reset the thresholds to $500,000 / $1,000,000
+    amt: {exemption_single: 90100, exemption_joint: 140200, exemption_separate: 70100,
+          phaseout_start_single: 500000, phaseout_start_joint: 1000000, phaseout_start_separate: 500000,
+          phaseout_rate: 50, breakpoint: 244500, breakpoint_separate: 122250}
+    # vintage: 2026, source: IRS Rev. Proc. 2025-32 §4.26 (§199A thresholds; phase-in $75,000 / $150,000 and the
+    # $400 minimum deduction for $1,000 of active QBI from OBBBA §70105, Rev. Proc. 2025-32 §2.12)
+    qbi: {threshold_single: 201750, threshold_joint: 403500, threshold_separate: 201775,
+          phase_in_single: 75000, phase_in_joint: 150000, minimum_deduction: 400, minimum_qbi: 1000}
+    # vintage: 2026, source: IRS Rev. Proc. 2025-32 §4.02 (§1(g) kiddie tax amount)
+    kiddie_tax: {base_amount: 1350}
+    # vintage: 2026, source: IRS Notice 2025-67 (§408(d)(8) qualified charitable distribution limit)
+    qcd_limit: 111000
+    # vintage: 2026, source: IRS Rev. Proc. 2025-32 §4.27 (§213(d)(10) eligible LTC premiums by age)
+    ltc_premium_limits: [{max_age: 40, limit: 500}, {max_age: 50, limit: 930}, {max_age: 60, limit: 1860},
+                         {max_age: 70, limit: 4960}, {max_age: 200, limit: 6200}]
+    # vintage: 2026, source: IRS Notice 2025-67 (§401(a)(17) compensation limit)
+    compensation_limit: 360000

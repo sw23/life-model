@@ -131,6 +131,13 @@ This package supports a comprehensive range of financial modeling components:
 - [x] **Capital Gains** - Short-term and long-term capital gains
 - [x] **Required Minimum Distributions (RMDs)** - From 401ks and Traditional IRAs
 - [x] **Early-Withdrawal Penalties** - 10% before 59½ on pre-tax and non-qualified Roth IRA draws; 20% on non-medical HSA draws before 65
+- [x] **Deductions** - Standard deduction with the §63(f) amount for 65+, OBBBA senior deduction, itemized (SALT cap schedule, mortgage interest, medical with long-term care premiums, charity at 60% cash / 30% appreciated property with carryovers; 2026 floor, non-itemizer deduction and §68 limit), QBI (§199A), student loan interest and IRA deduction phase-outs
+- [x] **Credits** - Child tax credit and credit for other dependents (Schedule 8812 with the additional child tax credit), earned income credit, child and dependent care credit with dependent-care FSAs, American opportunity / lifetime learning credits (529 coordination), saver's credit, prior-year minimum tax credit; each on its own Form 1040 / Schedule 3 line
+- [x] **Alternative Minimum Tax** - Form 6251 with capital-gain rates, incentive stock option exercises, and the minimum tax credit carryforward
+- [x] **Self-Employment** - Schedule C profit, self-employment tax sharing the wage base with W-2 wages, SEP and solo 401(k) contributions, QBI deduction
+- [x] **Kiddie Tax** - A child's interest and dividends on the parents' return (Form 8814)
+- [x] **Charitable Distributions** - Qualified charitable distributions from IRAs counting toward the RMD; gifts of appreciated shares at fair market value
+- [ ] **Withholding & Estimated Payments** - Taxes settle as a year-end lump (Plan 31 task 6); no ACA premium tax credit yet
 
 ### Housing & Lifestyle
 - [x] **Home Ownership** - Purchase, mortgage, appreciation, and selling

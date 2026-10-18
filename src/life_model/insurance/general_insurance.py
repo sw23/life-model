@@ -143,6 +143,7 @@ class Insurance(LifeModelAgent):
 
         self.person.spending.add_expense(self.annual_premium, category="insurance_premium")
         self.stat_premiums_paid += self.annual_premium
+        self.premium_paid_year = (self.model.year, self.annual_premium)
         return True
 
     def file_claim(self, claim_amount: float, description: str, *, charge_loss: bool = True) -> InsuranceClaim | None:

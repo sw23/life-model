@@ -71,6 +71,19 @@ fixtures use only synthetic names (a test enforces an allowlist).
   an unpaid gap becomes debt (`shortfall_debt` events). Settlement is order-independent:
   `tests/test_construction_order.py` builds households in shuffled construction orders and requires
   identical frames.
+- **The federal return** (Plan 31). `TaxUnit.get_income_taxes_due` computes the return the
+  waterfall sizes against; the return-level rules live in `tax/`: `household.py` (deduction choice
+  with §63(f), the 2026 charitable floor / non-itemizer deduction / §68 limit, QBI; the Form 8814 tax;
+  AMT; the year-end adjustments posted once before the waterfall: half of SE tax, taxable dependent
+  care benefits, IRA and Roth phase-outs, student loan interest), `credits.py` (an ordered registry:
+  EITC, dependent care, education, saver's, CTC/ODC with Schedule 8812 Part II, prior-year minimum
+  tax credit; nonrefundable before refundable, each limited to the tax the earlier ones left),
+  `amt.py`, `qbi.py`, `self_employment.py`, `deductions.py`. Self-employment is
+  `Job(kind="self_employed")` (profit paid monthly; the SEP via `sep_account`, or a solo 401(k) via a
+  `Job401kAccount` on the job, contributed with December's payment on the year's profit);
+  ISO/NSO exercises are `StockPlan(options=[StockOption(...)])`. Every parameter is the year's
+  (`tax_years`); a config without one leaves that feature off. Age tests use the age at the end of the
+  tax year (`Person.age_in(year)`), not the current month's age.
 - **Construction.** The recommended path is the household spec (`life_model.spec`, Plan 25):
   `build_model(load(path))` validates, canonicalizes list order and constructs agents in a fixed
   order (`spec/builder.py` docstring). Direct constructors remain the low-level API; keep their

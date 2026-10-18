@@ -36,28 +36,40 @@ def assert_return_reconciles(test: unittest.TestCase, tax_return: TaxReturn, pla
     r = tax_return
     test.assertAlmostEqual(max(r.total_income - r.total_adjustments, 0.0), r.agi, places=places)
     test.assertAlmostEqual(max(r.agi - r.deduction, 0.0), r.taxable_income, places=places)
+    # Plan 31: the non-itemizer charitable deduction rides with the standard deduction, and the QBI
+    # deduction is added on top (both 0 before Plan 31).
+    standard = r.standard_deduction + r.charitable_deduction_non_itemizer
     test.assertAlmostEqual(
-        r.deduction, max(r.standard_deduction, r.itemized_deductions) + r.senior_deduction, places=places
+        r.deduction, max(standard, r.itemized_deductions) + r.senior_deduction + r.qbi_deduction, places=places
     )
     test.assertAlmostEqual(r.taxable_ordinary_income + r.taxable_preferential_income, r.taxable_income, places=places)
     test.assertAlmostEqual(sum(row[4] for row in r.ordinary_brackets), r.ordinary_tax, places=places)
     test.assertAlmostEqual(sum(row[3] for row in r.ordinary_brackets), r.taxable_ordinary_income, places=places)
     test.assertAlmostEqual(
-        r.ordinary_tax + r.preferential_tax + r.niit + r.amt - r.total_credits + r.total_penalties,
+        r.ordinary_tax + r.preferential_tax + r.kiddie_tax + r.niit + r.amt - r.total_credits + r.total_penalties,
         r.federal_tax,
         places=places,
     )
+    test.assertAlmostEqual(sum(r.credits_nonrefundable.values()), r.nonrefundable_credits, places=places)
+    test.assertAlmostEqual(sum(r.credits_refundable.values()), r.refundable_credits, places=places)
     test.assertAlmostEqual(sum(r.credits.values()), r.total_credits, places=places)
     test.assertAlmostEqual(sum(r.penalties.values()), r.total_penalties, places=places)
     test.assertAlmostEqual(r.nonrefundable_credits + r.refundable_credits, r.total_credits, places=places)
     test.assertAlmostEqual(sum(line.social_security for line in r.fica), r.social_security_tax, places=places)
-    test.assertAlmostEqual(sum(line.medicare for line in r.fica), r.medicare_tax, places=places)
+    # Medicare on the return also carries the Additional Medicare Tax on self-employment income, which no
+    # employer withholds (so it is on no member's FICA line).
     test.assertAlmostEqual(
-        r.federal_tax + r.state_tax + r.social_security_tax + r.medicare_tax, r.total_tax, places=places
+        sum(line.medicare for line in r.fica), r.medicare_tax - r.additional_medicare_tax_self_employment, places=places
+    )
+    test.assertAlmostEqual(sum(line.self_employment_tax for line in r.fica), r.self_employment_tax, places=places)
+    test.assertAlmostEqual(
+        r.federal_tax + r.state_tax + r.social_security_tax + r.medicare_tax + r.self_employment_tax,
+        r.total_tax,
+        places=places,
     )
     if r.state_return is not None:
         test.assertAlmostEqual(r.state_return.tax, r.state_tax, places=places)
-    test.assertEqual(r.deduction_taken, "itemized" if r.itemized_deductions > r.standard_deduction else "standard")
+    test.assertEqual(r.deduction_taken, "itemized" if r.itemized_deductions > standard else "standard")
 
 
 def _one_year(status: FilingStatus, incomes: "list[list[tuple]]") -> tuple[LifeModel, list[Person]]:

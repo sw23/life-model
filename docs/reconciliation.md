@@ -74,7 +74,7 @@ and anything not green gets a likely cause:
 |---|---|---|
 | `missing_income_source` | the document shows income the spec lacks | add the account, job or income |
 | `input_difference` | both have it, amounts differ | correct the spec input (salary, balance, rate) |
-| `unmodeled_credit` / `unmodeled_deduction` | a credit or deduction the engine does not compute (EITC, dependent care, education, the 65+ standard deduction amount, ...) | none yet (Plan 31) |
+| `unmodeled_credit` / `unmodeled_deduction` | a credit or deduction the engine does not compute (foreign tax credit, ACA premium tax credit, energy credits, ...) or computes from an input the spec lacks (care or college costs, a child's income) | add the input (`children[].care_expenses_annual`, `payroll.dependent_care_fsa_annual`, ...); otherwise none yet (Plan 31 task 6 adds the premium tax credit) |
 | `unit_mismatch` | off by 12x or 100x | a monthly amount entered as annual, or a fraction as a percent |
 | `timing` | withholding, estimated payments, the refund or balance due | none yet (taxes settle as a year-end lump; Plan 31 D3) |
 | `missing_input` | needs a spec field the engine does not take yet | none yet (Plan 27: payroll deductions, basis) |
@@ -86,12 +86,44 @@ The tolerance table is `life_model.reconciliation.TOLERANCES` (override per call
 `tolerances=`). Calibration lines (`spending`) show the model's assumed amount next to the actual one
 and name the setting that drives it (medical cost bands, child cost bands, Medicare).
 
+### What the engine computes (line coverage)
+
+Every `TaxReturn` field maps onto the year's lines; since Plan 31 each credit has its own line:
+
+| Item | Lines |
+|---|---|
+| Wages, interest, dividends, IRA / pension / Social Security, capital gains | 1040 lines 1a-7a; Schedules B and D |
+| Taxable dependent care benefits (FSA over the exclusion) | 1040 line 1e; Form 2441 line 26; W-2 box 10 |
+| Schedule C profit, self-employment tax and its deductible half | Schedule 1 lines 3, 15; Schedule C line 31; Schedule SE lines 2-13; Schedule 2 line 4 (and the Additional Medicare Tax on SE income, Form 8959 Part II) |
+| SEP / solo 401(k) deduction | Schedule 1 line 16 |
+| Form 8814 (child's interest and dividends) | 1040 line 3a share, Schedule 1 line 8z, the 10% tax in line 16 (Form 8814 line 15) |
+| Adjustments (HSA, IRA after the phase-out, student loan interest after the phase-out) | Schedule 1 lines 13, 20, 21, 26 |
+| Standard deduction with the §63(f) amount for 65+, or itemized after the 2026 floor and §68 | 1040 line 12 / 12e; Schedule A lines 4-17 (cash line 11, appreciated property line 12) |
+| Non-itemizer charitable deduction (2026) | 1040 line 12f |
+| Senior deduction | Schedule 1-A lines 37-38 (2025) / 43-44 (2026); 1040 line 13b / 13a |
+| Qualified business income deduction | Form 8995 lines 1, 15; 1040 line 13 / 13a / 13b |
+| AMT (ISO bargain element, SALT or standard deduction add-back, Part III gains) | Form 6251 lines 4, 9, 11; Schedule 2 lines 2-3; 1040 line 17 |
+| Child tax credit and credit for other dependents; additional child tax credit | 1040 lines 19, 28; Schedule 8812 lines 14, 27 |
+| Dependent care, education (nonrefundable part), saver's, prior-year minimum tax credits | Schedule 3 lines 2, 3, 4, 6b (7, 8); 1040 line 20; Forms 2441 line 11, 8863 line 19, 8880 line 12 |
+| Earned income credit; refundable American opportunity credit | 1040 line 27 (27a); line 29, Form 8863 line 8 |
+| NIIT, Additional Medicare Tax, early-distribution and HSA additional taxes | Schedule 2; 1040 line 23 |
+
+Not modeled yet: withholding, estimated payments and the refund (Plan 31 task 6, `timing`), the ACA
+premium tax credit, the foreign tax credit, Form 8606 basis recovery on distributions (Plan 27 D1:
+nondeductible contributions are recorded as basis, distributions are still fully taxable).
+
 ## Household goldens
 
-`src/life_model/tests/goldens/households/` holds six synthetic households for 2024, 2025 and 2026
-(single renter with a student loan; married homeowners who itemize, with two children; head of
-household; a retiree couple with RMDs, Social Security and Medicare; an early retiree harvesting
-gains; married filing separately). Each return was worked line by line from the year's Form 1040 and
+`src/life_model/tests/goldens/households/` holds synthetic households for 2024, 2025 and 2026: the six
+of Plan 29 (single renter with a student loan; married homeowners who itemize, with two children; head
+of household; a retiree couple with RMDs, Social Security, the §63(f) amount and Medicare; an early
+retiree harvesting gains; married filing separately) and twelve of Plan 31 (the earned income and
+additional child tax credits; dependent care with an FSA; the American opportunity credit with a 529;
+the saver's credit and the 2026 non-itemizer deduction; an ISO exercise with AMT, and the next year's
+minimum tax credit; a self-employed filer with SE tax, a SEP and the QBI deduction; the kiddie tax
+on Form 8814; a gift of appreciated shares with the 30% limit, the 2026 floor and §68; a qualified
+charitable distribution; the IRA deduction and student loan interest phase-outs). Each return was
+worked line by line from the year's Form 1040 and
 instructions by `scripts/household_goldens.py`, which does not use the library; each golden's
 `worksheet.md` shows every line's arithmetic and its `expected.json` is an `actuals` record, so
 `test_household_goldens.py` simply reconciles it. Lines the engine cannot produce yet are expected

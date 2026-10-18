@@ -43,5 +43,12 @@ def minimal(**person_overrides) -> dict:
     return {"meta": {"name": "test", "start_year": 2026, "end_year": 2030}, "people": [person]}
 
 
+def not_yet_supported(**person_overrides) -> dict:
+    """A spec the validator rejects with ``not_yet_supported`` (a job end year, Plan 27 D3). The
+    ``self_employed`` example played this part until Plan 31 made it buildable."""
+    jobs = [{"id": "job", "company": "Co", "salary_annual": 80000, "raise_pct": "economy", "end_year": 2028}]
+    return minimal(jobs=jobs, **person_overrides)
+
+
 def spec_of(data: dict) -> HouseholdSpec:
     return HouseholdSpec.model_validate(copy.deepcopy(data))

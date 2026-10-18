@@ -183,7 +183,9 @@ class TestRun(CliTestCase):
         self.assertEqual(payload["error"]["findings"][0]["code"], "unknown_scenario")
 
     def test_validator_errors_exit_2_with_findings(self):
-        code, payload = invoke_json("run", "--example", "self_employed")
+        from .spec_helpers import not_yet_supported
+
+        code, payload = invoke_json("run", str(self.write_spec(not_yet_supported())))
         self.assertEqual(code, cli.EXIT_INVALID)
         self.assertEqual(payload["error"]["findings"][0]["code"], "not_yet_supported")
         self.assertNotIn("findings", {k for k in payload if k != "error"})
@@ -423,10 +425,10 @@ class TestSchemaAndExamples(CliTestCase):
         names = {row["name"]: row for row in payload["examples"]}
         self.assertIn("married_homeowners", names)
         self.assertTrue(names["married_homeowners"]["runnable"])
-        self.assertFalse(names["self_employed"]["runnable"])
+        self.assertTrue(names["self_employed"]["runnable"])  # buildable since Plan 31
         self.assertIn("stochastic", payload["scenarios"])
         code, out, _ = invoke("examples")
-        self.assertIn("not runnable yet", out)
+        self.assertIn("self_employed", out)
 
     def test_show_and_copy(self):
         code, out, _ = invoke("examples", "--show", "single_renter")

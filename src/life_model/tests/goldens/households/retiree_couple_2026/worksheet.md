@@ -51,13 +51,4 @@ RMDs (Pub. 590-B): pat $48,780.49; lee $30,188.68 ($1,200,000 / 24.6 at 75; $800
 
 ## Expected failures
 
-- `1040:12e`: Plan 31 task 1: the engine does not apply the IRC §63(f) additional standard deduction for age 65+ ($1,650 per person on a joint return in 2026)
-- `1040:14`: Plan 31 task 1: the engine does not apply the IRC §63(f) additional standard deduction for age 65+ ($1,650 per person on a joint return in 2026)
-- `1040:15`: Plan 31 task 1: the engine does not apply the IRC §63(f) additional standard deduction for age 65+ ($1,650 per person on a joint return in 2026)
-- `1040:16`: Plan 31 task 1: the engine does not apply the IRC §63(f) additional standard deduction for age 65+ ($1,650 per person on a joint return in 2026)
-- `1040:18`: Plan 31 task 1: the engine does not apply the IRC §63(f) additional standard deduction for age 65+ ($1,650 per person on a joint return in 2026)
-- `1040:22`: Plan 31 task 1: the engine does not apply the IRC §63(f) additional standard deduction for age 65+ ($1,650 per person on a joint return in 2026)
-- `1040:24a`: Plan 31 task 1: the engine does not apply the IRC §63(f) additional standard deduction for age 65+ ($1,650 per person on a joint return in 2026)
-- `1040:24c`: Plan 31 task 1: the engine does not apply the IRC §63(f) additional standard deduction for age 65+ ($1,650 per person on a joint return in 2026)
-- `exact:1040:16`: Plan 31 task 1: the engine does not apply the IRC §63(f) additional standard deduction for age 65+ ($1,650 per person on a joint return in 2026)
 - `spending:medicare_premiums_annual`: missing_input (Plan 27): the spec cannot carry the 2024 MAGI the 2026 IRMAA tier is based on; the engine has no AGI history before its first year and charges the base premium

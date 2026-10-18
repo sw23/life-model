@@ -11,10 +11,16 @@ moment, so it shows exactly the numbers the year was settled with; nothing on it
 lines follow Form 1040's structure:
 
 * income lines → ``total_income``; ``total_income - total_adjustments == agi`` (AGI is floored at 0);
-* ``agi - deduction == taxable_income`` (floored at 0), where ``deduction`` is the larger of the
-  standard and itemized deductions plus the senior deduction;
-* ``ordinary_tax + preferential_tax + niit + amt - total_credits + total_penalties == federal_tax``;
-* ``federal_tax + state_tax + social_security_tax + medicare_tax == total_tax`` (``TaxesDue.total``).
+* ``agi - deduction == taxable_income`` (floored at 0), where ``deduction`` is the itemized deductions
+  (after the §68 limit) or the standard deduction (with §63(f)) plus the non-itemizer charitable
+  deduction, plus the senior deduction and the QBI deduction;
+* ``ordinary_tax + preferential_tax + kiddie_tax + niit + amt - total_credits + total_penalties ==
+  federal_tax``;
+* ``federal_tax + state_tax + social_security_tax + medicare_tax + self_employment_tax == total_tax``
+  (``TaxesDue.total``).
+
+Each credit is split into its nonrefundable and refundable parts (``credits_nonrefundable`` /
+``credits_refundable``), so reconciliation can put it on its own Form 1040 / Schedule 3 line.
 
 Records are stored on ``model.tax_returns[(year, unit_id)]`` (``unit_id`` is the head's
 ``unique_id``) and on each member's ``person.tax_returns[year]``.
@@ -22,7 +28,7 @@ Records are stored on ``model.tax_returns[(year, unit_id)]`` (``unit_id`` is the
 All money is nominal dollars of the return's year; rates are percents (``22.0`` is 22%).
 """
 
-from dataclasses import asdict, dataclass, fields, replace
+from dataclasses import asdict, dataclass, field, fields, replace
 from typing import TYPE_CHECKING, Any
 
 from .income import IncomeType
@@ -32,7 +38,16 @@ if TYPE_CHECKING:
     from .tax import TaxesDue
 
 #: Ordinary-income entry sources that are above-the-line adjustments (Schedule 1, Part II).
-ADJUSTMENT_SOURCES = frozenset({"adjustment", "ira_deduction", "hsa_deduction", "student_loan_interest"})
+ADJUSTMENT_SOURCES = frozenset(
+    {
+        "adjustment",
+        "ira_deduction",
+        "hsa_deduction",
+        "student_loan_interest",
+        "se_tax_deduction",
+        "self_employed_plan",
+    }
+)
 #: Capital-gain entry sources that are netting adjustments, not realized gains.
 _NETTING_SOURCES = frozenset({"capital_loss_netting", "capital_loss_carryforward"})
 
@@ -46,6 +61,11 @@ class FicaLine:
     wages: float
     social_security: float
     medicare: float
+    #: Schedule SE: net profit (line 3), net earnings (line 6) and self-employment tax (line 12); not part
+    #: of the FICA columns above.
+    self_employment_income: float = 0.0
+    self_employment_tax: float = 0.0
+    self_employment_net_earnings: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -130,6 +150,24 @@ class TaxReturn:
     total_tax: float
     marginal_rate: float
     effective_rate: float
+    # Plan 31 (defaults let records saved before it load)
+    business_income: float = 0.0
+    taxable_dependent_care_benefits: float = 0.0
+    additional_standard_deduction: float = 0.0
+    charitable_deduction_non_itemizer: float = 0.0
+    itemized_limitation: float = 0.0
+    qualified_business_income: float = 0.0
+    qbi_deduction: float = 0.0
+    kiddie_tax: float = 0.0
+    alternative_minimum_taxable_income: float = 0.0
+    tentative_minimum_tax: float = 0.0
+    amt_credit_generated: float = 0.0
+    credits_nonrefundable: dict[str, float] = field(default_factory=dict)
+    credits_refundable: dict[str, float] = field(default_factory=dict)
+    earned_income: float = 0.0
+    self_employment_tax: float = 0.0
+    self_employment_tax_deduction: float = 0.0
+    additional_medicare_tax_self_employment: float = 0.0
 
     # ------------------------------------------------------------------
     # Serialization helpers
@@ -198,6 +236,9 @@ class TaxReturn:
                 wages=money(line.wages),
                 social_security=money(line.social_security),
                 medicare=money(line.medicare),
+                self_employment_income=money(line.self_employment_income),
+                self_employment_tax=money(line.self_employment_tax),
+                self_employment_net_earnings=money(line.self_employment_net_earnings),
             )
             for line in self.fica
         )
@@ -223,13 +264,15 @@ FIELD_DOCS: dict[str, str] = {
     "member_names": "Names of the members filing the return.",
     "filing_status": "Filing status name (``SINGLE``, ``MARRIED_FILING_JOINTLY``, ...).",
     "state": "State the unit files in (the head's).",
-    "wages": "W-2 wages (salary and RSU vests, net of pre-tax 401k deferrals).",
+    "wages": "W-2 wages (salary and RSU vests, net of pre-tax 401k deferrals and excluded dependent care benefits), "
+    "plus taxable dependent care benefits (line 1e).",
     "taxable_interest": "Taxable interest (bank, corporate and Treasury interest).",
     "tax_exempt_interest": "Tax-exempt (municipal) interest; not in total income.",
     "ordinary_dividends": "Ordinary dividends (the model's dividends are all qualified).",
     "qualified_dividends": "Qualified dividends (taxed on the preferential schedule).",
-    "ira_distributions_gross": "IRA / 401k / inherited-account distributions, gross.",
-    "ira_distributions_taxable": "Taxable part of those distributions (all of it in the model).",
+    "ira_distributions_gross": "IRA / 401k / inherited-account distributions, gross (qualified charitable "
+    "distributions included).",
+    "ira_distributions_taxable": "Taxable part of those distributions (all but qualified charitable distributions).",
     "pensions_and_annuities": "Taxable pension income and the taxable part of annuity payments.",
     "social_security_gross": "Social Security benefits received.",
     "social_security_taxable": "Taxable part of the benefits (IRC §86).",
@@ -243,15 +286,19 @@ FIELD_DOCS: dict[str, str] = {
     "other_income": "Other income (non-medical HSA draws, 529 earnings, forgiven debt, ...).",
     "other_income_by_source": "``other_income`` by source.",
     "total_income": "Line 9: sum of the income lines above (excluding tax-exempt interest).",
-    "adjustments": "Above-the-line adjustments by source (IRA, HSA, student-loan interest).",
+    "adjustments": "Above-the-line adjustments by source (IRA, HSA, student-loan interest, half of SE tax, "
+    "self-employed plan).",
     "total_adjustments": "Sum of ``adjustments``.",
     "agi": "Adjusted gross income: ``max(total_income - total_adjustments, 0)``.",
-    "standard_deduction": "Standard deduction for the filing status (0 for MFS when the spouse itemizes).",
-    "itemized_deductions": "Itemized deductions compared against the standard deduction.",
-    "itemized_components": "Itemized deductions by component (mortgage interest, SALT after the cap, medical, charity).",
+    "standard_deduction": "Standard deduction for the filing status plus the §63(f) amount for each member 65+ "
+    "(0 for MFS when the spouse itemizes).",
+    "itemized_deductions": "Itemized deductions (after the 2026+ §68 limit) compared against the standard deduction.",
+    "itemized_components": "Itemized deductions by component before the §68 limit (mortgage interest, SALT after the "
+    "cap, medical, charity in cash and charity_noncash, each after the 2026+ 0.5% floor).",
     "deduction_taken": "``standard`` or ``itemized``.",
     "senior_deduction": "OBBBA senior deduction (added on top of either deduction).",
-    "deduction": "Total deduction subtracted from AGI.",
+    "deduction": "Total deduction subtracted from AGI (lines 12e-14: standard or itemized, the non-itemizer charitable "
+    "deduction, the senior deduction and the QBI deduction).",
     "taxable_income": "``max(agi - deduction, 0)``.",
     "taxable_ordinary_income": "Part of taxable income taxed on the ordinary brackets.",
     "taxable_preferential_income": "Part of taxable income taxed on the capital-gains schedule.",
@@ -259,23 +306,43 @@ FIELD_DOCS: dict[str, str] = {
     "ordinary_brackets": "Bracket slices ``(lower, upper, rate_percent, amount, tax)``; their taxes sum to ``ordinary_tax``.",
     "preferential_tax": "Tax on qualified dividends and long-term gains.",
     "niit": "Net investment income tax (IRC §1411).",
-    "amt": "Alternative minimum tax (not modeled yet; always 0).",
-    "credits": "Credits by name (``child_tax_credit``).",
+    "amt": "Alternative minimum tax (Form 6251 line 11).",
+    "credits": "Credits by name (``child_tax_credit``, ``earned_income_credit``, ``dependent_care_credit``, "
+    "``education_credits``, ``savers_credit``, ``minimum_tax_credit``).",
     "nonrefundable_credits": "Credits limited to the income tax.",
     "refundable_credits": "Credits paid even beyond the income tax.",
     "total_credits": "Sum of ``credits``.",
     "penalties": "Additional taxes by source (``early_withdrawal``, ``hsa_non_medical``, ``roth_ira_earnings``, ...).",
     "total_penalties": "Sum of ``penalties``.",
-    "federal_tax": "Federal income tax: ordinary + preferential + NIIT + AMT - credits + penalties (negative = refund).",
-    "fica": "Payroll taxes per member.",
+    "federal_tax": "Federal income tax: ordinary + preferential + Form 8814 tax + NIIT + AMT - credits + penalties "
+    "(negative = refund).",
+    "fica": "Payroll taxes per member (and each member's Schedule SE profit and tax).",
     "social_security_tax": "Social Security tax (all members).",
     "medicare_tax": "Medicare tax including the additional Medicare tax (all members).",
     "additional_medicare_tax": "Additional Medicare tax on combined wages over the threshold.",
     "state_return": "State return lines.",
     "state_tax": "State income tax.",
-    "total_tax": "Everything the unit paid in tax this year: federal + state + payroll.",
+    "total_tax": "Everything the unit paid in tax this year: federal + state + payroll + self-employment tax.",
     "marginal_rate": "Ordinary-bracket rate (percent) of the last taxable ordinary dollar.",
     "effective_rate": "``federal_tax / agi`` as a percent (0 when AGI is 0).",
+    "business_income": "Schedule C net profit (Schedule 1 line 3).",
+    "taxable_dependent_care_benefits": "Dependent care benefits over the Form 2441 exclusion (line 1e; in ``wages``).",
+    "additional_standard_deduction": "The §63(f) part of ``standard_deduction`` (members 65+).",
+    "charitable_deduction_non_itemizer": "Non-itemizer cash charitable deduction (2026+, line 12f).",
+    "itemized_limitation": "§68 reduction of itemized deductions (2026+, 2/37 rule).",
+    "qualified_business_income": "Qualified business income (profit less half of SE tax and the self-employed plan).",
+    "qbi_deduction": "Qualified business income deduction (Form 8995).",
+    "kiddie_tax": "Form 8814 tax on a child's interest and dividends (part of line 16).",
+    "alternative_minimum_taxable_income": "Form 6251 line 4.",
+    "tentative_minimum_tax": "Form 6251 line 9.",
+    "amt_credit_generated": "Minimum tax credit this year's AMT creates for later years (Form 8801).",
+    "credits_nonrefundable": "The nonrefundable part of each credit.",
+    "credits_refundable": "The refundable part of each credit.",
+    "earned_income": "Earned income for the earned income, additional child and dependent care credits.",
+    "self_employment_tax": "Self-employment tax (Schedule SE line 12, all members).",
+    "self_employment_tax_deduction": "Deductible half of self-employment tax (Schedule 1 line 15).",
+    "additional_medicare_tax_self_employment": "The part of ``additional_medicare_tax`` on self-employment income "
+    "(Form 8959 Part II; in ``medicare_tax``, on no member's FICA line).",
 }
 
 
@@ -330,6 +397,8 @@ def build_tax_return(unit: "TaxUnit", taxes: "TaxesDue") -> TaxReturn:
     distributions = sum(
         e.amount for e in entries if e.income_type == IncomeType.PRETAX_DISTRIBUTION and e.source != "hsa"
     )
+    # Qualified charitable distributions: on line 4a (gross) but not taxable (line 4b).
+    qcd = sum(e.gross for e in entries if e.income_type == IncomeType.PRETAX_DISTRIBUTION and e.source == "qcd")
     hsa_distributions = sum(
         e.amount for e in entries if e.income_type == IncomeType.PRETAX_DISTRIBUTION and e.source == "hsa"
     )
@@ -382,12 +451,17 @@ def build_tax_return(unit: "TaxUnit", taxes: "TaxesDue") -> TaxReturn:
         + capital_line
         + other_income
     )
+    business_income = total(IncomeType.SELF_EMPLOYMENT)
+    total_income += business_income
+    taxable_care_benefits = sum(
+        e.amount for e in entries if e.income_type == IncomeType.WAGES and e.source == "taxable_dependent_care_benefits"
+    )
     total_adjustments = sum(adjustments.values())
     agi = unit.agi()
 
     standard = float(taxes.standard_deduction)
     itemized = float(taxes.itemized_deduction)
-    deduction_taken = "itemized" if itemized > standard else "standard"
+    deduction_taken = "itemized" if taxes.itemize else "standard"
 
     fica = tuple(
         FicaLine(
@@ -396,6 +470,9 @@ def build_tax_return(unit: "TaxUnit", taxes: "TaxesDue") -> TaxReturn:
             wages=member.fica_wages,
             social_security=taxes.ss_by_worker[i] if i < len(taxes.ss_by_worker) else 0.0,
             medicare=taxes.medicare_by_worker[i] if i < len(taxes.medicare_by_worker) else 0.0,
+            self_employment_income=member.income.self_employment_income,
+            self_employment_tax=taxes.se_by_worker[i].total if i < len(taxes.se_by_worker) else 0.0,
+            self_employment_net_earnings=taxes.se_by_worker[i].net_earnings if i < len(taxes.se_by_worker) else 0.0,
         )
         for i, member in enumerate(members)
     )
@@ -433,7 +510,7 @@ def build_tax_return(unit: "TaxUnit", taxes: "TaxesDue") -> TaxReturn:
         tax_exempt_interest=tax_exempt_interest,
         ordinary_dividends=qualified_dividends,
         qualified_dividends=qualified_dividends,
-        ira_distributions_gross=distributions,
+        ira_distributions_gross=distributions + qcd,
         ira_distributions_taxable=distributions,
         pensions_and_annuities=pensions,
         social_security_gross=ss_gross,
@@ -464,7 +541,7 @@ def build_tax_return(unit: "TaxUnit", taxes: "TaxesDue") -> TaxReturn:
         ordinary_brackets=brackets,
         preferential_tax=taxes.preferential_tax,
         niit=taxes.niit,
-        amt=0.0,
+        amt=taxes.amt,
         credits=dict(taxes.credits_detail),
         nonrefundable_credits=taxes.nonrefundable_credits,
         refundable_credits=taxes.refundable_credits,
@@ -481,4 +558,21 @@ def build_tax_return(unit: "TaxUnit", taxes: "TaxesDue") -> TaxReturn:
         total_tax=taxes.total,
         marginal_rate=marginal_rate,
         effective_rate=effective_rate,
+        business_income=business_income,
+        taxable_dependent_care_benefits=taxable_care_benefits,
+        additional_standard_deduction=taxes.additional_standard_deduction,
+        charitable_deduction_non_itemizer=taxes.charitable_non_itemizer,
+        itemized_limitation=taxes.itemized_limitation,
+        qualified_business_income=taxes.qbi_detail.qbi if taxes.qbi_detail is not None else 0.0,
+        qbi_deduction=taxes.qbi_deduction,
+        kiddie_tax=taxes.kiddie_tax,
+        alternative_minimum_taxable_income=taxes.amt_detail.amti if taxes.amt_detail is not None else 0.0,
+        tentative_minimum_tax=taxes.amt_detail.tentative_minimum_tax if taxes.amt_detail is not None else 0.0,
+        amt_credit_generated=taxes.amt_credit_generated,
+        credits_nonrefundable=dict(taxes.credits_nonrefundable),
+        credits_refundable=dict(taxes.credits_refundable),
+        earned_income=taxes.earned_income,
+        self_employment_tax=taxes.se_tax,
+        self_employment_tax_deduction=sum(se.deduction for se in taxes.se_by_worker),
+        additional_medicare_tax_self_employment=taxes.additional_medicare_se,
     )

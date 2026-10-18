@@ -317,12 +317,15 @@ class Person(LifeModelAgent):
 
         Sums the ``stat_medical_costs`` stamped in ``pre_step`` by the person's opt-in healthcare
         agents: age-curve costs (MedicalCosts), Medicare premiums (deductible per IRS Pub. 502),
-        and net-of-insurance long-term-care costs. LTC insurance *premiums* are not included in v1
-        (their age-capped deductibility is a documented simplification/backlog).
+        and net-of-insurance long-term-care costs, plus long-term care insurance premiums up to the
+        §213(d)(10) age limit (Plan 31).
         """
+        from ..tax.deductions import deductible_insurance_premiums
+
         agents = [*self.medical_costs, *self.medicare, *self.long_term_care]
         # Costs reimbursed tax-free from an HSA can't also be deducted (IRC §213 / §223(f)(1)).
-        return max(0.0, sum(agent.stat_medical_costs for agent in agents) - self.hsa_medical_reimbursed)
+        costs = sum(agent.stat_medical_costs for agent in agents) + deductible_insurance_premiums(self)
+        return max(0.0, costs - self.hsa_medical_reimbursed)
 
     def reimburse_medical_from_hsas(self, amount: float) -> float:
         """Reimburse up to ``amount`` of this year's medical costs tax-free from HSAs into the bank.

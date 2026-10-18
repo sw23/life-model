@@ -157,7 +157,7 @@ exclusion, RMD start age) and, since Plan 29, the long-term capital-gains bracke
 (`ctc_per_child`, `ctc_refundable_max`), the SALT cap (`salt: {cap,
 phaseout_threshold}`), the OBBBA senior deduction (`senior_deduction_amount`), the
 NIIT thresholds (`niit`) and the §63(f) additional standard deduction
-(`additional_standard_deduction`, recorded for Plan 31 and not applied yet). Each
+(`additional_standard_deduction`, applied since Plan 31). Each
 was verified against the year's Rev. Proc. or the statute; see
 [rebaseline-plan-29.md](rebaseline-plan-29.md). Access them with:
 
@@ -166,6 +166,44 @@ params = model.config.tax_year(2025)
 params.standard_deduction.single  # 15750
 params.ss_wage_base  # 176100
 ```
+
+### Credits, deductions and regimes (Plan 31)
+
+The 2024-2026 entries also carry (each stamped with its Rev. Proc., IRS notice or OBBBA section; see
+[rebaseline-plan-31.md](rebaseline-plan-31.md)):
+
+| Key | What | Source |
+|---|---|---|
+| `eitc` | earned income credit: earned income amount, maximum credit, phase-out thresholds (joint and other) for 0-3+ children, the investment income limit | Rev. Proc. §32 table |
+| `dependent_care` | §129 exclusion ($5,000; $7,500 from 2026) and the §21 rate schedule (35%-20%; OBBBA's 50%-35%-20% from 2026) | IRC §21, §129; OBBBA §§70404-70405 |
+| `savers_credit` | §25B AGI ceilings of the 50/20/10% tiers | IRS notices (Notice 2025-67 for 2026) |
+| `ira_phaseouts` | traditional IRA deduction (covered single / joint / spouse covered) and Roth contribution ranges | IRS notices |
+| `student_loan_phaseout` | §221 MAGI range (single, joint) | Rev. Proc. |
+| `amt` | exemption, phase-out start and rate (25%; 50% from 2026), 26/28% breakpoint | Rev. Proc.; OBBBA §70107 |
+| `qbi` | §199A thresholds, phase-in widths (75k/150k and the $400 minimum from 2026) | Rev. Proc.; OBBBA §70105 |
+| `kiddie_tax` | §1(g) base amount (Form 8814) | Rev. Proc. |
+| `qcd_limit` | §408(d)(8) qualified charitable distribution limit | IRS notices |
+| `ltc_premium_limits` | §213(d)(10) long-term care premium limits by age | Rev. Proc. |
+| `compensation_limit` | §401(a)(17) (caps the pay a SEP / solo 401(k) contribution is figured on) | IRS notices |
+
+`FinancialConfig.year_view` copies them onto `tax.federal` for the year. They have no static mirror
+(read them through `model.year_config`), and a config without them, such as the frozen test fixture,
+leaves the feature off. Statutory, unindexed rules sit outside the year table: the charitable limits
+and OBBBA's 2026 changes (`tax.federal.charitable`: the 30% limit on appreciated property, the
+non-itemizer deduction, the 0.5% floor, the §68 2/37 limit), the education credits
+(`tax.federal.credits.education`), the saver's credit sunset after 2026 (`credits.savers_credit_last_year`,
+SECURE 2.0 §103), the credit for other dependents and the additional child tax credit formula
+(`dependents.odc_per_dependent`, `actc_earned_income_threshold`), and self-employment tax
+(`tax.self_employment`). Past 2026 each indexed amount is scaled by inflation and rounded the way its
+statute rounds the yearly adjustment (EITC amounts to $10, IRA ranges down to $1,000, the student-loan
+range down to $5,000, AMT amounts to $100, the QCD limit down to $1,000, the compensation limit down
+to $5,000; `financial_config._project_plan31_params`).
+
+**Refreshing them** (add these rows to the annual refresh): the Rev. Proc. sections on the earned
+income credit (§32), AMT exemptions (§55), the kiddie tax (§1(g)), qualified business income
+(§199A), long-term care premiums (§213(d)(10)) and education loan interest (§221); the IRS
+retirement-limits notice for the IRA and Roth phase-outs, saver's credit ceilings, the QCD limit and
+§401(a)(17). The §25A phase-outs, §21/§129 amounts and the 2026 charitable rules are statutory.
 
 ### Projection rule for years outside the table
 

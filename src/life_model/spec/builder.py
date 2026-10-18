@@ -390,6 +390,9 @@ class _Builder:
         for index, job in enumerate(person_spec.jobs):
             if job.id == job_id:
                 return self.built.items[job.id or f"{person_spec.id}.jobs[{index}]"]
+        se = person_spec.self_employment
+        if se is not None and se.id == job_id:
+            return self.built.items[job_id]
         agent = self.built.items.get(job_id) if job_id is not None else None
         if agent is None:
             raise ValueError(f"{person_spec.id}: unknown job {job_id!r}")
@@ -431,13 +434,60 @@ class _Builder:
             yearly_increase=_growth(job.raise_pct),
             yearly_bonus=job.bonus_pct,
         )
-        return Job(owner=person, company=job.company, role=job.role, salary=salary)
+        payroll = None
+        if job.payroll is not None and job.payroll.dependent_care_fsa_annual:
+            from ..work.payroll import PayrollDeductions
+
+            payroll = PayrollDeductions(dependent_care_fsa_annual=job.payroll.dependent_care_fsa_annual)
+        return Job(owner=person, company=job.company, role=job.role, salary=salary, payroll=payroll)
+
+    def build_self_employment(self, person, se: s.SelfEmployment):
+        """A sole proprietorship: ``Job(kind="self_employed")`` whose salary is the gross receipts (the
+        SEP account is attached once the traditional IRAs exist, :meth:`attach_sep_account`)."""
+        from ..work.job import Job, Salary
+
+        salary = Salary(model=self.model, base=se.receipts, yearly_increase=_growth(se.growth_pct))
+        return Job(
+            owner=person,
+            company=se.business,
+            role="Owner",
+            salary=salary,
+            kind="self_employed",
+            expenses_annual=se.expenses_annual,
+            plan_contribution_percent=se.sep_ira_contrib_pct,
+            sstb=se.sstb,
+        )
+
+    def attach_sep_account(self, person, person_spec: s.Person, job) -> None:
+        """Give a self-employed job with a plan rate and no solo 401(k) its SEP IRA: the named
+        ``sep_account``, else the person's first traditional IRA, else a new empty one."""
+        from ..account.traditional_IRA import TraditionalIRA
+
+        se = person_spec.self_employment
+        if se is None or not se.sep_ira_contrib_pct or job.retirement_account is not None:
+            return
+        if se.sep_account is not None:
+            job.sep_account = self.built.items[se.sep_account]
+        elif person.traditional_iras:
+            job.sep_account = person.traditional_iras[0]
+        else:
+            job.sep_account = TraditionalIRA(person=person, balance=0.0)
 
     def build_stock_plan(self, job_agent, plan: s.StockPlan):
-        from ..work.stock import StockPlan
+        from ..work.stock import StockOption, StockPlan
 
         return StockPlan(
             job_agent,
+            options=[
+                StockOption(
+                    kind=o.kind,
+                    exercise_year=o.exercise_year,
+                    exercise_cost=o.exercise_cost,
+                    value=o.value,
+                    sell_at_exercise=o.sell_at_exercise,
+                )
+                for o in plan.options
+            ],
             signon_value=plan.signon_value,
             refresher_value=plan.refresher_value,
             refresher_start_year=plan.refresher_start_year,
@@ -829,6 +879,15 @@ class _Builder:
             self._register(p, "accounts", i, item, self.build_account(self.person(p.id), p, item))
         for p, i, job in each("jobs"):
             self._register(p, "jobs", i, job, self.build_job(self.person(p.id), job))
+        for p in people:
+            if p.self_employment is not None:
+                self._register(
+                    p,
+                    "self_employment",
+                    0,
+                    p.self_employment,
+                    self.build_self_employment(self.person(p.id), p.self_employment),
+                )
         for p, i, item in each("accounts", lambda a: a.kind == "401k"):
             self._register(p, "accounts", i, item, self.build_account(self.person(p.id), p, item))
         for p, i, job in each("jobs", lambda j: j.stock_plan is not None):
@@ -842,8 +901,25 @@ class _Builder:
             self._register(p, "housing", i, item, self.build_housing(self.person(p.id), item))
         for p, i, item in each("insurance"):
             self._register(p, "insurance", i, item, self.build_insurance(self.person(p.id), item))
+        for p in people:
+            if p.self_employment is not None:
+                key = p.self_employment.id or f"{p.id}.self_employment[0]"
+                self.attach_sep_account(self.person(p.id), p, self.built.items[key])
         for p, i, child in each("children"):
-            self._register(p, "children", i, child, Child(self.person(p.id), child.name, child.birth_year))
+            self._register(
+                p,
+                "children",
+                i,
+                child,
+                Child(
+                    self.person(p.id),
+                    child.name,
+                    child.birth_year,
+                    care_expenses_annual=child.care_expenses_annual,
+                    interest_annual=child.interest_annual,
+                    dividends_annual=child.dividends_annual,
+                ),
+            )
         for p, i, item in each("accounts", lambda a: a.kind in LATE_ACCOUNT_KINDS):
             self._register(p, "accounts", i, item, self.build_account(self.person(p.id), p, item))
         for p in people:

@@ -21,7 +21,8 @@ Warnings: fraction-looking percent, two unmarried adults in one family, every in
 on fixed growth (Monte Carlo becomes a no-op for them), mortgage term/origination/balance
 inconsistent, rent left at the 5% core default, spending or salary with 0% growth, a bank account
 standing in for bonds/CDs/Treasuries, several bank accounts without a primary, an event after the
-end year.
+end year, a dependent-care FSA with no child under 13, a child whose income is over the Form 8814
+limit (the child's own return is not modeled).
 """
 
 import re
@@ -247,7 +248,37 @@ class _SpecChecker:
         self.check_unmarried_adults()
         self.check_growth()
         self.check_actuals()
+        self.check_tax_inputs()
         return self.findings
+
+    # --- Plan 31 tax inputs ---
+
+    def check_tax_inputs(self) -> None:
+        """Warn about Plan 31 inputs the engine treats in a way the user may not expect."""
+        children = [child for p in self.spec.people for child in p.children]
+        young = any(0 <= self.start - child.birth_year < 13 for child in children)
+        for p_index, person in enumerate(self.spec.people):
+            for j_index, job in enumerate(person.jobs):
+                if job.payroll is not None and job.payroll.dependent_care_fsa_annual and not young:
+                    self.warn(
+                        f"people[{p_index}].jobs[{j_index}].payroll.dependent_care_fsa_annual",
+                        "A dependent-care FSA with no child under 13 in the household: with no care expenses the "
+                        "election is taxable wages (Form 2441 line 26).",
+                        "Add the child (children[]), or remove the election.",
+                        "fsa_without_care",
+                    )
+            for c_index, child in enumerate(person.children):
+                gross = child.interest_annual + child.dividends_annual
+                params = self.config.tax_year(self.start).kiddie_tax
+                if params is not None and gross >= 10 * params.base_amount:
+                    self.warn(
+                        f"people[{p_index}].children[{c_index}]",
+                        f"The child's interest and dividends (${gross:,.0f}) are over the Form 8814 limit "
+                        f"(${10 * params.base_amount:,.0f}): the child files their own return (Form 8615), which "
+                        "the model does not include.",
+                        None,
+                        "child_files_own_return",
+                    )
 
     # --- the first month and birth months ---
 

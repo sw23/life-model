@@ -1,11 +1,14 @@
-# Synthetic example household (not real data): a self-employed consultant. Self-employment income
-# (Schedule C profit, SE tax, SEP-IRA) is NOT YET SUPPORTED (Plan 31): the validator rejects this
-# spec with a not_yet_supported error until that plan lands. Everything else is supported.
+# Synthetic example household (not real data): a self-employed consultant. The business is a sole
+# proprietorship (Schedule C): its net profit is taxed with self-employment tax (Schedule SE), half of
+# which is deducted, a SEP-IRA contribution at a 15% plan rate goes to the traditional IRA, and the
+# qualified business income deduction applies (Plan 31). No estimated payments yet: the year's tax is
+# settled at year end.
 spec_version: 1
 meta:
   name: Self-employed consultant
-  description: Synthetic example. A 38-year-old consultant with self-employment income (not yet
-    supported, Plan 31), a family HSA and a taxable brokerage account.
+  description: Synthetic example. A 38-year-old consultant with self-employment income (business
+    profit, self-employment tax, a retirement plan contribution and the business income deduction), a
+    family HSA and a taxable brokerage account.
   as_of: 2026-01
   start_year: 2026
   end_year: 2080

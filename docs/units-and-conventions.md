@@ -166,13 +166,17 @@ in a spec).
 Exact-age thresholds: the 59.5 early-withdrawal age (pre-tax accounts, Roth earnings), the HSA's 65,
 `retirement_age` (a job stops after the paycheck of the month it is reached), Social Security's claim
 month, Medicare at 65, annuity payout start, pension start. By the end-of-year age: RMD start, the
-401(k) and HSA catch-ups, the senior deduction.
+401(k) and HSA catch-ups, the senior deduction, the §63(f) additional standard deduction (65 by December
+31), the earned income credit's 25-64 test, the saver's credit's 18, the long-term care premium age band and
+children's ages for the credits. The qualified charitable distribution's 70½ is exact (at the distribution).
 
 ## Monthly versus annual
 
 | Subsystem | Every month | Once a year |
 | --- | --- | --- |
 | Jobs | A twelfth of base salary (the bonus in `Salary(bonus_month=)`, default March); 401k deferral per paycheck against the year's 402(g) room; the match per paycheck, capped by 415(c) | December match true-up (`Job401kAccount(match_true_up=True)`); the raise at year end |
+| Self-employment (`Job(kind="self_employed")`) | A twelfth of the net profit (receipts less expenses; the bonus month adds its bonus), no withholding | The owner's SEP / solo 401(k) contribution with December's payment, on the year's profit; self-employment tax and QBI with the year's return |
+| Dependent-care FSA (`payroll.dependent_care_fsa_annual`) | A twelfth of the election out of each paycheck (wages and FICA wages) | The Form 2441 exclusion and any taxable excess at settlement |
 | Spending | A twelfth of base; one-time expenses in the month they are added | The base escalates at year end |
 | Housing | A twelfth of property tax, insurance, upkeep, HOA and PMI; one mortgage payment; rent | Home appreciation and the expense and rent escalators at year end |
 | Loans and cards | One payment each (amortization one period per month) | Deferment interest capitalizes at year end; a RAP payment is set from the last return's AGI |
@@ -180,11 +184,11 @@ month, Medicare at 65, annuity payout start, pension start. By the end-of-year a
 | Brokerage dividends | Quarterly (March, June, September, December), or monthly (`accounts.brokerage.dividend_frequency`) | |
 | Bank interest | Monthly | |
 | Social Security, pensions, annuities | One payment a month (from the claim or eligibility month) | Pension COLA and service credit at year end; Social Security's PIA (with COLAs) is set once a year |
-| RMDs | A twelfth of the year's RMD | The amount is set at year start from the prior year-end balance |
+| RMDs | A twelfth of the year's RMD | The amount is set at year start from the prior year-end balance, less any qualified charitable distribution made then (owner 70½ by exact age) |
 | Inherited IRAs (10-year rule) | Growth | The year's even-spread distribution at year start |
 | Healthcare | Medical costs, Medicare premiums (from 65), long-term-care costs while in care | LTC: the episode hazard is drawn at year start, the insurance claim filed at year end |
-| Children | A twelfth of the age band's yearly cost (529 draws for college) | |
-| Insurance premiums, donations, stock vests | | In the first month of the year; policy updates (term expiry, re-pricing, cash value) at year end |
+| Children | A twelfth of the age band's yearly cost and of `care_expenses_annual` (529 draws for college, keeping the year's first $4,000 for the AOTC) | The child's `interest_annual` / `dividends_annual` on the parents' return (Form 8814) |
+| Insurance premiums, donations (cash, appreciated shares in kind), stock vests and option exercises | | In the first month of the year; policy updates (term expiry, re-pricing, cash value) at year end |
 | Bills | Paid through the household waterfall each month; unpaid bills carried as debt with a month of interest | |
 | Taxes | | Settled in December from the year's income ledger (the sized waterfall) |
 | Mortality | Monthly hazard `1 - (1 - q)^(1/12)` (fixed-age deaths in the birth month); a death in month m stops pay from m+1 | |

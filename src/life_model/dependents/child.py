@@ -17,19 +17,46 @@ class Child(LifeModelAgent):
 
     STATS_OWNED = frozenset({"stat_dependent_costs"})
 
-    def __init__(self, person: "Person", name: str, birth_year: int):
+    def __init__(
+        self,
+        person: "Person",
+        name: str,
+        birth_year: int,
+        *,
+        care_expenses_annual: float = 0.0,
+        interest_annual: float = 0.0,
+        dividends_annual: float = 0.0,
+    ):
         """Models a child dependent for a person
 
         Args:
             person: The person to which this child belongs
             name: The name of the child
             birth_year: The year the child was born
+            care_expenses_annual: Dependent care (after-school care, day camp, ...) paid for the child
+                while under 13, on top of the age-band cost, in start-year dollars (grown by inflation like
+                the bands). The childcare band's cost (under 6) already counts as care expenses for the
+                child and dependent care credit and a dependent-care FSA.
+            interest_annual: The child's own interest income (e.g. a custodial account outside the
+                household's balances) each year, for the kiddie tax (the parents report it on Form 8814).
+            dividends_annual: The child's own qualified dividends each year (same).
         """
         super().__init__(person.model)
         self.person = person
         self.name = name
         self.birth_year = birth_year
+        self.care_expenses_annual = care_expenses_annual
+        self.interest_annual = interest_annual
+        self.dividends_annual = dividends_annual
         self.stat_dependent_costs = 0.0
+        #: This year's dependent care expenses (Form 2441), education expenses and the part of them paid
+        #: with tax-free 529 withdrawals (Form 8863 / Pub. 970), set in ``pre_step``.
+        self.care_expenses_this_year = 0.0
+        self.education_expenses_this_year = 0.0
+        self.education_paid_by_529 = 0.0
+        #: Years the American opportunity credit was claimed for this child (at most four).
+        self.aotc_years_claimed = 0
+        self._aotc_reserved_this_year = 0.0
         # Register so the child is visible to the person (Person.children) and to death-time
         # ownership reassignment (registries.iter_registries drives estate transfer).
         self.model.registries.children.register(person, self)
@@ -111,9 +138,23 @@ class Child(LifeModelAgent):
         in the step stage. Costs flow through ``Spending.add_expense`` (one-time expenses), never
         ``base`` — ``base`` is compounded by inflation at year end and would otherwise double-count.
         """
+        if self.model.is_year_start:
+            # The year's Form 2441 / 8863 figures accumulate month by month from the year's first month.
+            self.care_expenses_this_year = 0.0
+            self.education_expenses_this_year = 0.0
+            self.education_paid_by_529 = 0.0
+            self._aotc_reserved_this_year = 0.0
         if self.person.is_deceased:
             return
         cost = self.yearly_cost() / 12
+        if 0 <= self.age < self.CARE_CREDIT_AGE and self.care_expenses_annual > 0:
+            extra = self.care_expenses_annual * self.model.economy.cumulative_inflation(self.model.year) / 12
+            self.person.spending.add_expense(extra, category="dependent_care")
+            self.care_expenses_this_year += extra
+            self.stat_dependent_costs = snap_money(self.stat_dependent_costs + extra)
+        if 0 <= self.age < self.CHILDCARE_END_AGE:
+            # The childcare band is the cost of care while the parents work (Form 2441 expenses).
+            self.care_expenses_this_year += cost
         if cost <= 0:
             return
         if self.in_college_band:
@@ -123,9 +164,39 @@ class Child(LifeModelAgent):
             # withdrawal already sits in the bank, only the shortfall the 529 could not cover
             # actually reduces other assets. This keeps bank+529 conservation intact while
             # making the 529 machinery load-bearing.
-            self._draw_college_from_529s(cost)
+            #
+            # Expenses paid with tax-free 529 money cannot also earn the American opportunity credit
+            # (Pub. 970 ch. 7), so while AOTC years remain and the parents' last AGI was not past the
+            # phase-out, the first $4,000 of the year's expenses is left for other money.
+            reserve = self._aotc_reserve(cost)
+            shortfall = self._draw_college_from_529s(cost - reserve)
+            self.education_expenses_this_year += cost
+            self.education_paid_by_529 += cost - reserve - shortfall
         self.person.spending.add_expense(cost, category="dependents")
         self.stat_dependent_costs = snap_money(self.stat_dependent_costs + cost)
+
+    #: Dependent care qualifies for the child and dependent care credit until the child turns 13.
+    CARE_CREDIT_AGE = 13
+
+    def _aotc_reserve(self, cost: float) -> float:
+        """This month's expenses kept out of the 529 draw so they can earn the AOTC: the year's first
+        $4,000 (0 once its years are used, when the parents' prior-year AGI was past the phase-out, or
+        without a 529 to draw)."""
+        if not any(plan.beneficiary is self for plan in self.person.plan_529s):
+            return 0.0
+        federal = self.model.year_config.tax.federal
+        edu = federal.credits.education
+        if edu is None or self.aotc_years_claimed >= edu.aotc_max_years:
+            return 0.0
+        last_agi = self.person.agi_history.get(self.model.year - 1)
+        joint = getattr(self.person.filing_status, "name", "") == "MARRIED_FILING_JOINTLY"
+        phaseout = edu.phaseout_joint if joint else edu.phaseout_single
+        if last_agi is not None and last_agi >= phaseout.end:
+            return 0.0
+        room = edu.aotc_full_expenses + edu.aotc_partial_expenses - self._aotc_reserved_this_year
+        reserve = max(0.0, min(cost, room))
+        self._aotc_reserved_this_year += reserve
+        return reserve
 
     def _draw_college_from_529s(self, amount: float) -> float:
         """Draw ``amount`` of qualified education expenses from the owner's 529 plans whose

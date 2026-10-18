@@ -196,6 +196,9 @@ class _Extractor:
                 id=self.item_id(c, f"{pid}_child{i + 1}" if id(c) in referenced else None),
                 name=c.name,
                 birth_year=c.birth_year,
+                care_expenses_annual=c.care_expenses_annual,
+                interest_annual=c.interest_annual,
+                dividends_annual=c.dividends_annual,
             )
             for i, c in enumerate(person.children)
         ]
@@ -223,6 +226,30 @@ class _Extractor:
             healthcare=self.healthcare(person),
             giving=_sorted(self.giving(person)),
             children=_sorted(children),
+            self_employment=self.self_employment(person, job_ids),
+        )
+
+    def self_employment(self, person, job_ids: dict[int, str]) -> s.SelfEmployment | None:
+        """The person's (first active) self-employed job as the spec's ``self_employment``."""
+        job = next((j for j in person.jobs if not j.retired and j.kind == "self_employed"), None)
+        if job is None:
+            return None
+        sep = None
+        if job.sep_account is not None:
+            sep = self.item_id(job.sep_account)
+        receipts_only = job.expenses_annual > 0
+        return s.SelfEmployment(
+            id=job_ids.get(job.unique_id),
+            business=job.company,
+            net_profit_annual=None if receipts_only else job.salary.base,
+            gross_receipts_annual=job.salary.base if receipts_only else None,
+            expenses_annual=job.expenses_annual * (job.salary.base / job._receipts_at_start)
+            if receipts_only and job._receipts_at_start > 0
+            else job.expenses_annual,
+            growth_pct=_growth(job.salary._yearly_increase_override),
+            sep_ira_contrib_pct=job.plan_contribution_percent,
+            sep_account=sep,
+            sstb=job.sstb,
         )
 
     # --- jobs ---
@@ -235,6 +262,11 @@ class _Extractor:
             job_id = self.item_id(job, f"{self.pid(person)}_job{index + 1}" if needs_id else None)
             if job_id is not None:
                 ids[job.unique_id] = job_id
+            if job.kind == "self_employed":
+                continue  # extracted as the person's self_employment
+            payroll = None
+            if job.payroll is not None and job.payroll.dependent_care_fsa_annual:
+                payroll = s.Payroll(dependent_care_fsa_annual=job.payroll.dependent_care_fsa_annual)
             jobs.append(
                 s.Job(
                     id=job_id,
@@ -244,6 +276,7 @@ class _Extractor:
                     raise_pct=_growth(job.salary._yearly_increase_override),
                     bonus_pct=job.salary.yearly_bonus,
                     stock_plan=self.stock_plan(job.stock_plan) if job.stock_plan is not None else None,
+                    payroll=payroll,
                 )
             )
         return _sorted(jobs), ids
@@ -267,6 +300,17 @@ class _Extractor:
             signon_vesting_schedule_pct=None if signon_schedule == _pcts(plan.schedule) else signon_schedule,
             disposition=plan.disposition,
             growth_pct=_growth(plan._growth_rate_override),
+            options=[
+                s.StockOption(
+                    kind=o.kind,
+                    exercise_year=o.exercise_year,
+                    exercise_cost=o.exercise_cost,
+                    value=o.value * plan.price_index,
+                    sell_at_exercise=o.sell_at_exercise,
+                )
+                for o in plan.options
+                if not o.exercised and o.exercise_year >= self.model.year
+            ],
         )
 
     # --- accounts ---

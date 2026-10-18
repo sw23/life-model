@@ -48,8 +48,9 @@ class TestLoadSpec(unittest.TestCase):
             api.example_spec("nope")
         rows = {row["name"]: row for row in api.list_examples()}
         self.assertTrue(rows["single_renter"]["runnable"])
-        self.assertFalse(rows["self_employed"]["runnable"])
-        self.assertTrue(rows["self_employed"]["blocked_by"])
+        # Plan 31 made the self-employed example buildable (it was the not-yet-supported example).
+        self.assertTrue(rows["self_employed"]["runnable"])
+        self.assertFalse(rows["self_employed"]["blocked_by"])
 
 
 class TestRun(unittest.TestCase):
@@ -120,8 +121,11 @@ class TestRun(unittest.TestCase):
 class TestValidateExplain(unittest.TestCase):
     def test_validate(self):
         self.assertEqual(life_model.validate(_spec()), [])
-        findings = life_model.validate(example_path("self_employed"))
+        from .spec_helpers import not_yet_supported
+
+        findings = life_model.validate(not_yet_supported())
         self.assertEqual([f.code for f in findings if f.level == "error"], ["not_yet_supported"])
+        self.assertEqual(life_model.validate(example_path("self_employed")), [])
         schema = life_model.validate({"spec_version": 1})
         self.assertTrue(all(f.level == "error" for f in schema))
         self.assertEqual(life_model.validate(_spec(), scenario="nope")[0].code, "unknown_scenario")
