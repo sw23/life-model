@@ -9,30 +9,14 @@ import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
 
-from life_model.account.bank import BankAccount
-from life_model.account.brokerage import BrokerageAccount
-from life_model.account.hsa import HealthSavingsAccount, HSAType
-from life_model.account.job401k import Job401kAccount
-from life_model.account.roth_IRA import RothIRA
-from life_model.account.traditional_IRA import TraditionalIRA
 from life_model.base_classes import FinancialAccount
 from life_model.config.financial_config import FinancialConfig
 from life_model.config.scenarios import get_scenario
-from life_model.dependents.child import Child
-from life_model.healthcare.medical_costs import MedicalCosts
-from life_model.healthcare.medicare import Medicare
-from life_model.insurance.social_security import (
-    SocialSecurity,
-    get_avg_wage_index,
-    get_max_delayed_retirement_credit_age,
-    get_min_early_retirement_age,
-)
+from life_model.insurance.social_security import SocialSecurity, get_avg_wage_index
 from life_model.limits import required_min_distrib, rmd_start_age
-from life_model.model import LifeModel
-from life_model.people.family import Family
 from life_model.people.mortality import get_blended_chance_of_mortality, get_chance_of_mortality
-from life_model.people.person import GenderAtBirth, MortalityMode, Person, Spending
-from life_model.work.job import Job, Salary
+from life_model.people.person import GenderAtBirth
+from life_model.spec import create_model, populate_model
 
 from .actions import (
     TRANSFER_ACTIONS,
@@ -47,7 +31,7 @@ from .actions import (
 )
 from .economy_overlay import DEFAULT_REGIME_YEARS, ScenarioOverlay
 from .rewards import DEFAULT_PRESET, RewardConfig, get_reward_config, step_reward
-from .scenarios import HOUSEHOLD_SCENARIOS, EpisodeSampler
+from .scenarios import AGENT_ID, HOUSEHOLD_SCENARIOS, EpisodeSampler, household_spec
 
 # Observation layout version. Bumped whenever the feature list, ordering,
 # normalization, or bounds below change, so checkpoints trained against a different layout are
@@ -116,11 +100,6 @@ _MONEY_SCALE = 1_000_000.0
 # After-tax valuation of tax-deferred balances in terminal wealth for the named scenario envs and
 # the SLM scoring env: the middle (22%) federal bracket.
 NAMED_ENV_BEQUEST_TAX_RATE = 0.22
-
-# Earliest year a synthesized earnings record may start (SSA quarter-of-coverage table start).
-_FIRST_EARNINGS_YEAR = 1978
-# Earliest year-of-age-62 SSA publishes bend points for.
-_FIRST_BEND_POINT_YEAR = 1979
 
 # Economy modes the environment accepts (see EconomyModel; "path" is reachable via a named
 # economy_scenario rather than directly).
@@ -359,95 +338,47 @@ class FinancialLifeEnv(gym.Env):
             else:
                 financial_config.apply_scenario(scenario_name, scenario)
 
+        # The episode household as a declarative spec, built by life_model.spec's builder (which owns
+        # construction order). The named economy scenario is recorded in the spec but applied here,
+        # as an overlay, so the builder must not apply it again (apply_economy=False).
+        self.episode_spec = household_spec(household, self.config, config=financial_config)
+
         # Create new model instance, seeded for reproducibility. A reset without a seed (e.g. a
         # vector env's autoreset) derives the model seed from this env's seeded RNG; seeding the
         # LifeModel with None would draw OS entropy and make every later episode irreproducible.
         # RL rollouts never read the DataCollector frames, so collection is skipped for throughput.
         model_seed = seed if seed is not None else int(self.np_random.integers(2**31 - 1))
-        self.model = LifeModel(
-            start_year=self.config["start_year"], seed=model_seed, config=financial_config, collect_data=False
+        self.model = create_model(
+            self.episode_spec, config=financial_config, seed=model_seed, collect_data=False, apply_economy=False
         )
         if overlay is not None:
             overlay.install(self.model.economy)
-        self.family = Family(self.model)
+        # The household is generated, not user-written: skip the validator's per-reset cost (the
+        # sampler's households are validated in tests); not-yet-supported fields are still rejected.
+        built = populate_model(self.model, self.episode_spec, check=False)
+        self.family = built.family
 
-        # Create person with model-native stochastic mortality: death is decided by
-        # Person._check_mortality against the model's seeded RNG, and dying runs the full death
-        # machinery (life insurance, estate transfer/tax, survivor adjustments) inside the
-        # reward-visible world.
-        self.person = Person(
-            family=self.family,
-            name="RL_Agent",
-            age=household["person_start_age"],
-            retirement_age=household["person_retirement_age"],
-            spending=Spending(
-                model=self.model,
-                base=household["initial_spending"],
-                yearly_increase=self.config["spending_growth"],
-            ),
-            gender=household["person_gender"],
-            mortality_mode=MortalityMode.STOCHASTIC,
-        )
-
-        # Create bank account
-        self.bank_account = BankAccount(
-            owner=self.person,
-            company="Bank",
-            type="Checking",
-            balance=household["initial_bank_balance"],
-            interest_rate=0.5,
-        )
-
-        # Create job
-        self.job = Job(
-            owner=self.person,
-            company="Company",
-            role="Employee",
-            salary=Salary(
-                model=self.model,
-                base=household["initial_salary"],
-                yearly_increase=self.config["salary_growth"],
-                yearly_bonus=1,
-            ),
-        )
-
-        # Create the accounts the agent can act on so every action type is reachable.
-        self.job401k = Job401kAccount(
-            job=self.job,
-            pretax_balance=float(household.get("initial_401k_pretax") or 0.0),
-            roth_balance=float(household.get("initial_401k_roth") or 0.0),
-            average_growth=self.config["account_growth"],
-        )
-        self.brokerage = BrokerageAccount(
-            person=self.person, company="Brokerage", balance=float(household.get("initial_brokerage") or 0.0)
-        )
-        self.traditional_ira = TraditionalIRA(person=self.person)
-        self.roth_ira = RothIRA(person=self.person)
-        self.hsa = HealthSavingsAccount(person=self.person, hsa_type=HSAType.INDIVIDUAL)
-
-        # Optional household composition (defaults off, so a household that sets neither builds the
-        # same person as before). Children incur age-banded dependent costs; healthcare adds the
-        # age-banded medical-cost curve plus Medicare premiums from the eligibility age. All of
-        # these settle through the person's spending, so they reduce the money the agent can save.
-        self.children = [
-            Child(self.person, f"Child{i + 1}", self.model.start_year - int(age))
-            for i, age in enumerate(household.get("children_ages", ()) or ())
-        ]
+        # The person dies model-natively (stochastic mortality against the model's seeded RNG), and
+        # dying runs the full death machinery (life insurance, estate transfer/tax, survivor
+        # adjustments) inside the reward-visible world.
+        self.person = built.people[AGENT_ID]
+        self.bank_account = built.items["bank"]
+        self.job = built.items["job"]
+        # One of every account the agent can act on, so every action type is reachable.
+        self.job401k = built.items["401k"]
+        self.brokerage = built.items["brokerage"]
+        self.traditional_ira = built.items["traditional_ira"]
+        self.roth_ira = built.items["roth_ira"]
+        self.hsa = built.items["hsa"]
+        # Optional household composition (defaults off). Children incur age-banded dependent costs;
+        # healthcare adds the age-banded medical-cost curve plus Medicare premiums from the
+        # eligibility age. All of these settle through the person's spending.
+        self.children = list(self.person.children)
         if household.get("models_healthcare", False):
-            self.medical_costs = MedicalCosts(self.person)
-            self.medicare = Medicare(self.person)
-
-        # Social Security (after the job, so wages enter the earnings record in-simulation).
-        self.social_security: SocialSecurity | None = None
-        # Skipped for a person who turned 62 before SSA's bend-point table starts (1979): only
-        # artificial test households (start ages near 119) reach that.
-        turned_62 = self.config["start_year"] - int(household["person_start_age"]) + 62
-        if self.config["social_security"] and turned_62 >= _FIRST_BEND_POINT_YEAR:
-            self.social_security = SocialSecurity(
-                self.person,
-                withdrawal_start_age=self._ss_claim_age(household),
-                income_history=self._synthetic_earnings(household),
-            )
+            self.medical_costs = self.person.medical_costs[0]
+            self.medicare = self.person.medicare[0]
+        # Social Security (built after the job, so wages enter the earnings record in-simulation).
+        self.social_security: SocialSecurity | None = self.person.social_security
         self._ss_benefit_cache: tuple[int, float] | None = None
         # Savings boost: cut working-years spending by a share of salary (restored at retirement).
         boost = float(household.get("savings_boost_pct") or 0.0) / 100.0 * float(household["initial_salary"])
@@ -470,8 +401,7 @@ class FinancialLifeEnv(gym.Env):
         # Reset step counter
         self.current_step = 0
 
-        # Set initial model end year
-        self.model.end_year = self.model.start_year + self.max_steps
+        # The model's end year (start_year + max_steps) comes from the spec's meta.end_year.
 
         # Track initial state. The utility reward is per-year consumption plus a
         # terminal bequest/ruin term, so it carries no cross-step net-worth baseline — only the
@@ -494,39 +424,6 @@ class FinancialLifeEnv(gym.Env):
             self.person.spending.base /= self._working_spending_factor  # undo the working-years savings boost
         self.person.spending.base *= 1.0 if ratio is None else float(ratio)
         self._retirement_spending_applied = True
-
-    def _ss_claim_age(self, household: dict[str, Any]) -> int:
-        """The Social Security claiming age: the configured one, else the retirement age clipped to 62-70."""
-        config = self.model.config
-        low = get_min_early_retirement_age(config)
-        high = get_max_delayed_retirement_credit_age(config)
-        claim = household.get("ss_claim_age")
-        if claim is None:
-            claim = household["person_retirement_age"]
-        return int(min(max(int(claim), low), high))
-
-    def _synthetic_earnings(self, household: dict[str, Any]) -> list[tuple[int, float]]:
-        """Earnings record for the years worked before the episode starts.
-
-        Assumes a flat *real* career: each past year's wage is today's salary scaled by the
-        average wage index ratio, from ``career_start_age`` to the year before the start year,
-        capped at that year's taxable maximum. It overstates benefits for someone whose salary
-        recently jumped and understates them for someone who peaked earlier.
-        """
-        start_year = self.config["start_year"]
-        years_worked = max(0, int(household["person_start_age"]) - int(self.config["career_start_age"]))
-        salary = float(household["initial_salary"])
-        config, economy = self.model.config, self.model.economy
-        awi_now = get_avg_wage_index(start_year, config, economy=economy)
-        # SSA's wage index and quarter-of-coverage tables start in 1951 / 1978; earlier working
-        # years are dropped (only very old start ages reach them).
-        first_year = max(start_year - years_worked, _FIRST_EARNINGS_YEAR)
-        history: list[tuple[int, float]] = []
-        for year in range(first_year, start_year):
-            wage = salary * get_avg_wage_index(year, config, economy=economy) / awi_now
-            cap = self.model.config_for_year(year).tax.fica.social_security_max_income
-            history.append((year, round(min(wage, cap), 2)))
-        return history
 
     def _ss_annual_benefit(self) -> float:
         """Annual Social Security benefit in **current-year** dollars: the benefit paid once claiming,

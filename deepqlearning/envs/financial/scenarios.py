@@ -27,7 +27,30 @@ from typing import Any
 
 import numpy as np
 
+from life_model.config.financial_config import FinancialConfig, default_financial_config
+from life_model.insurance.social_security import get_max_delayed_retirement_credit_age, get_min_early_retirement_age
 from life_model.people.person import GenderAtBirth
+from life_model.spec import HouseholdSpec
+
+#: Person id of the RL agent in the household spec.
+AGENT_ID = "rl_agent"
+
+#: Earliest year-of-age-62 SSA publishes bend points for; households turning 62 before it get no
+#: Social Security (only artificial test households with start ages near 119 reach that).
+FIRST_BEND_POINT_YEAR = 1979
+
+#: Env config keys that describe the household's *construction* (read by :func:`household_spec`).
+#: The episode's policy knobs (retirement spending ratio, savings boost, employer match, bequest tax
+#: rate) are applied by the environment itself and are not part of the spec.
+SPEC_ENV_KEYS = (
+    "start_year",
+    "person_max_age",
+    "account_growth",
+    "spending_growth",
+    "salary_growth",
+    "social_security",
+    "career_start_age",
+)
 
 #: Retirement savings as a multiple of salary by age: the planner benchmark the starting balances
 #: are calibrated to (linear between knots, 0 at the start of a career, flat after 67).
@@ -170,6 +193,14 @@ class EpisodeSampler:
         self.scenario_name = scenario
         self.scenario = HOUSEHOLD_SCENARIOS[scenario]
 
+    def sample_spec(self, rng: np.random.Generator, env_config: dict[str, Any]) -> HouseholdSpec:
+        """Draw one randomized household (as :meth:`sample`) and return it as a ``HouseholdSpec``.
+
+        ``env_config`` supplies the env-level construction settings (:data:`SPEC_ENV_KEYS`) and the
+        defaults for household fields the draw does not set (e.g. ``children_ages``).
+        """
+        return household_spec({**env_config, **self.sample(rng)}, env_config)
+
     def point_household(self) -> dict[str, Any]:
         """The scenario's exact fixed point household (used when randomization is off)."""
         return dict(self.scenario.point)
@@ -226,3 +257,115 @@ class EpisodeSampler:
             }
         )
         return household
+
+
+def ss_claim_age(household: dict[str, Any], config: FinancialConfig | None = None) -> int:
+    """The Social Security claiming age for ``household``: ``ss_claim_age`` if set, else the
+    retirement age, clipped to the claiming window (62-70 in the packaged config)."""
+    config = config or default_financial_config()
+    low = get_min_early_retirement_age(config)
+    high = get_max_delayed_retirement_credit_age(config)
+    claim = household.get("ss_claim_age")
+    if claim is None:
+        claim = household["person_retirement_age"]
+    return int(min(max(int(claim), low), high))
+
+
+def _growth(value: float | None) -> float | str:
+    return "economy" if value is None else float(value)
+
+
+def household_spec(
+    household: dict[str, Any], env_config: dict[str, Any], *, config: FinancialConfig | None = None
+) -> HouseholdSpec:
+    """The ``HouseholdSpec`` of one RL episode household.
+
+    The household is a single earner with one of every account the agent can act on: a checking
+    account, a job with a 401k, a brokerage account, a traditional and a Roth IRA and an HSA, plus
+    the optional children, healthcare costs and Social Security. ``household`` holds the episode's
+    resolved household values (``person_start_age``, ``initial_salary``, ...); ``env_config`` the
+    env-level construction settings (:data:`SPEC_ENV_KEYS`); ``config`` the financial config used
+    to clip the Social Security claiming age (the packaged defaults when None).
+
+    Social Security uses a synthesized earnings record (``assumed_career_start_age``): a flat real
+    career at the current salary since ``career_start_age``, indexed by the average wage index.
+    The named economy scenario is recorded in ``meta.scenario``; the environment applies it itself
+    (as a stochastic overlay), so it builds with ``apply_economy=False``.
+    """
+    start_year = int(env_config["start_year"])
+    start_age = int(household["person_start_age"])
+    gender = household["person_gender"]
+    person: dict[str, Any] = {
+        "id": AGENT_ID,
+        "name": "RL_Agent",
+        "age": start_age,
+        "gender": gender.value if isinstance(gender, GenderAtBirth) else str(gender).lower(),
+        "retirement_age": household["person_retirement_age"],
+        "mortality": "stochastic",
+        "spending": {
+            "amount_annual": household["initial_spending"],
+            "growth_pct": _growth(env_config.get("spending_growth")),
+        },
+        "jobs": [
+            {
+                "id": "job",
+                "company": "Company",
+                "role": "Employee",
+                "salary_annual": household["initial_salary"],
+                "raise_pct": _growth(env_config.get("salary_growth")),
+                "bonus_pct": 1,
+            }
+        ],
+        "accounts": [
+            {
+                "kind": "bank",
+                "id": "bank",
+                "company": "Bank",
+                "type": "Checking",
+                "balance": household["initial_bank_balance"],
+                "interest_pct": 0.5,
+            },
+            {
+                "kind": "401k",
+                "id": "401k",
+                "job": "job",
+                "pretax_balance": float(household.get("initial_401k_pretax") or 0.0),
+                "roth_balance": float(household.get("initial_401k_roth") or 0.0),
+                "growth_pct": _growth(env_config.get("account_growth")),
+            },
+            {
+                "kind": "brokerage",
+                "id": "brokerage",
+                "company": "Brokerage",
+                "balance": float(household.get("initial_brokerage") or 0.0),
+            },
+            {"kind": "traditional_ira", "id": "traditional_ira"},
+            {"kind": "roth_ira", "id": "roth_ira"},
+            {"kind": "hsa", "id": "hsa", "coverage": "individual"},
+        ],
+        # Zero-padded ids keep the children in the order given (the builder sorts by id).
+        "children": [
+            {"id": f"child{i + 1:02d}", "name": f"Child{i + 1}", "birth_year": start_year - int(age)}
+            for i, age in enumerate(household.get("children_ages", ()) or ())
+        ],
+    }
+    if household.get("models_healthcare", False):
+        person["healthcare"] = {"medical_costs": True, "medicare": True}
+    turned_62 = start_year - start_age + 62
+    if env_config.get("social_security", True) and turned_62 >= FIRST_BEND_POINT_YEAR:
+        person["social_security"] = {
+            "claim_age": ss_claim_age(household, config),
+            "assumed_career_start_age": int(env_config["career_start_age"]),
+        }
+    max_steps = int(env_config["person_max_age"]) - start_age
+    return HouseholdSpec.model_validate(
+        {
+            "meta": {
+                "name": f"RL household ({env_config.get('household_scenario', 'custom')})",
+                "start_year": start_year,
+                "end_year": start_year + max_steps,
+                "scenario": household.get("economy_scenario"),
+            },
+            "people": [person],
+        }
+    )
