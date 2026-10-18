@@ -28,7 +28,7 @@ import numpy as np
 import torch
 from torch import nn, optim
 
-from .base import ActResult, Algorithm, StepBatch, masked_categorical
+from .base import ActResult, Algorithm, StepBatch, distribution_mode, policy_distribution
 from .networks import build_encoder
 
 BASELINES = ("none", "mean", "value")
@@ -54,6 +54,7 @@ class ReinforceAgent(Algorithm):
     """Monte-Carlo policy gradient over a discrete action space, with optional legal-action masking."""
 
     on_policy = True
+    supports_multidiscrete = True
     name = "reinforce"
 
     @staticmethod
@@ -107,14 +108,20 @@ class ReinforceAgent(Algorithm):
         """Sample from the masked policy while training; take its mode when evaluating."""
         with torch.no_grad():
             logits, _ = self.policy(self._to_tensor(obs))
-            dist = masked_categorical(logits, legal)
-            actions = dist.sample() if training else dist.probs.argmax(dim=1)
+            dist = policy_distribution(logits, legal, self.action_nvec)
+            actions = dist.sample() if training else distribution_mode(dist)
         return ActResult(actions.cpu().numpy().astype(np.int64))
 
     def _to_tensor(self, obs: np.ndarray) -> torch.Tensor:
         return torch.as_tensor(np.asarray(obs), dtype=torch.float32, device=self.device)
 
     # --- storing -----------------------------------------------------------------------------
+
+    def _stored_action(self, action):
+        """An ``int`` for a ``Discrete`` space, an integer vector for a ``MultiDiscrete`` one."""
+        if self.action_nvec is not None:
+            return np.asarray(action, dtype=np.int64).reshape(len(self.action_nvec))
+        return int(action)
 
     def observe(self, batch: StepBatch) -> None:
         """Append each row to its stream's trace, banking the trace when the episode ends."""
@@ -124,7 +131,7 @@ class ReinforceAgent(Algorithm):
             trace.append(
                 {
                     "obs": np.asarray(batch.obs[i]),
-                    "action": int(batch.actions[i]),
+                    "action": self._stored_action(batch.actions[i]),
                     "reward": float(batch.rewards[i]),
                     "legal": list(batch.legal[i]),
                 }
@@ -164,7 +171,7 @@ class ReinforceAgent(Algorithm):
         returns_t = torch.as_tensor(returns, dtype=torch.float32, device=self.device)
 
         logits, values = self.policy(obs_t)
-        dist = masked_categorical(logits, legal)
+        dist = policy_distribution(logits, legal, self.action_nvec)
         log_probs = dist.log_prob(actions_t)
         entropy = dist.entropy().mean()
 

@@ -48,6 +48,21 @@ class TestLegalActionsFallbackChain(unittest.TestCase):
         self.assertEqual(legal_actions_of(env, info), sorted(env.get_legal_actions()))
 
 
+class TestMaskWidth(unittest.TestCase):
+    def test_multidiscrete_masks_concatenate_the_slots(self):
+        from gymnasium import spaces
+
+        from deepqlearning.envs.financial.environment import FinancialLifeEnv
+        from deepqlearning.envs.masks import mask_width
+
+        self.assertEqual(mask_width(spaces.Discrete(52)), 52)
+        self.assertEqual(mask_width(spaces.MultiDiscrete([3, 2, 4])), 9)
+        env = FinancialLifeEnv({"action_space": "factored"})
+        _, info = env.reset(seed=0)
+        self.assertEqual(legal_actions_of(env, info), env.get_legal_actions())
+        self.assertEqual(len(info["legal_mask"]), mask_width(env.action_space))
+
+
 class TestVectorInfoMasks(unittest.TestCase):
     def test_rows_are_decoded_per_env(self):
         info = {"legal_mask": np.array([[True, False, True], [False, True, False]])}

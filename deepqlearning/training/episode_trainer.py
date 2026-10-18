@@ -58,7 +58,7 @@ class EpisodeTrainer:
         num_episodes = self.config["num_episodes"]
         print(f"Starting training for {num_episodes} episodes")
         print(f"Environment: {type(self.env).__name__}")
-        print(f"Action space size: {self.env.action_space.n}")
+        print(f"Action space: {self.env.action_space}")
         print(f"Observation space: {self.env.observation_space.shape}")
 
         for episode in range(num_episodes):

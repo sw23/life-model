@@ -19,8 +19,10 @@ Design notes:
   it nominal dollars, the cumulative-inflation deflator, and terminal flags; nothing here touches
   the model. That makes the objective unit-testable in isolation (monotonicity, concavity,
   deflation correctness, ruin alignment).
-* **No double discounting.** Time preference is the DQN's ``gamma`` alone. The per-year reward is
-  the *undiscounted* utility of that year's consumption; the optimizer discounts across years.
+* **No double discounting.** Time preference is the algorithm's ``gamma`` alone. The per-year reward
+  is the *undiscounted* utility of that year's consumption; the optimizer discounts across steps.
+  With sub-year decisions (Plan 32 D9) a step earns ``months / 12`` of the year's utility, and
+  ``gamma`` is per step (``gamma ** 4`` per year at quarterly decisions).
 * **CRRA.** ``u(x) = (x**(1-g) - 1)/(1-g)`` for risk-aversion ``g != 1`` and ``log(x)`` at
   ``g == 1``. It is increasing and concave for ``x > 0`` and every ``g >= 0``, so more real
   consumption is always better but with diminishing returns — the shape that makes *smoothing*
@@ -132,12 +134,16 @@ def step_reward(
     terminal: bool,
     nominal_terminal_net_worth: float,
     ruined: bool,
+    period_fraction: float = 1.0,
 ) -> float:
     """Total reward for one environment step.
 
-    Always includes the year's consumption utility. On the terminal step it adds either the ruin
-    penalty (if the episode ended in bankruptcy) or the bequest utility (otherwise). Returns a
-    Python ``float`` so no ``np.float64`` leaks into the replay buffer.
+    Always includes the consumption utility, weighted by ``period_fraction`` (the share of a year the
+    step simulated: 1 for yearly decisions, 0.25 for quarterly, 1/12 for monthly), so a year of
+    steps at a constant consumption rate earns the same utility at every decision interval. On the
+    terminal step it adds either the ruin penalty (if the episode ended in bankruptcy) or the
+    bequest utility (otherwise), unweighted. Returns a Python ``float`` so no ``np.float64`` leaks
+    into the replay buffer.
 
     Args:
         nominal_consumption: This year's spending in nominal dollars.
@@ -147,8 +153,11 @@ def step_reward(
         nominal_terminal_net_worth: Net worth (or estate value at death) in nominal dollars; only
             used on the terminal step and only when not ruined.
         ruined: Whether the episode ended in bankruptcy (net worth below the bankruptcy threshold).
+        period_fraction: Share of a year the step covers (``months / 12``).
     """
     reward = consumption_utility(nominal_consumption, deflator, config)
+    if period_fraction != 1.0:
+        reward *= period_fraction
     if terminal:
         if ruined:
             reward += config.ruin_penalty

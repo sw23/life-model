@@ -15,6 +15,11 @@ Turns a black-box checkpoint into human-checkable pictures of *what the policy d
   year of age across eval episodes.
 * **Lifetime trace** — one annotated episode: a year-by-year table of age, net worth, action, and
   reward, saved as JSON and rendered as a net-worth-over-life figure.
+* **Policy vector by age** (factored action space, Plan 32 D8) — the standing policies the agent
+  keeps in force at each age: per slot, the modal value across greedy episodes and the share of
+  decisions at that age that held it, as a table (``policy_vector_by_age.txt`` / ``.json``) and a
+  slot x age figure. This replaces the action-category heatmap and the dollar schedule, which
+  describe one-off money moves the factored agent does not make.
 
 All figures are written with the headless Agg backend, so artifacts generate on servers/CI. The
 functions return the underlying data too, so a notebook can render them inline.
@@ -40,6 +45,7 @@ from deepqlearning.algos import ALGORITHMS
 from deepqlearning.algos.base import Algorithm
 from deepqlearning.envs.financial.actions import ActionType
 from deepqlearning.envs.financial.environment import OBS_VERSION, FinancialLifeEnv, FinancialLifeEnvGenerator
+from deepqlearning.envs.financial.policies import SLOT_BY_NAME, SLOT_NAMES
 from deepqlearning.training.rollout import rollout
 
 # Coarse action categories for a readable heatmap.
@@ -161,10 +167,88 @@ def contribution_schedule(trajectories: list[list[dict]], out_path: str) -> dict
     return {"ages": ages, "avg_contribution": contrib, "avg_withdrawal": withdraw}
 
 
+def policy_vector_schedule(trajectories: list[list[dict]], out_png: str, out_txt: str | None = None) -> dict:
+    """The standing policies in force by age (factored action space), as data, a table and a figure.
+
+    For each age and slot: the modal value over every greedy decision made at that age (across
+    episodes) and the share of those decisions that held it. ``out_txt`` gets a fixed-width table
+    (one row per age, one column per slot) with the per-slot share of the modal value.
+    """
+    by_age: dict[int, dict[str, Counter]] = {}
+    for traj in trajectories:
+        for step in traj:
+            age, vector = step.get("age"), step.get("policy_vector")
+            if age is None or vector is None:
+                continue
+            slots = by_age.setdefault(int(age), {name: Counter() for name in SLOT_NAMES})
+            for name in SLOT_NAMES:
+                slots[name][vector[name]] += 1
+    ages = sorted(by_age)
+    table: dict[int, dict[str, dict]] = {}
+    for age in ages:
+        row = {}
+        for name in SLOT_NAMES:
+            counter = by_age[age][name]
+            value, count = counter.most_common(1)[0]
+            row[name] = {"value": value, "share": round(count / max(1, sum(counter.values())), 3)}
+        table[age] = row
+
+    if out_txt is not None:
+        short = {
+            "pretax_401k_rate": "pretax",
+            "roth_401k_rate": "roth",
+            "ira_contribution": "ira",
+            "hsa_contribution": "hsa",
+            "sweep_policy": "sweep",
+            "spending_adjust": "spend",
+            "withdrawal_order": "order",
+            "retire": "retired",
+            "claim_social_security": "ss",
+            "roth_conversion": "conversion",
+        }
+        widths = {name: max(len(short[name]), 15) for name in SLOT_NAMES}
+        lines = ["age  " + " ".join(f"{short[name]:<{widths[name]}}" for name in SLOT_NAMES)]
+        for age in ages:
+            cells = []
+            for name in SLOT_NAMES:
+                cell = table[age][name]
+                text = cell["value"] if cell["share"] >= 0.995 else f"{cell['value']} {cell['share']:.0%}"
+                cells.append(f"{text:<{widths[name]}}")
+            lines.append(f"{age:<4d} " + " ".join(cells))
+        with open(out_txt, "w") as f:
+            f.write("\n".join(lines) + "\n")
+
+    if ages:
+        grid = np.array(
+            [
+                [
+                    (SLOT_BY_NAME[name].values.index(table[age][name]["value"]))
+                    / max(1, len(SLOT_BY_NAME[name].values) - 1)
+                    for age in ages
+                ]
+                for name in SLOT_NAMES
+            ]
+        )
+        fig, ax = plt.subplots(figsize=(max(8, len(ages) * 0.18), 5))
+        ax.imshow(grid, aspect="auto", cmap="viridis", vmin=0, vmax=1, interpolation="nearest")
+        ax.set_yticks(range(len(SLOT_NAMES)))
+        ax.set_yticklabels(SLOT_NAMES)
+        step = max(1, len(ages) // 15)
+        ax.set_xticks(range(0, len(ages), step))
+        ax.set_xticklabels([str(a) for a in ages[::step]])
+        ax.set_xlabel("Age")
+        ax.set_title("Standing policy in force by age (modal value; position in the slot's value list)")
+        fig.tight_layout()
+        fig.savefig(out_png, dpi=120, bbox_inches="tight")
+        plt.close(fig)
+    return {"ages": ages, "by_age": {str(age): table[age] for age in ages}}
+
+
 def lifetime_trace(
     agent: Algorithm, env_config: dict | None, out_png: str, out_json: str, seed: int = 4_000_000
 ) -> dict:
-    """One annotated greedy episode: year-by-year state/action/reward, as JSON + a net-worth figure."""
+    """One annotated greedy episode: step-by-step state/action/reward (and, on the factored space, the
+    standing policy vector), as JSON + a net-worth figure."""
     env = FinancialLifeEnv(env_config or {})
     state, _ = env.reset(seed=seed)
     rows: list[dict] = []
@@ -172,16 +256,19 @@ def lifetime_trace(
         legal = env.get_legal_actions()
         action = agent.select_action(state, legal, training=False)
         state, reward, terminated, truncated, info = env.step(action)
-        rows.append(
-            {
-                "age": info.get("age"),
-                "net_worth": float(info.get("net_worth", 0.0)),
-                "action_type": info.get("action_type"),
-                "action_amount": float(info.get("action_amount") or 0.0),
-                "reward": float(reward),
-                "is_retired": bool(info.get("is_retired")),
-            }
-        )
+        row = {
+            "age": info.get("age"),
+            "net_worth": float(info.get("net_worth", 0.0)),
+            "action_type": info.get("action_type"),
+            "action_amount": float(info.get("action_amount") or 0.0),
+            "reward": float(reward),
+            "is_retired": bool(info.get("is_retired")),
+        }
+        if info.get("policy_vector") is not None:
+            row["year"], row["month"] = info.get("year"), info.get("month")
+            row["policy_changes"] = info.get("policy_changes")
+            row["policy_vector"] = info.get("policy_vector")
+        rows.append(row)
         if terminated or truncated:
             break
 
@@ -212,17 +299,27 @@ def analyze(agent: Algorithm, env_config: dict | None, out_dir: str, n_episodes:
     """Generate all policy-analysis artifacts into ``out_dir`` and return a manifest of their data + paths."""
     os.makedirs(out_dir, exist_ok=True)
     trajectories = collect_greedy_trajectories(agent, env_config, n_episodes)
-    heatmap = action_heatmap(trajectories, os.path.join(out_dir, "policy_heatmap.png"))
-    schedule = contribution_schedule(trajectories, os.path.join(out_dir, "contribution_schedule.png"))
+    factored = (env_config or {}).get("action_space") == "factored"
+    manifest: dict = {"n_episodes": n_episodes}
+    if factored:
+        manifest["action_space"] = "factored"
+        manifest["decision_interval"] = (env_config or {}).get("decision_interval", "year")
+        schedule = policy_vector_schedule(
+            trajectories,
+            os.path.join(out_dir, "policy_vector_by_age.png"),
+            os.path.join(out_dir, "policy_vector_by_age.txt"),
+        )
+        with open(os.path.join(out_dir, "policy_vector_by_age.json"), "w") as f:
+            json.dump(schedule, f, indent=2)
+            f.write("\n")  # end-of-file newline (pre-commit)
+        manifest["policy_vector_by_age"] = schedule
+    else:
+        manifest["heatmap"] = action_heatmap(trajectories, os.path.join(out_dir, "policy_heatmap.png"))
+        manifest["schedule"] = contribution_schedule(trajectories, os.path.join(out_dir, "contribution_schedule.png"))
     trace = lifetime_trace(
         agent, env_config, os.path.join(out_dir, "lifetime_trace.png"), os.path.join(out_dir, "lifetime_trace.json")
     )
-    manifest = {
-        "n_episodes": n_episodes,
-        "heatmap": heatmap,
-        "schedule": schedule,
-        "lifetime_trace_summary": {k: v for k, v in trace.items() if k != "rows"},
-    }
+    manifest["lifetime_trace_summary"] = {k: v for k, v in trace.items() if k != "rows"}
     with open(os.path.join(out_dir, "analysis_manifest.json"), "w") as f:
         json.dump(manifest, f, indent=2)
         f.write("\n")  # end-of-file newline (pre-commit)
@@ -238,11 +335,20 @@ def main() -> None:
     parser.add_argument("--out-dir", default=None, help="Output dir (default: next to the checkpoint)")
     parser.add_argument("--episodes", type=int, default=50)
     parser.add_argument("--scenario", default="basic", help="Household scenario the checkpoint was trained on")
+    parser.add_argument("--action-space", default="flat", choices=["flat", "factored"])
+    parser.add_argument("--decision-interval", default="year", choices=["year", "quarter", "month"])
     args = parser.parse_args()
 
     # Rebuild the exact env the trainer used (financial:<scenario>: the scenario's point household
     # plus the named-env settings), not the bare FinancialLifeEnv defaults.
-    env = FinancialLifeEnvGenerator.create_scenario_env(args.scenario, {"reward_preset": args.reward_preset})
+    env = FinancialLifeEnvGenerator.create_scenario_env(
+        args.scenario,
+        {
+            "reward_preset": args.reward_preset,
+            "action_space": args.action_space,
+            "decision_interval": args.decision_interval,
+        },
+    )
     env_config = dict(env.config)
     algo_config = {"num_envs": 1} if args.algo == "ppo" else {}
     if args.algo == "dqn":
