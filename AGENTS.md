@@ -121,7 +121,10 @@ training casually: they are long and memory-hungry.
 
 Generated docs (regenerate after changing their sources; tests fail while they are stale):
 `python scripts/generate_household_spec_docs.py`, `python scripts/generate_outputs_doc.py`,
-`python scripts/generate_cheatsheet.py` (or `make -C docs generated`).
+`python scripts/generate_cheatsheet.py` (or `make -C docs generated`). The household goldens and the
+backtest example are written by `python scripts/household_goldens.py` (re-run it after changing a
+golden's inputs and review the `worksheet.md` diff) and `python scripts/backtest_example.py
+[statements]`.
 
 ## Conventions
 

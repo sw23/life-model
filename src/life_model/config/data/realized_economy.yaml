@@ -1,0 +1,47 @@
+# Copyright 2026 Spencer Williams
+#
+# Use of this source code is governed by an MIT license:
+# https://github.com/sw23/life-model/blob/main/LICENSE
+
+# Realized annual economic series for backtests (Plan 29 D5; life_model.backtest). Append a year when
+# it is published; never overwrite history. Fetched 2026-10-18.
+
+# CPI-U, U.S. city average, all items, not seasonally adjusted (series CUUR0000SA0), annual average
+# (1982-84 = 100). vintage: 2025, source: BLS Public Data API v2 (period M13), cross-checked against
+# FRED CPIAUCNS annual averages (identical). The 2025 average is the mean of 11 months: BLS published
+# no October 2025 index (lapse in appropriations).
+cpi_u_annual_average:
+  2018: 251.107
+  2019: 255.657
+  2020: 258.811
+  2021: 270.970
+  2022: 292.655
+  2023: 304.702
+  2024: 313.689
+  2025: 321.943
+
+# S&P 500 total return (dividends reinvested), calendar year, percent. vintage: 2025, source: S&P Dow
+# Jones Indices "Market Attributes: U.S. Equities" December reports for 2019, 2020, 2021 and 2025
+# (the 2025 report states 2022-2024), read from web.archive.org captures of spglobal.com; matches
+# Slickcharts' S&P 500 total returns table.
+sp500_total_return_pct:
+  2019: 31.49
+  2020: 18.40
+  2021: 28.71
+  2022: -18.11
+  2023: 26.29
+  2024: 25.02
+  2025: 17.88
+
+# SSA national average wage index. vintage: 2025, source: SSA OACT AWI.html (web.archive.org capture
+# of 2026-10-17); 2018-2024 equal social_security.avg_wage_index in financial_defaults.yaml, and 2025
+# (72,800.33, +4.23%) was published in October 2026.
+avg_wage_index:
+  2018: 52145.80
+  2019: 54099.99
+  2020: 55628.60
+  2021: 60575.07
+  2022: 63795.13
+  2023: 66621.80
+  2024: 69846.57
+  2025: 72800.33
