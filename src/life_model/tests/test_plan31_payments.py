@@ -572,3 +572,53 @@ class TestSpecFields(unittest.TestCase):
         self.assertIn("withholding_suggested", [f.code for f in validate_spec(data)])
         data["people"][0]["jobs"][0]["payroll"] = {"withholding": "w4_default"}
         self.assertNotIn("withholding_suggested", [f.code for f in validate_spec(data)])
+
+
+class TestExamplesWithAndWithoutWithholding(unittest.TestCase):
+    """Every example spec for 50 years under the strict invariant checker (stochastic economy and mortality, two
+    seeds), as written (the December lump) and with every W-2 job withholding by a default Form W-4 and the
+    self-employed paying safe-harbor estimates."""
+
+    @staticmethod
+    def _variant(name, seed, withholding):
+        from ..spec import HouseholdSpec, load_example
+        from ..spec.io import to_data
+
+        data = to_data(load_example(name))
+        data["economy"] = {"mode": "stochastic"}
+        data["meta"]["end_year"] = data["meta"]["start_year"] + 49
+        data["meta"]["seed"] = seed
+        for person in data["people"]:
+            person["mortality"] = "stochastic"
+            person.pop("death_age", None)
+            if withholding:
+                for job in person.get("jobs", []):
+                    job.setdefault("payroll", {})["withholding"] = "w4_default"
+                if person.get("self_employment"):
+                    person["estimated_payments"] = {"policy": "safe_harbor"}
+        if withholding:
+            for event in data.get("events", []):
+                if event.get("new_job"):
+                    event["new_job"].setdefault("payroll", {})["withholding"] = "w4_default"
+        return HouseholdSpec.model_validate(data)
+
+    def test_fifty_years_strict(self):
+        import warnings
+
+        from ..spec import EXAMPLES, build_model
+
+        paid_as_you_go = 0
+        for name in EXAMPLES:
+            for seed in (1, 2):
+                for withholding in (False, True):
+                    with self.subTest(example=name, seed=seed, withholding=withholding):
+                        with warnings.catch_warnings():
+                            warnings.simplefilter("ignore")
+                            model = build_model(self._variant(name, seed, withholding))
+                            model.checks = "strict"
+                            model.run()
+                        self.assertEqual(model.invariant_violations, [])
+                        april = any(r.settled_in_april for r in model.tax_returns.values())
+                        self.assertEqual(april, withholding and name != "retiree_couple")
+                        paid_as_you_go += april
+        self.assertGreaterEqual(paid_as_you_go, 6)
