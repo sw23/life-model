@@ -13,13 +13,16 @@ results.
 Usage::
 
     def build(seed):
-        model = LifeModel(seed=seed, scenario="stochastic_economy")
+        model = LifeModel(seed=seed, scenario="stochastic")  # the packaged stochastic economy
         # ... construct the family, jobs, accounts ...
         return model
 
     result = MonteCarlo(build, n=1000, seed=42).run()
     result.success_rate(lambda row: row["Bank Balance"] > 0)   # probability of not running out
     result.percentiles("Bank Balance", [10, 50, 90])           # fan-chart frames
+
+For a household spec, ``life_model.api.run_montecarlo(spec, n=1000, scenario="stochastic")`` (or
+``life-model montecarlo SPEC --scenario stochastic``) builds the factory for you.
 
 ``model_factory`` must be a picklable top-level callable so trials can run in worker processes.
 When it is not picklable, the runner transparently falls back to running trials sequentially in the
