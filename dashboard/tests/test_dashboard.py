@@ -206,10 +206,11 @@ def test_scenario_default_label_uses_packaged_defaults():
 
 
 def test_state_dropdown_maps_to_person_state():
-    """The state dropdown sets Person.state; DEFAULT maps to None (config default pack)."""
+    """The state dropdown sets Person.state; DEFAULT is passed explicitly (Plan 31 D4: the flat-rate pack is a
+    deliberate choice, with the same numbers as the config default it used to fall back to)."""
     assert app.model_params["state"]["value"] == "DEFAULT"
     assert "CA" in app.model_params["state"]["values"]
-    assert app._state_value("DEFAULT") is None
+    assert app._state_value("DEFAULT") == "DEFAULT"
     assert app._state_value("CA") == "CA"
 
     from life_model.people.person import Person
@@ -220,7 +221,7 @@ def test_state_dropdown_maps_to_person_state():
 
     default_model = DashboardLifeModel(start_year=2023, end_year=2024, jane_enabled=False)
     (default_person,) = [a for a in default_model.agents if isinstance(a, Person)]
-    assert default_person.state is None
+    assert default_person.state == "DEFAULT"
 
 
 def test_state_selection_changes_state_tax():

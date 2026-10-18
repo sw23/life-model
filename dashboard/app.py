@@ -270,11 +270,12 @@ def _scenario_value(raw: Any) -> str | None:
     return value
 
 
-def _state_value(raw: Any) -> str | None:
-    """Map the state dropdown selection to a Person ``state`` (None for the DEFAULT pack)."""
+def _state_value(raw: Any) -> str:
+    """Map the state dropdown selection to a Person ``state`` (``DEFAULT``, the flat-rate pack, chosen explicitly
+    when nothing is selected: Plan 31 D4)."""
     value = param_value(raw)
-    if value in (None, DEFAULT_STATE_KEY):
-        return None
+    if value is None:
+        return DEFAULT_STATE_KEY
     return value
 
 
