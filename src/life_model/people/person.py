@@ -1172,8 +1172,9 @@ class Person(LifeModelAgent):
     def withdraw_from_roth_401ks(self, amount: float) -> float:
         """Withdraws money from Roth 401ks into the bank account.
 
-        Qualified Roth distributions are tax-free, so no income-ledger entry is created
-        (taxation of non-qualified Roth *earnings* is a documented simplification).
+        Qualified distributions (age 59.5 and over) are tax-free. Before 59.5, an account that tracks
+        its contribution basis (``roth_basis``) posts the earnings share as ordinary income plus the
+        10% additional tax; an account without a tracked basis is treated as all basis (tax-free).
 
         Returns:
             float: Amount actually withdrawn.

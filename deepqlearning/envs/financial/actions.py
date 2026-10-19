@@ -93,8 +93,10 @@ _WITHDRAW_HELPERS = {
 
 # Early-withdrawal penalties for pre-tax 401k, Traditional IRA, Roth IRA earnings and non-medical HSA
 # withdrawals are charged by the core model on the income ledger and settled as federal tax at year
-# end. Roth 401k basis is not tracked in the core, so its penalty stays at the action level: 10% of
-# the whole withdrawal before age 59.5 (a conservative stand-in for the pro-rata earnings rule).
+# end. The core taxes a Roth 401k's early earnings only when the account tracks ``roth_basis``; the RL
+# households do not set it, so the action charges a conservative 10% of the whole withdrawal before
+# age 59.5 instead (a stand-in for the pro-rata earnings rule). A household that sets ``roth_basis``
+# would be charged by both the core and this action.
 _PENALIZED_WITHDRAWALS = frozenset({ActionType.WITHDRAW_401K_ROTH})
 
 TRANSFER_ACTIONS = frozenset(_TRANSFER_TARGETS)
