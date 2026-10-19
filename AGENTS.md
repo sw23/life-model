@@ -101,7 +101,9 @@ fixtures use only synthetic names (a test enforces an allowlist).
   (`PayrollDeductions`, `start_year` / `end_year`, `Bonus`, `raises`, existing RSU grants, `ESPP`).
   Recurring contributions, the yearly surplus sweep and Roth conversions are standing policies on the
   person (`life_model/policies.py`: `ContributionPlan`, `SavingsPolicy`, `RothConversionPolicy`,
-  `convert_to_roth`), changeable between months. Constructors take canonical keyword names (`owner=`,
+  `convert_to_roth`), changeable between months; a `ContributionPlan` has a `start`/`end` window. Bank
+  and brokerage accounts can be joint between spouses (`joint_owner=`; registered under the titled
+  owner, usable by both, income split 50/50, passed to the survivor at a death). Constructors take canonical keyword names (`owner=`,
   `*_pct`, `*_annual`) and are keyword-only past the owner; the old names still work with a
   `DeprecationWarning` (`life_model/_compat.py`). Library code must use the canonical names.
 - **Construction.** The recommended path is the household spec (`life_model.spec`, Plan 25):
@@ -203,10 +205,13 @@ golden's inputs and review the `worksheet.md` diff) and `python scripts/backtest
   the spec builder makes it the first spouse in `relationships.marriages`), following the head's
   residency timeline.
 - Silent defaults: `Person` is immortal and files single unless told otherwise; `Spending` and
-  `Salary` growth default to 0%; rent rises 5%; investments grow at 7%; cash earns 0%; a person with no
-  state files in `DEFAULT` (a flat 6% of the federal-style base); taxes are paid as a December lump
-  unless a job withholds or the person pays estimates. An unknown state code is an error
-  (`UnknownStateError`), never a silent fallback. The spec validator warns or errors on these; direct
+  `Salary` growth default to 0%; rent rises 5%; investments grow at 7%; cash earns 0% and surplus
+  cash is never invested without a `SavingsPolicy`; every child costs the configured bands on top of
+  spending; health costs stop with the job (no coverage before Medicare, no Medicare premiums without
+  `healthcare`); a person with no state files in `DEFAULT` (a flat 6% of the federal-style base);
+  taxes are paid as a December lump unless a job withholds or the person pays estimates. An unknown
+  state code is an error (`UnknownStateError`), never a silent fallback. The spec validator warns or
+  errors on these (a spec keeps a warning on purpose with `meta.accepted_warnings`); direct
   construction does not. See [docs/constructor-cheatsheet.md](docs/constructor-cheatsheet.md).
 - Bank-sourced contribution plans hold back the tax the year's income still owes (and last year's
   balance due until April), so a plan contributes less than its amount when taxes are not withheld.

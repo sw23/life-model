@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 class Child(LifeModelAgent):
     """A child dependent: the age band's yearly cost is charged a twelfth each month (college months
-    drawn from the child's 529 plans first)."""
+    drawn from the child's 529 plans first). Bands follow the child's exact age (``birth_month``)."""
 
     STATS_OWNED = frozenset({"stat_dependent_costs"})
 
@@ -28,6 +28,7 @@ class Child(LifeModelAgent):
         dividends_annual: float = 0.0,
         cost_annual: float | None = None,
         college_cost_annual: float | None = None,
+        birth_month: int | None = None,
     ):
         """Models a child dependent for a person
 
@@ -48,6 +49,10 @@ class Child(LifeModelAgent):
                 in ``care_expenses_annual``.
             college_cost_annual: This child's yearly college cost, in start-year dollars, instead of the
                 configured college band.
+            birth_month: The month (1-12) the child was born. The age bands, the college years and the end
+                of ``care_expenses_annual`` follow the child's exact age: they change in the month of the
+                birthday (care stops at the 13th birthday). None assumes January, so they change in January
+                of the birthday year. Tax rules keep using the age at the end of the year.
         """
         super().__init__(person.model)
         self.person = person
@@ -58,6 +63,9 @@ class Child(LifeModelAgent):
         self.dividends_annual = dividends_annual
         self.cost_annual = cost_annual
         self.college_cost_annual = college_cost_annual
+        if birth_month is not None and not 1 <= int(birth_month) <= 12:
+            raise ValueError(f"birth_month must be 1-12, got {birth_month}")
+        self.birth_month = None if birth_month is None else int(birth_month)
         self.stat_dependent_costs = 0.0
         #: This year's dependent care expenses (Form 2441), education expenses and the part of them paid
         #: with tax-free 529 withdrawals (Form 8863 / Pub. 970), set in ``pre_step``.
@@ -78,14 +86,30 @@ class Child(LifeModelAgent):
 
     @property
     def age(self) -> int:
-        """Calculate child's current age based on model year"""
+        """The age the child reaches this year (the age at the end of the year, the one tax rules use)."""
         return self.model.year - self.birth_year
 
     @property
+    def age_now(self) -> int:
+        """The child's exact age in completed years this month: the birthday month (``birth_month``, January
+        when unknown) is the month the age goes up. Costs and care follow this age."""
+        month = getattr(self.model, "month", 1) or 1
+        born = self.birth_month or 1
+        return ((self.model.year * 12 + month) - (self.birth_year * 12 + born)) // 12
+
+    @property
     def in_college_band(self) -> bool:
-        """Whether the child is in the college-cost band this year."""
+        """Whether the child is in the college-cost band this year (by the age reached this year; tax rules
+        such as the student dependent test read it)."""
         cfg = self.model.config.dependents
         return cfg.college_start_age <= self.age < cfg.college_start_age + cfg.college_years
+
+    @property
+    def in_college_band_now(self) -> bool:
+        """Whether this month is one of the child's college months (by exact age: from the month of the
+        ``college_start_age`` birthday for ``college_years`` years)."""
+        cfg = self.model.config.dependents
+        return cfg.college_start_age <= self.age_now < cfg.college_start_age + cfg.college_years
 
     def nominal_cost_for_age(self, age: int) -> float:
         """Start-year-dollar cost of the child at ``age`` (before inflation indexing).
@@ -109,12 +133,13 @@ class Child(LifeModelAgent):
         return 0.0
 
     def yearly_cost(self) -> float:
-        """This year's child cost in current (nominal) dollars.
+        """The yearly rate of the child's cost this month, in current (nominal) dollars (by the exact age,
+        :attr:`age_now`).
 
         The nominal band cost is grown by cumulative inflation from the start year so a child born
         later costs later-year dollars.
         """
-        nominal = self.nominal_cost_for_age(self.age)
+        nominal = self.nominal_cost_for_age(self.age_now)
         if nominal <= 0:
             return 0.0
         return nominal * self.model.economy.cumulative_inflation(self.model.year)
@@ -159,18 +184,19 @@ class Child(LifeModelAgent):
         if self.person.is_deceased:
             return
         cost = self.yearly_cost() / 12
-        if 0 <= self.age < self.CARE_CREDIT_AGE and self.care_expenses_annual > 0:
+        age = self.age_now
+        if 0 <= age < self.CARE_CREDIT_AGE and self.care_expenses_annual > 0:
             extra = self.care_expenses_annual * self.model.economy.cumulative_inflation(self.model.year) / 12
             self.person.spending.add_expense(extra, category="dependent_care")
             self.care_expenses_this_year += extra
             self.stat_dependent_costs = snap_money(self.stat_dependent_costs + extra)
-        if 0 <= self.age < self.CHILDCARE_END_AGE and self.cost_annual is None:
+        if 0 <= age < self.CHILDCARE_END_AGE and self.cost_annual is None:
             # The childcare band is the cost of care while the parents work (Form 2441 expenses). An
             # entered cost_annual is the child's whole cost: its care part goes in care_expenses_annual.
             self.care_expenses_this_year += cost
         if cost <= 0:
             return
-        if self.in_college_band:
+        if self.in_college_band_now:
             # Draw self-beneficiary 529 plans first: withdraw_qualified deposits the tuition cash
             # into the owner's bank tax-free, so college is funded from the 529 before other
             # assets. The full tuition is then charged to spending; because the qualified
@@ -188,7 +214,8 @@ class Child(LifeModelAgent):
         self.person.spending.add_expense(cost, category="dependents")
         self.stat_dependent_costs = snap_money(self.stat_dependent_costs + cost)
 
-    #: Dependent care qualifies for the child and dependent care credit until the child turns 13.
+    #: Dependent care qualifies for the child and dependent care credit until the child turns 13 (care paid
+    #: from the 13th birthday on does not count, Form 2441), so ``care_expenses_annual`` stops then.
     CARE_CREDIT_AGE = 13
 
     def _aotc_reserve(self, cost: float) -> float:

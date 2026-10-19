@@ -232,6 +232,14 @@ def _compile_one(builder: "_Builder", timing: EventTiming, event, year: int) -> 
         name = _name(event, f"{person.name} contributes ${event.amount:,.0f}")
         return [_life_event(year, name, event, _contribute, builder, person, event.account, event.amount)]
 
+    if action == "stop_contribution":
+        name = _name(event, f"{person.name} stops contributing to {event.account}")
+        return [_life_event(year, name, event, _stop_contribution, builder, person, event)]
+
+    if action == "change_contribution":
+        name = _name(event, f"{person.name} changes the contribution to {event.account}")
+        return [_life_event(year, name, event, _change_contribution, builder, person, event)]
+
     if action == "disability":
         name = _name(event, f"{person.name} becomes disabled")
         return [_life_event(year, name, event, _disability, person)]
@@ -345,7 +353,7 @@ def _contribute(builder: "_Builder", person, account_id: str, amount: float) -> 
     from ..charity.daf import DonorAdvisedFund
 
     account = builder.built.items[account_id]
-    available = min(amount, person.bank_account_balance)
+    available = min(amount, sum(a.balance for a in person.usable_bank_accounts))
     if available <= 0:
         return
     if isinstance(account, DonorAdvisedFund):
@@ -355,7 +363,7 @@ def _contribute(builder: "_Builder", person, account_id: str, amount: float) -> 
         # bank, posting each part as a transfer from that bank (Plan 31: the debit used to go unposted while
         # the account posted new money from outside, so the ledger did not conserve).
         remaining = available
-        for bank in person.bank_accounts:
+        for bank in person.usable_bank_accounts:
             if remaining <= 0:
                 break
             accepted = account.contribute(min(remaining, bank.balance), from_account=bank)
@@ -366,6 +374,44 @@ def _contribute(builder: "_Builder", person, account_id: str, amount: float) -> 
     else:
         person.deduct_from_bank_accounts(available)
         account.deposit(available)
+
+
+def _stop_contribution(builder: "_Builder", person, event: s.StopContributionEvent) -> None:
+    from ..account.job401k import Job401kAccount
+
+    account = builder.built.items[event.account]
+    person.remove_contribution_plan(account, bucket=event.bucket)
+    if isinstance(account, Job401kAccount):
+        for bucket in (event.bucket,) if event.bucket is not None else ("pretax", "roth", "after_tax"):
+            setattr(account, f"{bucket}_contrib_percent", 0.0)
+    builder.model.event_log.add(Event(f"{person.name} stopped contributing to {event.account}"))
+
+
+def _change_contribution(builder: "_Builder", person, event: s.ChangeContributionEvent) -> None:
+    from ..account.job401k import Job401kAccount
+    from ..policies import MAX, ContributionPlan
+
+    account = builder.built.items[event.account]
+    is_401k = isinstance(account, Job401kAccount)
+    bucket = (event.bucket or "pretax") if is_401k else None
+    amount = MAX if event.max_out else event.amount_annual
+    plan = next(
+        (p for p in person.contribution_plans if p.account is account and (not is_401k or p.bucket == bucket)), None
+    )
+    if plan is None:
+        plan = ContributionPlan(
+            account,
+            amount_annual=amount,
+            pct_of_pay=event.pay_pct,
+            source="payroll" if is_401k else "bank",
+            bucket=bucket,
+        )
+        person.add_contribution_plan(plan)
+    elif event.pay_pct is not None:
+        plan.set_rate(event.pay_pct)
+    else:
+        plan.set_amount(amount)
+    builder.model.event_log.add(Event(f"{person.name} changed the contribution to {event.account}"))
 
 
 def _refinance(builder: "_Builder", event: s.RefinanceEvent) -> None:

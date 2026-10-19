@@ -132,9 +132,13 @@ class TestPlan27PrDSpec(unittest.TestCase):
         data["people"][0]["social_security"]["fra_from_birth_year"] = True
         self.assertNotIn("ss_fra_by_birth_year", [code for code, _ in _codes(validate_spec(data))])
 
-    def test_pia_override_excludes_an_earnings_record(self):
+    def test_pia_override_excludes_a_synthesized_record(self):
+        # The dogfood fixes allow the statement's earnings_history with the override (it scales the override for
+        # the years not worked); a synthesized record is still exclusive with it.
         data = minimal()
         data["people"][0]["social_security"] = {"pia_override_monthly": 2000, "earnings_history": {2020: 1}}
+        spec_of(data)
+        data["people"][0]["social_security"] = {"pia_override_monthly": 2000, "assumed_career_start_age": 22}
         with self.assertRaises(ValueError):
             spec_of(data)
 

@@ -144,7 +144,7 @@ class HouseholdProfile(StrictModel):
             person_gender=person.gender.capitalize(),
             initial_salary=person.jobs[0].salary_annual if person.jobs else 0.0,
             initial_bank_balance=bank.balance if bank is not None else 0.0,
-            initial_spending=person.spending.amount_annual,
+            initial_spending=person.spending.amount_annual if person.spending is not None else 0.0,
             economy_scenario=spec.meta.scenario,
             children_ages=[spec.meta.start_year - child.birth_year for child in person.children],
             models_healthcare=bool(person.healthcare is not None and person.healthcare.medical_costs),

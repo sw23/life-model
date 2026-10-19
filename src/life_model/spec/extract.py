@@ -165,6 +165,7 @@ class _Extractor:
             seed=src.seed if src is not None else None,
             scenario=self.config.scenario,
             default_state=src.default_state if src is not None else None,
+            accepted_warnings=src.accepted_warnings if src is not None else None,
         )
 
     def economy(self) -> s.Economy | None:
@@ -214,6 +215,7 @@ class _Extractor:
                 id=self.item_id(c, f"{pid}_child{i + 1}" if id(c) in referenced else None),
                 name=c.name,
                 birth_year=c.birth_year,
+                birth_month=getattr(c, "birth_month", None),
                 care_expenses_annual=c.care_expenses_annual,
                 interest_annual=c.interest_annual,
                 dividends_annual=c.dividends_annual,
@@ -270,7 +272,9 @@ class _Extractor:
             **self.policies(person),
         )
 
-    def spending(self, spending) -> s.Spending:
+    def spending(self, spending) -> s.Spending | None:
+        if getattr(spending, "spec_omitted", False) and spending.base == 0 and not spending.categories:
+            return None
         categories = None
         if spending.categories:
             categories = {
@@ -314,6 +318,17 @@ class _Extractor:
     def policies(self, person) -> dict:
         from ..policies import MAX
 
+        def window(plan) -> dict[str, Any]:
+            written = getattr(plan, "spec_window", None)
+            if written is not None:  # built from a spec: the window as written
+                start, end, until_age = written
+                return {"start": start, "end": end, "until_age": until_age}
+
+            def text(period):
+                return None if period is None else f"{period[0]:04d}-{period[1]:02d}"
+
+            return {"start": text(plan.start), "end": text(plan.end)}
+
         plans = [
             s.ContributionPlan(
                 account=cast(str, self.item_id(plan.account)),
@@ -323,6 +338,7 @@ class _Extractor:
                 source=cast(Any, plan.source),
                 bucket=cast(Any, plan.bucket),
                 months=len(plan.months) if plan.months == tuple(range(1, len(plan.months) + 1)) else list(plan.months),
+                **window(plan),
             )
             for plan in person.contribution_plans
         ]
@@ -499,6 +515,7 @@ class _Extractor:
                     if self.spec_built
                     else (index == 0 and len(banks) > 1),
                     reserve=bank.reserve,
+                    joint=getattr(bank, "joint_owner", None) is not None,
                 )
             )
         for holding in person.fixed_income_holdings:
@@ -510,7 +527,8 @@ class _Extractor:
                     id=self.item_id(holding),
                     instrument=holding.kind,
                     name=None if holding.name == _DEFAULT_FIXED_NAMES[holding.kind] else holding.name,
-                    face=holding.balance,
+                    # A CD's face excludes its pre-start accrued interest (which is part of the balance).
+                    face=holding.balance - (holding.accrued_interest if holding.kind == "cd" else 0.0),
                     rate_pct=holding.rate_pct,
                     maturity=_ym(holding.maturity)
                     if holding.maturity is not None and holding.kind != "i_bond"
@@ -542,7 +560,7 @@ class _Extractor:
                     match_tiers=None
                     if account.match_tiers is None
                     else [s.MatchTier(match_pct=rate, up_to_pay_pct=width) for rate, width in account.match_tiers],
-                    match_on_bonus=account.match_on_bonus,
+                    bonus_is_plan_pay=account.bonus_is_plan_pay,
                     match_vesting_years=account.match_vesting_years,
                     after_tax_balance=account.after_tax_balance or None,
                     after_tax_basis=None
@@ -585,6 +603,7 @@ class _Extractor:
                     growth_pct=_growth(account._growth_rate_override),
                     dividend_yield_pct=account._dividend_yield_override,
                     reinvest_dividends=account.reinvest_dividends,
+                    joint=getattr(account, "joint_owner", None) is not None,
                     **_invest(account),
                 )
             )
@@ -806,6 +825,7 @@ class _Extractor:
             "origination": None if loan.origination is None else f"{loan.origination[0]}-{loan.origination[1]:02d}",
             "payments_made": None if made == 0 or made_from_origination is not None else made,
             "extra_principal_monthly": loan.extra_principal_monthly,
+            "schedule": getattr(loan, "schedule", "contract"),
         }
 
     def debts(self, person, housing: list | None = None) -> list:
@@ -963,6 +983,7 @@ class _Extractor:
                     max_missed_payments=_none_if(policy.max_missed_payments, life_cfg.default_max_missed_payments),
                     beneficiary=self.pid(policy.beneficiary) if policy.beneficiary is not None else None,
                     issue_year=_none_if(policy.policy_start_year, self.start),
+                    issue_month=getattr(policy, "issue_month", None),
                     cash_value=policy.cash_value or None,
                     loan_balance=policy.outstanding_loan_balance or None,
                     premiums_paid=_none_if(policy.total_premiums_paid, policy.cash_value),
@@ -1019,7 +1040,14 @@ class _Extractor:
             "earnings_test": ss.earnings_test,
         }
         if ss.pia_override is not None:
-            return s.SocialSecurity(claim_age=claim, pia_override_monthly=ss.pia_override, **flags)
+            history = (
+                {income.year: income.amount for income in ss.income_history}
+                if getattr(ss, "_statement_history", None)
+                else None
+            )
+            return s.SocialSecurity(
+                claim_age=claim, pia_override_monthly=ss.pia_override, earnings_history=history, **flags
+            )
         synthesized = getattr(ss, "spec_synthesized_history", None)
         if synthesized is not None and len(ss.income_history) == synthesized[1]:
             return s.SocialSecurity(claim_age=claim, assumed_career_start_age=synthesized[0], **flags)

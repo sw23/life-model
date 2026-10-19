@@ -387,6 +387,15 @@ class _Builder:
     def person(self, pid: str):
         return self.built.people[pid]
 
+    def start_spouse(self, person_spec: s.Person):
+        """The person's spouse by a marriage in effect at the start (a joint account's co-owner)."""
+        start = self.model.start_year
+        for marriage in self.spec.relationships.marriages:
+            if person_spec.id in marriage.spouses and (marriage.year is None or marriage.year <= start):
+                other = next(pid for pid in marriage.spouses if pid != person_spec.id)
+                return self.built.people[other]
+        raise ValueError(f"{person_spec.id}: a joint account needs a marriage in effect at the start")
+
     def job_agent(self, person_spec: s.Person, job_id: str | None):
         if job_id is None:
             return None
@@ -407,13 +416,18 @@ class _Builder:
         from ..people.person import Person, Spending
         from ..people.types import GenderAtBirth, MortalityMode
 
-        spending = Spending(
-            model=self.model,
-            base_annual=p.spending.amount_annual,
-            growth_pct=_growth(p.spending.growth_pct),
-            categories=_spending_lines(p.spending.categories),
-            schedule=[tuple(step) for step in p.spending.schedule] if p.spending.schedule else None,
-        )
+        if p.spending is None:
+            # A spouse whose partner's spending holds the household budget spends nothing of their own.
+            spending = Spending(model=self.model, base_annual=0.0, growth_pct=None)
+            spending.spec_omitted = True  # provenance for the extractor
+        else:
+            spending = Spending(
+                model=self.model,
+                base_annual=p.spending.amount_annual,
+                growth_pct=_growth(p.spending.growth_pct),
+                categories=_spending_lines(p.spending.categories),
+                schedule=[tuple(step) for step in p.spending.schedule] if p.spending.schedule else None,
+            )
         person = Person(
             family=self.family,
             name=p.name,
@@ -556,6 +570,7 @@ class _Builder:
             invest["allocation"] = dict(account.allocation_pct)
         if getattr(account, "expense_ratio_pct", None) is not None:
             invest["expense_ratio_pct"] = account.expense_ratio_pct
+        joint_owner = self.start_spouse(person_spec) if getattr(account, "joint", False) else None
         if kind == "bank":
             from ..account.bank import BankAccount
 
@@ -567,6 +582,8 @@ class _Builder:
                 interest_pct=_growth(account.interest_pct),
                 compounding=account.compounding,
                 reserve=account.reserve,
+                joint_owner=joint_owner,
+                joint_primary=account.primary and joint_owner is not None,
             )
         if kind == "fixed_income":
             from ..account.fixed_income import FixedIncomeHolding
@@ -607,7 +624,7 @@ class _Builder:
                 match_tiers=None
                 if account.match_tiers is None
                 else [(tier.match_pct, tier.up_to_pay_pct) for tier in account.match_tiers],
-                match_on_bonus=account.match_on_bonus,
+                bonus_is_plan_pay=account.bonus_is_plan_pay,
                 match_vesting_years=account.match_vesting_years,
                 **invest,
             )
@@ -638,6 +655,7 @@ class _Builder:
                 growth_pct=_growth(account.growth_pct),
                 dividend_yield_pct=account.dividend_yield_pct,
                 reinvest_dividends=account.reinvest_dividends,
+                joint_owner=joint_owner,
                 **invest,
             )
         if kind == "traditional_ira":
@@ -791,6 +809,7 @@ class _Builder:
             "payments_made": loan.payments_made,
             "remaining_months": loan.remaining_months,
             "extra_principal_monthly": loan.extra_principal_monthly,
+            "schedule": loan.schedule,
         }
 
     @staticmethod
@@ -936,6 +955,7 @@ class _Builder:
                 max_missed_payments=policy.max_missed_payments,
                 beneficiary=self.person(policy.beneficiary) if policy.beneficiary is not None else None,
                 issue_year=policy.issue_year,
+                issue_month=policy.issue_month,
                 cash_value=policy.cash_value or 0.0,
                 loan_balance=policy.loan_balance or 0.0,
                 premiums_paid=policy.premiums_paid,
@@ -1029,16 +1049,28 @@ class _Builder:
         from ..policies import MAX, ContributionPlan, RothConversionPolicy, SavingsPolicy
 
         for plan in p.contribution_plans or ():
-            person.add_contribution_plan(
-                ContributionPlan(
-                    self.built.items[plan.account],
-                    amount_annual=MAX if plan.max_out else plan.amount_annual,
-                    pct_of_pay=plan.pay_pct,
-                    source=plan.source,
-                    months=plan.months,
-                    bucket=plan.bucket,
-                )
+            account = self.built.items[plan.account]
+            end = plan.end
+            default_end = None
+            if plan.until_age is not None:
+                year, month = person.get_period_at_age(plan.until_age)
+                end = (year, month - 1) if month > 1 else (year - 1, 12)
+            elif end is None:
+                default_end = _college_end(account)
+                end = default_end
+            core_plan = ContributionPlan(
+                account,
+                amount_annual=MAX if plan.max_out else plan.amount_annual,
+                pct_of_pay=plan.pay_pct,
+                source=plan.source,
+                months=plan.months,
+                bucket=plan.bucket,
+                start=plan.start,
+                end=end,
             )
+            # Provenance for the extractor: the window as written (until_age, or no end for a 529's default).
+            core_plan.spec_window = (plan.start, plan.end, plan.until_age)
+            person.add_contribution_plan(core_plan)
         if p.savings_policy is not None:
             person.savings_policy = SavingsPolicy(
                 cash_floor=p.savings_policy.cash_floor, sweep_to=self.built.items[p.savings_policy.sweep_to]
@@ -1055,10 +1087,10 @@ class _Builder:
 
     # --- marriages ---
 
-    def marry(self, head, spouse, filing_status: str) -> None:
+    def marry(self, head, spouse, filing_status: str, *, log_event: bool = True) -> None:
         from ..tax.federal import FilingStatus
 
-        head.get_married(spouse)
+        head.get_married(spouse, log_event=log_event)
         if filing_status == "separate":
             head.filing_status = spouse.filing_status = FilingStatus.MARRIED_FILING_SEPARATELY
 
@@ -1128,6 +1160,7 @@ class _Builder:
                     dividends_annual=child.dividends_annual,
                     cost_annual=child.cost_override_annual,
                     college_cost_annual=child.college_cost_annual,
+                    birth_month=child.birth_month,
                 ),
             )
         for p, i, dependent in each("dependents"):
@@ -1177,7 +1210,9 @@ class _Builder:
         for marriage in spec.relationships.marriages:
             if marriage.year is None or marriage.year <= self.model.start_year:
                 head, spouse = (self.person(pid) for pid in marriage.spouses)
-                self.marry(head, spouse, marriage.filing_status)
+                # A marriage before the first simulated year (or undated) is starting state, not an event of
+                # the run; one dated in the start year is logged as that year's event.
+                self.marry(head, spouse, marriage.filing_status, log_event=marriage.year == self.model.start_year)
 
         life_events = ev.compile_events(self, timing)
         if life_events:
@@ -1205,6 +1240,21 @@ def _spending_lines(categories: "dict[str, s.SpendingCategory] | None"):
             essential=category.essential,
         )
     return lines
+
+
+def _college_end(account) -> "tuple[int, int] | None":
+    """The default last contribution month of a 529 plan for a child beneficiary: the month before the
+    child's college months start (``college_start_age`` birthday; January of that year without a birth
+    month). None for other accounts."""
+    from ..dependents.child import Child
+    from ..dependents.plan529 import Plan529
+
+    if not isinstance(account, Plan529) or not isinstance(account.beneficiary, Child):
+        return None
+    child = account.beneficiary
+    year = child.birth_year + child.model.config.dependents.college_start_age
+    month = child.birth_month or 1
+    return (year, month - 1) if month > 1 else (year - 1, 12)
 
 
 #: Earliest year a synthesized earnings record may start (SSA quarter-of-coverage table start).

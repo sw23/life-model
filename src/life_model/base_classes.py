@@ -56,6 +56,9 @@ class FinancialAccount(LifeModelAgent, ABC):
         self.person = person
         self._balance = float(balance)
         self.beneficiary = beneficiary
+        #: The co-owner of a joint account (a spouse), or None. Bank and brokerage accounts take it
+        #: (``joint_owner=``); see :meth:`income_owners` and ``Person.die``.
+        self.joint_owner: Person | None = None
         self.stat_balance_history = []
         if self.IN_NET_WORTH:
             self.model.ledger.post_opening(self, self._balance)
@@ -68,6 +71,19 @@ class FinancialAccount(LifeModelAgent, ABC):
     @owner.setter
     def owner(self, value: "Person") -> None:
         self.person = value
+
+    def income_owners(self) -> "list[tuple[Person, float]]":
+        """Who reports this account's income, with their shares: the owner, or both owners half and half
+        for a joint account while both are alive (it matters on separate returns)."""
+        joint = self.joint_owner
+        if joint is not None and not joint.is_deceased and not self.person.is_deceased:
+            return [(self.person, 0.5), (joint, 0.5)]
+        return [(self.person, 1.0)]
+
+    def add_income(self, income_type, amount: float, *, source: str) -> None:
+        """Book ``amount`` of this account's income on its owners' ledgers (split for a joint account)."""
+        for person, share in self.income_owners():
+            person.income.add(income_type, amount * share, source=source)
 
     @property
     def balance(self) -> float:
@@ -142,7 +158,8 @@ class Loan(LifeModelAgent, ABC):
     its statement shows it — an ``origination`` month (or ``payments_made``), the ``remaining_months``,
     the ``current_balance`` and the payment — and :func:`~life_model.debt.terms.resolve_loan_terms` fills in
     the rest and rejects inputs that contradict each other. ``extra_principal_monthly`` is paid with
-    every scheduled payment.
+    every scheduled payment. ``schedule="statement"`` trusts a current balance above the original schedule
+    (a loan behind on its payments) and amortizes from it.
     """
 
     @deprecated_arguments(LOAN_RENAMES)
@@ -160,10 +177,12 @@ class Loan(LifeModelAgent, ABC):
         payments_made: int | None = None,
         remaining_months: int | None = None,
         extra_principal_monthly: float = 0.0,
+        schedule: str = "contract",
     ):
         super().__init__(owner.model)
         self.person = owner
         self._set_terms(
+            schedule=schedule,
             as_of=(self.model.year, self.model.month),
             loan_amount=original_amount,
             yearly_interest_rate=rate_pct,
@@ -209,8 +228,10 @@ class Loan(LifeModelAgent, ABC):
         payments_made: int | None,
         remaining_months: int | None,
         extra_principal_monthly: float = 0.0,
+        schedule: str = "contract",
     ) -> None:
-        """Resolve and store the loan's terms (see :func:`~life_model.debt.terms.resolve_loan_terms`)."""
+        """Resolve and store the loan's terms (see :func:`~life_model.debt.terms.resolve_loan_terms`;
+        ``schedule="statement"`` trusts the statement's balance over the original schedule)."""
         from .debt.terms import resolve_loan_terms
 
         if yearly_interest_rate is None:
@@ -232,7 +253,10 @@ class Loan(LifeModelAgent, ABC):
             current_balance=principal,
             monthly_payment=monthly_payment,
             names=self.TERM_NAMES,
+            schedule=schedule,
         )
+        #: Which inputs define the schedule: ``"contract"`` (the original terms) or ``"statement"``.
+        self.schedule = schedule
         self.loan_amount = terms.original_amount
         self.yearly_interest_rate = yearly_interest_rate
         self.term_months = terms.term_months

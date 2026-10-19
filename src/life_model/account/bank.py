@@ -49,6 +49,8 @@ class BankAccount(FinancialAccount):
         interest_pct: float | None = None,
         compounding: str | None = None,
         reserve: bool = False,
+        joint_owner: Person | None = None,
+        joint_primary: bool = False,
     ):
         """Class modeling bank accounts
 
@@ -64,6 +66,13 @@ class BankAccount(FinancialAccount):
             reserve (bool, optional): An emergency reserve (Plan 27 D2/D4): income is not deposited here
                 and the household waterfall draws it only after every other source (the ``reserve``
                 step). Defaults to False.
+            joint_owner (Person, optional): The spouse who owns the account jointly with ``owner``. Either
+                spouse's income can be paid in (the joint owner's lands here when they have no spending bank
+                account of their own, or when ``joint_primary``), the joint owner can pay from it, its interest
+                is split half and half between their returns, and it passes to the survivor at a death,
+                outside the estate. It stays registered under ``owner``.
+            joint_primary (bool, optional): The joint owner's income is paid here even when they have bank
+                accounts of their own.
 
         Every argument after ``owner`` is keyword-only (positional use is deprecated, Plan 27 D8).
         """
@@ -73,6 +82,8 @@ class BankAccount(FinancialAccount):
         self.type = type
         #: Whether this is an emergency reserve (drawn last by the waterfall, never receives income).
         self.reserve = reserve
+        self.joint_owner = joint_owner
+        self.joint_primary = joint_primary
         bank_config = self.model.config.accounts.bank
         # An explicit interest_rate overrides the economy; None defers to the
         # economy's cash yield, re-read each year.
@@ -119,7 +130,7 @@ class BankAccount(FinancialAccount):
         self.stat_total_interest += interest
         self.model.ledger.post(interest, FlowKind.INTEREST, to_account=self, source=self.company, agent=self.person)
         if interest != 0:
-            self.person.income.add(IncomeType.INTEREST, interest, source="bank_interest")
+            self.add_income(IncomeType.INTEREST, interest, source="bank_interest")
 
     def collect_stats(self):
         # Year-end statistics, after the month's bills and the year's taxes were paid.

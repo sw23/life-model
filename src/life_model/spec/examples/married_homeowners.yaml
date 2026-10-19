@@ -10,6 +10,12 @@ meta:
   end_year: 2072
   # The flat DEFAULT state rate, chosen explicitly (Plan 31 D4: no silent fallback).
   default_state: DEFAULT
+  # Kept on purpose to keep the example small (a real household should model these instead):
+  # no retiree health insurance before Medicare or Medicare premiums after 65, and surplus cash
+  # left in the banks (no savings_policy sweep).
+  accepted_warnings:
+  - cash_not_invested
+  - no_health_coverage
 people:
 - id: john
   name: John
@@ -104,6 +110,10 @@ people:
   - id: junior
     name: Junior
     birth_year: 2015
+    # Child costs on top of the parents' spending (the configured bands, stated explicitly);
+    # the junior_college event adds room and board.
+    cost_override_annual: 8000
+    college_cost_annual: 28000
 - id: jane
   name: Jane
   age: 45

@@ -135,6 +135,62 @@ def _cell(text: str) -> str:
     return " ".join(text.replace("|", "\\|").split())
 
 
+def child_cost_bands() -> list[tuple[str, str, float, str]]:
+    """``(band, ages, start-year dollars a year, note)`` rows of the packaged config's child cost bands (the
+    costs a child gets unless ``cost_override_annual`` / ``college_cost_annual`` say otherwise)."""
+    from ..config.financial_config import FinancialConfig
+    from ..dependents.child import Child
+
+    dep = FinancialConfig().dependents
+    childcare_end = Child.CHILDCARE_END_AGE
+    college_end = dep.college_start_age + dep.college_years - 1
+    return [
+        (
+            "childcare",
+            f"0-{childcare_end - 1}",
+            float(dep.childcare_annual_cost),
+            "counts as dependent care expenses (credit, dependent-care FSA); replaced by cost_override_annual",
+        ),
+        (
+            "school age",
+            f"{childcare_end}-{dep.adult_age - 1}",
+            float(dep.school_age_annual_cost),
+            "replaced by cost_override_annual",
+        ),
+        (
+            "college",
+            f"{dep.college_start_age}-{college_end}",
+            float(dep.college_annual_cost),
+            "paid from the child's 529 plans first; replaced by college_cost_annual (0: no college)",
+        ),
+    ]
+
+
+def _child_bands_section() -> list[str]:
+    lines = [
+        "### Child cost bands\n",
+        "<!-- Generated from the packaged config (dependents in financial_defaults.yaml). -->\n",
+        (
+            "What a child costs unless the spec says otherwise, in start-year dollars a year, grown with inflation "
+            "and charged a twelfth a month by the child's exact age (`birth_month`; January when unset). These "
+            "costs come **on top of** the person's `spending.amount_annual`, which excludes modeled child costs: "
+            "when the household budget already includes the child, set `cost_override_annual: 0` (and "
+            "`college_cost_annual` to the planned amount, 0 for none). The validator warns about every band a "
+            "child gets by default.\n"
+        ),
+        "| Band | Ages | Default cost (USD/year) | Note |",
+        "|---|---|---|---|",
+    ]
+    for band, ages, amount, note in child_cost_bands():
+        lines.append(f"| {band} | {ages} | ${amount:,.0f} | {_cell(note)} |")
+    lines.append("")
+    return lines
+
+
+#: Generated sections appended after a model's table.
+_EXTRA_SECTIONS = {"Child": _child_bands_section}
+
+
 def render_markdown() -> str:
     """The full ``docs/household-spec.md`` text."""
     lines = [_INTRO]
@@ -170,4 +226,7 @@ def render_markdown() -> str:
             ]
             lines.append("| " + " | ".join(_cell(c) for c in row) + " |")
         lines.append("")
+        extra_section = _EXTRA_SECTIONS.get(model.__name__)
+        if extra_section is not None:
+            lines += extra_section()
     return "\n".join(lines).rstrip() + "\n"

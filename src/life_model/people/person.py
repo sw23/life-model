@@ -741,7 +741,26 @@ class Person(LifeModelAgent):
         return desc
 
     @property
+    def joint_bank_accounts(self) -> list:
+        """Bank accounts titled to the spouse that this person owns jointly (``joint_owner``)."""
+        spouse = self.spouse
+        if spouse is None:
+            return []
+        return [a for a in spouse.bank_accounts if getattr(a, "joint_owner", None) is self]
+
+    @property
+    def usable_bank_accounts(self) -> list:
+        """The bank accounts this person can pay from: their own, then the joint ones titled to the spouse."""
+        return [*self.bank_accounts, *self.joint_bank_accounts]
+
+    @property
+    def usable_bank_balance(self) -> float:
+        """Spendable (non-reserve) cash in :attr:`usable_bank_accounts`."""
+        return sum(a.balance for a in self.usable_bank_accounts if not getattr(a, "reserve", False))
+
+    @property
     def bank_account_balance(self) -> float:
+        """Balances of this person's own bank accounts (joint ones titled to the spouse are the spouse's)."""
         return sum(x.balance for x in self.bank_accounts)
 
     @property
@@ -797,8 +816,8 @@ class Person(LifeModelAgent):
             float: Amount that could not be deducted.
         """
         remaining = amount
-        # Emergency-reserve accounts last.
-        for account in sorted(self.bank_accounts, key=lambda a: bool(getattr(a, "reserve", False))):
+        # Emergency-reserve accounts last; joint accounts titled to the spouse after this person's own.
+        for account in sorted(self.usable_bank_accounts, key=lambda a: bool(getattr(a, "reserve", False))):
             if remaining <= 0:
                 break
             taken = account.withdraw(remaining)
@@ -817,12 +836,19 @@ class Person(LifeModelAgent):
 
     @property
     def primary_bank_account(self):
-        """The bank account income is paid into: the first that is not an emergency reserve (else the
-        first), or None without a bank account."""
+        """The bank account income is paid into: a joint account titled to the spouse marked
+        ``joint_primary``, else the first own account that is not an emergency reserve, else the first
+        joint one, else the first own account; None without a bank account."""
+        joint = [a for a in self.joint_bank_accounts if not getattr(a, "reserve", False)]
+        for account in joint:
+            if getattr(account, "joint_primary", False):
+                return account
         accounts = self.bank_accounts
         for account in accounts:
             if not getattr(account, "reserve", False):
                 return account
+        if joint:
+            return joint[0]
         return accounts[0] if accounts else None
 
     @property
@@ -1349,12 +1375,15 @@ class Person(LifeModelAgent):
 
         return TaxUnit([self]).get_income_taxes_due(additional_income)
 
-    def get_married(self, spouse: "Person", link_spouse: bool = True):
+    def get_married(self, spouse: "Person", link_spouse: bool = True, *, log_event: bool = True):
         """Get married.
 
         Args:
             spouse (Person): Spouse to get married to.
             link_spouse (bool, optional): Whether to call get_married on the spouse object as well. Defaults to True.
+            log_event (bool, optional): Log a ``married`` event (keyword-only). False for a marriage that is
+                part of the starting state (it happened before the first simulated year), so the event list
+                does not report it as something that happened in the run.
         """
         self.spouse = spouse
         self.filing_status = FilingStatus.MARRIED_FILING_JOINTLY
@@ -1372,8 +1401,9 @@ class Person(LifeModelAgent):
                         self.family.members.append(member)
                 vacated_family.members = []
             spouse.get_married(self, False)
-            event_str = f"{self.name} and {spouse.name} got married at age {self.age} and {spouse.age}"
-            self.model.event_log.add(Event(EventKind.MARRIED, person=self, message=event_str, spouse=spouse.name))
+            if log_event:
+                event_str = f"{self.name} and {spouse.name} got married at age {self.age} and {spouse.age}"
+                self.model.event_log.add(Event(EventKind.MARRIED, person=self, message=event_str, spouse=spouse.name))
 
     def add_child(self, name: str, birth_year: int | None = None) -> "Child":
         """Add a child dependent to this person.
@@ -1538,6 +1568,9 @@ class Person(LifeModelAgent):
         spouse = self.spouse if (self.spouse is not None and not self.spouse.is_deceased) else None
         inheritor = spouse if spouse is not None else self._find_beneficiary()
 
+        # 1b. Joint accounts pass to the surviving co-owner by right of survivorship, outside the estate.
+        self._settle_joint_accounts()
+
         # 2. Life-insurance death benefits pay out to the beneficiary; policies then close (a
         #    whole-life policy's cash value is absorbed by the death benefit).
         for policy in list(self.life_insurance_policies):
@@ -1586,6 +1619,45 @@ class Person(LifeModelAgent):
 
         # 6. Remove the deceased (and any now-empty owned agents) from the simulation.
         self._remove_from_simulation()
+
+    def _settle_joint_accounts(self) -> None:
+        """Joint bank and brokerage accounts at this person's death: one titled to this person passes to the
+        surviving joint owner (registry and owner move; no money moves), one titled to the spouse becomes the
+        spouse's alone. A brokerage account's basis steps up on the decedent's half (IRC §1014(b)(9),
+        §2040(b))."""
+        from ..account.brokerage import BrokerageAccount
+
+        registries = self.model.registries
+        for registry in (registries.bank_accounts, registries.brokerage_accounts):
+            for account in list(registry.get_all_items()):
+                joint = getattr(account, "joint_owner", None)
+                if joint is None:
+                    continue
+                if account.person is self and not joint.is_deceased:
+                    if isinstance(account, BrokerageAccount):
+                        account.step_up_basis_at_death(0.5)
+                    registry.unregister(self, account)
+                    registry.register(joint, account)
+                    account.person = joint
+                    account.joint_owner = None
+                    if hasattr(account, "joint_primary"):
+                        account.joint_primary = False
+                    self.model.event_log.add(
+                        Event(
+                            EventKind.INHERITANCE,
+                            person=joint,
+                            amount=account.balance,
+                            account=account,
+                            cause=f"joint account with {self.name} (right of survivorship)",
+                            message=f"{self.name}'s joint {type(account).__name__} passed to {joint.name}",
+                        )
+                    )
+                elif joint is self:
+                    if isinstance(account, BrokerageAccount):
+                        account.step_up_basis_at_death(0.5)
+                    account.joint_owner = None
+                    if hasattr(account, "joint_primary"):
+                        account.joint_primary = False
 
     def _find_beneficiary(self) -> Optional["Person"]:
         """Non-spouse beneficiary: an explicit designation, else the first surviving family member."""

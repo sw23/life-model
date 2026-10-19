@@ -39,6 +39,20 @@ Level = Literal["error", "warning"]
 ERROR: Level = "error"
 WARNING: Level = "warning"
 
+#: Warnings about a costly default the spec leaves in place (an assumption to confirm and report, not a
+#: typing mistake): :func:`validate_spec` returns them only with ``include_assumptions=True``, which the
+#: command line, ``life_model.validate`` / ``run`` / ``build`` and the MCP tools pass. Library callers that
+#: generate specs (the RL environment, the dashboard) get the original warnings only.
+ASSUMPTION_CODES = frozenset(
+    {
+        "default_child_costs",
+        "child_birth_month_assumed",
+        "no_health_coverage",
+        "cash_not_invested",
+        "ss_estimate_assumes_work",
+    }
+)
+
 #: Adults (for the "two adults not married" warning) are at least this old.
 ADULT_AGE = 18
 #: Relative difference between an entered mortgage balance and the amortized one that warns.
@@ -175,12 +189,20 @@ def _schema_findings(error: ValidationError) -> list[Finding]:
     return findings
 
 
-def validate_spec(spec: s.HouseholdSpec | dict | str, *, config: FinancialConfig | None = None) -> list[Finding]:
+def validate_spec(
+    spec: s.HouseholdSpec | dict | str,
+    *,
+    config: FinancialConfig | None = None,
+    include_accepted: bool = False,
+    include_assumptions: bool = False,
+) -> list[Finding]:
     """Validate a spec (a ``HouseholdSpec``, a dict, or JSON text); returns every finding.
 
     Raw data that fails the schema returns the schema errors (the semantic checks need a valid
     spec). ``config`` supplies the state packs and Social Security ages (packaged defaults when
-    None).
+    None). Warnings whose code is in ``meta.accepted_warnings`` are dropped unless
+    ``include_accepted``; the assumption warnings (:data:`ASSUMPTION_CODES`) are returned only with
+    ``include_assumptions``.
     """
     if not isinstance(spec, s.HouseholdSpec):
         try:
@@ -196,6 +218,11 @@ def validate_spec(spec: s.HouseholdSpec | dict | str, *, config: FinancialConfig
     findings += not_yet_supported_findings(spec)
     findings += fraction_percent_findings(spec)
     findings += _SpecChecker(spec, config).run()
+    if not include_assumptions:
+        findings = [f for f in findings if f.code not in ASSUMPTION_CODES]
+    if not include_accepted:
+        accepted = set(spec.meta.accepted_warnings or ())
+        findings = [f for f in findings if not (f.level == WARNING and f.code in accepted)]
     return findings
 
 
@@ -230,7 +257,174 @@ class _SpecChecker:
         self.check_actuals()
         self.check_withholding_inputs()
         self.check_tax_inputs()
+        self.check_children()
+        self.check_retirement_gaps()
+        self.check_cash_sweep()
         return self.findings
+
+    # --- dogfood: what an early retiree and a long run silently leave out ---
+
+    def _birth(self, person: s.Person) -> tuple[int, int]:
+        if person.birth is not None:
+            year, month = (int(part) for part in person.birth.split("-"))
+            return year, month
+        return self.start - person.age, 1
+
+    def _year_at(self, person: s.Person, age: float) -> int:
+        year, month = self._birth(person)
+        return (year * 12 + month - 1 + round(age * 12)) // 12
+
+    def check_retirement_gaps(self) -> None:
+        """Warn when a worker retiring before Medicare has no health coverage cost before 65 and no Medicare
+        after, and when an SSA statement's PIA override (which assumes work until full retirement age) meets an
+        earlier retirement without the earnings record that would scale it."""
+        from ..insurance.social_security import full_retirement_age
+
+        medicare_age = self.config.healthcare.medicare.eligibility_age
+        for i, p in enumerate(self.spec.people):
+            path = f"people[{i}]"
+            works = bool(p.jobs) or p.self_employment is not None
+            retire_year = self._year_at(p, p.retirement_age)
+            # (retirement_age below the current age with a job is already an error: retirement_before_age)
+            if works and p.age <= p.retirement_age < medicare_age and retire_year <= self.end:
+                care = p.healthcare
+                has_policy = any(policy.kind == "health" for policy in p.insurance)
+                has_costs = care is not None and (care.medical_costs or care.medical_costs_annual is not None)
+                gaps = []
+                if not has_policy and not has_costs:
+                    gaps.append(
+                        f"no health coverage cost from retirement at {p.retirement_age:g} to {medicare_age} "
+                        "(payroll premiums stop with the job)"
+                    )
+                if (care is None or not care.medicare) and self._year_at(p, medicare_age) <= self.end:
+                    gaps.append(f"no Medicare premiums from {medicare_age}")
+                if gaps:
+                    self.warn(
+                        f"{path}.healthcare",
+                        f"{p.name} retires before Medicare and the spec has " + " and ".join(gaps) + ".",
+                        f"add insurance {{kind: health, premium_annual: <quote>, coverage_start_age: "
+                        f"{int(p.retirement_age)}, coverage_end_age: {medicare_age - 1}}} for the years before "
+                        "Medicare: for ACA marketplace coverage add marketplace: {slcsp_monthly: <benchmark "
+                        "premium>, advance_monthly: estimate} (the premium tax credit then offsets the premium "
+                        "on the return), or enter a COBRA or retiree plan's premium; and healthcare: "
+                        "{medicare: true} from 65 (plus medical_costs: true for out-of-pocket costs); or accept "
+                        "it (meta.accepted_warnings: [no_health_coverage]).",
+                        "no_health_coverage",
+                    )
+            ss = p.social_security
+            if ss is not None and ss.pia_override_monthly is not None and ss.earnings_history is None and works:
+                birth_year = self._birth(p)[0]
+                fra = (
+                    full_retirement_age(birth_year, self.config)
+                    if ss.fra_from_birth_year
+                    else (self.config.social_security.normal_retirement_age)
+                )
+                if p.retirement_age < fra:
+                    self.warn(
+                        f"{path}.social_security.pia_override_monthly",
+                        f"the SSA statement's estimate assumes {p.name} keeps working at the latest earnings until "
+                        f"full retirement age ({fra:g}), but they retire at {p.retirement_age:g}: the override "
+                        "overstates the benefit (a retirement-age change does not move it).",
+                        "add earnings_history (the statement's earnings record): the override is then scaled for "
+                        "the years not worked; or reduce the override, or accept it (meta.accepted_warnings: "
+                        "[ss_estimate_assumes_work]).",
+                        "ss_estimate_assumes_work",
+                    )
+
+    #: A bank yield (APR, percent) below this counts as low for the surplus-cash warning.
+    LOW_CASH_YIELD_PCT = 1.0
+    #: Runs at least this long get the surplus-cash warning.
+    LONG_RUN_YEARS = 10
+
+    def check_cash_sweep(self) -> None:
+        """Warn when nobody sweeps surplus cash and the bank pays a low yield over a long run: income left after
+        the bills piles up in checking (the engine never invests it on its own)."""
+        if self.end - self.start + 1 < self.LONG_RUN_YEARS:
+            return
+        if any(p.savings_policy is not None for p in self.spec.people):
+            return
+        economy_yield = float(getattr(self.config.economy, "cash_yield", 0.0) or 0.0)
+        low = []
+        for p in self.spec.people:
+            for a in p.accounts:
+                if a.kind != "bank" or a.reserve:
+                    continue
+                rate = economy_yield if a.interest_pct == "economy" else float(a.interest_pct)
+                if rate < self.LOW_CASH_YIELD_PCT:
+                    low.append(f"{p.name}'s {a.company} {a.type} at {rate:g}%")
+        if low:
+            self.warn(
+                "people[*].savings_policy",
+                "no one has a savings_policy, so surplus income stays in the bank for the whole run, here "
+                + ", ".join(low)
+                + ": over a long run it piles up as low-yield cash (net worth and peak-year answers depend on it).",
+                "add savings_policy: {cash_floor: <dollars to keep>, sweep_to: <a brokerage, IRA or savings account "
+                "id>} to invest cash above the floor every year; or keep it on purpose (meta.accepted_warnings: "
+                "[cash_not_invested]) and say so in the assumptions.",
+                "cash_not_invested",
+            )
+
+    # --- children (dogfood: default band costs stack on top of spending) ---
+
+    def check_children(self) -> None:
+        """Warn about every configured child-cost band a child gets by default (they come on top of the
+        person's spending, which excludes modeled child costs), and about care_expenses_annual without a
+        birth month."""
+        from ..dependents.child import Child
+
+        dep = self.config.dependents
+        bands = [
+            ("childcare", 0, Child.CHILDCARE_END_AGE - 1, dep.childcare_annual_cost, "cost_override_annual"),
+            (
+                "school age",
+                Child.CHILDCARE_END_AGE,
+                dep.adult_age - 1,
+                dep.school_age_annual_cost,
+                "cost_override_annual",
+            ),
+            (
+                "college",
+                dep.college_start_age,
+                dep.college_start_age + dep.college_years - 1,
+                dep.college_annual_cost,
+                "college_cost_annual",
+            ),
+        ]
+        for p_index, person in enumerate(self.spec.people):
+            for c_index, child in enumerate(person.children):
+                path = f"people[{p_index}].children[{c_index}]"
+                parts = []
+                for band, low, high, amount, override in bands:
+                    if getattr(child, override) is not None or amount <= 0:
+                        continue
+                    first = max(self.start, child.birth_year + low)
+                    last = min(self.end, child.birth_year + high)
+                    if first > last:
+                        continue
+                    span = f"{first}" if first == last else f"{first}-{last}"
+                    parts.append(f"{band} ${amount:,.0f}/yr (ages {low}-{high}, {span})")
+                if parts:
+                    self.warn(
+                        path,
+                        f"{child.name} gets the configured child costs by default, in start-year dollars and on top "
+                        f"of {person.name}'s spending (spending excludes modeled child costs): "
+                        + "; ".join(parts)
+                        + ".",
+                        "if spending.amount_annual already includes the child, set cost_override_annual: 0 (or the "
+                        "child's own yearly cost); set college_cost_annual to the planned yearly cost (0 for no "
+                        "college); or keep the defaults on purpose (meta.accepted_warnings: [default_child_costs]).",
+                        "default_child_costs",
+                    )
+                if child.care_expenses_annual > 0 and child.birth_month is None:
+                    year = child.birth_year + Child.CARE_CREDIT_AGE
+                    if self.start <= year <= self.end:
+                        self.warn(
+                            f"{path}.birth_month",
+                            f"care_expenses_annual stops at {child.name}'s 13th birthday, in {year}; without "
+                            "birth_month it is taken to be in January, so that year's care is dropped.",
+                            f"set birth_month (1-12): care is then paid through the month before the birthday in {year}.",
+                            "child_birth_month_assumed",
+                        )
 
     # --- Plan 31 tax inputs ---
 
@@ -425,10 +619,34 @@ class _SpecChecker:
         bank_added_later = {
             e.person for e in self.spec.events if isinstance(e, s.AddAccountEvent) and e.account.kind == "bank"
         }
+        spouse_at_start = self.start_spouses()
         for i, p in enumerate(self.spec.people):
             path = f"people[{i}]"
             banks = [a for a in p.accounts if a.kind == "bank"]
-            if not banks:
+            spouse = self.people.get(spouse_at_start.get(p.id, ""))
+            joint_banks = [
+                a
+                for a in (spouse.accounts if spouse is not None else [])
+                if a.kind == "bank" and a.joint and not a.reserve
+            ]
+            for j, account in enumerate(p.accounts):
+                if getattr(account, "joint", False) and p.id not in spouse_at_start:
+                    self.error(
+                        f"{path}.accounts[{j}].joint",
+                        f"a joint account needs {p.name}'s spouse: a marriage in relationships.marriages in effect at "
+                        f"the start ({self.start} or earlier).",
+                        "add the marriage, or remove joint and list the account under its owner.",
+                        "joint_without_spouse",
+                    )
+            if joint_banks and any(a.primary for a in joint_banks) and any(a.primary for a in banks):
+                self.error(
+                    f"{path}.accounts",
+                    f"{p.name} has a primary bank account and also shares a primary joint account with their spouse "
+                    "(primary for both): income can go to only one.",
+                    "mark only one of them primary.",
+                )
+            # Without banks of their own, a spouse's joint account receives this person's income and pays their bills.
+            if not banks and not joint_banks:
                 hint = (
                     " (an add_account event opens one later, but income before then is lost)"
                     if p.id in bank_added_later
@@ -437,10 +655,11 @@ class _SpecChecker:
                 self.error(
                     f"{path}.accounts",
                     f"{p.name} has no bank account{hint}; income would go to an untracked cash bucket.",
-                    "add {kind: bank, balance: ...}.",
+                    "add {kind: bank, balance: ...} (0 for an account the statements do not show), or, for a married "
+                    "couple sharing a joint account, mark the spouse's account joint: true.",
                     "no_bank_account",
                 )
-            if banks and all(a.reserve for a in banks):
+            if banks and all(a.reserve for a in banks) and not joint_banks:
                 self.error(
                     f"{path}.accounts",
                     f"{p.name}'s only bank accounts are emergency reserves; income needs a spending account.",
@@ -491,7 +710,19 @@ class _SpecChecker:
                         f"set social_security.claim_age to {min_claim} or later.",
                         "ss_claim_too_early",
                     )
-            if p.spending.growth_pct == 0:
+            if p.spending is None:
+                spouses = {
+                    q for m in self.spec.relationships.marriages if p.id in m.spouses for q in m.spouses if q != p.id
+                }
+                if not any(q in self.people and self.people[q].spending is not None for q in spouses):
+                    self.error(
+                        f"{path}.spending",
+                        f"{p.name} has no spending and no spouse whose spending holds the household budget.",
+                        "add spending: {amount_annual: ..., growth_pct: economy} (the household's living spending; "
+                        "a married couple may put the whole budget on one spouse).",
+                        "missing_spending",
+                    )
+            elif p.spending.growth_pct == 0:
                 self.warn(
                     f"{path}.spending.growth_pct",
                     "spending grows 0%/yr (the core default), so it shrinks in real terms.",
@@ -546,6 +777,18 @@ class _SpecChecker:
             for j, debt in enumerate(p.debts):
                 if isinstance(debt, s.CarLoan | s.StudentLoan):
                     self.check_loan(debt, f"{path}.debts[{j}]")
+                if (
+                    isinstance(debt, s.StudentLoan)
+                    and debt.repayment_plan == "repayment_assistance_plan"
+                    and debt.loan_type in ("private", "unknown")
+                ):
+                    self.error(
+                        f"{path}.debts[{j}].loan_type",
+                        f"the Repayment Assistance Plan is for federal loans; loan_type is {debt.loan_type}.",
+                        "set loan_type to the federal program on the statement (federal_subsidized, "
+                        "federal_unsubsidized or plus), or use repayment_plan: standard.",
+                        "rap_needs_federal_loan",
+                    )
                 if isinstance(debt, s.HomeEquityLine) and debt.home not in home_ids:
                     self.error(
                         f"{path}.debts[{j}].home",
@@ -707,6 +950,18 @@ class _SpecChecker:
                 self.error(f"{ppath}.source", f"{p.name} has no W-2 job to deduct the HSA contribution from.")
             if plan.max_out and kind not in limited:
                 self.error(f"{ppath}.max_out", f"a {kind} account has no annual limit to max out.")
+            last = None
+            if plan.until_age is not None:
+                last = (self._year_at(p, plan.until_age), "until_age")
+            elif plan.end is not None:
+                last = (int(str(plan.end).split("-")[0]), "end")
+            if last is not None and last[0] < self.start:
+                self.warn(
+                    f"{ppath}.{last[1]}",
+                    f"the plan ends in {last[0]}, before the start year {self.start}: it never contributes.",
+                    "remove the plan, or fix its end / until_age.",
+                    "contribution_plan_never_runs",
+                )
         policy = p.savings_policy
         if policy is not None:
             account = accounts.get(policy.sweep_to)
@@ -762,8 +1017,20 @@ class _SpecChecker:
                 )
 
     def check_payroll(self, p: s.Person, path: str) -> None:
-        """Payroll HSA money needs an HSA; a health FSA over the year's limit is cut to it."""
+        """Payroll HSA money needs an HSA; a health FSA over the year's limit is cut to it; employer HSA money
+        is entered once."""
         has_hsa = any(a.kind == "hsa" for a in p.accounts)
+        payroll_employer = any(job.payroll is not None and job.payroll.hsa_employer_annual for job in p.jobs)
+        for j, account in enumerate(p.accounts):
+            if account.kind == "hsa" and account.employer_contribution_annual and payroll_employer:
+                self.error(
+                    f"{path}.accounts[{j}].employer_contribution_annual",
+                    "employer HSA money is given twice: the account's employer_contribution_annual (a yearly "
+                    "deposit at each year start) and the job's payroll.hsa_employer_annual (per paycheck) would "
+                    "both be paid.",
+                    "keep payroll.hsa_employer_annual (preferred) and remove employer_contribution_annual.",
+                    "hsa_employer_twice",
+                )
         fsa_limit = self.config.tax_year(self.start).limit_health_fsa
         for j, job in enumerate(p.jobs):
             payroll = job.payroll
@@ -840,15 +1107,12 @@ class _SpecChecker:
                 current_balance=m.balance,
                 monthly_payment=payment,
                 names=_LOAN_FIELD_NAMES,
+                schedule=m.schedule,
             )
         except LoanTermsError as exc:
             field = exc.field
-            self.error(
-                f"{path}.{field}",
-                str(exc).split(": ", 1)[-1],
-                "recheck it against the statement (see docs/units-and-conventions.md, loans).",
-                "loan_terms",
-            )
+            message = str(exc).split(": ", 1)[-1]
+            self.error(f"{path}.{field}", message, _loan_fix(field, message, m), "loan_terms")
             return False
         return True
 
@@ -906,6 +1170,16 @@ class _SpecChecker:
             )
 
     # --- marriages and events ---
+
+    def start_spouses(self) -> dict[str, str]:
+        """Person id -> spouse id for the marriages in effect at the start."""
+        out: dict[str, str] = {}
+        for marriage in self.spec.relationships.marriages:
+            if marriage.year is None or marriage.year <= self.start:
+                a, b = marriage.spouses
+                out.setdefault(a, b)
+                out.setdefault(b, a)
+        return out
 
     def check_marriages(self) -> None:
         married: dict[str, str] = {}
@@ -1018,6 +1292,22 @@ class _SpecChecker:
                         f"one-time contributions to a {target[2].kind} account are not supported.",
                         "use the 401k's contribution percentages, or a brokerage/IRA/HSA/529/bank account.",
                     )
+            if isinstance(event, s.StopContributionEvent | s.ChangeContributionEvent):
+                target = item_ids.get(event.account)
+                if target is None or target[1] != "accounts" or target[0] != event.person:
+                    self.error(
+                        f"{path}.account",
+                        f"unknown account {event.account!r} (one of the event person's account ids)",
+                        code="unknown_reference",
+                    )
+                else:
+                    kind = target[2].kind
+                    if event.bucket is not None and kind != "401k":
+                        self.error(f"{path}.bucket", "bucket is for 401k accounts.")
+                    if kind in ("pension", "annuity", "inherited_pretax", "trust", "daf"):
+                        self.error(f"{path}.account", f"recurring contributions to a {kind} account are not supported.")
+                    if kind == "401k" and target[2].job is None and isinstance(event, s.ChangeContributionEvent):
+                        self.error(f"{path}.account", "a 401k without a job takes no contributions.")
             if isinstance(event, s.ConvertToRothEvent) and event.person in self.people:
                 self.check_conversion_refs(
                     self._person_accounts(self.people[event.person]), event.source, event.target, path
@@ -1084,6 +1374,47 @@ class _SpecChecker:
                 "use growth_pct: economy for accounts that should follow market returns.",
                 "fixed_growth",
             )
+
+
+def _loan_fix(field: str, message: str, loan) -> str:
+    """The Fix of a loan_terms error: field combinations that validate."""
+    escrow = " (a mortgage: the statement total with escrow_monthly)" if hasattr(loan, "escrow_monthly") else ""
+    if field == "balance" and "above" in message:
+        return (
+            "if the statement's balance is right and the loan is behind its schedule (late payments, a deferral), "
+            "add schedule: statement and keep balance and rate_pct: it pays the contract payment of original_amount "
+            "over the term, or payment_monthly / remaining_months when given; or drop original_amount, term_* and "
+            "origination and give balance + rate_pct + payment_monthly (or + remaining_months). Otherwise recheck "
+            "original_amount, rate_pct, term_* and origination against the statement (a lower balance is a prepaid "
+            "loan and validates as is)."
+        )
+    if field == "balance":
+        return (
+            "give original_amount + rate_pct + term_years (or term_months) + origination (or payments_made); or "
+            "balance + rate_pct + remaining_months (or payment_monthly)."
+        )
+    if field == "payment_monthly" and "does not pay" in message:
+        return (
+            f"payment_monthly is principal and interest{escrow}; or drop remaining_months (the payment then sets the "
+            "payoff date), or drop payment_monthly (computed from balance over remaining_months)."
+        )
+    if field == "payment_monthly" and "never pays" in message:
+        return "recheck payment_monthly (principal and interest) and rate_pct, or give remaining_months instead."
+    if field == "payment_monthly":
+        return "give term_years / term_months (with original_amount), remaining_months, or payment_monthly."
+    if field == "remaining_months":
+        return (
+            "drop remaining_months (it follows from the term and origination); or drop term_* and origination and "
+            "keep balance + rate_pct + remaining_months; if the lender extended the loan (a deferral), add schedule: "
+            "statement with balance + remaining_months."
+        )
+    if field == "payments_made":
+        return "give origination or payments_made, not both."
+    if field == "origination" and "after the as-of" in message:
+        return "a loan taken out after the start belongs in an event (or start the spec later)."
+    if "exceed" in message:
+        return "the loan is paid off by the start: remove it, or recheck term_* and origination."
+    return "recheck it against the statement (see docs/units-and-conventions.md, loans)."
 
 
 #: Core argument names (as :func:`~life_model.debt.terms.resolve_loan_terms` reports them) to spec fields.
@@ -1177,7 +1508,7 @@ def validate_model(model) -> list[Finding]:
                 None,
                 "unknown_state",
             )
-        if not person.bank_accounts:
+        if not person.usable_bank_accounts:
             add(
                 ERROR,
                 f"{path}.bank_accounts",

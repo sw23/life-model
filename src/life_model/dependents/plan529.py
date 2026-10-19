@@ -179,7 +179,11 @@ class Plan529(Investment):
             self.qualified_withdrawals += actual_withdrawal
             # Qualified withdrawals are tax-free; deposit the cash to the owner.
             self.person.receive_cash(
-                actual_withdrawal, source="529 qualified withdrawal", kind=FlowKind.WITHDRAWAL, from_account=self
+                actual_withdrawal,
+                source="529 qualified withdrawal",
+                kind=FlowKind.WITHDRAWAL,
+                from_account=self,
+                cause=self.model.ledger.current_cause or "qualified education expenses (tax-free)",
             )
 
         return actual_withdrawal

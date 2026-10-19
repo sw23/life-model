@@ -344,8 +344,11 @@ remains.
 `accounts.brokerage.dividend_yield` splits a brokerage account's return into untaxed
 price appreciation and a taxable qualified dividend that is reinvested at full basis.
 The yield is carved *out of* the total return rather than added on top, so total
-return is unchanged — only the tax character of that slice moves. It defaults to `0`,
-which keeps accounts pure-appreciation.
+return is unchanged — only the tax character of that slice moves. It is `0` in the
+packaged defaults, which keeps accounts pure-appreciation. A spec brokerage account's
+`dividend_yield_pct` overrides it per account, and an account that leaves
+`dividend_yield_pct` unset uses this configured value (so 0% unless a config or
+scenario changes it).
 
 States tax capital gains as ordinary income by default; set `capital_gains_taxable:
 false` on a state pack for the exceptions.

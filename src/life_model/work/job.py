@@ -273,7 +273,7 @@ class Job(LifeModelAgent):
             fsa = min(self.payroll.dependent_care_fsa_annual / 12, gross_income)
         if self.retirement_account is not None:
             account = self.retirement_account
-            # Plan pay: base salary, plus the bonus when the plan counts it (match_on_bonus).
+            # Plan pay: base salary, plus the bonus when the plan counts it (bonus_is_plan_pay).
             compensation = account.plan_compensation(base, bonus)
             # Elective deferrals share one 402(g) limit across all of the person's jobs, so two
             # jobs can no longer each defer the full limit.
@@ -515,7 +515,13 @@ class Job(LifeModelAgent):
             elective_room=self.owner.remaining_401k_elective_room() + booked.elective if account is not None else 0.0,
         )
         pretax, roth, employer = plan.elective_pretax, plan.elective_roth, plan.employer
-        cash = self.owner.bank_account_balance + booked.elective + booked.match + profit - booked.gross
+        cash = (
+            sum(a.balance for a in self.owner.usable_bank_accounts)
+            + booked.elective
+            + booked.match
+            + profit
+            - booked.gross
+        )
         total = pretax + roth + employer
         if total > cash > 0:
             scale = cash / total

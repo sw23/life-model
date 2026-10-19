@@ -33,23 +33,29 @@ units are in [units-and-conventions.md](units-and-conventions.md).
 | Estimated tax vouchers (1040-ES) | `estimated_payments` (`quarterly` amounts, or `policy: safe_harbor` with last year's tax) |
 | Form 1095-A (marketplace coverage) | `insurance[]` `kind: health` with `marketplace: {slcsp_monthly, advance_monthly}` |
 | A supported parent or other relative | `dependents[]` (`relationship`, `gross_income_annual`, `lives_with`) |
-| Budget or bank history | `spending.amount_annual` (living costs, excluding housing, debt payments and taxes), `growth_pct`; optional `categories` (`amount_annual` or `amount_monthly`, `essential`, `start_year`/`end_year`) and an age `schedule` (a retirement spending smile) |
-| Bank statements | `accounts[]` `kind: bank`: `balance`, `interest_pct` (APR; `compounding: annual` for an APY), one `primary: true` |
+| Budget or bank history | `spending.amount_annual` (living costs, excluding housing, debt payments, taxes and the costs the model adds itself, such as children's cost bands), `growth_pct`; optional `categories` (`amount_annual` or `amount_monthly`, `essential`, `start_year`/`end_year`) and an age `schedule` (a retirement spending smile). **Spending is per person and adds up across the household**: give the whole budget on one spouse (leave the other's `spending` out) or split it |
+| Bank statements | `accounts[]` `kind: bank`: `balance`, `interest_pct` (APR; `compounding: annual` for an APY), one `primary: true`; a joint account once, under either spouse, with `joint: true` (the other spouse then needs no bank account); an emergency fund as its own `reserve: true` account |
 | 401k statement | `kind: 401k`, `job:` (the job's `id`), `pretax_balance`, `roth_balance`, `pretax_contrib_pct`, `roth_contrib_pct`, `match_tiers` |
-| Brokerage statement | `kind: brokerage` with `lots` (`value`, `cost_basis`, `acquired_year`) or a single `balance` |
+| Brokerage statement | `kind: brokerage` with `lots` (`value`, `cost_basis`, `acquired_year`) or a single `balance`; `joint: true` for a joint account |
+| Recurring contributions (a 529 from checking, an IRA) | `contribution_plans[]`: `account`, `amount_annual` / `pay_pct` / `max_out`, `start`, `end` or `until_age` (a 529 for a child stops the month before college unless `end` says otherwise); `stop_contribution` / `change_contribution` events |
 | IRA / HSA / 529 statements | `kind: traditional_ira`, `roth_ira`, `hsa`, `529` |
 | Mortgage statement | `housing[]` `kind: home`: `purchase_price`, `current_value`, `cost_basis`, `purchase_year`, `mortgage` (`original_amount`, `rate_pct`, `term_years`, and `origination: YYYY-MM`, or the current `balance` with `remaining_months`; `payment_monthly` with `escrow_monthly` when the statement payment includes escrow), `pmi`/`pmi_monthly`, `expenses` (property tax as `property_tax_annual` or % of an `assessed_value`, `insurance_annual`, maintenance, HOA) |
 | Lease | `kind: rental`: `rent_monthly`, `rent_growth_pct` |
-| Loan statements | `debts[]` `kind: car`, `student`, `credit_card`, `heloc`: `rate_pct` (APR), then the statement's terms (`original_amount` with `term_months`/`term_years` and `origination`, or the current `balance` with `remaining_months`), `extra_principal_monthly`; a student loan's `deferment_until` and `qualifying_payments`; a card's `spending_charged_pct`; a HELOC's `home`, `improvement_balance` |
+| Loan statements | `debts[]` `kind: car`, `student`, `credit_card`, `heloc`: `rate_pct` (APR), then the statement's terms (`original_amount` with `term_months`/`term_years` and `origination`, or the current `balance` with `remaining_months`), `extra_principal_monthly`; `schedule: statement` when the balance is above what the original terms leave (late payments, a deferral); a student loan's `loan_type` (leave it unset when the statement does not say); a student loan's `deferment_until` and `qualifying_payments`; a card's `spending_charged_pct`; a HELOC's `home`, `improvement_balance` |
 | Insurance declarations | `insurance[]` `kind: life` (term/whole; an existing policy's `issue_year`, `cash_value`, `loan_balance`) or a general policy (`health` with `deductible`, `coinsurance_pct`, `oop_max_annual`; `disability` with `benefit_pct`; `auto`, `home`, `renters`, ...) |
 | Pension / annuity statements | `kind: pension` (`benefit_annual` or the formula with `salary_history_annual`, `normal_retirement_age`, `early_retirement_reduction_pct`, `survivor_reduction_pct`, `employee_basis`, `lump_sum_option`); `kind: annuity` (`basis`, `purchase_year`, `qualified`, `in_payout` with `payout_monthly`) |
-| SSA statement | `social_security.pia_override_monthly` (the full-retirement-age benefit) or `earnings_history` (year: covered earnings), `claim_age`, `fra_from_birth_year`, `spousal_benefit` |
-| Children | `children[]`: `name`, `birth_year`, optional `cost_override_annual` / `college_cost_annual` (and `kind: 529` accounts that name them as `beneficiary`) |
+| SSA statement | `social_security.pia_override_monthly` (the full-retirement-age benefit) **with** `earnings_history` (year: covered earnings, from the same statement): the estimate assumes work until full retirement age, and the history lets an earlier retirement lower it; `claim_age`, `fra_from_birth_year`, `spousal_benefit` |
+| Children | `children[]`: `name`, `birth_year`, `birth_month`, `cost_override_annual` / `college_cost_annual` (the configured bands are added on top of spending unless overridden: 0 when the budget already includes the child), `care_expenses_annual` (until the 13th birthday), and `kind: 529` accounts that name them as `beneficiary` |
+| Health insurance after a job ends | `insurance[]` `kind: health` with `premium_annual`, `coverage_start_age` (the retirement age) and `coverage_end_age: 64` (for marketplace coverage add `marketplace: {slcsp_monthly, advance_monthly}`, which earns the ACA premium tax credit); `healthcare: {medicare: true}` from 65. Payroll premiums stop with the job |
+| Term life policy | `kind: life`, `policy: term`, `issue_year` and `issue_month` (premiums on the anniversary; coverage ends at the last anniversary) |
 | Marriage | `relationships.marriages[]`: `spouses` (the first is the tax-unit head), `filing_status` |
 | Plans | `events[]`: `at: {year}` / `{age}` / `{relative: {after, years}}`, `person`, `action` (`retire`, `change_job`, `move`, `buy_home`, `one_time_expense`, `recurring_expense`, `change_spending`, `contribute`, `convert_to_roth`, `claim_social_security`, `refinance`, `heloc_draw`, `disability`, ...) |
 
 Two rules matter most. **Never invent a value**: a missing balance or rate is a question for the
-person, or a labeled assumption, never a plausible-looking number. **Say what the engine would
+person, or a labeled assumption, never a plausible-looking number. Behavioral inputs that
+statements never show (raises, spending growth) are not "missing values": use the economy-linked
+choice (`raise_pct: economy`, `growth_pct: economy`) and list it among the assumptions, rather than
+the silent 0% core default. **Say what the engine would
 otherwise assume**: people are immortal unless `mortality: stochastic` (or `fixed_age`), spending
 and salaries don't grow unless given a rate or `economy`, rent rises 5% a year by default, and
 investments grow at the economy's 7% equity return. [constructor-cheatsheet.md](constructor-cheatsheet.md)
@@ -57,7 +63,15 @@ lists every silent default.
 
 Something that already happened belongs in the starting state, not in an event: a past marriage is
 a `relationships.marriages` entry, a past purchase is an owned home with its current mortgage
-balance. Events dated before `start_year` are errors.
+balance. Events dated before `start_year` are errors. (A marriage dated before the start year is
+part of the starting state: it does not appear in the run's event list.)
+
+The defaults that most often change a long-run answer, and that the validator warns about: a
+child's configured cost bands added on top of spending, no health coverage between an early
+retirement and Medicare (and no Medicare premiums), surplus cash left in a low-yield bank without a
+`savings_policy`, and an SSA estimate without its earnings record. Fix each one, or keep it on purpose
+by listing its code in `meta.accepted_warnings` (it then stops failing `--checks strict`) and report it
+as an assumption.
 
 ## 2. Validate
 
@@ -80,7 +94,9 @@ life-model run my-models/household.yaml --seed 1 --out my-models/out
 The run prints the key columns per year (income, taxes, spending, housing, bank balance, debt, net
 worth) and a summary: final net worth, run totals, `shortfall_years` (years the household could not
 pay its bills and carried the gap as debt) and `conservation_failures` (years where net worth moved
-without a matching ledger flow; this must be empty, and a non-empty list is a model bug to report).
+without a matching ledger flow, always checked in nominal dollars; this must be empty, and a
+non-empty list is a model bug to report). It also reports the net-worth peak and the lowest cash
+(overall and after everyone retires), in nominal and start-year dollars.
 `my-models/out/result.json` holds everything: model and agent frames, every tax return, the
 cash-flow ledger and the events ([outputs.md](outputs.md) documents every column). Add
 `--real-dollars` to compare years in start-year dollars, `--years N` to shorten the run.
@@ -106,7 +122,8 @@ life-model compare my-models/household.yaml --seed 1 --change my-models/kitchen.
 ```
 
 Both runs use the same seed; the output is changed minus base for final net worth, total taxes,
-each final balance and the number of shortfall years. A change file is a JSON merge patch in YAML,
+each final balance, the number of shortfall years and each run's net-worth peak and lowest cash
+(`--json` adds both runs' yearly rows). A change file is a JSON merge patch in YAML,
 with `key+:` to append to a list and `people: {<id>: {...}}` to patch a list item by id:
 
 ```yaml
@@ -168,9 +185,12 @@ The same workflow is packaged as a Claude Code skill in
 1. Gather facts from statements, not memory; record `meta.as_of`.
 2. Never invent a balance, rate or date: ask, or label an assumption.
 3. Start from a shipped example (`life-model examples --copy ...`) in `my-models/`.
-4. Fill the spec in percents and stated periods; set mortality, growth, state and filing status
-   explicitly instead of relying on silent defaults.
-5. `life-model validate` until there are no errors; decide on every warning.
+4. Fill the spec in percents and stated periods; set mortality, growth (economy-linked when the
+   statements are silent, listed as an assumption), state and filing status explicitly instead of
+   relying on silent defaults. Spending is per person and adds up; children cost the configured
+   bands on top of it; early retirees need health coverage before 65 and Medicare after.
+5. `life-model validate` until there are no errors; decide on every warning (fix it, or list its code
+   in `meta.accepted_warnings` and report it).
 6. `life-model run --out my-models/out`; check `shortfall_years` and `conservation_failures`.
 7. `life-model explain` the years that matter; `life-model compare` the decision; `montecarlo` with
    `--scenario stochastic` for risk.

@@ -240,7 +240,16 @@ class TaxUnit:
     def bank_account_balance(self) -> float:
         """Cash the unit's bills and taxes are paid from: every member's bank accounts except
         emergency reserves (which the waterfall's ``reserve`` step moves into a spending account)."""
-        return sum(m.spendable_bank_balance for m in self.members)
+        return sum(a.balance for a in self._unit_bank_accounts() if not getattr(a, "reserve", False))
+
+    def _unit_bank_accounts(self) -> list:
+        """Every member's bank accounts, with the joint accounts members hold with a spouse (on separate
+        returns the spouse's unit can pay from a joint account too), each once."""
+        seen: dict[int, object] = {}
+        for member in self.members:
+            for account in member.usable_bank_accounts:
+                seen.setdefault(id(account), account)
+        return list(seen.values())
 
     @property
     def total_itemized_deductions(self) -> float:
@@ -671,7 +680,7 @@ class TaxUnit:
             apy = (1 + account.interest_rate / 100 / periods) ** periods - 1
             return (apy, account.person.name, account.company, account.type, -account.balance)
 
-        return sorted((a for m in self.members for a in m.bank_accounts if not getattr(a, "reserve", False)), key=key)
+        return sorted((a for a in self._unit_bank_accounts() if not getattr(a, "reserve", False)), key=key)
 
     def _members_for(self, source: str) -> "list[Person]":
         """The order members are drawn in by a non-bank waterfall step: canonical (by name), not by

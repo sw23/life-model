@@ -42,7 +42,7 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         print(f"[error] {args.path}: {error}")
         return 1
-    findings = validate_spec(spec)
+    findings = validate_spec(spec, include_assumptions=True)
     for finding in findings:
         print(finding)
     if not findings:

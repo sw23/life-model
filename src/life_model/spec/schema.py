@@ -162,6 +162,17 @@ class Meta(SpecModel):
         "tax pack (unknown codes are errors, never a silent flat 6%).",
         core="config.tax.state.default_state",
     )
+    accepted_warnings: list[Annotated[str, Field(pattern=r"^[a-z_.]+$")]] | None = spec_field(
+        None,
+        description="Validator warning codes the household keeps on purpose (e.g. [default_child_costs, "
+        "cash_not_invested]): the validator drops them, so they no longer fail --checks strict. Record why with "
+        "the assumptions you report. Errors cannot be accepted.",
+    )
+
+    @field_validator("accepted_warnings")
+    @classmethod
+    def _sorted_codes(cls, value: list[str] | None) -> list[str] | None:
+        return None if value is None else sorted(set(value))
 
 
 class StochasticEconomy(SpecModel):
@@ -343,12 +354,17 @@ class SpendingCategory(SpecModel):
 
 
 class Spending(SpecModel):
-    """A person's living spending (everything except housing, debts, taxes and modeled costs)."""
+    """A person's living spending: everything except housing, debts, taxes, insurance premiums, payroll
+    deductions and the costs the model adds itself (children's cost bands and care, healthcare, events). It is
+    per person and adds across the household (two spouses with 30,000 each spend 60,000 together)."""
 
     CORE_CLASS = "Spending"
 
     amount_annual: NonNegativeMoney = spec_field(
-        description="Base living spending per year.", unit="USD/year", core="Spending.base"
+        description="Base living spending per year (this person's share of the household budget: the amounts of "
+        "all people add up). Excludes modeled child costs (see Child).",
+        unit="USD/year",
+        core="Spending.base",
     )
     growth_pct: GrowthPct = spec_field(
         0.0,
@@ -476,7 +492,9 @@ class Payroll(SpecModel):
     )
     hsa_employer_annual: NonNegativeMoney = spec_field(
         0.0,
-        description="Employer HSA contributions (never wages), paid a twelfth a month while the job pays.",
+        description="Employer HSA contributions (never wages), paid a twelfth a month while the job pays. The "
+        "preferred place for employer HSA money: leave the HSA account's employer_contribution_annual unset (both "
+        "set is a validation error).",
         unit="USD/year",
         core="PayrollDeductions.hsa_employer_annual",
     )
@@ -761,6 +779,16 @@ class BankAccount(SpecModel):
         "other source.",
         core="BankAccount.reserve",
     )
+    joint: bool = spec_field(
+        False,
+        description="Owned jointly with this person's spouse (a marriage in relationships in effect at the start). "
+        "List the account once, under either spouse. Either spouse's income can be paid in: the spouse's lands "
+        "here when they have no bank account of their own, or always when this account is primary (primary for "
+        "both). Either spouse can pay from it (a spouse needs no bank account of their own), its interest is split "
+        "half and half between their returns (it matters filing separately), and it passes to the survivor at a "
+        "death, outside the estate.",
+        core="BankAccount.joint_owner",
+    )
 
 
 class FixedIncomeAccount(SpecModel):
@@ -821,7 +849,9 @@ class FixedIncomeAccount(SpecModel):
     )
     accrued_interest: NonNegativeMoney = spec_field(
         0.0,
-        description="An I bond's interest included in face (taxed at redemption).",
+        description="An I bond's interest included in face (taxed at redemption). A CD's interest earned before the "
+        "start that face (the statement's principal) leaves out, e.g. from the purchase month to the start: added "
+        "to the value and taxed when paid (at maturity).",
         unit="USD",
         core="FixedIncomeHolding.accrued_interest",
     )
@@ -879,7 +909,9 @@ class BrokerageAccount(SpecModel):
     )
     dividend_yield_pct: NonNegativePercent | None = spec_field(
         None,
-        description="Qualified-dividend yield carved out of the return; defaults to the configured yield.",
+        description="Qualified-dividend yield carved out of the total return (the rest is untaxed price growth). "
+        "Unset: the configured accounts.brokerage.dividend_yield, which is 0 in the packaged defaults (pure price "
+        "appreciation, no dividends); enter the fund's yield from the statement.",
         unit="percent",
         core="BrokerageAccount.dividend_yield_pct",
     )
@@ -891,6 +923,14 @@ class BrokerageAccount(SpecModel):
     )
     reinvest_dividends: bool = spec_field(
         True, description="False pays dividends to the bank instead.", core="BrokerageAccount.reinvest_dividends"
+    )
+    joint: bool = spec_field(
+        False,
+        description="Owned jointly with this person's spouse (a marriage in relationships in effect at the start); "
+        "list it once, under either spouse (that spouse's waterfall sells it). Dividends and realized gains are "
+        "split half and half between the spouses' returns, and at a death it passes to the survivor outside the "
+        "estate with the decedent's half of the basis stepped up.",
+        core="BrokerageAccount.joint_owner",
     )
 
     @model_validator(mode="after")
@@ -921,14 +961,14 @@ class Job401k(SpecModel):
     )
     pretax_contrib_pct: NonNegativePercent = spec_field(
         0.0,
-        description="Pre-tax deferral, percent of plan pay (base salary, plus bonus with match_on_bonus).",
+        description="Pre-tax deferral, percent of plan pay (base salary, plus the bonus with bonus_is_plan_pay).",
         unit="percent",
         core="Job401kAccount.pretax_contrib_pct",
         typical_above_one=True,
     )
     roth_contrib_pct: NonNegativePercent = spec_field(
         0.0,
-        description="Roth deferral, percent of plan pay (base salary, plus bonus with match_on_bonus).",
+        description="Roth deferral, percent of plan pay (base salary, plus the bonus with bonus_is_plan_pay).",
         unit="percent",
         core="Job401kAccount.roth_contrib_pct",
         typical_above_one=True,
@@ -947,10 +987,14 @@ class Job401k(SpecModel):
         "deferred plus 50% of the next 2%.",
         core="Job401kAccount.match_tiers",
     )
-    match_on_bonus: bool = spec_field(
+    bonus_is_plan_pay: bool = spec_field(
         False,
-        description="Plan pay includes the bonus (deferral percentages and match tiers apply to salary + bonus).",
-        core="Job401kAccount.match_on_bonus",
+        description="The plan's compensation (plan pay) includes the bonus. A plan document defines compensation "
+        "once, for both the deferral election and the match: true withholds the deferral percentages from the "
+        "bonus too and applies the match tiers to salary + bonus; false (default) applies both to base salary "
+        "only. Check the plan's definition of compensation (many include bonuses). 'match_on_bonus' is a "
+        "deprecated alias read as this field.",
+        core="Job401kAccount.bonus_is_plan_pay",
     )
     match_vesting_years: int = spec_field(
         0,
@@ -1005,6 +1049,24 @@ class Job401k(SpecModel):
     expense_ratio_pct: NonNegativePercent | None = spec_field(
         None, description=_EXPENSE_DESC, unit="percent", core="Investment.expense_ratio_pct"
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _deprecated_match_on_bonus(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "match_on_bonus" in data:
+            import warnings
+
+            data = dict(data)
+            alias = data.pop("match_on_bonus")
+            if "bonus_is_plan_pay" in data and data["bonus_is_plan_pay"] != alias:
+                raise ValueError("match_on_bonus is the deprecated name of bonus_is_plan_pay: give only one")
+            data["bonus_is_plan_pay"] = alias
+            warnings.warn(
+                "401k match_on_bonus is deprecated: use bonus_is_plan_pay (it also controls the deferral on the bonus)",
+                UserWarning,
+                stacklevel=1,
+            )
+        return data
 
     @model_validator(mode="after")
     def _one_match_formula(self) -> "Job401k":
@@ -1111,8 +1173,10 @@ class HealthSavingsAccount(SpecModel):
     )
     employer_contribution_annual: NonNegativeMoney | None = spec_field(
         None,
-        description="Employer contribution per year, at each year start while the person has an active job "
-        "(prefer the job's payroll.hsa_employer_annual, paid per paycheck). Defaults to the configured amount.",
+        description="Employer contribution per year, deposited at each year start while the person has an active "
+        "job. Prefer the job's payroll.hsa_employer_annual (paid per paycheck, as on the pay stub) and leave this "
+        "unset: unset adds only the configured accounts.hsa.default_employer_contribution, which is 0 in the "
+        "packaged defaults, so nothing is counted twice. Giving both is a validation error (hsa_employer_twice).",
         unit="USD/year",
         core="HealthSavingsAccount.employer_contribution",
     )
@@ -1489,7 +1553,8 @@ _LOAN_STATEMENT = (
     "current balance with the months remaining (or the payment). Any three of balance / months remaining / "
     "payment determine the fourth; inputs that contradict each other are a validation error naming the field. "
     "The first payment is in the month after origination; a balance below the original schedule is a prepaid "
-    "loan (it pays off early at the contract payment)."
+    "loan (it pays off early at the contract payment). A balance above it (a loan behind on its payments) needs "
+    "schedule: statement."
 )
 
 
@@ -1549,6 +1614,16 @@ class _LoanTerms(SpecModel):
         unit="USD/month",
         core="Loan.extra_principal_monthly",
     )
+    schedule: Literal["contract", "statement"] = spec_field(
+        "contract",
+        description="Which inputs to trust. 'contract' (default): the original terms define the schedule and the "
+        "statement must agree (a balance above the original schedule is an error). 'statement': the loan is "
+        "behind its original schedule (late payments, a deferral, a forbearance) and the statement's balance is "
+        "right: it amortizes from balance at payment_monthly, else over remaining_months, else at the contract "
+        "payment of original_amount over the term (paying off after the original maturity); original_amount, "
+        "term and origination are then kept for the record. Needs balance.",
+        core="Loan.schedule",
+    )
 
     @model_validator(mode="after")
     def _term(self) -> "_LoanTerms":
@@ -1576,8 +1651,13 @@ class StudentLoan(_LoanTerms):
 
     kind: Literal["student"]
     id: Identifier | None = _id_field("debt")
-    loan_type: Literal["federal_subsidized", "federal_unsubsidized", "private", "plus"] = spec_field(
-        description="Loan program.", core="StudentLoan.loan_type"
+    loan_type: Literal["federal_subsidized", "federal_unsubsidized", "private", "plus", "unknown"] = spec_field(
+        "unknown",
+        description="Loan program. 'unknown' (the default, when the statement does not say federal or private): "
+        "repaid like any loan on the standard plan, interest accrues and capitalizes during deferment (no "
+        "subsidy), and the repayment_assistance_plan (federal only) is not allowed. The type only matters for "
+        "deferment and that plan.",
+        core="StudentLoan.loan_type",
     )
     school: str = spec_field("School", description="School name.", core="StudentLoan.school_name")
     in_deferment: bool = spec_field(False, description="In deferment (no payments).", core="StudentLoan.in_deferment")
@@ -1950,6 +2030,14 @@ class LifeInsurance(SpecModel):
         unit="year",
         core="LifeInsurance.issue_year",
     )
+    issue_month: Annotated[int, Field(ge=1, le=12)] | None = spec_field(
+        None,
+        description="Month issued (1-12). The policy year then runs from it: the year's premium (12 x "
+        "premium_monthly) is charged on each anniversary instead of every January, and a term policy's coverage "
+        "ends at the start of its last anniversary month (issue_year + term_years) instead of that December.",
+        unit="month",
+        core="LifeInsurance.issue_month",
+    )
     cash_value: NonNegativeMoney | None = spec_field(
         None, description="Existing whole-life cash value.", unit="USD", core="LifeInsurance.cash_value"
     )
@@ -2106,7 +2194,12 @@ class SocialSecurity(SpecModel):
     pia_override_monthly: NonNegativeMoney | None = spec_field(
         None,
         description="The benefit at full retirement age from the SSA statement, in today's dollars (wage-indexed "
-        "to age 62, then COLAs), instead of computing it from the earnings record.",
+        "to age 62, then COLAs), instead of computing it from the earnings record. SSA's estimate assumes work "
+        "until full retirement age at the latest earnings: give earnings_history too (the statement's earnings "
+        "record) and the override is scaled for the years the run does not work, by the PIA recomputed from the "
+        "record plus the simulated wages (zeros after retiring) over the PIA of the statement's assumption. "
+        "Without earnings_history the override is used as is, which overstates the benefit of someone retiring "
+        "before full retirement age (the validator warns).",
         unit="USD/month",
         core="SocialSecurity.pia_override",
     )
@@ -2139,8 +2232,11 @@ class SocialSecurity(SpecModel):
         given = [self.earnings_history is not None, self.assumed_career_start_age is not None]
         if sum(given) > 1:
             raise ValueError("give either earnings_history or assumed_career_start_age, not both")
-        if self.pia_override_monthly is not None and any(given):
-            raise ValueError("pia_override_monthly replaces the earnings record: give one or the other")
+        if self.pia_override_monthly is not None and self.assumed_career_start_age is not None:
+            raise ValueError(
+                "pia_override_monthly comes from the SSA statement: give it with the statement's earnings_history "
+                "(or alone), not with a synthesized assumed_career_start_age record"
+            )
         return self
 
 
@@ -2265,7 +2361,12 @@ class EstimatedPayments(SpecModel):
 
 
 class Child(SpecModel):
-    """A child dependent: age-banded costs, the Child Tax Credit, 529 beneficiary."""
+    """A child dependent: age-banded costs, the Child Tax Credit, 529 beneficiary.
+
+    Unless overridden, a child costs the configured bands (childcare, school age, college; amounts in the
+    'Child cost bands' table of docs/household-spec.md) on top of the person's ``spending``: spending
+    excludes modeled child costs. The validator warns about every band a child gets by default.
+    """
 
     CORE_CLASS = "Child"
 
@@ -2274,24 +2375,36 @@ class Child(SpecModel):
     birth_year: Year = spec_field(
         description="Birth year (future years are planned births).", unit="year", core="Child.birth_year"
     )
+    birth_month: Annotated[int, Field(ge=1, le=12)] | None = spec_field(
+        None,
+        description="Birth month (1-12). The cost bands, the college months and the end of care_expenses_annual "
+        "follow the child's exact age: they change in the birthday month (care stops at the 13th birthday). "
+        "Unset: January is assumed, so they change in January of the birthday year.",
+        unit="month",
+        core="Child.birth_month",
+    )
     cost_override_annual: NonNegativeMoney | None = spec_field(
         None,
-        description="This child's yearly cost while a dependent (start-year dollars) instead of the configured "
-        "childcare and school-age bands (not counted as dependent care: use care_expenses_annual).",
+        description="This child's yearly cost while a dependent (birth to 18), in start-year dollars, instead of "
+        "the configured childcare and school-age bands (see 'Child cost bands' below for their amounts). These "
+        "costs are added on top of spending.amount_annual, which excludes modeled child costs: if the household "
+        "budget already includes the child, set 0. Not counted as dependent care: use care_expenses_annual.",
         unit="USD/year",
         core="Child.cost_annual",
     )
     college_cost_annual: NonNegativeMoney | None = spec_field(
         None,
-        description="This child's yearly college cost (start-year dollars) instead of the configured band.",
+        description="This child's yearly college cost (start-year dollars) instead of the configured college band "
+        "(see 'Child cost bands' below), paid from the child's 529 plans first. 0: no college costs.",
         unit="USD/year",
         core="Child.college_cost_annual",
     )
     care_expenses_annual: NonNegativeMoney = spec_field(
         0.0,
-        description="Dependent care (after-school care, day camp) paid while the child is under 13, on top of the "
-        "age-band cost, in start-year dollars. The childcare band's cost (under 6) already counts as care "
-        "expenses for the dependent care credit.",
+        description="Dependent care (after-school care, day camp) paid until the child's 13th birthday (the month "
+        "of it with birth_month; January of that year without), on top of the age-band cost, in start-year "
+        "dollars. The childcare band's cost (under 6) already counts as care expenses for the dependent care "
+        "credit.",
         unit="USD/year",
         core="Child.care_expenses_annual",
     )
@@ -2349,12 +2462,35 @@ class ContributionPlan(SpecModel):
         description="Contribute in the first n months of each year (12: monthly), or in the listed months.",
         core="ContributionPlan.months",
     )
+    start: Year | YearMonth | None = spec_field(
+        None,
+        description="First month of contributions (YYYY-MM, or a year: its January). Unset: from the start.",
+        unit="YYYY-MM",
+        core="ContributionPlan.start",
+    )
+    end: Year | YearMonth | None = spec_field(
+        None,
+        description="Last month of contributions, inclusive (YYYY-MM, or a year: its December). Unset: until an "
+        "event stops or changes it, except a 529 plan for a child beneficiary, which stops the month before the "
+        "child's college months start (set end to keep contributing through college).",
+        unit="YYYY-MM",
+        core="ContributionPlan.end",
+    )
+    until_age: AgeFloat | None = spec_field(
+        None,
+        description="Stop once the owner reaches this age: the last contribution is the month before that "
+        "birthday. Exclusive with end.",
+        unit="age",
+        core="ContributionPlan.end",
+    )
 
     @model_validator(mode="after")
     def _one_amount(self) -> "ContributionPlan":
         given = [self.amount_annual is not None, self.pay_pct is not None, self.max_out]
         if sum(given) != 1:
             raise ValueError("give exactly one of amount_annual, pay_pct or max_out")
+        if self.end is not None and self.until_age is not None:
+            raise ValueError("give end or until_age, not both")
         return self
 
 
@@ -2527,7 +2663,14 @@ class Person(SpecModel):
     death_age: Age | None = spec_field(
         None, description="Age of death for mortality 'fixed_age'.", unit="age", core="Person.death_age"
     )
-    spending: Spending = spec_field(description="Living spending.")
+    spending: Spending | None = spec_field(
+        None,
+        description="This person's living spending. Spending is per person and adds across the household: the "
+        "household's budget is the sum of every person's amount_annual, so give the whole household budget on one "
+        "spouse (and leave the other spouse's spending out, or 0) or split it between them, never the full "
+        "budget on each. Required for a person without a spouse (relationships.marriages) whose spending holds "
+        "the budget; a spouse who leaves it out spends nothing of their own.",
+    )
     jobs: list[Job] = spec_field(default_factory=list, description="Jobs (W-2).")
     accounts: list[Account] = spec_field(default_factory=list, description="Accounts, discriminated by 'kind'.")
     debts: list[Debt] = spec_field(default_factory=list, description="Debts (car, student, credit_card, heloc).")
@@ -2722,6 +2865,41 @@ class ContributeEvent(EventBase):
     amount: NonNegativeMoney = spec_field(description="Amount (one time).", unit="USD")
 
 
+class StopContributionEvent(EventBase):
+    """Stop the person's recurring contributions into an account from this month: its contribution plans
+    (for a 401k, the bucket's plan, or every bucket when unset) are removed, and a 401k's deferral percent for
+    the bucket (or every bucket) drops to 0."""
+
+    action: Literal["stop_contribution"]
+    account: Identifier = spec_field(description="Account id (one of the person's accounts).")
+    bucket: Literal["pretax", "roth", "after_tax"] | None = spec_field(
+        None, description="For a 401k: which bucket (unset: every bucket)."
+    )
+
+
+class ChangeContributionEvent(EventBase):
+    """Change (or start) the person's recurring contribution into an account from this month: its plan for
+    the account (and 401k bucket) gets the new amount; without one a plan starts (a 401k: payroll deferral;
+    other accounts: from the bank)."""
+
+    action: Literal["change_contribution"]
+    account: Identifier = spec_field(description="Account id (one of the person's accounts).")
+    bucket: Literal["pretax", "roth", "after_tax"] | None = spec_field(
+        None, description="For a 401k: which bucket (default pretax)."
+    )
+    amount_annual: NonNegativeMoney | None = spec_field(None, description="New dollars per year.", unit="USD/year")
+    pay_pct: NonNegativePercent | None = spec_field(
+        None, description="New percent of gross pay.", unit="percent", le=100
+    )
+    max_out: bool = spec_field(False, description="Contribute the account's annual limit.")
+
+    @model_validator(mode="after")
+    def _one_amount(self) -> "ChangeContributionEvent":
+        if sum([self.amount_annual is not None, self.pay_pct is not None, self.max_out]) != 1:
+            raise ValueError("give exactly one of amount_annual, pay_pct or max_out")
+        return self
+
+
 class ConvertToRothEvent(EventBase):
     """Convert pre-tax money to a Roth IRA (``life_model.policies.convert_to_roth``): pro rata to the traditional
     IRAs' Form 8606 basis, the taxable part is ordinary income this year (no 10% additional tax). A
@@ -2815,6 +2993,8 @@ Event = Annotated[
     | ChangeSpendingEvent
     | AddAccountEvent
     | ContributeEvent
+    | StopContributionEvent
+    | ChangeContributionEvent
     | ConvertToRothEvent
     | ClaimSocialSecurityEvent
     | DieEvent
@@ -2838,6 +3018,8 @@ EVENT_ACTIONS: tuple[str, ...] = (
     "change_spending",
     "add_account",
     "contribute",
+    "stop_contribution",
+    "change_contribution",
     "convert_to_roth",
     "claim_social_security",
     "die",

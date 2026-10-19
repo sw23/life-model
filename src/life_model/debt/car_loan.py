@@ -29,6 +29,7 @@ class CarLoan(Loan):
         payments_made: int | None = None,
         remaining_months: int | None = None,
         extra_principal_monthly: float = 0.0,
+        schedule: str = "contract",
     ):
         """Models a car loan for a person
 
@@ -47,6 +48,8 @@ class CarLoan(Loan):
             payments_made: Payments made before the run (instead of ``origination``).
             remaining_months: Payments left on the statement.
             extra_principal_monthly: Extra principal paid every month.
+            schedule: ``"contract"`` (the original terms rule; default) or ``"statement"`` (trust a current
+                balance above the original schedule; see :mod:`life_model.debt.terms`).
 
         Every argument after the owner is keyword-only (positional use is deprecated).
 
@@ -65,6 +68,7 @@ class CarLoan(Loan):
             payments_made=payments_made,
             remaining_months=remaining_months,
             extra_principal_monthly=extra_principal_monthly,
+            schedule=schedule,
         )
         self.name = name
         self.model.registries.car_loans.register(owner, self)

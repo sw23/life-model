@@ -103,6 +103,7 @@ class BrokerageAccount(Investment):
         reinvest_dividends: bool = True,
         allocation: "dict[str, float] | None" = None,
         expense_ratio_pct: float = 0.0,
+        joint_owner: Person | None = None,
     ):
         """Models a brokerage/investment account
 
@@ -123,6 +124,10 @@ class BrokerageAccount(Investment):
             allocation: Target allocation in percent by asset class (``{"equity": 70, "bond": 30}``),
                 rebalanced yearly (Plan 27 D5).
             expense_ratio_pct: Fund expense ratio (percent a year), netted out of the return.
+            joint_owner: The spouse who owns the account jointly with ``owner``: dividends and realized gains
+                are split half and half between their returns, and at a death the account passes to the
+                survivor outside the estate with half the basis stepped up (IRC §1014(b)(9), §2040(b)). The
+                titled ``owner``'s waterfall sells it.
         """
         if lots is not None and balance:
             raise ValueError("pass either balance or lots, not both")
@@ -145,6 +150,7 @@ class BrokerageAccount(Investment):
                     self.lots.append(self._lot(value, basis, year, month))
         elif balance > 0:
             self.lots.append(self._lot(balance, balance))
+        self.joint_owner = joint_owner
         self.model.registries.brokerage_accounts.register(owner, self)
 
     @staticmethod
@@ -218,7 +224,7 @@ class BrokerageAccount(Investment):
         self._post_growth(appreciation)
 
         if dividend > 0:
-            self.person.income.add(IncomeType.QUALIFIED_DIVIDEND, dividend, source="dividend")
+            self.add_income(IncomeType.QUALIFIED_DIVIDEND, dividend, source="dividend")
             if self.reinvest_dividends:
                 self.deposit(dividend)
                 self.model.ledger.post(
@@ -284,9 +290,9 @@ class BrokerageAccount(Investment):
         """
         withdrawn, long_term_gain, short_term_gain = self.sell(amount)
         if long_term_gain != 0:
-            self.person.income.add(IncomeType.LONG_TERM_CAPITAL_GAIN, long_term_gain, source="brokerage_sale")
+            self.add_income(IncomeType.LONG_TERM_CAPITAL_GAIN, long_term_gain, source="brokerage_sale")
         if short_term_gain != 0:
-            self.person.income.add(IncomeType.SHORT_TERM_CAPITAL_GAIN, short_term_gain, source="brokerage_sale")
+            self.add_income(IncomeType.SHORT_TERM_CAPITAL_GAIN, short_term_gain, source="brokerage_sale")
         return withdrawn
 
     def sell(self, amount: float) -> tuple[float, float, float]:
@@ -374,14 +380,21 @@ class BrokerageAccount(Investment):
             remaining -= take
         return long_term_gain, short_term_gain
 
-    def step_up_basis_at_death(self) -> None:
+    def step_up_basis_at_death(self, fraction: float = 1.0) -> None:
         """Reset basis to fair market value at the owner's death (IRC §1014).
 
         The lots collapse to a single lot with basis equal to the current balance, so gains that
         accrued during the decedent's lifetime are never taxed to the heir. Inherited property is
         long-term regardless of how long anyone actually held it, which the sentinel acquisition
         date below (twelve months ago) guarantees.
+
+        ``fraction`` < 1 steps up only the decedent's share of a joint account (half for spouses,
+        §2040(b)): each lot's basis moves that fraction of the way to its value and keeps its date.
         """
+        if fraction < 1.0:
+            for lot in self.lots:
+                lot.cost_basis += (lot.value - lot.cost_basis) * fraction
+            return
         self.lots = []
         if self.balance > 0:
             self.lots.append(self._lot(self.balance, self.balance, self.model.year - 1, self.model.month))
