@@ -103,7 +103,7 @@ class TestSalary(unittest.TestCase):
     def test_escalator_grows_base_in_post_step(self):
         model = LifeModel(start_year=2020, end_year=2020)
         salary = Salary(model=model, base_annual=100000, raise_pct=10)
-        salary.on_year_end()  # the escalator runs at year end (Plan 32)
+        salary.on_year_end()  # the escalator runs at year end
         self.assertAlmostEqual(salary.base, 110000, places=6)
 
 

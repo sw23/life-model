@@ -51,4 +51,4 @@ RMDs (Pub. 590-B): pat $48,780.49; lee $30,188.68 ($1,200,000 / 24.6 at 75; $800
 
 ## Expected failures
 
-- `spending:medicare_premiums_annual`: missing_input (Plan 27): the spec cannot carry the 2024 MAGI the 2026 IRMAA tier is based on; the engine has no AGI history before its first year and charges the base premium
+- `spending:medicare_premiums_annual`: missing_input: the spec cannot carry the 2024 MAGI the 2026 IRMAA tier is based on; the engine has no AGI history before its first year and charges the base premium

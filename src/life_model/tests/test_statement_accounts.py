@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Plan 27 PR A: accounts entered as the statements show them.
+"""Accounts entered as the statements show them.
 
 Existing positions (brokerage lots, IRA / Roth / HSA / 529 basis), fixed-income holdings, standalone and
 after-tax 401(k) money, Roth conversions, portfolio allocation, recurring contributions and the surplus sweep.

@@ -55,7 +55,7 @@ class TestSpecErrors(unittest.TestCase):
 
     def test_unknown_state(self):
         data = minimal(state="ZZ")
-        data["meta"]["default_state"] = "WY"  # no pack (AZ has had one since Plan 31)
+        data["meta"]["default_state"] = "WY"  # no tax pack
         findings = validate_spec(data)
         self.assertEqual(codes(findings), ["unknown_state", "unknown_state"])
         self.assertEqual({f.path for f in findings}, {"meta.default_state", "people[0].state"})
@@ -98,13 +98,13 @@ class TestSpecErrors(unittest.TestCase):
         ]
         data["meta"]["start"] = "2026-10"
         findings = [f for f in validate_spec(data) if f.code == "not_yet_supported"]
-        # Plan 32 supports birth and meta.start, Plan 27 fixed income and Roth conversions; divorce is still
-        # rejected.
+        # birth, meta.start, fixed income and Roth conversions are supported; divorce is rejected.
         self.assertEqual(codes(findings), ["not_yet_supported"])
-        self.assertIn("backlog (divorce)", findings[0].message)
+        self.assertIn("not yet supported", findings[0].message.lower())
+        self.assertIn("divorce", findings[0].message)
 
     def test_every_not_yet_supported_field_is_rejected(self):
-        """A later plan flips a field on by deleting its marker; until then setting it is an error."""
+        """Supporting a field means deleting its marker; until then setting it is an error."""
         from ..spec.docs import _models_in_order
 
         marked = [
@@ -113,12 +113,12 @@ class TestSpecErrors(unittest.TestCase):
             for name, info in model.model_fields.items()
             if isinstance(info.json_schema_extra, dict) and NYS_KEY in info.json_schema_extra
         ]
-        self.assertTrue(marked)  # shrinks as later plans flip fields on
+        self.assertTrue(marked)  # shrinks as fields become supported
         spec = spec_of(not_yet_supported())
         self.assertEqual(codes(not_yet_supported_findings(spec)), ["not_yet_supported"])
 
     def test_standalone_401k(self):
-        """Plan 27 D3: a 401k without a job (an old employer's plan) is supported."""
+        """A 401k without a job (an old employer's plan) is supported."""
         data = minimal()
         data["people"][0]["accounts"].append({"kind": "401k", "pretax_balance": 1000})
         self.assertNotIn("not_yet_supported", codes(validate_spec(data)))
@@ -151,7 +151,7 @@ class TestSpecErrors(unittest.TestCase):
             {"at": 2027, "person": "alex", "action": "add_account", "account": {"kind": "401k", "job": "nope"}},
             {"at": 2027, "person": "alex", "action": "add_account", "account": {"kind": "529", "beneficiary": "kid"}},
         ]
-        # A standalone 401k (the first event) is supported since Plan 27 D3.
+        # A standalone 401k (the first event) is supported.
         self.assertEqual(sorted(codes(validate_spec(data))), ["unknown_reference", "unknown_reference"])
 
     def test_claim_age_relative_to_another_person(self):
@@ -255,7 +255,7 @@ def _python_household():
 
     It reproduces the notebook's problems: a marriage LifeEvent dated before the start year (so it
     never fires), core's 0% spending/salary growth defaults, and a bank account standing in for bonds.
-    Since Plan 26, ``LifeEvents`` itself refuses a past-dated event, so the schedule here is mutated
+    ``LifeEvents`` itself refuses a past-dated event, so the schedule here is mutated
     directly (as code that bypasses the constructor could) to show the validator still catches it.
     """
     model = LifeModel(start_year=2026, end_year=2030)
@@ -295,7 +295,7 @@ class TestModelValidation(unittest.TestCase):
 
         model = LifeModel(start_year=2026)
         family = Family(model)
-        # Plan 31 D4: a state without a tax pack is refused when the person is built (no silent flat rate).
+        # A state without a tax pack is refused when the person is built (no silent flat rate).
         with self.assertRaises(UnknownStateError):
             Person(family, "Solo", age=70, retirement_age=65, spending=Spending(model, base_annual=1), state="ZZ")
         person = Person(family, "Solo", age=70, retirement_age=65, spending=Spending(model, base_annual=1), state="CA")

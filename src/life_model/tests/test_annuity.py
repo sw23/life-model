@@ -434,7 +434,7 @@ class TestTermLifeMultipliersFromConfig(unittest.TestCase):
         config.apply_scenario("flat", {"insurance": {"life": {"term_age_multipliers": {20: 1.0, 90: 1.0}}}})
         model = LifeModel(start_year=2026, end_year=2026, config=config)
         person = Person(Family(model), "P", age=60, retirement_age=65, spending=Spending(model, 0))
-        # Plan 26 D8: age-banded pricing is explicit (the default is a level premium).
+        # Age-banded pricing is explicit (the default is a level premium).
         policy = LifeInsurance(
             person, LifeInsuranceType.TERM, 500000, 50.0, 20, premium_increase_rate=PremiumIncreaseType.AGE_BANDED
         )

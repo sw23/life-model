@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Plan 30 D4/D7: the docs that travel with the repo stay true.
+"""The docs that travel with the repo stay true.
 
 * every scenario name used in docs, the README and docstrings resolves via ``list_scenarios()``;
 * the README lists every packaged scenario;
@@ -164,7 +164,8 @@ class TestAgentDocs(unittest.TestCase):
 
     def test_agents_md_is_current(self):
         text = (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
-        # Plan 30 Problem 3: the stale claims are gone, the current ones are present.
+        # AGENTS.md states the current facts (packaged data via importlib.resources, the stage names, the
+        # tooling), not the false claim that config is loaded relative to the repo root.
         self.assertNotIn("relative to the repo root", text)
         self.assertIn("importlib.resources", text)
         self.assertIn("`pre_step` (", text)

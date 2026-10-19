@@ -3,8 +3,8 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Plan 27 PR C: homes, mortgages and loans entered from their statements (D1), loans in months,
-extra principal, refinancing, home equity lines and card charges (D7).
+"""Homes, mortgages and loans entered from their statements, loans in months, extra principal,
+refinancing, home equity lines and card charges.
 
 Dollar assertions use the frozen fixture config. The amortization figures are checked against an
 independent computation (the closed-form schedule in decimal arithmetic, and a lender's schedule
@@ -120,7 +120,7 @@ class TestLoanTerms(unittest.TestCase):
 
 
 class TestMortgageFromStatement(unittest.TestCase):
-    """Acceptance (Plan 27 PR C)."""
+    """A mortgage entered from its statement or origination terms resolves to the lender's schedule."""
 
     def test_origination_alone_gives_the_2026_balance_and_payment(self):
         model = _model()
@@ -210,7 +210,7 @@ class TestMortgageFromStatement(unittest.TestCase):
 
 class TestLoansInMonths(unittest.TestCase):
     def test_66_month_car_loan_ends_in_month_66(self):
-        """Acceptance (Plan 27 PR C)."""
+        """A loan's term is in months: a 66-month car loan makes its last payment in month 66."""
         model = _model(end_year=2032)
         person = _person(model)
         loan = CarLoan(person, original_amount=30000, rate_pct=7.0, name="Car", term_months=66)

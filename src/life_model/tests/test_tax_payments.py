@@ -3,9 +3,9 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Plan 31 tasks 6-7: withholding, estimated payments and the April settlement (D3), the ACA premium tax
-credit, residency timelines and part-year state returns (D4), qualifying surviving spouses and dependents
-(D5), and the contribution plans' tax hold-back.
+"""Withholding, estimated payments and the April settlement, the ACA premium tax credit, residency
+timelines and part-year state returns, qualifying surviving spouses and dependents, and the contribution
+plans' tax hold-back.
 
 Dollar assertions read published years (2024-2026) of the packaged tables (each verified against its source:
 IRS Pub. 15-T, Form 2210 and 8962 instructions, state revenue departments).
@@ -102,7 +102,7 @@ class TestPercentageMethod(unittest.TestCase):
         """Projected years derive the tables from brackets and the standard deduction; the rule reproduces every
         published 2024 and 2026 row (the checkbox schedules' thresholds are printed rounded to the dollar). The 2025
         tables were published before OBBBA raised the 2025 standard deduction ($15,000 to $15,750), so they derive
-        from the old amounts: the engine withholds by the published tables, as employers did."""
+        from the pre-OBBBA amounts: the engine withholds by the published tables, as employers did."""
         for year in (2024, 2026):
             view = _view(year)
             for status in ("single", "married_filing_jointly", "head_of_household"):
@@ -313,9 +313,8 @@ class TestContributionHoldBack(unittest.TestCase):
         return model, person, brokerage
 
     def test_no_december_sell_back(self):
-        """Before Plan 31 this household contributed $1,000 of its $1,000-ish monthly surplus January-November and
-        then sold $25,209 of the brokerage in December to pay the year's taxes (fourth-wave 1cd3555). The plan now
-        holds back the month's share of the year's unpaid tax: nothing is sold."""
+        """The plan holds back each month's share of the year's unpaid tax, so a household contributing its whole
+        monthly surplus never has to sell brokerage in December to pay the year's taxes."""
         model, person, brokerage = self._run()
         events = model.event_log.to_frame()
         self.assertFalse((events.kind == "forced_sale").any())
@@ -392,7 +391,7 @@ class TestPremiumTaxCredit(unittest.TestCase):
 
 
 # --------------------------------------------------------------------------------------------------
-# Residency (D4)
+# Residency
 # --------------------------------------------------------------------------------------------------
 
 
@@ -452,7 +451,7 @@ class TestResidency(unittest.TestCase):
 
 
 # --------------------------------------------------------------------------------------------------
-# Filing status (D5)
+# Filing status
 # --------------------------------------------------------------------------------------------------
 
 

@@ -3,8 +3,13 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Fixes from the Plan 30 dogfood test: a fresh agent modeled a household from the agent docs alone and
-reported what it could not represent or what misled it (docs/rebaseline-dogfood.md)."""
+"""Modeling a household from its documents through the spec, the CLI and the one-call API.
+
+Real-dollar results conserve money, the summaries answer the usual questions, an SSA estimate responds to
+early retirement when the earnings record is given, contribution plans have windows, loans can follow
+their statement, child ages are exact, spouses can share accounts, and statement details (a policy's issue
+month, a CD's accrued interest) are representable. ``fixtures/two_earner_household.yaml`` exercises them
+together under the strict checks."""
 
 import contextlib
 import io
@@ -63,7 +68,7 @@ class _SpecFile(unittest.TestCase):
 
 
 class TestRealDollarConservation(_SpecFile):
-    """Friction 1: a real-dollar run reported a conservation failure in every year after the first."""
+    """A real-dollar result passes the conservation check in every year; strict checks fail a leak in either mode."""
 
     def test_real_dollar_result_conserves(self):
         spec = minimal()
@@ -114,7 +119,7 @@ class TestRealDollarConservation(_SpecFile):
 
 
 class TestOutputs(_SpecFile):
-    """Friction 16: the summaries answer the questions agents ask without re-running in Python."""
+    """The summaries answer the usual questions (shortfalls, conservation, peak and lowest cash) without code."""
 
     def test_run_text_always_prints_shortfalls_and_conservation(self):
         code, out, err = _invoke("run", str(self.write(minimal())))
@@ -187,7 +192,8 @@ def _sam(retirement_age: float, *, history: bool = True) -> dict:
 
 
 class TestSocialSecurityOverride(unittest.TestCase):
-    """Friction 4: an SSA estimate assumes work until full retirement age."""
+    """An SSA statement estimate assumes work until full retirement age; an earnings record lets it respond to an
+    earlier retirement."""
 
     def _benefit(self, data: dict) -> float:
         model = _quiet_build(data)
@@ -212,7 +218,7 @@ class TestSocialSecurityOverride(unittest.TestCase):
 
 
 class TestContributionPlanWindows(unittest.TestCase):
-    """Friction 7: contribution plans can end, and a 529 plan stops when college starts."""
+    """Contribution plans can start and end, and a 529 plan stops when college starts."""
 
     def _family(self, plan: dict, events: list | None = None, child: dict | None = None) -> dict:
         data = minimal()
@@ -288,7 +294,7 @@ class TestContributionPlanWindows(unittest.TestCase):
 
 
 class TestLoanSchedule(unittest.TestCase):
-    """Friction 8: a loan statement behind its own schedule."""
+    """A loan statement whose balance is behind the original amortization schedule."""
 
     def _car(self, **fields) -> dict:
         data = minimal()
@@ -321,7 +327,7 @@ class TestLoanSchedule(unittest.TestCase):
 
 
 class TestChildAges(unittest.TestCase):
-    """Friction 13: care_expenses_annual stops at the 13th birthday month."""
+    """care_expenses_annual stops in the month of the 13th birthday."""
 
     def _care(self, **child) -> "dict[int, float]":
         data = minimal()
@@ -362,7 +368,7 @@ class TestChildAges(unittest.TestCase):
 
 class TestStartingStateAndInputs(unittest.TestCase):
     def test_past_marriage_is_not_an_event(self):
-        """Friction 17."""
+        """A marriage dated before the start year is starting state, not an event."""
         data = minimal()
         sam = {**minimal()["people"][0], "id": "sam", "name": "Sam"}
         sam["jobs"] = [{**sam["jobs"][0], "id": "sam_job"}]
@@ -376,7 +382,7 @@ class TestStartingStateAndInputs(unittest.TestCase):
             self.assertEqual(int((result.events["kind"] == "married").sum()), expected, year)
 
     def test_student_loan_type_unknown(self):
-        """Friction 18."""
+        """A student loan of unknown type validates and builds; RAP still needs a federal loan."""
         data = minimal()
         data["people"][0]["debts"] = [{"kind": "student", "balance": 11200, "rate_pct": 4.5, "remaining_months": 41}]
         self.assertEqual([f for f in life_model.validate(data) if f.level == "error"], [])
@@ -386,7 +392,7 @@ class TestStartingStateAndInputs(unittest.TestCase):
         self.assertIn("rap_needs_federal_loan", [f.code for f in life_model.validate(data)])
 
     def test_bonus_is_plan_pay(self):
-        """Friction 10: one field for the plan's compensation; match_on_bonus is a deprecated alias."""
+        """bonus_is_plan_pay decides whether the bonus is plan compensation; match_on_bonus is a deprecated alias."""
         from ..spec import schema
 
         account = schema.Job401k.model_validate({"kind": "401k", "bonus_is_plan_pay": True})
@@ -433,7 +439,7 @@ def _joint_couple(*, filing_status: str = "joint", alex_dies_at: int | None = No
 
 
 class TestJointAccounts(unittest.TestCase):
-    """Friction 9 (and 3): joint bank and brokerage accounts between spouses; spending on one spouse."""
+    """Joint bank and brokerage accounts between spouses, with the household spending on one spouse."""
 
     def test_validates_without_a_bank_for_the_second_spouse(self):
         self.assertEqual(life_model.validate(_joint_couple()), [])
@@ -490,7 +496,7 @@ class TestJointAccounts(unittest.TestCase):
 
 
 class TestStatementTiming(unittest.TestCase):
-    """Rows of the 'could not be represented' table: a term policy's issue month, a CD's accrued interest."""
+    """Statement timing details: a term policy's issue month and a CD's interest accrued before the start."""
 
     def test_term_life_issue_month(self):
         data = minimal()
@@ -536,27 +542,27 @@ class TestStatementTiming(unittest.TestCase):
 
 
 FIXTURE = Path(__file__).parent / "fixtures" / "two_earner_household.yaml"
-#: The warnings the dogfood household keeps on purpose for the strict runs (each is asserted separately).
+#: The warnings the two-earner household keeps on purpose for the strict runs (each is asserted separately).
 KEPT = ["cash_not_invested", "default_child_costs", "no_health_coverage", "ss_estimate_assumes_work"]
 
 
-def _dogfood(**meta) -> dict:
+def _two_earner(**meta) -> dict:
     data = yaml.safe_load(FIXTURE.read_text(encoding="utf-8"))
     data["meta"].update(meta)
     return data
 
 
-class TestDogfoodHousehold(unittest.TestCase):
-    """The dogfood household re-run with the fixes (docs/rebaseline-dogfood.md)."""
+class TestTwoEarnerHousehold(unittest.TestCase):
+    """A two-earner household with a child, a mortgage, joint accounts and statement inputs, run strict."""
 
     @classmethod
     def setUpClass(cls):
-        spec = _dogfood(accepted_warnings=KEPT)
+        spec = _two_earner(accepted_warnings=KEPT)
         cls.nominal = life_model.run(spec, seed=1, checks="strict")
         cls.real = life_model.run(spec, seed=1, checks="strict", real_dollars=True)
 
     def test_validator_prints_the_new_warnings(self):
-        findings = life_model.validate(_dogfood())
+        findings = life_model.validate(_two_earner())
         self.assertEqual([f for f in findings if f.level == "error"], [])
         codes = [f.code for f in findings]
         self.assertEqual(sorted(set(codes)), KEPT)
@@ -600,11 +606,11 @@ class TestDogfoodHousehold(unittest.TestCase):
         def pia(result) -> float:
             return result._model.household.people["sam"].social_security._pia_by_year[2054]
 
-        changed = api.apply_change(_dogfood(accepted_warnings=KEPT), {"people": {"sam": {"retirement_age": 55}}})
+        changed = api.apply_change(_two_earner(accepted_warnings=KEPT), {"people": {"sam": {"retirement_age": 55}}})
         early = life_model.run(changed, seed=1, checks="strict")
         self.assertLess(pia(early), pia(self.nominal))
         # Dana's statement estimate has no earnings record, so hers does not move (the validator warned).
-        changed = api.apply_change(_dogfood(accepted_warnings=KEPT), {"people": {"dana": {"retirement_age": 55}}})
+        changed = api.apply_change(_two_earner(accepted_warnings=KEPT), {"people": {"dana": {"retirement_age": 55}}})
         dana_early = life_model.run(changed, seed=1, checks="strict")
         dana = dana_early._model.household.people["dana"].social_security
         base = self.nominal._model.household.people["dana"].social_security
@@ -622,8 +628,8 @@ class TestDogfoodHousehold(unittest.TestCase):
         self.assertEqual(model.household.items["dana_student"].loan_type.name, "UNKNOWN")
 
 
-class TestPlan31Interactions(unittest.TestCase):
-    """The dogfood fixes with Plan 31 part 2: marketplace coverage, withholding."""
+class TestMarketplaceCoverageAndWithholding(unittest.TestCase):
+    """Marketplace coverage satisfies the health-coverage warning; the household runs with W-4 withholding."""
 
     def test_marketplace_coverage_satisfies_the_health_warning(self):
         data = minimal(retirement_age=60)
@@ -645,8 +651,8 @@ class TestPlan31Interactions(unittest.TestCase):
         data["people"][0]["healthcare"] = {"medicare": True}
         self.assertNotIn("no_health_coverage", [f.code for f in life_model.validate(data)])
 
-    def test_dogfood_household_with_withholding(self):
-        data = _dogfood(accepted_warnings=KEPT)
+    def test_two_earner_household_with_withholding(self):
+        data = _two_earner(accepted_warnings=KEPT)
         for person in data["people"]:
             for job in person["jobs"]:
                 job.setdefault("payroll", {})["withholding"] = "w4_default"

@@ -3,12 +3,12 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""The cash-flow ledger and the money-conservation check (Plan 28, task 3).
+"""The cash-flow ledger and the money-conservation check.
 
 The conservation check compares each year's change in household net worth, measured from the
 balances, with the year's net external flow on the ledger. The whole-household tests run decades
-of every major code path; the bug tests below each pin one place where money used to appear or
-vanish.
+of every major code path; the edge-case tests below each pin one place (deaths, estates, closed
+policies, underwater sales) where money must not appear or vanish without a ledger flow.
 """
 
 import unittest
@@ -76,7 +76,7 @@ class TestLedgerEntries(unittest.TestCase):
         taxes = frame[frame.kind.isin(["tax", "penalty"])].amount.sum()
         self.assertAlmostEqual(taxes, person.tax_returns[2026].total_tax, places=6)
         self.assertEqual(frame.year.unique().tolist(), [2026])
-        # Every entry carries the month it was posted in (Plan 32: the engine is monthly).
+        # Every entry carries the month it was posted in (the engine is monthly).
         self.assertTrue(frame.month.between(1, 12).all())
         self.assertEqual(model.ledger.names[f"BankAccount:{bank.unique_id}"], "Pat's BankAccount (Bank)")
         # The DataCollector table exposes the same rows.
@@ -91,7 +91,7 @@ class TestLedgerEntries(unittest.TestCase):
         BrokerageAccount(person, company="Broker", balance=200000)
         model.run()
         sales = [e for e in model.ledger if e.kind == "sale"]
-        # Plan 32: each month's bills sell what the bank can't cover; December also funds the taxes.
+        # Each month's bills sell what the bank can't cover; December also funds the taxes.
         bill_sales = [e for e in sales if e.cause != "fund 2026 taxes"]
         self.assertEqual([e.month for e in bill_sales], list(range(1, 13)))
         for sale in bill_sales:
@@ -185,11 +185,11 @@ class TestConservationOnWholeHouseholds(unittest.TestCase):
         self.assertEqual(opening.amount, 5000)
 
 
-class TestMoneyConservationBugs(unittest.TestCase):
-    """Each test pins a place where money used to be created or destroyed without a flow."""
+class TestMoneyConservationEdgeCases(unittest.TestCase):
+    """Each test pins an edge case where money must not be created or destroyed without a flow."""
 
     def test_social_security_stops_at_death(self):
-        # Bug: SocialSecurity kept paying a dead person, into a cash pocket nobody owned.
+        # Benefits stop at death: nothing is paid to a dead person or into a cash pocket nobody owns.
         model = LifeModel(start_year=2026, end_year=2030)
         person = _person(model, age=70, mortality_mode=MortalityMode.FIXED_AGE, death_age=72)
         heir = Person(person.family, "Heir", 40, 65, Spending(model, base_annual=0))
@@ -198,14 +198,14 @@ class TestMoneyConservationBugs(unittest.TestCase):
         SocialSecurity(person, claim_age=67, earnings_history=EARNINGS_HISTORY)
         model.run()
         benefits = [e for e in model.ledger if e.kind == "benefit" and e.source == "Social Security"]
-        # Plan 32: the death (January 2028, at 72) comes after that month's benefit, then nothing.
+        # The death (January 2028, at 72) comes after that month's benefit, then nothing.
         self.assertEqual(max((e.year, e.month) for e in benefits), (2028, 1))
         self.assertEqual(sorted({e.year for e in benefits}), [2026, 2027, 2028])
         self.assertEqual(person.cash, 0)
         assert_conservation(model)
 
     def test_unpaid_bills_debt_passes_to_the_heir(self):
-        # Bug: a decedent's carried unpaid-bills debt vanished at death (free money for the estate).
+        # A decedent's carried unpaid-bills debt is an estate liability; it does not vanish at death.
         model = LifeModel(start_year=2026, end_year=2027)
         person = _person(model, age=80, mortality_mode=MortalityMode.FIXED_AGE, death_age=81, spending=50000)
         heir = Person(person.family, "Heir", 50, 65, Spending(model, base_annual=0))
@@ -217,13 +217,13 @@ class TestMoneyConservationBugs(unittest.TestCase):
         model.step_year()
         self.assertTrue(person.is_deceased)
         self.assertEqual(person.debt, 0)
-        # The heir's settlement repaid the inherited debt (with a month of interest, Plan 32).
+        # The heir's settlement repaid the inherited debt (with a month of interest).
         repaid = [e for e in model.ledger.for_year(2027) if e.cause == "repay unpaid bills"]
         self.assertGreater(sum(e.amount for e in repaid), carried)
         assert_conservation(model)
 
     def test_cash_held_outside_banks_passes_to_the_heir(self):
-        # Bug: cash a decedent held without a bank account vanished at death.
+        # Cash a decedent held without a bank account passes to the heir.
         model = LifeModel(start_year=2026, end_year=2027)
         person = _person(model, age=80, mortality_mode=MortalityMode.FIXED_AGE, death_age=81)
         heir = Person(person.family, "Heir", 50, 65, Spending(model, base_annual=0))
@@ -235,9 +235,9 @@ class TestMoneyConservationBugs(unittest.TestCase):
         assert_conservation(model)
 
     def test_agents_removed_at_a_death_do_not_run_the_rest_of_that_stage(self):
-        # Bug: die() removes the decedent's pensions "so nothing of theirs steps again", but the
-        # engine had already snapshotted the stage's agent list, so a survivor pension still paid
-        # the survivor (into a cash pocket nobody owned) in the year she died.
+        # die() removes the decedent's pensions so nothing of theirs steps again. A stage iterates a snapshot
+        # of the agent list, but an agent removed at a death does not run the rest of that stage, so a
+        # survivor pension stops paying (into a cash pocket nobody owns) once the survivor dies.
         from ..account.pension import Pension
 
         model = LifeModel(start_year=2026, end_year=2031)
@@ -256,14 +256,14 @@ class TestMoneyConservationBugs(unittest.TestCase):
         model.run()
         self.assertTrue(sue.is_deceased)
         paid = {(e.year, e.month) for e in model.ledger if e.kind == "benefit"}
-        # Sue died in January 2029, after that month's survivor benefit (Plan 32: deaths are monthly).
+        # Sue died in January 2029, after that month's survivor benefit (deaths are monthly).
         self.assertEqual(max(paid), (2029, 1))
         self.assertEqual(sue.cash, 0)
         assert_conservation(model)
 
     def test_death_with_a_529_plan_passes_it_on(self):
-        # Crash (found by the conservation scenarios): a 529 plan's ``beneficiary`` is the student, a
-        # Child, which the estate code read as a designated Person (``beneficiary.is_deceased``).
+        # A 529 plan's ``beneficiary`` is the student, a Child, not a designated Person: the estate code
+        # must not treat it as one (``beneficiary.is_deceased``).
         from ..dependents.plan529 import Plan529
 
         model = LifeModel(start_year=2026, end_year=2027)
@@ -287,8 +287,8 @@ class TestMoneyConservationBugs(unittest.TestCase):
         assert_conservation(model)
 
     def test_a_dissolved_estate_stops_donating(self):
-        # Bug: with no heir, the decedent's dissolved bank account kept its balance after removal and
-        # their Donation agent kept spending it every year (and reporting it in the Charity column).
+        # With no heir, the decedent's bank account is dissolved to zero and their Donation agent stops:
+        # nothing keeps spending (or reporting in the Charity column) from a removed account.
         from ..charity.donation import Donation
 
         model = LifeModel(start_year=2026, end_year=2030)
@@ -305,9 +305,8 @@ class TestMoneyConservationBugs(unittest.TestCase):
         assert_conservation(model)
 
     def test_a_closed_whole_life_policy_holds_no_money(self):
-        # Bug: a policy that ended (death, lapse) kept its cash value and loan balance, so surrendering
-        # it later paid the stale cash value out again, and repaying its loan paid off a loan the death
-        # benefit (or the lapse) had already settled.
+        # A policy that ended (death, lapse) holds no cash value or loan balance: the death benefit (or the
+        # lapse) already settled both, so surrendering it pays nothing and there is no loan to repay.
         from ..insurance.life_insurance import LifeInsurance, LifeInsuranceType
 
         model = LifeModel(start_year=2026, end_year=2029)
@@ -348,8 +347,8 @@ class TestMoneyConservationBugs(unittest.TestCase):
         assert_conservation(model)
 
     def test_underwater_home_sale_is_paid_by_the_owner(self):
-        # Bug: selling a home for less than the mortgage payoff (plus selling costs) silently wrote
-        # the difference off: the mortgage vanished and nobody paid.
+        # Selling a home for less than the mortgage payoff (plus selling costs): the owner pays the
+        # difference; the shortfall is not written off.
         model = LifeModel(start_year=2026, end_year=2026)
         person = _person(model)
         BankAccount(person, company="Bank", balance=100000)

@@ -3,8 +3,9 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Plan 27 PR D in the household spec: existing policies, annuities and pensions, health and disability
-insurance, Social Security statement fields and the spending model (validate, build, extract, run)."""
+"""Statement-entered insurance, benefits and spending in the household spec: existing policies, annuities
+and pensions, health and disability insurance, Social Security statement fields and the spending model
+(validate, build, extract, run)."""
 
 import unittest
 
@@ -88,7 +89,7 @@ def _rich() -> dict:
     return data
 
 
-class TestPlan27PrDSpec(unittest.TestCase):
+class TestStatementInsuranceSpec(unittest.TestCase):
     def test_validates_builds_round_trips_and_conserves(self):
         data = _rich()
         self.assertEqual(_codes(validate_spec(data, config=fixture_config()), ERROR), [])
@@ -133,8 +134,8 @@ class TestPlan27PrDSpec(unittest.TestCase):
         self.assertNotIn("ss_fra_by_birth_year", [code for code, _ in _codes(validate_spec(data))])
 
     def test_pia_override_excludes_a_synthesized_record(self):
-        # The dogfood fixes allow the statement's earnings_history with the override (it scales the override for
-        # the years not worked); a synthesized record is still exclusive with it.
+        # The statement's earnings_history is allowed with the override (it scales the override for the years
+        # not worked); a synthesized record is exclusive with it.
         data = minimal()
         data["people"][0]["social_security"] = {"pia_override_monthly": 2000, "earnings_history": {2020: 1}}
         spec_of(data)

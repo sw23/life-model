@@ -74,7 +74,7 @@ class TestLifeInsurance(unittest.TestCase):
         self.assertTrue(result)
         self.assertEqual(policy.total_premiums_paid, 600)
         self.assertEqual(policy.consecutive_missed_payments, 0)
-        # The premium is a bill paid at year-end settlement (Plan 15 D3), not an immediate debit.
+        # The premium is added to the bills paid with the household's spending, not an immediate debit.
         self.assertEqual(self.john.spending.get_yearly_spending(), initial_bills + 600)
 
     def test_premium_payment_insufficient_funds(self):
@@ -306,7 +306,7 @@ class TestLifeInsurance(unittest.TestCase):
             death_benefit=500000,
             premium_monthly=50,
             term_years=30,
-            premium_increase_rate=PremiumIncreaseType.AGE_BANDED,  # Plan 26 D8: explicit
+            premium_increase_rate=PremiumIncreaseType.AGE_BANDED,  # age banding is opt-in
         )
 
         initial_premium = policy.monthly_premium
@@ -407,7 +407,7 @@ class TestLifeInsurance(unittest.TestCase):
             death_benefit=500000,
             premium_monthly=50,
             term_years=30,
-            premium_increase_rate=PremiumIncreaseType.AGE_BANDED,  # Plan 26 D8: explicit
+            premium_increase_rate=PremiumIncreaseType.AGE_BANDED,  # age banding is opt-in
         )
 
         # Should have default age multipliers
@@ -437,7 +437,7 @@ class TestLifeInsurance(unittest.TestCase):
             death_benefit=500000,
             premium_monthly=50,
             term_years=30,
-            premium_increase_rate=PremiumIncreaseType.AGE_BANDED,  # Plan 26 D8: explicit
+            premium_increase_rate=PremiumIncreaseType.AGE_BANDED,  # age banding is opt-in
         )
 
         initial_premium = policy.monthly_premium
@@ -481,7 +481,7 @@ class TestLifeInsurance(unittest.TestCase):
         self.assertEqual(age_policy.yearly_increase_rate, 0.0)
         self.assertEqual(age_policy.age_multipliers, age_multipliers)
 
-        # Test with None (Plan 26 D8: a level premium; age bands are opt-in)
+        # Test with None (a level premium; age bands are opt-in)
         default_policy = LifeInsurance(
             owner=self.john,
             policy_type=LifeInsuranceType.TERM,
@@ -594,7 +594,7 @@ if __name__ == "__main__":
 
 
 class TestLifePremiumBillPath(unittest.TestCase):
-    """Plan 15 D3: life premiums settle through the bill path like every other premium."""
+    """Life premiums settle through the bill path like every other premium."""
 
     def test_cash_poor_retiree_funds_premium_from_401k_instead_of_lapsing(self):
         from ..account.job401k import Job401kAccount

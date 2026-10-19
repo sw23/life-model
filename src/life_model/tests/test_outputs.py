@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""New stats, agent Name/Type/Owner columns and the pre-post_step snapshot (Plan 28, task 5)."""
+"""New stats, agent Name/Type/Owner columns and the pre-post_step snapshot."""
 
 import unittest
 

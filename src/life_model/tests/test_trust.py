@@ -165,7 +165,7 @@ class TestTrustEstateIntegration(unittest.TestCase):
         self.assertNotIn(trust, model.agents)
 
     def test_revocable_trust_with_predeceased_beneficiaries_escheats_to_residual(self):
-        # Regression (money conservation): when every trust beneficiary predeceases the grantor,
+        # Money conservation: when every trust beneficiary predeceases the grantor,
         # the corpus escheats to the residual inheritor instead of dissolving to nowhere.
         model = _model(estate_tax_exemption=10000000)
         family = Family(model)

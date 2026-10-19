@@ -5,9 +5,9 @@
 
 """Regression tests for tax engine correctness.
 
-Each test targets a specific tax-engine bug. Dollar
-assertions read the frozen fixture config (fixtures/test_config.yaml), never live-year
-defaults, so they stay stable across annual data refreshes.
+Each test pins one tax-engine rule (bracket math, per-person FICA, withdrawal sizing, deduction
+timing, housing deductions, the RMD start age). Dollar assertions read the frozen fixture config
+(fixtures/test_config.yaml), never live-year defaults, so they stay stable across annual data refreshes.
 """
 
 import unittest
@@ -68,7 +68,7 @@ class TestBracketMath(unittest.TestCase):
 
 
 class TestFicaPerPerson(unittest.TestCase):
-    """Bugs 1-3: FICA is a per-person payroll tax on wages only."""
+    """FICA is a per-person payroll tax on wages only."""
 
     def test_retiree_401k_distribution_pays_no_fica(self):
         # A retiree living on 401k distributions has no wages, so owes zero FICA.
@@ -149,7 +149,7 @@ class TestWithdrawalSizing(unittest.TestCase):
 
 
 class TestDeductionTiming(unittest.TestCase):
-    """Bugs 5-6: charitable deductions must reduce taxes and only when cash actually leaves."""
+    """Charitable deductions reduce taxes, and only when cash actually leaves."""
 
     def _federal_tax_with_donation(self, donation_amount: float) -> float:
         model = LifeModel(start_year=2020, end_year=2020, config=_fixture_config())
@@ -165,7 +165,7 @@ class TestDeductionTiming(unittest.TestCase):
     def test_recurring_donation_reduces_federal_tax(self):
         # A donation made this year must be deductible this year. Itemizing $30k (vs the
         # $10k fixture standard deduction) lowers taxable income by $20k -> $5k less tax at 25%.
-        # DEFAULT (5%) state income tax now also enters SALT. Only the itemizing
+        # DEFAULT (5%) state income tax also enters SALT. Only the itemizing
         # (donation) case includes it: state tax = 5% of the $70k post-charity AGI = $3,500, adding
         # $3,500 * 25% = $875 of federal savings. Total delta = $5,000 + $875 = $5,875.
         tax_without = self._federal_tax_with_donation(0)

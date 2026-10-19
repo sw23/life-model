@@ -45,7 +45,7 @@ class TestJob401k(unittest.TestCase):
         self.assertEqual(account.roth_balance, 0)
 
     def test_deposit_validation_is_uniform(self):
-        """Same rule as every account: zero is a successful no-op, negative raises (Plan 06 item 14)."""
+        """Same rule as every account: zero is a successful no-op, negative raises."""
         account = self._account()
         self.assertTrue(account.deposit(0))
         self.assertEqual(account.balance, 0)
@@ -76,12 +76,12 @@ class TestJob401k(unittest.TestCase):
         account.on_year_start()
         account.pre_step()  # RMD only; the owner is far below RMD age.
         self.assertEqual(account.pretax_balance, 10000)
-        run_months(account.model, account.step)  # Plan 32: twelve months of growth
+        run_months(account.model, account.step)  # twelve months of growth
         self.assertAlmostEqual(account.pretax_balance, 11000, places=6)
         self.assertAlmostEqual(account.roth_balance, 11000, places=6)
 
     def test_balance_assignment_raises(self):
-        """The derived balance must never silently discard a write (Plan 06 item 8)."""
+        """The derived balance must never silently discard a write."""
         account = self._account(pretax_balance=100)
         with self.assertRaises(AttributeError):
             account.balance = 5
@@ -93,7 +93,7 @@ class TestJob401kLimits(unittest.TestCase):
         return FinancialConfig(config_file=str(Path(__file__).parent / "fixtures" / "test_config.yaml"))
 
     def test_two_jobs_share_one_402g_limit(self):
-        """Plan 06 item 7: two jobs can't each defer the full elective limit."""
+        """Two jobs share one 402(g) elective deferral limit: they can't each defer the full limit."""
         model = LifeModel(end_year=2020, start_year=2020, config=self._fixture_config())
         person = Person(Family(model), "P", 40, 65, Spending(model, base_annual=0))
         BankAccount(person, company="Bank", balance=0)
@@ -104,7 +104,7 @@ class TestJob401kLimits(unittest.TestCase):
 
         model.step_year()
 
-        # Fixture 402(g) base is $20k shared by both jobs. Plan 32: both pay monthly, so both defer
+        # Fixture 402(g) base is $20k shared by both jobs. Both pay monthly, so both defer
         # $1,250 a month until the shared limit is reached in August ($10k each).
         self.assertAlmostEqual(job1.retirement_account.pretax_balance, 10000, places=2)
         self.assertAlmostEqual(job2.retirement_account.pretax_balance, 10000, places=2)
@@ -129,7 +129,7 @@ class TestJob401kLimits(unittest.TestCase):
         person = Person(Family(model), "P", 75, 60, Spending(model, base_annual=0))
         job = Job(person, company="Co", role="Retiree", salary=Salary(model, base_annual=0))
         k401 = Job401kAccount(job, pretax_balance=100000, growth_pct=0)
-        k401.on_year_start()  # Plan 32: the year's RMD is set at the year start, paid in twelfths
+        k401.on_year_start()  # the year's RMD is set at the year start, paid in twelfths
         run_months(model, k401.pre_step)
         self.assertGreater(k401.stat_required_min_distrib, 0)
         self.assertAlmostEqual(person.income.ordinary_taxable, k401.stat_required_min_distrib)

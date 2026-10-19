@@ -3,8 +3,8 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Plan 27 D8 (housing, debt, insurance, Social Security, spending): the canonical constructor names, and
-the old names / positional arguments still working for one release with a DeprecationWarning."""
+"""The canonical constructor names (housing, debt, insurance, Social Security, spending), and the deprecated
+names / positional arguments still working for one release with a DeprecationWarning."""
 
 import unittest
 import warnings

@@ -1,12 +1,11 @@
-# Synthetic household (not real data): the Plan 30 dogfood test's household, as a fresh agent modeled it
-# from the agent docs alone (two W-2 earners, one child, a mortgaged home), adapted to the fields the
-# dogfood fixes added: a joint checking and brokerage account, the child's birth month, a car loan
+# Synthetic household (not real data), modeled from the agent docs alone: two W-2 earners, one child and
+# a mortgaged home, with a joint checking and brokerage account, the child's birth month, a car loan
 # behind its own schedule, the term policy's issue month, the CD's pre-start interest and Sam's SSA
-# earnings record. See test_dogfood.TestDogfoodHousehold and docs/rebaseline-dogfood.md.
+# earnings record. See test_household_modeling.TestTwoEarnerHousehold.
 spec_version: 1
 meta:
-  name: Dogfood household
-  description: Synthetic household from the agent-docs dogfood test, as of 2026-01.
+  name: Two-earner household
+  description: Synthetic two-earner household modeled from the agent docs, as of 2026-01.
   as_of: 2026-01
   start_year: 2026
   end_year: 2079

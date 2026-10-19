@@ -3,10 +3,11 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Plan 26: engine timing, events and settlement correctness.
+"""Engine timing, events and settlement correctness.
 
-Each test class reproduces one defect from the plan's problem statement (the probe scripts that
-found them) and pins the corrected behaviour. Dollar assertions load the frozen fixture config.
+Each test class pins one timing or settlement rule: what an age means, when events fire, how a married
+unit pays, how interest and benefits are taxed, and how premiums, annuities and pensions behave. Dollar
+assertions load the frozen fixture config.
 """
 
 import unittest
@@ -68,7 +69,7 @@ def _agent_column(model, agent, column):
 
 
 class TestAgeSemantics(unittest.TestCase):
-    """Item 1 / D1: the constructor age is the age during the first simulated year."""
+    """The constructor age is the age during the first simulated year."""
 
     def test_collected_age_starts_at_constructor_age(self):
         model = _model()
@@ -150,7 +151,7 @@ def _buy_home(person, price=300000, down=60000):
 
 
 class TestEventsStage(unittest.TestCase):
-    """Item 2 / D2: events fire after income arrives and before the year is settled."""
+    """Events fire after income arrives and before the year is settled."""
 
     def test_stage_order(self):
         self.assertEqual(LifeModel.STAGES, ("pre_step", "events", "step", "post_step"))
@@ -253,7 +254,7 @@ class TestEventsStage(unittest.TestCase):
     def test_post_step_event_takes_effect_next_year(self):
         model = _model(end_year=2028)
         person = _worker(model)
-        # December's post_step: after the year's last bills are paid (Plan 32: events fire in a month).
+        # December's post_step: after the year's last bills are paid (events fire in a month).
         LifeEvents(model, [LifeEvent(2026, "late", person.spending.add_expense, 5000, stage="post_step", month=12)])
         model.run()
         df = _frame(model)
@@ -266,7 +267,7 @@ class TestEventsStage(unittest.TestCase):
 
 
 class TestCreatedYear(unittest.TestCase):
-    """D2: agents record when (and in which stage) they were built.
+    """Agents record when (and in which stage) they were built.
 
     An agent built by a life event is consumed in its creation year (events run before settlement,
     and Job.step books a new job's payroll), so its year-end escalator runs that year like any
@@ -306,7 +307,7 @@ class TestCreatedYear(unittest.TestCase):
 
 
 class TestPastEvents(unittest.TestCase):
-    """Item 3 / D3: events dated before the start year raise, or apply at construction."""
+    """Events dated before the start year raise, or apply at construction."""
 
     def test_past_event_raises(self):
         model = _model()
@@ -335,9 +336,9 @@ class TestPastEvents(unittest.TestCase):
         self.assertTrue(any("after the simulation's end year" in str(w.message) for w in caught))
 
 
-def _probe4_household(*, spouse_first=False, years=3):
-    """The review's probe 4: a married homeowner couple with a 401k and a taxable brokerage account,
-    whose combined bank comfortably covers every year's bills."""
+def _comfortable_couple_household(*, spouse_first=False, years=3):
+    """A married homeowner couple with a 401k and a taxable brokerage account, whose combined bank
+    comfortably covers every year's bills."""
     model = LifeModel(start_year=2026, end_year=2026 + years - 1, config=_fixture_config())
     family = Family(model)
 
@@ -379,10 +380,10 @@ def _probe4_household(*, spouse_first=False, years=3):
 
 
 class TestHouseholdWaterfall(unittest.TestCase):
-    """Item 4 / D4: a married unit pays from all members' banks before selling anyone's brokerage."""
+    """A married unit pays from all members' banks before selling anyone's brokerage."""
 
     def test_married_couple_sells_no_brokerage_while_combined_bank_covers_bills(self):
-        model = _probe4_household()
+        model = _comfortable_couple_household()
         model.run()
         df = _frame(model)
         self.assertTrue((df["Capital Gains"] == 0).all())
@@ -390,8 +391,8 @@ class TestHouseholdWaterfall(unittest.TestCase):
         self.assertTrue((df["Bank Balance"] > 0).all())
 
     def test_result_independent_of_spouse_construction_order(self):
-        first = _probe4_household(spouse_first=False, years=5)
-        second = _probe4_household(spouse_first=True, years=5)
+        first = _comfortable_couple_household(spouse_first=False, years=5)
+        second = _comfortable_couple_household(spouse_first=True, years=5)
         first.run()
         second.run()
         a = first.datacollector.get_model_vars_dataframe()
@@ -423,7 +424,7 @@ class TestHouseholdWaterfall(unittest.TestCase):
 
 
 class TestRothBasisBeforePretax(unittest.TestCase):
-    """Item 10 / D4: under 59.5, penalty-free Roth basis is spent before a penalized pre-tax draw."""
+    """Under 59.5, penalty-free Roth basis is spent before a penalized pre-tax draw."""
 
     def _saver(self, withdrawal_order=None):
         model = _model(end_year=2026)
@@ -452,7 +453,7 @@ class TestRothBasisBeforePretax(unittest.TestCase):
 
 
 class TestMidYearPurchaseUsesHouseholdWaterfall(unittest.TestCase):
-    """Item 11 / D4: a purchase the bank and brokerage can't cover draws the 401k, not a credit card."""
+    """A purchase the bank and brokerage can't cover draws the 401k, not a credit card."""
 
     def test_home_purchase_draws_the_401k_instead_of_creating_debt(self):
         model = _model(end_year=2026)
@@ -471,7 +472,7 @@ class TestMidYearPurchaseUsesHouseholdWaterfall(unittest.TestCase):
 
 
 class TestBankInterestIsIncome(unittest.TestCase):
-    """Item 5 / D5: bank interest is ordinary (NIIT) income on the owner's ledger."""
+    """Bank interest is ordinary (NIIT) income on the owner's ledger."""
 
     def _taxes(self, rate):
         model = _model(end_year=2027)
@@ -490,7 +491,7 @@ class TestBankInterestIsIncome(unittest.TestCase):
         model = _model()
         person = _worker(model, salary=0, bank=0)
         account = BankAccount(person, company="Savings", balance=10000, interest_pct=5, compounding="annual")
-        run_months(model, account.step)  # a year of monthly interest (Plan 32)
+        run_months(model, account.step)  # a year of monthly interest
         totals = person.income.totals_by_type()
         self.assertAlmostEqual(totals[IncomeType.INTEREST], 500, places=6)
         self.assertAlmostEqual(person.income.net_investment_income, 500, places=6)
@@ -503,7 +504,7 @@ class TestBankInterestIsIncome(unittest.TestCase):
         monthly = BankAccount(person, company="M", balance=1000, interest_pct=5, compounding="monthly")
         default = BankAccount(person, company="D", balance=1000, interest_pct=5)
         for account in (annual, monthly, default):
-            run_months(model, account.step)  # a year of monthly interest (Plan 32)
+            run_months(model, account.step)  # a year of monthly interest
         self.assertAlmostEqual(annual.balance, 1050, places=6)
         # interest_rate is an APR compounded monthly: APY = (1 + 0.05/12)^12 - 1 = 5.116%.
         self.assertAlmostEqual(monthly.balance, 1000 * (1 + 0.05 / 12) ** 12, places=6)
@@ -517,7 +518,7 @@ class TestBankInterestIsIncome(unittest.TestCase):
         account = BankAccount(person, company="Savings", balance=100000, interest_pct=5, compounding="annual")
         model.run()
         taxes = person.stat_taxes_paid
-        # Plan 32: each month's interest (before the month's bills) on the balance left after the
+        # Each month's interest (before the month's bills) on the balance left after the
         # previous month's bills; the year's taxes are paid in December.
         monthly_rate = 1.05 ** (1 / 12) - 1
         balance = interest = 0.0
@@ -530,7 +531,7 @@ class TestBankInterestIsIncome(unittest.TestCase):
 
 
 class TestTaxExemptInterestTypes(unittest.TestCase):
-    """D5: interest types for Plan 27's fixed income: municipal (federally exempt) and Treasury
+    """Interest types for fixed-income holdings: municipal (federally exempt) and Treasury
     (state-exempt)."""
 
     def test_municipal_interest_is_outside_ordinary_income_and_niit(self):
@@ -575,7 +576,7 @@ def _retiree(model, family=None, *, name="R", age=70, bank=0, spending=0, retire
 
 
 class TestSocialSecurityTaxedAtSettlement(unittest.TestCase):
-    """Item 6 / D6: the taxable share of benefits comes from the unit's final ledger.
+    """The taxable share of benefits comes from the unit's final ledger.
 
     Benefits need the live config's wage-index and COLA history (the fixture is trimmed); every
     assertion is relative to ``taxable_social_security`` under the same config, not a dollar pin.
@@ -623,7 +624,7 @@ class TestSocialSecurityTaxedAtSettlement(unittest.TestCase):
 
 
 class TestMatchTiers(unittest.TestCase):
-    """Item 7 / D7: the employer match as plan documents state it, the deprecated alias, 415(c)."""
+    """The employer match as plan documents state it, the deprecated alias, 415(c)."""
 
     def _match(self, *, deferral=6, salary=100000, bonus=0, model=None, **account_kwargs):
         model = model or _model(end_year=2026)
@@ -651,7 +652,7 @@ class TestMatchTiers(unittest.TestCase):
         with self.assertWarns(DeprecationWarning) as caught:
             match = self._match(company_match_percent=6)
         self.assertAlmostEqual(match, 360, places=6)  # 6% of the $6,000 deferral
-        # (Plan 27 D8 adds deprecation warnings for the helper's positional arguments; find this one.)
+        # (The helper's positional arguments raise deprecation warnings too; find this one.)
         messages = [str(w.message) for w in caught.warnings]
         self.assertTrue(any("match_tiers=[(100, 6)]" in m for m in messages), messages)
 
@@ -673,7 +674,7 @@ class TestMatchTiers(unittest.TestCase):
         account = Job401kAccount(
             job=job, pretax_contrib_pct=6, growth_pct=0, match_tiers=[(100, 6)], match_vesting_years=3
         )
-        # Quits after December 2027's paycheck (Plan 32: an event in a year fires in its month).
+        # Quits after December 2027's paycheck (an event in a year fires in its month).
         LifeEvents(model, [LifeEvent(2027, "quit", job.retire, month=12)])
         model.run()
         # Two years of deferrals stay; two years of unvested match are forfeited.
@@ -693,7 +694,7 @@ class TestMatchTiers(unittest.TestCase):
 
 
 class TestLevelTermPremiums(unittest.TestCase):
-    """Item 8 / D8: term premiums are level unless age banding is asked for."""
+    """Term premiums are level unless age banding is asked for."""
 
     def _premiums(self, **kwargs):
         model = _model(end_year=2030)
@@ -722,7 +723,7 @@ class TestLevelTermPremiums(unittest.TestCase):
 
 
 class TestAnnuityDefaults(unittest.TestCase):
-    """Item 9 / D9: FIXED/VARIABLE annuities stay in accumulation unless a payout age is given."""
+    """FIXED/VARIABLE annuities stay in accumulation unless a payout age is given."""
 
     def test_fixed_annuity_accumulates(self):
         model = _model(end_year=2028)
@@ -764,7 +765,7 @@ class TestAnnuityDefaults(unittest.TestCase):
 
 
 class TestPensionServiceAccrues(unittest.TestCase):
-    """Item 13 / task 10: pension service grows while the participant works for the sponsor."""
+    """Pension service grows while the participant works for the sponsor."""
 
     def test_unvested_participant_vests_by_working(self):
         model = _model(end_year=2030)
@@ -804,8 +805,8 @@ class TestPensionServiceAccrues(unittest.TestCase):
         self.assertEqual(pension.years_of_service, 1)
 
 
-class TestSmallFixes(unittest.TestCase):
-    """Item 13 / task 10: one-time expenses in combined spending; unpaid end-of-life costs; one tax path."""
+class TestSpendingAndSettlementDetails(unittest.TestCase):
+    """One-time expenses in combined spending; unpaid end-of-life costs; one tax path."""
 
     def test_combined_spending_includes_one_time_expenses(self):
         model = _model()

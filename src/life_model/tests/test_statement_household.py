@@ -3,11 +3,11 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Plan 27 acceptance: a household entered from its statements without workarounds.
+"""A household entered from its statements without workarounds.
 
 A synthetic household with the owner's shape: bonds as fixed-income holdings (not a "Bonds" bank account),
 the 401(k) match as tiers, a brokerage with real basis, a pre-tax health premium and an RSU plan with existing
-unvested grants, plus the other PR A / PR B inputs. ``validate()`` is clean, it runs under the strict
+unvested grants, plus the other statement account and payroll inputs. ``validate()`` is clean, it runs under the strict
 invariant checker, and the spec survives build -> extract unchanged.
 """
 

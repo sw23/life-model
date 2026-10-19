@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""RunResult, exports, explain() and Monte Carlo outputs (Plan 28, task 6)."""
+"""RunResult, exports, explain() and Monte Carlo outputs."""
 
 import importlib.util
 import json
@@ -133,7 +133,7 @@ class TestExports(unittest.TestCase):
                     "ledger.csv",
                     "meta.json",
                     "model.csv",
-                    "monthly_balance_sheets.csv",  # Plan 32: the monthly conservation inputs
+                    "monthly_balance_sheets.csv",  # the monthly conservation inputs
                     "tax_returns.csv",
                 ],
             )
@@ -199,7 +199,7 @@ class TestExplain(unittest.TestCase):
         ):
             self.assertIn(heading, text)
         self.assertIn("solver target", text)
-        self.assertIn("fund 2026 taxes", text)  # Plan 32: bills are paid monthly, taxes in December
+        self.assertIn("fund 2026 taxes", text)  # bills are paid monthly, taxes in December
 
     def test_explain_married_homeowners(self):
         text = married_homeowners(years=6).run().explain(2030)
@@ -263,7 +263,7 @@ if __name__ == "__main__":
 
 
 class TestMonthlyFrames(unittest.TestCase):
-    """Plan 32: RunResult carries the monthly model frame (collect="month") and monthly balance sheets."""
+    """RunResult carries the monthly model frame (collect="month") and monthly balance sheets."""
 
     def test_monthly_frame_and_balance_sheets(self):
         model = LifeModel(start="2026-07", end_year=2027, collect="month")

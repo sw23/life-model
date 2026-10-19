@@ -105,7 +105,7 @@ class TestTenYearInheritance(unittest.TestCase):
         useable = dict(zip(df["Year"], df["Useable Balance"]))
         bank = dict(zip(df["Year"], df["Bank Balance"]))
         # "Useable Balance" also counts bank balances; the inherited corpus is the difference.
-        # Death year: the whole corpus visible. Mid-window: the remaining corpus. Plan 32: the parent
+        # Death year: the whole corpus visible. Mid-window: the remaining corpus. The parent
         # dies in January after January's twelfth of the year's RMD, so the corpus is $500k less it.
         corpus = 500000 - required_min_distrib(80, 500000, config=model.config) / 12
         self.assertAlmostEqual(useable[2026] - bank[2026], corpus, places=2)

@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""The ``life-model`` command line (Plan 30 D1): subcommands, the --json contract, exit codes."""
+"""The ``life-model`` command line: subcommands, the --json contract, exit codes."""
 
 import contextlib
 import io
@@ -224,7 +224,7 @@ class TestRun(CliTestCase):
 
 class TestOutputGuard(CliTestCase):
     def test_refuses_out_inside_src(self):
-        target = REPO_ROOT / "src" / "plan30-should-not-exist"
+        target = REPO_ROOT / "src" / "cli-output-should-not-exist"
         code, payload = invoke_json("run", str(self.spec_path), "--years", "1", "--out", str(target))
         self.assertEqual(code, cli.EXIT_INVALID)
         self.assertIn("Refusing", payload["error"]["message"])
@@ -425,7 +425,7 @@ class TestSchemaAndExamples(CliTestCase):
         names = {row["name"]: row for row in payload["examples"]}
         self.assertIn("married_homeowners", names)
         self.assertTrue(names["married_homeowners"]["runnable"])
-        self.assertTrue(names["self_employed"]["runnable"])  # buildable since Plan 31
+        self.assertTrue(names["self_employed"]["runnable"])
         self.assertIn("stochastic", payload["scenarios"])
         code, out, _ = invoke("examples")
         self.assertIn("self_employed", out)

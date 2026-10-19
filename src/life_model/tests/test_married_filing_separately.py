@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Married filing separately (Plan 05 item 8).
+"""Married filing separately.
 
 2026 values from IRS Rev. Proc. 2025-32: the separate-return standard deduction is $16,100 and the
 37% rate starts at $384,350 (half the joint $768,700). Statutory separate-filer thresholds: $125,000

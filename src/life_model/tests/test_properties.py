@@ -127,7 +127,7 @@ def _bracket_rows(thresholds: list[int], rates: list[float]) -> list[list[float]
 
 
 class TestFederalAndStateBracketEnginesAgree(unittest.TestCase):
-    """Plan 17: the federal and state-pack bracket paths must produce the same tax for the same table."""
+    """The federal and state-pack bracket paths must produce the same tax for the same table."""
 
     @settings(max_examples=150, deadline=None)
     @given(

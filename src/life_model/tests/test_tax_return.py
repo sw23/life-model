@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""The per-year TaxReturn record (Plan 28, task 1).
+"""The per-year TaxReturn record.
 
 The record is built from the numbers settlement paid, so these tests check two things: that its
 lines reconcile among themselves the way Form 1040's do, and that on the IRS golden cases
@@ -36,8 +36,8 @@ def assert_return_reconciles(test: unittest.TestCase, tax_return: TaxReturn, pla
     r = tax_return
     test.assertAlmostEqual(max(r.total_income - r.total_adjustments, 0.0), r.agi, places=places)
     test.assertAlmostEqual(max(r.agi - r.deduction, 0.0), r.taxable_income, places=places)
-    # Plan 31: the non-itemizer charitable deduction rides with the standard deduction, and the QBI
-    # deduction is added on top (both 0 before Plan 31).
+    # The non-itemizer charitable deduction rides with the standard deduction, and the QBI deduction is
+    # added on top (both are 0 when they do not apply).
     standard = r.standard_deduction + r.charitable_deduction_non_itemizer
     test.assertAlmostEqual(
         r.deduction, max(standard, r.itemized_deductions) + r.senior_deduction + r.qbi_deduction, places=places
@@ -233,7 +233,7 @@ class TestReturnsOnWholeHouseholds(unittest.TestCase):
 
 
 class TestTaxStatsOnEveryMember(unittest.TestCase):
-    """Task 2: a joint return's tax stats are split across the spouses (payroll and penalties are
+    """A joint return's tax stats are split across the spouses (payroll and penalties are
     each spouse's own; income taxes and credits pro rata by income); model totals are unchanged."""
 
     def _couple(self):

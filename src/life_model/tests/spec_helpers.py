@@ -44,9 +44,9 @@ def minimal(**person_overrides) -> dict:
 
 
 def not_yet_supported(**person_overrides) -> dict:
-    """A spec the validator rejects with ``not_yet_supported`` (employer group life, Plan 27 item 13). The
-    ``self_employed`` example played this part until Plan 31 made it buildable, then a job end year until Plan
-    27 D3 made that buildable."""
+    """A spec the validator rejects with ``not_yet_supported``: employer group life insurance is not modeled.
+
+    Every packaged example is buildable, so the tests that need a rejected spec use this one."""
     insurance = [
         {
             "kind": "life",

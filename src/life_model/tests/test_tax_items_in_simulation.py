@@ -3,12 +3,12 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Plan 31 on whole simulations: the settlement path posts the year-end adjustments once, the waterfall
-pays the new taxes, the invariant checker stays clean, and the inputs behind each item (QCDs, stock gifts,
-IRA phase-outs, self-employment, options) move the money the forms say.
+"""Credits, deductions and tax regimes on whole simulations: the settlement path posts the year-end
+adjustments once, the waterfall pays the resulting taxes, the invariant checker stays clean, and the inputs
+behind each item (QCDs, stock gifts, IRA phase-outs, self-employment, options) move the money the forms say.
 
-Dollar assertions read published years (2024-2026) of the packaged ``tax_years`` table (history: each
-value verified against its source; they do not drift when a year is added).
+Dollar assertions read published years (2024-2026) of the packaged ``tax_years`` table (each value verified
+against its source; published years do not drift when a year is added).
 """
 
 import unittest
@@ -325,7 +325,8 @@ if __name__ == "__main__":
 
 
 class TestSpecFields(unittest.TestCase):
-    """The Plan 31 spec fields build into the core objects and extract back."""
+    """The self-employment, payroll, stock option, child and QCD spec fields build into the core objects and
+    extract back."""
 
     def _built(self, **person):
         from ..spec import build_household
@@ -390,7 +391,7 @@ class TestSpecFields(unittest.TestCase):
         self.assertEqual(spec.people[0].jobs[0].payroll.dependent_care_fsa_annual, 5000)
         self.assertEqual(spec.people[0].jobs[0].stock_plan.options[0].exercise_cost, 1000)
 
-    def test_other_payroll_items_are_supported_since_plan_27(self):
+    def test_other_payroll_items_are_supported(self):
         from ..spec.validate import validate_spec
         from .spec_helpers import minimal, spec_of
 
@@ -445,7 +446,7 @@ class TestSolo401k(unittest.TestCase):
 
 
 class TestMonthlyTiming(unittest.TestCase):
-    """Plan 31 on the monthly engine (Plan 32): profit and the FSA per month, the SEP in December."""
+    """On the monthly engine: profit and the FSA are paid per month, the SEP contribution in December."""
 
     def test_profit_monthly_and_sep_with_the_december_payment(self):
         model = _model(2024)

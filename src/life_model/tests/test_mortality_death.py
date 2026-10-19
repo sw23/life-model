@@ -75,7 +75,7 @@ class TestMortalityModes(unittest.TestCase):
         df = model.datacollector.get_model_vars_dataframe()
         income_by_year = dict(zip(df["Year"], df["Income"]))
         self.assertEqual(income_by_year[2029], 50000)
-        # Plan 32: died in January 2030 (the month Mort turned 65), after January's paycheck.
+        # Died in January 2030 (the month Mort turned 65), after January's paycheck.
         self.assertAlmostEqual(income_by_year[2030], 50000 / 12, places=2)
         self.assertEqual(income_by_year[2035], 0)
 
@@ -320,7 +320,7 @@ class TestPerAccountBeneficiary(unittest.TestCase):
         self.assertEqual(child.bank_account_balance, 0)
 
     def test_nonspouse_designation_stays_in_estate_tax_base(self):
-        # Regression: the marital deduction shelters only what actually passes to the spouse.
+        # The marital deduction shelters only what actually passes to the spouse.
         # $2M IRA designated to a child + $1M residual bank to the spouse, $1M exemption:
         # taxable base = $3M - $1M marital share = $2M; tax = ($2M - $1M) x 40% = $400k,
         # charged to the residual inheritor (the spouse) -> spouse nets $600k.
@@ -331,7 +331,7 @@ class TestPerAccountBeneficiary(unittest.TestCase):
         cfg.model.economy.equity_return = 0
         model = LifeModel(start_year=2026, end_year=2026, config=cfg)
         family = Family(model)
-        # Plan 32: Bread dies at 72 (before RMDs start), so no January RMD leaves the IRA before the
+        # Bread dies at 72 (before RMDs start), so no January RMD leaves the IRA before the
         # January death and the estate keeps its round numbers.
         breadwinner = Person(
             family,
@@ -449,7 +449,7 @@ class TestPensionSurvivorAtDeath(unittest.TestCase):
         pension_income = dict(zip(df["Year"], df["Pension Income"]))
         # Breadwinner dies at start of 2027 (age 76). 2026 full benefit, 2027+ reduced to survivor.
         self.assertEqual(pension_income[2026], 40000)
-        # Plan 32: the death comes in January after that month's full payment, then the survivor's.
+        # The death comes in January after that month's full payment, then the survivor's.
         self.assertAlmostEqual(pension_income[2027], 40000 / 12 + 20000 * 11 / 12, places=2)
         self.assertEqual(pension_income[2030], 20000)
 
@@ -464,7 +464,7 @@ class TestPensionSurvivorAtDeath(unittest.TestCase):
         df = model.datacollector.get_model_vars_dataframe()
         pension_income = dict(zip(df["Year"], df["Pension Income"]))
         self.assertEqual(pension_income[2026], 40000)  # full benefit the year before death
-        # Terminates at death (January 2027, age 76), after that month's payment (Plan 32).
+        # Terminates at death (January 2027, age 76), after that month's payment.
         self.assertAlmostEqual(pension_income[2027], 40000 / 12, places=2)
         self.assertEqual(pension_income[2030], 0)
 
@@ -479,7 +479,7 @@ class TestPensionSurvivorAtDeath(unittest.TestCase):
         self.assertIs(surviving.person, spouse)
 
     def test_nonretired_survivor_receives_benefit_immediately(self):
-        # Regression: the survivor annuity is in pay immediately — eligibility must not
+        # The survivor annuity is in pay immediately — eligibility must not
         # re-evaluate against the survivor's own retirement status. A 50-year-old working widow
         # of a retired pensioner receives the survivor benefit from the year of death.
         model = LifeModel(start_year=2026, end_year=2030)
@@ -507,7 +507,7 @@ class TestPensionSurvivorAtDeath(unittest.TestCase):
         # benefit is paid to the non-retired widow every year from 2027 on — not $0 until she
         # retires.
         self.assertEqual(pension_income[2026], 40000)
-        # Plan 32: the death comes in January after that month's full payment, then the survivor's.
+        # The death comes in January after that month's full payment, then the survivor's.
         self.assertAlmostEqual(pension_income[2027], 40000 / 12 + 20000 * 11 / 12, places=2)
         self.assertEqual(pension_income[2030], 20000)
 

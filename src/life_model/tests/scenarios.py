@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Whole-household scenarios shared by the explainable-output tests (Plan 28).
+"""Whole-household scenarios shared by the explainable-output tests (ledger, tax returns, events, exports).
 
 Each builder returns a ready-to-run :class:`~life_model.model.LifeModel`. They are deliberately
 broad (many agent types, decades long) because the tax-return reconciliation and money-conservation

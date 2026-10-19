@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Actual records in the spec and the reconciliation report (Plan 29 tasks 1-2). The household
+"""Actual records in the spec and the reconciliation report. The household
 goldens (``test_household_goldens.py``) reconcile real hand-computed returns; these tests cover the
 records, the mapping and the cause classification on a synthetic example."""
 

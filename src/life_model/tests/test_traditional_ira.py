@@ -71,15 +71,15 @@ class TestTraditionalIRA(unittest.TestCase):
         self.assertEqual(ira.contribute(1000), 1000)
 
 
-def _plan06_person(age: int = 40, year: int = 2020) -> Person:
+def _person_at(age: int = 40, year: int = 2020) -> Person:
     model = LifeModel(end_year=year, start_year=year)
     return Person(Family(model), "P", age, 65, Spending(model))
 
 
 class TestTraditionalIRATaxSemantics(unittest.TestCase):
     def test_distinct_tax_treatment_from_roth(self):
-        """Plan 06 item 1: traditional IRA is no longer identical to Roth."""
-        person = _plan06_person()
+        """A traditional IRA is pre-tax and RMD-eligible; a Roth IRA is neither."""
+        person = _person_at()
         trad = TraditionalIRA(person, growth_pct=0)
         roth = RothIRA(person, growth_pct=0)
         self.assertEqual(trad.tax_treatment, TaxTreatment.PRETAX)
@@ -88,27 +88,27 @@ class TestTraditionalIRATaxSemantics(unittest.TestCase):
         self.assertFalse(roth.is_rmd_eligible)
 
     def test_pretax_contribution_records_deduction(self):
-        person = _plan06_person(age=40)
+        person = _person_at(age=40)
         trad = TraditionalIRA(person, growth_pct=0)
         self.assertEqual(trad.contribute(5000), 5000)
         self.assertEqual(person.income.ordinary_taxable, -5000)
 
     def test_roth_contribution_records_no_deduction(self):
-        person = _plan06_person(age=40)
+        person = _person_at(age=40)
         RothIRA(person, growth_pct=0).contribute(5000)
         self.assertEqual(person.income.ordinary_taxable, 0)
 
     def test_early_withdrawal_is_taxed_and_penalized(self):
-        person = _plan06_person(age=40)
+        person = _person_at(age=40)
         TraditionalIRA(person, balance=10000, growth_pct=0)
         person.withdraw_from_traditional_iras(2000)
         self.assertEqual(person.income.ordinary_taxable, 2000)
         self.assertAlmostEqual(person.income.penalties, 200)
 
     def test_required_minimum_distribution_taken_and_taxed(self):
-        person = _plan06_person(age=75, year=2020)
+        person = _person_at(age=75, year=2020)
         trad = TraditionalIRA(person, balance=100000, growth_pct=0)
-        trad.on_year_start()  # Plan 32: the year's RMD is set at the year start, paid in twelfths
+        trad.on_year_start()  # the year's RMD is set at the year start, paid in twelfths
         run_months(person.model, trad.pre_step)
         self.assertGreater(trad.stat_required_min_distrib, 0)
         self.assertAlmostEqual(person.income.ordinary_taxable, trad.stat_required_min_distrib)
@@ -116,7 +116,7 @@ class TestTraditionalIRATaxSemantics(unittest.TestCase):
         self.assertEqual(person.income.penalties, 0)
 
     def test_no_rmd_before_start_age(self):
-        person = _plan06_person(age=60, year=2020)
+        person = _person_at(age=60, year=2020)
         trad = TraditionalIRA(person, balance=100000, growth_pct=0)
         trad.on_year_start()
         run_months(person.model, trad.pre_step)

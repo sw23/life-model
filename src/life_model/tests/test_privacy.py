@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Plan 30 D6: tracked example specs and test fixtures are synthetic by construction.
+"""Tracked example specs and test fixtures are synthetic by construction.
 
 Real household data lives in the git-ignored ``my-models/``. Rather than grepping for real names
 (a test that names a real person would itself leak it), every identifying string in the shipped
@@ -64,7 +64,7 @@ SYNTHETIC_ORGS = frozenset(
 #: Other capitalized words free text may use mid-sentence (product names, places, generic nouns).
 GENERIC_PROPER_WORDS = frozenset(
     {
-        # Plan 31 tasks 6-7: the marketplace, months, state names and codes, a form suffix
+        # The marketplace, months, state names and codes, a form suffix
         "ACA",
         "April",
         "July",
@@ -83,7 +83,7 @@ GENERIC_PROPER_WORDS = frozenset(
         "VA",
         "AGI",
         "Additional",
-        # Tax-form vocabulary of the Plan 31 golden descriptions.
+        # Tax-form vocabulary of the household golden descriptions.
         "American",
         "FSA",
         "III",

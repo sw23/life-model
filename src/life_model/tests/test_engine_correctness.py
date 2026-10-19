@@ -5,9 +5,10 @@
 
 """Regression tests for core simulation engine correctness.
 
-Each test targets a specific money-flow bug.
-Dollar assertions are derived from the library's own tax/housing helpers (not hardcoded
-constants) so they remain valid as financial data is refreshed.
+Each test pins one money-flow rule (collection timing, retirement crossing, married housing, debts paid
+once, per-unit taxes, conservation, construction-order independence). Dollar assertions are derived from
+the library's own tax/housing helpers (not hardcoded constants) so they remain valid as financial data is
+refreshed.
 """
 
 import unittest
@@ -117,7 +118,7 @@ class TestRetirementCrossing(unittest.TestCase):
     def test_non_integer_retirement_age_triggers(self):
         model = LifeModel(start_year=2020, end_year=2030)
         family = Family(model)
-        # Plan 32: ages are exact. Born January 1956, Cy reaches 65.5 in July 2021.
+        # Ages are exact. Born January 1956, Cy reaches 65.5 in July 2021.
         person = Person(family, "Cy", age=64, retirement_age=65.5, spending=Spending(model, 0))
         BankAccount(person, company="Bank", balance=100000, interest_pct=0)
         job = Job(person, company="Co", role="Dev", salary=Salary(model=model, base_annual=50000))
@@ -192,7 +193,7 @@ class TestFamilyDebtPaidOnce(unittest.TestCase):
         self.assertEqual(b.debt, 0)
 
     def test_carried_debt_accrues_a_year_of_interest(self):
-        """Plan 04 item 14: unpaid bills are a real liability, repaid with interest. Plan 32: bills
+        """Unpaid bills are a real liability, repaid with interest. Bills
         are paid monthly, so the carried debt is repaid in January with a month of interest."""
         model, _a, b, bank = self._married_with_debt(debt_rate=18.0)
 

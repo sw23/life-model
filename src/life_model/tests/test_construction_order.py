@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Plan 26 D11: construction order does not change the simulation.
+"""Construction order does not change the simulation.
 
 Each household below is described as a list of construction steps (each step builds one agent, or
 a group that must be built together, such as a job and its 401k). The same household is built in
@@ -218,7 +218,7 @@ def run_household(builder, seed=None, years=25):
 
 
 class TestConstructionOrderProperty(unittest.TestCase):
-    """D11: five shuffled constructions of each household give identical frames."""
+    """Five shuffled constructions of each household give identical frames."""
 
     def assert_frames_match(self, expected, actual, label):
         self.assertEqual(list(expected.columns), list(actual.columns))
@@ -237,7 +237,7 @@ class TestConstructionOrderProperty(unittest.TestCase):
                     self.assert_frames_match(baseline, run_household(builder, seed), f"{name} seed {seed}")
 
 
-# --- Plan 25: the same property over the household-spec examples -----------------------------
+# --- The same property over the household-spec examples ------------------------------------
 
 
 def _spec_example(name: str, years: int = 25):
@@ -366,7 +366,7 @@ def run_spec_shuffled_construction(name: str, seed: int | None):
 
     if seed is not None:
         # People keep the spec's order here because stochastic mortality draws follow it (RNG
-        # consumption order). Which spouse heads the unit no longer matters for the money: see
+        # consumption order). Which spouse heads the unit does not matter for the money: see
         # TestHeadOfUnitIndependence.
         steps = random.Random(seed).sample(steps, len(steps))
     for step in people_steps:

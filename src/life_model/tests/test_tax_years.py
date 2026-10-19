@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Year-indexed tax parameters moved into ``tax_years`` by Plan 29 (task 3), pinned to the primary
+"""Year-indexed tax parameters in the ``tax_years`` table, pinned to the primary
 sources they were verified against (Rev. Procs. 2021-45, 2022-38, 2023-34, 2024-40, 2025-32; OBBBA,
 P.L. 119-21), and the per-return SALT cap with its OBBBA phase-down."""
 
@@ -78,7 +78,7 @@ class TestPublishedValues(unittest.TestCase):
             )
 
     def test_additional_standard_deduction_recorded(self):
-        # §63(f) amounts (married, unmarried); Plan 31 applies them.
+        # §63(f) amounts (married, unmarried), applied as the additional standard deduction for 65+.
         expected = {2022: (1400, 1750), 2023: (1500, 1850), 2024: (1550, 1950), 2025: (1600, 2000), 2026: (1650, 2050)}
         for year, (married, unmarried) in expected.items():
             extra = CONFIG.tax_year(year).additional_standard_deduction

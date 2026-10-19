@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Plan 27 PR C in the household spec: statement loan fields, home inputs, home equity lines, card
+"""Statement-entered housing and debt in the household spec: statement loan fields, home inputs, home equity lines, card
 charges, and the refinance / heloc_draw events (validate, build, extract)."""
 
 import copy
