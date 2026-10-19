@@ -5,7 +5,7 @@
 
 """Build a :class:`~life_model.model.LifeModel` from a :class:`~life_model.spec.schema.HouseholdSpec`.
 
-The builder owns construction order (Plan 25 D5). Mesa agents step in construction order within a
+The builder owns construction order. Mesa agents step in construction order within a
 stage priority, and several results depend on it (``bank_accounts[0]`` receives income, the first
 family member heads the tax unit, same-priority agents run in insertion order). So the builder never
 uses the order the user wrote things in: :func:`canonical` sorts every list into a fixed order and
@@ -28,10 +28,9 @@ the builder then constructs, for all people at each step:
 Within one step, items are ordered by ``(id, canonical JSON)``, so two items without ids still have
 a deterministic order. Shuffling any list in a spec therefore yields an identical model.
 
-Plan 27 replaced the undocumented core workarounds the builder used to rely on (brokerage opening lots via
-``deposit_with_basis``; a loan in progress as ``loan_amount=original_amount, principal=balance``) with
-real constructor arguments: ``BrokerageAccount(lots=)`` and the loans' statement inputs (origination,
-current balance, months remaining).
+Opening balances go through documented constructor arguments rather than adjustments after
+construction: brokerage tax lots through ``BrokerageAccount(lots=)``, and a loan in progress through
+the loans' statement inputs (origination, current balance, months remaining).
 
 Standing savings policies (``contribution_plans``, ``savings_policy``, ``roth_conversion``) are attached
 after every account exists (they reference accounts by id).
@@ -797,7 +796,7 @@ class _Builder:
 
     @staticmethod
     def _loan_terms(loan: Any) -> dict[str, Any]:
-        """The statement inputs every amortizing loan takes (Plan 27 D1/D7)."""
+        """The statement inputs every amortizing loan takes."""
         return {
             "original_amount": loan.original_amount,
             "term_years": loan.term_years,
@@ -1042,7 +1041,7 @@ class _Builder:
             end_year=donation.end_year,
         )
 
-    # --- standing savings policies (Plan 27 D4) ---
+    # --- standing savings policies ---
 
     def attach_policies(self, person, p: s.Person) -> None:
         """Attach the person's contribution plans, savings sweep and standing Roth conversion."""
@@ -1223,7 +1222,7 @@ class _Builder:
 
 
 def _spending_lines(categories: "dict[str, s.SpendingCategory] | None"):
-    """The core ``SpendingLine`` of each spec spending category (Plan 27 D6)."""
+    """The core ``SpendingLine`` of each spec spending category."""
     if not categories:
         return None
     from ..people.person import SpendingLine
@@ -1288,7 +1287,7 @@ def is_spec_agent(agent: LifeModelAgent) -> bool:
 
 
 def _withholding(value):
-    """The core withholding policy of a spec ``payroll.withholding`` (Plan 31 D3)."""
+    """The core withholding policy of a spec ``payroll.withholding``."""
     from ..tax.payments import W4, FlatWithholding
 
     if value is None or value == "w4_default":

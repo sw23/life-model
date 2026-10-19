@@ -1,8 +1,8 @@
 # Synthetic example household (not real data): a self-employed consultant. The business is a sole
 # proprietorship (Schedule C): its net profit is taxed with self-employment tax (Schedule SE), half of
 # which is deducted, a SEP-IRA contribution at a 15% plan rate goes to the traditional IRA, and the
-# qualified business income deduction applies (Plan 31). No estimated payments yet: the year's tax is
-# settled at year end.
+# qualified business income deduction applies. The example makes no estimated payments: the year's tax
+# is settled at year end.
 spec_version: 1
 meta:
   name: Self-employed consultant

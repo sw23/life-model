@@ -42,7 +42,7 @@ WARNING: Level = "warning"
 #: Warnings about a costly default the spec leaves in place (an assumption to confirm and report, not a
 #: typing mistake): :func:`validate_spec` returns them only with ``include_assumptions=True``, which the
 #: command line, ``life_model.validate`` / ``run`` / ``build`` and the MCP tools pass. Library callers that
-#: generate specs (the RL environment, the dashboard) get the original warnings only.
+#: generate specs (the RL environment, the dashboard) get every other warning but not these.
 ASSUMPTION_CODES = frozenset(
     {
         "default_child_costs",
@@ -120,21 +120,21 @@ def not_yet_supported_findings(spec: s.HouseholdSpec) -> list[Finding]:
     """An error for every ``not_yet_supported`` model or field the spec uses."""
     findings: list[Finding] = []
     for path, model in _walk(spec, ""):
-        plan = getattr(type(model), "NOT_YET_SUPPORTED", None)
-        if plan and not any(f.path == path for f in findings):
+        reason = getattr(type(model), "NOT_YET_SUPPORTED", None)
+        if reason and not any(f.path == path for f in findings):
             label = getattr(model, "kind", None) or getattr(model, "action", None) or type(model).__name__
             findings.append(
                 Finding(
                     ERROR,
                     path,
-                    f"'{label}' is not yet supported by the engine ({plan}).",
-                    "Remove it, or model it another way until that plan lands.",
+                    f"'{label}' is not yet supported by the engine ({reason}).",
+                    "Remove it, or model it another way.",
                     "not_yet_supported",
                 )
             )
         for name, info in type(model).model_fields.items():
-            plan = _extra(info).get(s.NYS_KEY)
-            if not plan:
+            reason = _extra(info).get(s.NYS_KEY)
+            if not reason:
                 continue
             value = getattr(model, name)
             if value != info.get_default(call_default_factory=True):
@@ -142,7 +142,7 @@ def not_yet_supported_findings(spec: s.HouseholdSpec) -> list[Finding]:
                     Finding(
                         ERROR,
                         f"{path}.{name}" if path else name,
-                        f"'{name}' is not yet supported by the engine ({plan}).",
+                        f"'{name}' is not yet supported by the engine ({reason}).",
                         "Remove the field (the engine would silently ignore it).",
                         "not_yet_supported",
                     )
@@ -262,7 +262,7 @@ class _SpecChecker:
         self.check_cash_sweep()
         return self.findings
 
-    # --- dogfood: what an early retiree and a long run silently leave out ---
+    # --- gaps an early retirement or a long run would silently leave out ---
 
     def _birth(self, person: s.Person) -> tuple[int, int]:
         if person.birth is not None:
@@ -364,7 +364,7 @@ class _SpecChecker:
                 "cash_not_invested",
             )
 
-    # --- children (dogfood: default band costs stack on top of spending) ---
+    # --- children (default band costs stack on top of spending) ---
 
     def check_children(self) -> None:
         """Warn about every configured child-cost band a child gets by default (they come on top of the
@@ -426,10 +426,11 @@ class _SpecChecker:
                             "child_birth_month_assumed",
                         )
 
-    # --- Plan 31 tax inputs ---
+    # --- tax inputs with a surprising treatment ---
 
     def check_tax_inputs(self) -> None:
-        """Warn about Plan 31 inputs the engine treats in a way the user may not expect."""
+        """Warn about tax inputs the engine treats in a way the user may not expect: a dependent-care FSA with
+        no child under 13, and a child's investment income over the Form 8814 limit."""
         children = [child for p in self.spec.people for child in p.children]
         young = any(0 <= self.start - child.birth_year < 13 for child in children)
         for p_index, person in enumerate(self.spec.people):
@@ -489,7 +490,7 @@ class _SpecChecker:
                     "birth_age_mismatch",
                 )
 
-    # --- actual records (Plan 29) ---
+    # --- actual records ---
 
     def check_actuals(self) -> None:
         """``actuals``: line names exist on that year's forms, and every person/account id resolves."""
@@ -757,7 +758,7 @@ class _SpecChecker:
             for j, account in enumerate(p.accounts):
                 apath = f"{path}.accounts[{j}]"
                 self.check_account_refs(account, apath, job_ids, child_ids)
-                self.check_account_plan27(account, apath)
+                self.check_account_rules(account, apath)
             self.check_policies(p, path)
             self.check_payroll(p, path)
             for e_index, event in enumerate(self.spec.events):
@@ -817,10 +818,10 @@ class _SpecChecker:
                         f"{path}.insurance[{j}].issue_year",
                         f"issue_year {policy.issue_year} is after the start year (a later policy belongs in an event).",
                     )
-            self.check_plan27_insurance_and_benefits(p, path)
+            self.check_annuities_pensions_and_benefits(p, path)
 
-    def check_plan27_insurance_and_benefits(self, p: s.Person, path: str) -> None:
-        """Plan 27 PR D cross-field checks: annuities in payout, pension rollovers, Social Security."""
+    def check_annuities_pensions_and_benefits(self, p: s.Person, path: str) -> None:
+        """Cross-field checks of annuities in payout, pension rollovers, Social Security and disability."""
         ira_ids = {a.id for a in p.accounts if a.kind == "traditional_ira" and a.id is not None}
         for j, account in enumerate(p.accounts):
             apath = f"{path}.accounts[{j}]"
@@ -878,9 +879,9 @@ class _SpecChecker:
                 code="no_disability_policy",
             )
 
-    def check_account_plan27(self, account, path: str) -> None:
-        """Plan 27 account rules: a standalone 401k takes no contributions; an allocation needs growth to
-        follow the economy."""
+    def check_account_rules(self, account, path: str) -> None:
+        """Account rules: a standalone 401k takes no contributions or match; an allocation sums to 100 and
+        needs growth to follow the economy."""
         if isinstance(account, s.Job401k) and account.job is None:
             if account.pretax_contrib_pct or account.roth_contrib_pct or account.after_tax_contrib_pct:
                 self.error(
@@ -990,7 +991,7 @@ class _SpecChecker:
                 self.error(f"{path}.target", f"{target!r} is not a roth_ira of the person", code="unknown_reference")
 
     def check_withholding_inputs(self) -> None:
-        """Suggest withholding when the records show it (W-2 box 2) but no job withholds (Plan 31 D3)."""
+        """Suggest withholding when the records show it (W-2 box 2) but no job withholds."""
         if not self.spec.actuals:
             return
         withholds = any(
@@ -1077,7 +1078,7 @@ class _SpecChecker:
 
     def check_loan(self, m, path: str, *, as_of: tuple[int, int] | None = None) -> bool:
         """Resolve a loan's statement inputs like the builder does; an inconsistency is an error naming the
-        field (Plan 27 D1). Returns True when the loan resolved."""
+        field. Returns True when the loan resolved."""
         from ..debt.terms import LoanTermsError, resolve_loan_terms
 
         payment = m.payment_monthly
@@ -1504,7 +1505,7 @@ def validate_model(model) -> list[Finding]:
             add(
                 ERROR,
                 f"{path}.state",
-                f"no state tax pack for {person.state!r}: there is no fallback rate (Plan 31 D4).",
+                f"no state tax pack for {person.state!r}: there is no fallback rate.",
                 None,
                 "unknown_state",
             )

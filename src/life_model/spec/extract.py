@@ -301,7 +301,7 @@ class _Extractor:
             schedule=schedule,
         )
 
-    # --- standing policies (Plan 27 D4) ---
+    # --- standing policies ---
 
     def name_policy_accounts(self, person, pid: str) -> None:
         """Give every account a policy references an id (so the policy can name it)."""
@@ -1180,7 +1180,7 @@ def spec_from_model(model) -> s.HouseholdSpec:
 
 
 def _withholding_spec(policy):
-    """The spec form of a core withholding policy (Plan 31 D3)."""
+    """The spec form of a core withholding policy."""
     from dataclasses import asdict
 
     from ..tax.payments import W4
