@@ -156,7 +156,7 @@ This package supports a comprehensive range of financial modeling components:
 ### Giving & Legacy
 - [x] **Charitable Giving** - Tax-deductible donations with itemized deduction support
 - [x] **Donor Advised Funds** - Charitable investment accounts with growth, fees, and distributions
-- [x] **Estate Planning** - Mortality-driven death, spousal/beneficiary estate transfer, per-account beneficiary designations, estate tax, revocable/irrevocable trusts, and the SECURE Act 10-year inherited-account rule (trust income is untaxed until distributed — no compressed trust brackets; annuity two-life survivor factor still backlog)
+- [x] **Estate Planning** - Mortality-driven death, spousal/beneficiary estate transfer, per-account beneficiary designations, estate tax, revocable/irrevocable trusts, and the SECURE Act 10-year inherited-account rule (trust income is untaxed until distributed — no compressed trust brackets; the annuity two-life survivor factor is not modeled)
 - [x] **End of Life Care** - Long-term care facilities and a final-year medical expense spike charged to the estate
 - [x] **Funeral and Final Expenses** - Funeral cost charged against the estate before transfer and estate tax
 

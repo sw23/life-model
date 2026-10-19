@@ -36,18 +36,6 @@ see `AGENTS.md <https://github.com/sw23/life-model/blob/main/AGENTS.md>`_.
 
    model-household (Claude Code skill) <agent-skills/model-household/SKILL.md>
 
-.. toctree::
-   :maxdepth: 1
-   :caption: Re-baseline logs
-
-   Plan 26: engine timing and settlement <rebaseline-plan-26.md>
-   Plan 27: statement-faithful inputs <rebaseline-plan-27.md>
-   Plan 28: explainable outputs <rebaseline-plan-28.md>
-   Plan 29: reconciliation and calibration <rebaseline-plan-29.md>
-   Plan 31: tax completeness <rebaseline-plan-31.md>
-   Plan 32: monthly engine <rebaseline-plan-32.md>
-   Dogfood fixes <rebaseline-dogfood.md>
-
 Indices and tables
 ==================
 

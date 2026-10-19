@@ -26,13 +26,13 @@ Every spec flow names its period: `*_annual` (per year) or `*_monthly` (per mont
 `premium_annual`. Balances, prices, face values and one-time amounts (`balance`, `purchase_price`,
 `death_benefit`, `amount` on a one-time expense) are plain dollars.
 
-Since Plan 27 (D8) the core constructors for housing, debts, insurance, Social Security and spending
-use the spec's names too: `Apartment(rent_monthly=)`, `LifeInsurance(premium_monthly=)` and the loans'
+The core constructors for housing, debts, insurance, Social Security and spending use the spec's
+names too: `Apartment(rent_monthly=)`, `LifeInsurance(premium_monthly=)` and the loans'
 `payment_monthly=` are monthly; `Spending(base_annual=)`, `Insurance(premium_annual=)` and
 `HomeExpenses(hoa_annual=, maintenance_annual=)` are annual (the spec's `hoa_monthly` is multiplied by
-12). The old names (`monthly_rent`, `monthly_premium`, `base`, `annual_premium`, `hoa_amount`, ...) and
-positional arguments after the owner of a loan, annuity or pension still work for one release with a
-`DeprecationWarning` naming the replacement. `Salary(base_annual=)` is annual.
+12). The deprecated names (`monthly_rent`, `monthly_premium`, `base`, `annual_premium`, `hoa_amount`,
+...) and positional arguments after the owner of a loan, annuity or pension are accepted for one release
+with a `DeprecationWarning` naming the replacement. `Salary(base_annual=)` is annual.
 
 The engine steps one **month** at a time (see [Time](#time) below): annual amounts are paid a
 twelfth a month, monthly ones (rent, loan payments) once a month, and loans amortize one period per
@@ -97,7 +97,7 @@ Defaults differ between the spec and the core: the spec's spending `growth_pct` 
   `social_security` block means no Social Security benefit).
 - **Core rate arguments**: follow the economy (above) or a config default (a credit card's
   `rate_pct=None` is `debt.credit_card.default_interest_rate`, 18%).
-- **Loans in progress** (Plan 27 D1/D7): enter what the statement shows. `origination="YYYY-MM"` (or
+- **Loans in progress**: enter what the statement shows. `origination="YYYY-MM"` (or
   `payments_made`) with the original amount and term gives today's balance and payment; or give
   `current_balance` (spec: `balance`) with `remaining_months` (or the payment). Any three of balance /
   months remaining / payment determine the fourth; inputs that contradict each other raise
@@ -137,13 +137,13 @@ first spouse listed, and the unit files in the head's state. An unmarried person
 household with a dependent child (under 19, or a student under 24) or a qualifying relative
 (`dependents[]`: a parent wherever they live, another relative living with them), and as a qualifying
 surviving spouse for the two years after a spouse's death (`widowed_year`, or a death in the run)
-while a dependent child lives with them (Plan 31 D5).
+while a dependent child lives with them.
 
 A state needs a state tax pack (`CA`, `NY`, `GA`, ...; `DEFAULT` is the flat rate, chosen
 deliberately): an unknown code is an error in the spec and in the core (`UnknownStateError`). The
 state follows a residency timeline (`residency: [[YYYY-MM, state], ...]`; a `move` event adds an
 entry): a year with a move files part-year returns, wages allocated by the months worked in each
-state and other income by residence when received (Plan 31 D4).
+state and other income by residence when received.
 
 ## Time
 
@@ -216,7 +216,7 @@ children's ages for the credits. The qualified charitable distribution's 70½ is
 | Jobs | A twelfth of base salary (the bonus in `Salary(bonus_month=)`, default March); 401k deferral per paycheck against the year's 402(g) room; the match per paycheck, capped by 415(c) | December match true-up (`Job401kAccount(match_true_up=True)`); the raise at year end |
 | Self-employment (`Job(kind="self_employed")`) | A twelfth of the net profit (receipts less expenses; the bonus month adds its bonus), no withholding | The owner's SEP / solo 401(k) contribution with December's payment, on the year's profit; self-employment tax and QBI with the year's return |
 | Dependent-care FSA (`payroll.dependent_care_fsa_annual`) | A twelfth of the election out of each paycheck (wages and FICA wages) | The Form 2441 exclusion and any taxable excess at settlement |
-| Other payroll deductions (`PayrollDeductions`, Plan 27) | Health / dental-vision premiums and commuter benefits (monthly amounts), a twelfth of the health FSA and of employee / employer HSA money: out of wages and FICA wages; premiums and HSA money out of take-home pay | |
+| Other payroll deductions (`PayrollDeductions`) | Health / dental-vision premiums and commuter benefits (monthly amounts), a twelfth of the health FSA and of employee / employer HSA money: out of wages and FICA wages; premiums and HSA money out of take-home pay | |
 | Jobs with `start_year` / `end_year` | Paid only from the start month through the end month; the job retires the month after | |
 | ESPP (`StockPlan(espp=)`) | Pay set aside each month | The purchase (and its discount income) in each purchase month (June, December) |
 | Contribution plans (`person.add_contribution_plan`) | Bank-sourced: after the month's bills, never more than the bank holds (December: less the year's estimated tax); payroll-sourced: with the paycheck | A 401(k) "max" / dollar plan's percent re-derived at the year start |
@@ -236,10 +236,10 @@ children's ages for the credits. The qualified charitable distribution's 70½ is
 | Children | A twelfth of the age band's yearly cost and of `care_expenses_annual` (529 draws for college, keeping the year's first $4,000 for the AOTC) | The child's `interest_annual` / `dividends_annual` on the parents' return (Form 8814) |
 | Insurance premiums, donations (cash, appreciated shares in kind), stock vests and option exercises | | In the first month of the year; policy updates (term expiry, re-pricing, cash value) at year end |
 | Bills | Paid through the household waterfall each month; unpaid bills carried as debt with a month of interest | |
-| Taxes | With `payroll.withholding` (Plan 31 D3): federal (Pub. 15-T), Social Security, Medicare and state tax withheld from each paycheck; estimated tax installments in April, June, September and January (`estimated_payments`); last year's balance due paid (or refund received) in April | Settled in December from the year's income ledger: by default the whole year as a lump through the sized waterfall; with withholding or estimates the return is figured and the balance due (or refund) accrued as a liability (or receivable), with the Form 2210 penalty |
+| Taxes | With `payroll.withholding`: federal (Pub. 15-T), Social Security, Medicare and state tax withheld from each paycheck; estimated tax installments in April, June, September and January (`estimated_payments`); last year's balance due paid (or refund received) in April | Settled in December from the year's income ledger: by default the whole year as a lump through the sized waterfall; with withholding or estimates the return is figured and the balance due (or refund) accrued as a liability (or receivable), with the Form 2210 penalty |
 | RSU vests (with withholding) | | Supplemental federal rate (22%, 37% past $1,000,000), FICA and state tax withheld by selling shares to cover them |
 | Marketplace health coverage (`marketplace`) | A twelfth of the premium, net of any advance premium tax credit, while covered | The premium tax credit on the return (Form 8962) |
-| Contribution plans (bank-sourced), tax hold-back | Each month holds back the balance due on last year's return and the month's share of the year's projected tax not yet withheld or paid (Plan 31) | |
+| Contribution plans (bank-sourced), tax hold-back | Each month holds back the balance due on last year's return and the month's share of the year's projected tax not yet withheld or paid | |
 | Mortality | Monthly hazard `1 - (1 - q)^(1/12)` (fixed-age deaths in the birth month); a death in month m stops pay from m+1 | |
 | Data | Ledger entries carry their month; month-end balance sheets (the monthly conservation check); monthly rows with `collect="month"` | Model and agent frames at each year end; tax returns |
 | Invariant checks (`checks=`) | Read: monthly conservation, between-month continuity, month-end balances, the cash floor at the month of each waterfall draw | Run at each year end, after December's taxes (`life_model.invariants`) |

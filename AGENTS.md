@@ -59,20 +59,22 @@ fixtures use only synthetic names (a test enforces an allowlist).
 
 - **Model.** `LifeModel` (`src/life_model/model.py`) subclasses `mesa.Model`; every domain object
   (Person, Family, Job, accounts, homes, insurance, ...) is a `LifeModelAgent`.
-- **Stages.** Each simulated year (`model.step()`) runs four stages over all agents:
+- **Stages.** Each simulated month (`model.step()`) runs four stages over all agents:
   `pre_step` (ages advance, mortality, wages and benefits arrive, RMDs) -> `events` (scheduled
-  `LifeEvents` fire, after income and before settlement) -> `step` (account growth, then tax-unit
-  settlement) -> `post_step` (year-end resets and escalators). Within a stage, agents run by
-  `STEP_PRIORITY` (ascending; e.g. the economy at -100 in `pre_step`), then construction order.
+  `LifeEvents` fire, after income and before the month's bills) -> `step` (account growth, then the
+  month's bills through each tax unit) -> `post_step` (end-of-month bookkeeping). The first month of a
+  year starts with `on_year_start`; December ends with `on_year_end` (the year's tax settlement,
+  escalators and resets). Within a stage, agents run by `STEP_PRIORITY` (ascending; e.g. the economy
+  at -100 in `pre_step`), then construction order.
 - **Settlement.** `Family.step` groups members into `TaxUnit`s (`people/tax_unit.py`): single filers
-  and married couples (joint or separate). Each unit computes its return and pays bills plus taxes
-  through one **household waterfall** (`Family(withdrawal_order=)`, default bank -> fixed income ->
+  and married couples (joint or separate). Each unit pays the month's bills, and in December the
+  year's taxes, through one **household waterfall** (`Family(withdrawal_order=)`, default bank -> fixed income ->
   brokerage -> Roth basis -> pre-tax (sized for its own tax and penalty) -> Roth earnings -> emergency
   reserves) across every member;
   an unpaid gap becomes debt (`shortfall_debt` events). Settlement is order-independent:
   `tests/test_construction_order.py` builds households in shuffled construction orders and requires
   identical frames.
-- **The federal return** (Plan 31). `TaxUnit.get_income_taxes_due` computes the return the
+- **The federal return.** `TaxUnit.get_income_taxes_due` computes the return the
   waterfall sizes against; the return-level rules live in `tax/`: `household.py` (deduction choice
   with §63(f), the 2026 charitable floor / non-itemizer deduction / §68 limit, QBI; the Form 8814 tax;
   AMT; the year-end adjustments posted once before the waterfall: half of SE tax, taxable dependent
@@ -82,19 +84,19 @@ fixtures use only synthetic names (a test enforces an allowlist).
   `amt.py`, `qbi.py`, `self_employment.py`, `deductions.py`, `ptc.py` (the ACA premium tax credit, Form
   8962, for `Insurance(HEALTH, marketplace=MarketplaceCoverage(...))`), `payments.py` (withholding by IRS
   Pub. 15-T, estimated payments, Form 2210), `state.py` (year-keyed state packs, part-year returns).
-  Tax payments (Plan 31 D3) are opt-in: `PayrollDeductions(withholding="w4_default" | W4(...) |
+  Tax payments are opt-in: `PayrollDeductions(withholding="w4_default" | W4(...) |
   FlatWithholding(...))` withholds federal, FICA (per employer) and state tax from each paycheck (bonuses and
   RSU vests as supplemental wages), `Person(estimated_payments=EstimatedPayments(...))` pays quarterly; such a
   unit's December settlement figures the return and accrues the balance due (`TaxDue:<id>`, a liability) or
   refund (`TaxRefund:<id>`, an asset), paid in April. Without either the year settles as a December lump.
-  Filing statuses (Plan 31 D5): head of household for a dependent child or a qualifying relative
+  Filing statuses: head of household for a dependent child or a qualifying relative
   (`Dependent`), qualifying surviving spouse for two years after a spouse's death. Self-employment is
   `Job(kind="self_employed")` (profit paid monthly; the SEP via `sep_account`, or a solo 401(k) via a
   `Job401kAccount` on the job, contributed with December's payment on the year's profit);
   ISO/NSO exercises are `StockPlan(options=[StockOption(...)])`. Every parameter is the year's
   (`tax_years`); a config without one leaves that feature off. Age tests use the age at the end of the
   tax year (`Person.age_in(year)`), not the current month's age.
-- **Statement-faithful inputs and standing policies** (Plan 27). Accounts take the existing position a
+- **Statement-faithful inputs and standing policies.** Accounts take the existing position a
   statement shows (`BrokerageAccount(lots=[Lot(...)])`, IRA / Roth / HSA / 529 basis, a standalone
   `Job401kAccount(owner=)`, after-tax and Roth 401(k) basis, `FixedIncomeHolding` for CDs / Treasuries /
   I bonds / bond funds, `allocation=` / `expense_ratio_pct=` on investments); jobs take the pay stub
@@ -104,13 +106,13 @@ fixtures use only synthetic names (a test enforces an allowlist).
   `convert_to_roth`), changeable between months; a `ContributionPlan` has a `start`/`end` window. Bank
   and brokerage accounts can be joint between spouses (`joint_owner=`; registered under the titled
   owner, usable by both, income split 50/50, passed to the survivor at a death). Constructors take canonical keyword names (`owner=`,
-  `*_pct`, `*_annual`) and are keyword-only past the owner; the old names still work with a
+  `*_pct`, `*_annual`) and are keyword-only past the owner; deprecated names are still accepted with a
   `DeprecationWarning` (`life_model/_compat.py`). Library code must use the canonical names.
-- **Construction.** The recommended path is the household spec (`life_model.spec`, Plan 25):
+- **Construction.** The recommended path is the household spec (`life_model.spec`):
   `build_model(load(path))` validates, canonicalizes list order and constructs agents in a fixed
   order (`spec/builder.py` docstring). Direct constructors remain the low-level API; keep their
   changes keyword-only with defaults, since the dashboard and RL code call them directly.
-- **Outputs.** `model.run()` returns a `RunResult` (`results.py`, Plan 28): model and agent frames,
+- **Outputs.** `model.run()` returns a `RunResult` (`results.py`): model and agent frames,
   `tax_returns` (`TaxReturn` per unit and year), the cash-flow `ledger` (every money movement),
   typed `events`, balance sheets, `real_dollars()`, `explain(year)`, `conservation()`, and
   `to_json/to_csv/to_parquet/load`. `MonteCarlo` (`montecarlo.py`) runs seeded trials.
@@ -127,10 +129,10 @@ fixtures use only synthetic names (a test enforces an allowlist).
   `default_financial_config()`. `config_manager.config` is a deprecated shim library code must not
   import (a test enforces it). Scenarios are YAML overlays in `config/data/scenarios/`
   (`list_scenarios()`; `stochastic` turns on random economy draws).
-- **RL environment** (`deepqlearning/envs/financial/`, Plan 32 D8/D9). `FinancialLifeEnv(config=
+- **RL environment** (`deepqlearning/envs/financial/`). `FinancialLifeEnv(config=
   {"action_space": "flat" | "factored", "decision_interval": "year" | "quarter" | "month"})`: the
   flat `Discrete(52)` one-off moves stay the default; the factored `MultiDiscrete` space is ten
-  standing-policy slots (`policies.py`) that set the Plan 27 `ContributionPlan` / `SavingsPolicy` /
+  standing-policy slots (`policies.py`) that set the core `ContributionPlan` / `SavingsPolicy` /
   `RothConversionPolicy` objects, the household `withdrawal_order`, retirement and the Social Security
   claim, with per-slot legal masks. An env step runs 12, 3 or 1 monthly model steps; `"year"` must
   stay bit-identical to `model.step_year()` (a twin-env test). PPO/REINFORCE take `MultiDiscrete`
@@ -185,8 +187,8 @@ golden's inputs and review the `worksheet.md` diff) and `python scripts/backtest
   negative balances, no taxable draw while cash sits above the floor, contribution limits, RMDs,
   FICA, return identities), check sign and magnitude sanity and year alignment; compare before
   and after in a scratch worktree, and explain every changed number. Tax changes must keep the
-  household goldens (`src/life_model/tests/goldens/households/`) green. Re-baseline notebooks or golden
-  frames deliberately, saying why the numbers moved (see `docs/rebaseline-plan-*.md`).
+  household goldens (`src/life_model/tests/goldens/households/`) green. Update notebook outputs or
+  golden frames deliberately, and say in the PR why each number moved.
 - **Financial constants** (brackets, limits, wage bases, premiums) must come from primary sources
   (IRS, SSA, CMS, state revenue departments) and carry `# vintage: <year>, source: <doc>` comments.
   Append year-keyed tables, never overwrite history; keep the static mirror of the latest
@@ -215,9 +217,8 @@ golden's inputs and review the `worksheet.md` diff) and `python scripts/backtest
   construction does not. See [docs/constructor-cheatsheet.md](docs/constructor-cheatsheet.md).
 - Bank-sourced contribution plans hold back the tax the year's income still owes (and last year's
   balance due until April), so a plan contributes less than its amount when taxes are not withheld.
-- Historical simulation results had correctness bugs (married-couple housing, FICA on retirement
-  income, the RMD age table, and more; see the re-baseline logs). Investigate surprising numbers
-  rather than papering over them.
+- Results from older releases had correctness bugs (married-couple housing, FICA on retirement
+  income, the RMD age table, and more). Investigate surprising numbers rather than papering over them.
 - The PyPI release can lag `main`; test against `pip install -e .`, or build the wheel the way CI's
   build-and-smoke job does.
 - `ProcessPoolExecutor` Monte Carlo needs a picklable top-level factory; it silently falls back to

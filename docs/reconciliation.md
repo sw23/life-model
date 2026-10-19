@@ -1,6 +1,6 @@
 # Checking the model: reconciliation, goldens, invariants and backtests
 
-Four tools tie the simulation to reality (Plan 29):
+Four tools tie the simulation to reality:
 
 * **Reconciliation**: compare a simulated year with the household's real documents
   (`life-model reconcile`).
@@ -90,7 +90,7 @@ and name the setting that drives it (medical cost bands, child cost bands, Medic
 
 ### What the engine computes (line coverage)
 
-Every `TaxReturn` field maps onto the year's lines; since Plan 31 each credit has its own line:
+Every `TaxReturn` field maps onto the year's lines, and each credit has its own line:
 
 | Item | Lines |
 |---|---|
@@ -115,19 +115,19 @@ Every `TaxReturn` field maps onto the year's lines; since Plan 31 each credit ha
 | State return | state AGI, taxable income, tax, withheld (a part-year return compares the share of the record's state) |
 
 Not modeled yet: the foreign tax credit, Form 1099 withholding (box 4). Form 8606 basis is recovered pro rata on distributions and
-Roth conversions (Plan 27: 8606 lines 2 and 14, 1099-R box 2a); Treasury coupons are 1099-INT box 3.
+Roth conversions (8606 lines 2 and 14, 1099-R box 2a); Treasury coupons are 1099-INT box 3.
 
 ## Household goldens
 
-`src/life_model/tests/goldens/households/` holds synthetic households for 2024, 2025 and 2026: the six
-of Plan 29 (single renter with a student loan; married homeowners who itemize, with two children; head
+`src/life_model/tests/goldens/households/` holds synthetic households for 2024, 2025 and 2026: six
+core returns (single renter with a student loan; married homeowners who itemize, with two children; head
 of household; a retiree couple with RMDs, Social Security, the §63(f) amount and Medicare; an early
-retiree harvesting gains; married filing separately), five of Plan 31's tasks 6-7 for 2024-2026
+retiree harvesting gains; married filing separately), five on payments and filing status for 2024-2026
 (withholding with the April refund or balance due; estimated payments with a Form 2210 penalty; the
 ACA premium tax credit with advance payments and the repayment limit; a qualifying surviving spouse; head
 of household with a dependent parent), twelve for 2025-2026 (a California-to-Texas part-year mover's
-Form 540NR; one W-2 state return per new state pack) and twelve of Plan 31's tasks 1-5 (the earned income and
-additional child tax credits; dependent care with an FSA; the American opportunity credit with a 529;
+Form 540NR; one W-2 state return for each of OH, GA, NC, MI, NJ, VA, AZ, TN, IN, MO and MD) and twelve
+on credits and deductions (the earned income and additional child tax credits; dependent care with an FSA; the American opportunity credit with a 529;
 the saver's credit and the 2026 non-itemizer deduction; an ISO exercise with AMT, and the next year's
 minimum tax credit; a self-employed filer with SE tax, a SEP and the QBI deduction; the kiddie tax
 on Form 8814; a gift of appreciated shares with the 30% limit, the 2026 floor and §68; a qualified
@@ -136,7 +136,7 @@ worked line by line from the year's Form 1040 and
 instructions by `scripts/household_goldens.py`, which does not use the library; each golden's
 `worksheet.md` shows every line's arithmetic and its `expected.json` is an `actuals` record, so
 `test_household_goldens.py` simply reconciles it. Lines the engine cannot produce yet are expected
-failures naming the plan that adds them. See the
+failures, each with the reason. See the
 [goldens README](https://github.com/sw23/life-model/blob/main/src/life_model/tests/goldens/households/README.md)
 for the format and how to add one.
 
@@ -166,9 +166,8 @@ Run them every year with `LifeModel(checks="strict" | "warn" | "off")` (library 
 on a finished run with `life_model.invariants.check_model(model)`, or from the command line with
 `--checks` (default `warn`). Violations are kept on `model.invariant_violations`.
 
-The checker found one engine imprecision when it was introduced: the brokerage sale that funds a
-year was sized against tax on gains a prior-year capital-loss carryforward was about to cancel, so
-it over-sold (see [rebaseline-plan-29.md](rebaseline-plan-29.md)). The test suite runs every example
+The brokerage sale that funds a year is sized against the tax on its gains after any prior-year
+capital-loss carryforward, so the sale does not over-sell. The test suite runs every example
 spec, the broad test scenarios, every RL scenario household (with random actions) and sampled adviser
 households for 50 years under `strict`.
 
