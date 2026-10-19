@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Return-level pieces of a tax unit's federal computation (Plan 31).
+"""Return-level pieces of a tax unit's federal computation.
 
 :class:`~life_model.people.tax_unit.TaxUnit` owns the settlement; the return-level rules it applies
 live here so they stay with the rest of the tax code:
@@ -67,13 +67,13 @@ def _is_dependent_child(child, dep) -> bool:
 
 
 def has_dependent_child(member: "Person") -> bool:
-    """Whether ``member`` has a dependent child this year (a qualifying child; Plan 31 D5)."""
+    """Whether ``member`` has a dependent child this year (a qualifying child)."""
     dep = member.model.config.dependents
     return any(_is_dependent_child(child, dep) for child in member.children)
 
 
 def qualifying_relatives(unit: "TaxUnit") -> list:
-    """The unit's qualifying relatives this year (a supported parent; Plan 31 D5)."""
+    """The unit's qualifying relatives this year (a supported parent)."""
     year = unit.members[0].model.year
     return [d for m in unit.members for d in getattr(m, "qualifying_relatives", ()) if d.qualifies(year)]
 

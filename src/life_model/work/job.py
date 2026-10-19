@@ -52,7 +52,7 @@ class Payroll:
     hsa_employer: float = 0.0
     #: Qualified transportation benefit excluded from wages (within the §132(f) limit).
     commuter: float = 0.0
-    #: Taxes withheld (Plan 31 D3): federal income tax, Social Security, Medicare (with the Additional
+    #: Taxes withheld: federal income tax, Social Security, Medicare (with the Additional
     #: Medicare Tax, ``additional_medicare`` of it) and state income tax.
     federal_withheld: float = 0.0
     ss_withheld: float = 0.0
@@ -141,8 +141,8 @@ class Job(LifeModelAgent):
                 (receipts less ``expenses_annual``) is paid to the bank a twelfth a month like wages but is Schedule C
                 income: no FICA withholding, self-employment tax on Schedule SE (sharing the Social
                 Security wage base with the person's W-2 wages), half of it an adjustment, and the
-                qualified business income deduction. No withholding or estimated payments until Plan 31
-                task 6: the tax is settled with the year.
+                qualified business income deduction. Nothing is withheld: the tax is settled with the year's
+                return, less any federal estimated payments the owner makes (``Person(estimated_payments=...)``).
             expenses_annual: Business expenses (self-employed only), in start-year dollars; they scale
                 with the receipts so the margin is constant.
             payroll: Pre-tax payroll deductions (W-2 jobs; :class:`~life_model.work.payroll.PayrollDeductions`).
@@ -153,7 +153,7 @@ class Job(LifeModelAgent):
                 is a ``Job401kAccount`` on this job: its deferral percentages apply to the same net earnings.
                 The contributions are made with December's payment, on the year's profit.
             sstb: The business is a specified service trade or business (§199A(d)(2)).
-            start_year: The first year (or ``"YYYY-MM"`` month) the job pays (Plan 27 D3); default: now.
+            start_year: The first year (or ``"YYYY-MM"`` month) the job pays; default: now.
             end_year: The last year (its December, or the ``"YYYY-MM"`` month) the job pays. After it the
                 job retires (unvested match is forfeited; no further pay, match or vests).
             bonus: The bonus (:class:`Bonus`: target percent and/or fixed dollars, a payout range, a
@@ -161,7 +161,7 @@ class Job(LifeModelAgent):
             raises: ``[(year, percent), ...]``: the raise taking effect in each listed year (the salary's
                 ``yearly_increase`` applies to other years); sets ``salary.raises``.
 
-        Every argument after ``owner`` is keyword-only (positional use is deprecated, Plan 27 D8).
+        Every argument after ``owner`` is keyword-only (positional use is deprecated).
         """
         if kind not in self.KINDS:
             raise ValueError(f"Unknown job kind {kind!r}; expected one of {self.KINDS}")
@@ -276,7 +276,7 @@ class Job(LifeModelAgent):
             # Plan pay: base salary, plus the bonus when the plan counts it (bonus_is_plan_pay).
             compensation = account.plan_compensation(base, bonus)
             # Elective deferrals share one 402(g) limit across all of the person's jobs, so two
-            # jobs can no longer each defer the full limit.
+            # jobs cannot each defer the full limit.
             room = min(self.owner.remaining_401k_elective_room() + booked.elective, compensation)
             pretax = min(account.pretax_contrib(compensation), room)
             room -= pretax
@@ -314,7 +314,7 @@ class Job(LifeModelAgent):
 
     @property
     def withholding(self):
-        """The job's withholding policy (Plan 31 D3), or None."""
+        """The job's withholding policy, or None."""
         return self.payroll.withholding if self.payroll is not None else None
 
     def _withholding_year(self) -> dict:
@@ -326,7 +326,7 @@ class Job(LifeModelAgent):
         return book
 
     def withhold(self, regular: float, supplemental: float, fica_wages: float, prior_fica_wages: float) -> dict:
-        """Taxes withheld from a payment by this employer (Plan 31 D3; :mod:`life_model.tax.payments`):
+        """Taxes withheld from a payment by this employer (see :mod:`life_model.tax.payments`):
         ``regular`` and ``supplemental`` taxable wages, ``fica_wages`` of FICA wages with the year's FICA
         wages paid before it ``prior_fica_wages``. Returns ``federal``, ``ss``, ``medicare``,
         ``additional`` (the Additional Medicare Tax part of ``medicare``) and ``state``."""
@@ -690,11 +690,11 @@ class Job(LifeModelAgent):
         # Add to taxable income for the person
         # - Income tax is settled by the tax unit at year end
         # - Elective pre-tax 401k deferrals reduce ordinary income but are still FICA wages, so
-        #   the full gross is recorded as the FICA base (fixes the understated-FICA bug).
+        #   the full gross (less the exclusions below) is recorded as the FICA base.
         # A dependent-care FSA election is excluded from wages for income tax and FICA (W-2 box 10). The
         # cash is unchanged: the FSA pays the care bill the household's spending already carries.
         # Cafeteria-plan items (premiums, the health FSA, HSA deferrals) and the commuter benefit are
-        # excluded from both wages and FICA wages (Plan 27 D3).
+        # excluded from both wages and FICA wages.
         excluded = delta.wage_exclusions
         self.owner.income.add_wages(
             ordinary_amount=delta.gross - delta.pretax - excluded, fica_wages=delta.gross - excluded
@@ -813,7 +813,7 @@ class Job(LifeModelAgent):
 
 @dataclass(frozen=True)
 class Bonus:
-    """A job's bonus as the offer letter states it (Plan 27 D3).
+    """A job's bonus as the offer letter states it.
 
     The year's bonus is ``target_pct`` of base salary plus ``fixed_annual`` dollars, scaled by a payout
     multiplier drawn each year (uniformly, from the model's seeded random stream) between the two
@@ -866,11 +866,11 @@ class Salary(LifeModelAgent):
             bonus_month (int, optional): Month (1-12) the bonus is paid in (keyword-only). Defaults to
                 the configured ``payroll.bonus_month`` (March).
             bonus (Bonus, optional): A structured bonus (target and/or fixed, a payout range, a sign-on);
-                replaces ``bonus_pct`` (Plan 27 D3).
+                an alternative to ``bonus_pct`` (pass one or the other).
             raises (optional): ``[(year, percent), ...]``: the raise taking effect in each listed year
                 (``raise_pct`` applies to the others).
 
-        Every argument after ``model`` is keyword-only (positional use is deprecated, Plan 27 D8).
+        Every argument after ``model`` is keyword-only (positional use is deprecated).
         """
         if bonus is not None and bonus_pct:
             raise ValueError("pass bonus_pct or bonus=Bonus(...), not both")

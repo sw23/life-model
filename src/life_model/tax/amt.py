@@ -5,7 +5,7 @@
 
 """Alternative minimum tax (IRC §55-§56; Form 6251) and the minimum tax credit (§53; Form 8801).
 
-A parallel computation on the same return inputs (Plan 31 D2): alternative minimum taxable income is
+A parallel computation on the same return inputs: alternative minimum taxable income is
 taxable income plus the senior deduction (2025+), plus the standard deduction or the itemized SALT,
 plus the incentive-stock-option spread, less the §68 reduction (§56(b)(1)(E): §68 does not apply to
 AMT). The exemption phases out at the year's rate; the tentative minimum tax uses 26%/28% with Form

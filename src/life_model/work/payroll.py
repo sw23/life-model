@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Pre-tax payroll deductions of a W-2 job (Plan 27 D3's ``Payroll``).
+"""Pre-tax payroll deductions of a W-2 job (:class:`PayrollDeductions`).
 
 What a pay stub shows between gross pay and take-home pay, other than the 401(k) (which belongs to the
 plan, ``Job401kAccount``). Each item's tax and cash treatment:
@@ -20,7 +20,7 @@ plan, ``Job401kAccount``). Each item's tax and cash treatment:
   job pays, so it stops with the job.
 * ``commuter_monthly``: excluded from both up to the year's §132(f) monthly limit (the excess is wages);
   cash unchanged (the benefit pays the commute the household's spending already carries).
-* ``withholding`` (Plan 31 D3): federal, FICA and state tax withheld from each paycheck (and from the job's
+* ``withholding``: federal, FICA and state tax withheld from each paycheck (and from the job's
   bonuses and RSU vests as supplemental wages): ``"w4_default"``, a :class:`~life_model.tax.payments.W4`,
   a :class:`~life_model.tax.payments.FlatWithholding`, or a mapping (``{"w4": {...}}``, ``{"pct": 15}``,
   ``{"amount_monthly": 900}``). None (the default) withholds nothing: the year's taxes are settled as a
@@ -49,7 +49,7 @@ class PayrollDeductions:
     hsa_employer_annual: float = 0.0
     #: Qualified transportation (transit / parking) through payroll, per month.
     commuter_monthly: float = 0.0
-    #: Tax withholding policy (Plan 31 D3; see the module docstring). None: no withholding.
+    #: Tax withholding policy (see the module docstring). None: no withholding.
     withholding: Any = None
 
     def __post_init__(self):

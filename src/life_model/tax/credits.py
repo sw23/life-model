@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Federal tax credits (Plan 31 D1).
+"""Federal tax credits.
 
 Each credit is a function ``credit_x(facts, config) -> CreditLine`` of the return in progress
 (:class:`ReturnFacts`, gathered by the tax unit from the members' ledgers) and the year's config. The

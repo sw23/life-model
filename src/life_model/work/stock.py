@@ -133,7 +133,7 @@ class StockGrant:
     #: The last year whose vest has happened (an existing grant's vests before the simulation started).
     vested_through_year: int | None = None
     #: An existing grant's current market value of its unvested part (from the equity statement): sets
-    #: ``price_index_at_grant`` so the unvested shares are worth that now (Plan 27 D1). None keeps the
+    #: ``price_index_at_grant`` so the unvested shares are worth that now. None keeps the
     #: grant valued at its grant value.
     unvested_value: float | None = None
 
@@ -157,7 +157,7 @@ ESPP_MAX_DISCOUNT_PCT = 15.0
 
 @dataclass
 class ESPP:
-    """An employee stock purchase plan (IRC §423) attached to a :class:`StockPlan` (Plan 27 D3).
+    """An employee stock purchase plan (IRC §423) attached to a :class:`StockPlan`.
 
     ``contribution_pct`` of each month's gross pay is set aside after tax and buys company stock at the
     end of each offering period (``purchase_months``, default June and December) at ``discount_pct`` off the
@@ -191,7 +191,7 @@ class ESPP:
 
 @dataclass
 class StockOption:
-    """A stock option grant the owner exercises in a planned year (Plan 31; dollars, like grants).
+    """A stock option grant the owner exercises in a planned year (in dollars, like grants).
 
     ``value`` is the market value of the option's shares at the plan's start (price index 1.0); it is
     revalued by the plan's price index to the exercise year. ``exercise_cost`` is the strike price times
@@ -235,8 +235,8 @@ class StockPlan(LifeModelAgent):
     * **Vest income is W-2 wages** — ordinary income *and* full FICA wages, and Social Security
       credit for the year. That is what a real vest is.
     * **Vest income is excluded from 401(k)-eligible compensation**, the common plan-document
-      treatment. This needs no code: ``Job.pre_step`` computes contributions off base salary alone.
-    * **Withholding follows the job's payroll policy** (Plan 31 D3). Without one (the default) nothing
+      treatment. This needs no code: ``Job.pre_step`` computes contributions off the salary alone.
+    * **Withholding follows the job's payroll policy**. Without one (the default) nothing
       is withheld and the year's taxes settle at year end. With one, a vest is supplemental wages:
       federal tax at the flat supplemental rate (37% past $1,000,000 of the year's supplemental wages),
       Social Security, Medicare and state tax are withheld by selling shares to cover them, so the
@@ -250,7 +250,7 @@ class StockPlan(LifeModelAgent):
     STATS_OWNED = frozenset({"stat_gross_income", "stat_stock_vested", "stat_stock_unvested"})
 
     # Runs after Job.pre_step (priority 0) so wages are already on the ledger. Vests happen once a
-    # year, in the first month of the year (quarterly vesting is a later plan's).
+    # year, in the first month of the year (quarterly vesting is not modeled).
     STEP_PRIORITY: ClassVar[dict[str, int]] = {"pre_step": 5}
 
     @deprecated_arguments({"refresher_growth_percent": "refresher_growth_pct", "growth_rate": "growth_pct"})
@@ -296,7 +296,7 @@ class StockPlan(LifeModelAgent):
                 owner's first brokerage account, resolved at vest time.
             options: Stock options (ISO / NSO) to exercise in planned years (:class:`StockOption`).
             existing_grants: Grants made before the simulation started that still have unvested shares
-                (:class:`StockGrant` with its real ``grant_year``; Plan 27 D1). The vests before the start
+                (:class:`StockGrant` with its real ``grant_year``). The vests before the start
                 are taken as done, and ``unvested_value`` (the statement's current value of the unvested
                 shares) revalues the grant.
             espp: An employee stock purchase plan (:class:`ESPP`).

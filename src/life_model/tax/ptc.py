@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""The ACA premium tax credit (IRC §36B; Form 8962; Plan 31 task 6).
+"""The ACA premium tax credit (IRC §36B; Form 8962).
 
 Marketplace coverage is a HEALTH :class:`~life_model.insurance.general_insurance.Insurance` with
 ``marketplace=MarketplaceCoverage(slcsp_monthly=..., advance_monthly=...)``: the policy's premium is paid a

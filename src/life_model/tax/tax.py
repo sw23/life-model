@@ -91,7 +91,7 @@ class TaxesDue:
         #: The state computation's breakdown (a :class:`~life_model.tax.state.StateTaxDetail`), when
         #: the caller resolved one.
         self.state_detail = None
-        # --- Plan 31 ---
+        # --- Schedule SE, return-level deductions, AMT and credit worksheets ---
         #: Self-employment tax (Schedule SE line 12, all workers); part of ``total``, not of ``federal``.
         self.se_tax = 0.0
         #: Each worker's Schedule SE, in the order of the wage list.
@@ -125,7 +125,7 @@ class TaxesDue:
         self.credit_details: dict[str, dict[str, float]] = {}
         #: Earned income of the return (for the earned-income credits).
         self.earned_income = 0.0
-        # --- Plan 31 tasks 6-7 ---
+        # --- Estimated-tax penalty and the premium tax credit ---
         #: Form 2210 underpayment penalty (paid with the balance due; not in ``total``).
         self.estimated_tax_penalty = 0.0
         #: Excess advance premium tax credit repaid (Form 8962 line 29; in ``federal``).
@@ -174,11 +174,11 @@ def compute_taxes(
         deductions: Deductions applied against ordinary income.
         filing_status: Filing status of the unit.
         wage_incomes: Each member's FICA-subject wages (payroll tax base), one entry per person.
-        config: Per-model config. Defaults to the global config.
+        config: Per-model config. Defaults to the packaged defaults.
         credits: Pre-computed tax credits (e.g. Child Tax Credit) recorded on the result and
             subtracted from ``total``. Defaults to 0 (no credits).
         state_tax: Precomputed state income tax for the unit. When ``None`` the ``DEFAULT`` flat
-            rate is applied to the federal AGI base. Callers that resolve a state pack compute
+            rate is applied to the federal taxable income. Callers that resolve a state pack compute
             state tax from the state base and pass it here so it can also be folded into the SALT
             itemized deduction without circularity.
         preferential_income: Long-term capital gains and qualified dividends, taxed on the
@@ -207,8 +207,7 @@ def compute_taxes(
     tax_niit = net_investment_income_tax(net_investment_income, total_income, filing_status, config)
 
     if state_tax is None:
-        # ``DEFAULT`` flat rate on the federal *taxable income* (post-deduction) base. (This local was
-        # once named ``adjusted_gross_income``, which it never was: it is after deductions.)
+        # ``DEFAULT`` flat rate on the federal *taxable income* (post-deduction) base, not AGI.
         tax_state = state_income_tax(taxable_income, config)
     else:
         tax_state = state_tax
@@ -291,7 +290,7 @@ def get_income_taxes_due(
         gross_income (float): Income subject to income and payroll taxes.
         deductions (float): Deductions from income.
         filing_status (FilingStatus): Filing status.
-        config (FinancialConfig, optional): Per-model config. Defaults to the global config.
+        config (FinancialConfig, optional): Per-model config. Defaults to the packaged defaults.
 
     Returns:
         TaxesDue: Taxes due, split by type.
