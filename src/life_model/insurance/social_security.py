@@ -390,9 +390,9 @@ class SocialSecurity(LifeModelAgent):
     """Social Security benefits: a monthly benefit from the month the person reaches
     ``withdrawal_start_age`` (exact age), at the year's primary insurance amount (with COLAs).
 
-    Plan 27 D10 adds the PIA from the SSA statement (``pia_override``), full retirement age by birth year
-    (``fra_from_birth_year``), the spousal benefit (``spousal_benefit``) and the retirement earnings test
-    (``earnings_test``)."""
+    Optional refinements: the PIA from the SSA statement (``pia_override``), full retirement age by birth
+    year (``fra_from_birth_year``), the spousal benefit (``spousal_benefit``) and the retirement earnings
+    test (``earnings_test``)."""
 
     # The earnings test reads the year's earnings before the income ledger is cleared (20).
     STEP_PRIORITY: ClassVar[dict[str, int]] = {"on_year_end": 15}
@@ -420,7 +420,7 @@ class SocialSecurity(LifeModelAgent):
             earnings_history: The person's covered earnings by year (``income_history=`` is deprecated)
             pia_override_monthly: The monthly benefit at full retirement age from the SSA statement, in today's
                 (the model start's) dollars, instead of computing the PIA from ``income_history``
-                (keyword-only; Plan 27 D10). It is wage-indexed to the year the person turns 62 (the
+                (keyword-only). It is wage-indexed to the year the person turns 62 (the
                 statement's "today's dollars" are wage-indexed), then gets the COLAs. The statement's
                 estimate assumes work until full retirement age at the latest earnings; with an
                 ``earnings_history`` too, the override is scaled by the ratio of the PIA recomputed from
@@ -507,9 +507,9 @@ class SocialSecurity(LifeModelAgent):
             income_obj = Income(year, amount)
             self.income_history.append(income_obj)
 
-        # Cap income at THAT year's Social Security wage base, not a single frozen value applied
-        # to every year. Read from the same per-year config FICA uses, so the payroll-tax base and
-        # the AIME base are one source (including inflation-projected future years).
+        # Cap income at that year's Social Security wage base, read from the same per-year config FICA
+        # uses, so the payroll-tax base and the AIME base are one source (including inflation-projected
+        # future years).
         max_income = self.model.config_for_year(income_obj.year).tax.fica.social_security_max_income
         income_obj.amount = min(income_obj.amount, max_income)
 

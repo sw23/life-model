@@ -1,4 +1,4 @@
-# Stochastic economy - every year's equity, bond and inflation rates are drawn as correlated
+# Stochastic economy - every month's equity, bond and inflation rates are drawn as correlated
 # normals (cash yield, home appreciation and wage growth independently) from the model's seeded
 # RNG, so runs are reproducible under a fixed seed and differ across seeds. This is the scenario
 # Monte Carlo studies use (LifeModel(seed=seed, scenario="stochastic"); `life-model montecarlo

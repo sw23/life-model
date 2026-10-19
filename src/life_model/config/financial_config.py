@@ -35,7 +35,7 @@ if TYPE_CHECKING:
 
 
 #: ``YearlyTaxParameters`` fields that live only in ``tax_years`` and are copied onto
-#: ``tax.federal`` by :meth:`FinancialConfig.year_view` (Plan 31).
+#: ``tax.federal`` by :meth:`FinancialConfig.year_view`.
 YEAR_ONLY_FEDERAL_FIELDS = (
     "additional_standard_deduction",
     "eitc",
@@ -55,8 +55,8 @@ YEAR_ONLY_FEDERAL_FIELDS = (
 )
 
 
-def _project_plan31_params(data: dict, factor: float, round_to) -> None:
-    """Index the Plan 31 parameters of a year past the table (in place, on ``model_dump()`` data).
+def _project_credit_params(data: dict, factor: float, round_to) -> None:
+    """Index a year's credit, deduction and regime parameters past the table (in place, on ``model_dump()`` data).
 
     A projection, not law: each amount is scaled by ``factor`` and rounded the way its statute rounds
     the yearly adjustment (cited per line); statutory, unindexed amounts (the dependent care credit, the
@@ -140,7 +140,7 @@ def _project_plan31_params(data: dict, factor: float, round_to) -> None:
             row["limit"] = near(row["limit"], 10)  # §213(d)(10)(B): nearest $10
     if data.get("compensation_limit") is not None:
         data["compensation_limit"] = down(data["compensation_limit"], 5000)  # §401(a)(17)(B): down to $5,000
-    # Plan 31 tasks 6-7. Withholding tables are derived from the projected brackets and standard deduction
+    # Withholding tables are derived from the projected brackets and standard deduction
     # (``tax.payments.withholding_table``); the Step 1g amounts and supplemental rates are fixed.
     if data.get("withholding") is not None:
         data["withholding"]["standard"] = None
@@ -365,7 +365,7 @@ class FinancialConfig:
         }
         if ctc:
             dependents = dependents.model_copy(update=ctc)
-        # State packs with a year table resolve to the year's entry (Plan 31 D4).
+        # State packs with a year table resolve to the year's entry.
         state = model.tax.state
         if any(pack.years is not None for pack in state.packs.values()):
             state = state.model_copy(
@@ -484,7 +484,7 @@ class FinancialConfig:
             data["additional_standard_deduction"] = {
                 k: round_to(v * factor, 50) for k, v in data["additional_standard_deduction"].items()
             }
-        _project_plan31_params(data, factor, round_to)
+        _project_credit_params(data, factor, round_to)
         # rmd_start_age is a structural (age) parameter, not a dollar amount — leave it.
         return YearlyTaxParameters(**data)
 

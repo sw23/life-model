@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-# Realized annual economic series for backtests (Plan 29 D5; life_model.backtest). Append a year when
+# Realized annual economic series for backtests (read by life_model.backtest). Append a year when
 # it is published; never overwrite history. Fetched 2026-10-18.
 
 # CPI-U, U.S. city average, all items, not seasonally adjusted (series CUUR0000SA0), annual average

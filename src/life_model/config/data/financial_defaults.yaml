@@ -38,7 +38,7 @@ tax:
         - [0, 17700, 10]
         - [17701, 67450, 12]
         - [67451, 105700, 22]
-        - [105701, 201750, 24]  # Rev. Proc. 2025-32 §4.01 Table 2 (201,775 before Plan 29 was wrong)
+        - [105701, 201750, 24]  # Rev. Proc. 2025-32 §4.01 Table 2 (single's row ends at 201,775)
         - [201751, 256200, 32]
         - [256201, 640600, 35]
         - [640601, .inf, 37]
@@ -129,7 +129,7 @@ tax:
     # vintage: statutory, source: IRC §25A(b), (c), (d), (i); SECURE 2.0 §103 (saver's credit through 2026)
     credits:
       education: {}
-    # Estimated tax and the underpayment penalty (Plan 31 D3). vintage: statutory, source: IRC §6654(d)(1)
+    # Estimated tax and the underpayment penalty. vintage: statutory, source: IRC §6654(d)(1)
     # (required annual payment: 90% of this year's tax or 100% of last year's, 110% when last year's AGI was
     # over $150,000 / $75,000 separate), §6654(e)(1) ($1,000), Instructions for Form 2210 (2024, 2025).
     estimated_tax:
@@ -164,15 +164,14 @@ tax:
     # Local/city income taxes (e.g. NYC), state EITCs, and state-specific credits are out of
     # scope. Refresh these packs annually against each state DOR (see refresh-financial-data).
     packs:
-      # California (Plan 31: per tax year, head of household, exemption credits). The 1% Mental Health Services Tax
+      # California (per tax year, with head of household and exemption credits). The 1% Mental Health Services Tax
       # (R&TC §17043) on taxable income over $1,000,000 (not doubled for joint returns) is folded into the top rows.
       # The exemption credits ($6 less for each $2,500 of AGI over the threshold, $1,250 separate) are modeled;
       # blind credits are not. A separate return uses the single schedule.
       CA:
         years:
           # vintage: 2025, source: FTB 2025 California Tax Rate Schedules (X, Y, Z) and 2025 Form 540 Booklet (standard
-          # deduction chart; exemption credits lines 7-10; AGI limitation worksheet, line 32). Corrects the earlier
-          # entry, which carried the 2024 schedules (and two mistyped 2024 thresholds).
+          # deduction chart; exemption credits lines 7-10; AGI limitation worksheet, line 32).
           2025:
             brackets:
               single: [[0, 11079, 1.0], [11080, 26264, 2.0], [26265, 41452, 4.0], [41453, 57542, 6.0], [57543, 72724, 8.0], [72725, 371479, 9.3], [371480, 445771, 10.3], [445772, 742953, 11.3], [742954, 1000000, 12.3], [1000001, .inf, 13.3]]
@@ -208,7 +207,7 @@ tax:
               step_separate: 1250
             retirement_income_taxable: true
             ss_taxable: false
-      # New York (Plan 31: per tax year, head of household, the $1,000 dependent exemption). Not modeled: the
+      # New York (per tax year, with head of household and the $1,000 dependent exemption). Not modeled: the
       # supplemental "tax benefit recapture" over $107,650 of NY AGI and the $20,000 pension / IRA exclusion at 59.5.
       # A separate return uses the single schedule.
       NY:
@@ -277,7 +276,7 @@ tax:
         retirement_income_taxable: true
         ss_taxable: false
       # ------------------------------------------------------------------------------------------
-      # Plan 31 D4: the ten next-largest states without a pack (Census Bureau Vintage 2025 state population
+      # The ten next-largest states after those above (Census Bureau Vintage 2025 state population
       # estimates, NST-EST2025: OH, GA, NC, MI, NJ, VA, AZ, TN, IN, MO; MD is 11th, added as well), each per
       # tax year from the state's revenue department. State amounts are not inflation-projected past the last
       # year. Local / county income taxes (OH, MI, IN, MD) are not modeled.
@@ -975,7 +974,7 @@ dependents:
   ctc_per_child: 2200
   ctc_refundable_max: 1700
   # Oldest qualifying age, inclusive: a qualifying child "has not attained age 17" by year end.
-  # vintage: statutory, source: IRC §24(c)(1) (17 before Plan 31 gave the credit to 17-year-olds)
+  # vintage: statutory, source: IRC §24(c)(1) (a 17-year-old does not qualify)
   ctc_qualifying_age_max: 16
   # Phase-out thresholds are statutory and not inflation-indexed.
   # vintage: statutory, source: IRC §24(h)(3).
@@ -998,7 +997,8 @@ equity_comp:
   default_schedule: four_year   # four_year | three_year | front_loaded | back_loaded | even
   default_vesting_years: 4
 
-# Payroll timing (Plan 32: jobs pay monthly). A modeling convention, not a published figure.
+# Payroll timing (jobs pay monthly; a yearly bonus is paid in bonus_month). A modeling convention, not a
+# published figure.
 payroll:
   bonus_month: 3  # month (1-12) a yearly bonus is paid in
 
@@ -1012,8 +1012,8 @@ estate:
 
 # Economy-wide rates driving account returns, wage growth, and inflation. A single
 # EconomyModel per simulation reads this section and answers per-year rate queries.
-# The defaults reproduce the pre-economy per-account constants, so `mode: fixed` leaves
-# simulation output unchanged. See docs/configuration.md for path/stochastic modes.
+# The defaults are long-run assumptions; in `mode: fixed` every account without its own rate grows
+# at them every year. See docs/configuration.md for path/stochastic modes.
 economy:
   mode: fixed  # fixed | path | stochastic
   inflation: 3.0          # percent CPI (drives spending/rent increases when opted in)
@@ -1087,13 +1087,14 @@ healthcare:
   medical_deduction_agi_floor: 7.5    # percent; IRC §213(a) unreimbursed-medical AGI floor
 
 # Year-indexed tax parameters (published values, 2022-2026). Accessed via
-# config.tax_year(year). Plan 29 moved the capital-gains brackets, Child Tax Credit amounts, SALT
-# cap, senior deduction and NIIT thresholds in, and Plan 31 added the §63(f) amounts' use and the
-# per-year credit, phase-out, AMT, QBI, kiddie-tax, QCD and LTC-premium parameters (2024-2026); 2022-2026 re-verified 2026-10-18 against Rev. Procs. 2021-45, 2022-38, 2023-34,
-# 2024-40 and 2025-32, OBBBA (P.L. 119-21, govinfo), and IRS Notices 2022-55/2023-75/2024-80/2025-67
-# (see docs/rebaseline-plan-29.md). Years outside the table are projected: earliest entry
-# for prior years, frozen at the latest entry for future years, most-recent
-# published year at-or-before for gaps. Verify against IRS/SSA before extending.
+# config.tax_year(year). Every year carries the brackets, standard deduction, contribution limits,
+# wage base, capital-gains brackets, Child Tax Credit amounts, SALT cap, senior deduction, NIIT
+# thresholds and §63(f) amounts; 2024-2026 also carry the credit, phase-out, AMT, QBI, kiddie-tax,
+# QCD, LTC-premium, withholding and premium-tax-credit parameters. 2022-2026 verified 2026-10-18
+# against Rev. Procs. 2021-45, 2022-38, 2023-34, 2024-40 and 2025-32, OBBBA (P.L. 119-21, govinfo),
+# and IRS Notices 2022-55/2023-75/2024-80/2025-67. Years outside the table are projected: earliest
+# entry for prior years, the latest entry (indexed by inflation when the model projects) for future
+# years, most-recent published year at-or-before for gaps. Verify against IRS/SSA before extending.
 #   sources: IRS Rev. Proc. 2021-45 (2022), 2022-38 (2023), 2023-34 (2024),
 #            2024-40 (2025), 2025-32 (2026); IRS Notices 2021-61/2022-55/2023-75/
 #            2024-80/2025-67 (401k & IRA limits; limit_415c is the §415(c)(1)(A) defined-
@@ -1502,7 +1503,7 @@ tax_years:
         - [0, 17700, 10]
         - [17701, 67450, 12]
         - [67451, 105700, 22]
-        - [105701, 201750, 24]  # Rev. Proc. 2025-32 §4.01 Table 2 (201,775 before Plan 29 was wrong)
+        - [105701, 201750, 24]  # Rev. Proc. 2025-32 §4.01 Table 2 (single's row ends at 201,775)
         - [201751, 256200, 32]
         - [256201, 640600, 35]
         - [640601, .inf, 37]

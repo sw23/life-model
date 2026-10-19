@@ -867,7 +867,7 @@ def compare(
 
 
 # --------------------------------------------------------------------------------------------------
-# Reconcile (Plan 29)
+# Reconcile (a simulated year against actual records)
 # --------------------------------------------------------------------------------------------------
 
 
@@ -915,7 +915,7 @@ def reconcile(
     scenario: str | None = None,
     checks: Checks = "warn",
 ):
-    """Compare a simulated year with the household's actual records (Plan 29).
+    """Compare a simulated year with the household's actual records (filed return, forms, statements).
 
     Args:
         spec: The household (anything :func:`load_spec` accepts), described as of the start of

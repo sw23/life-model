@@ -284,8 +284,8 @@ class Annuity(LifeModelAgent):
                 at annuitization; annuitizing without one raises ``ValueError``.
             survivor_pct: JOINT_AND_SURVIVOR only: share of the payment continued to the joint
                 annuitant after the owner dies (e.g. 50.0 for joint-and-50%-survivor).
-            basis: An existing contract's cost basis (after-tax money paid in; keyword-only, Plan 27
-                D1). Defaults to ``balance`` (no gain) for a non-qualified contract.
+            basis: An existing contract's cost basis (after-tax money paid in; keyword-only). Defaults
+                to ``balance`` (no gain) for a non-qualified contract.
             purchase_year: Year the contract was bought (the surrender-charge clock and the
                 period-certain guarantee count from it). Defaults to the current year.
             qualified: Held in a qualified plan or IRA (bought with pre-tax money): no basis, every

@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Backtest a household against its statements over past years (Plan 29 D5).
+"""Backtest a household against its statements over past years.
 
 :func:`backtest` runs a household spec from its ``meta.start_year`` through the last year that has
 statement balances in ``actuals``, feeding the economy the *realized* path (``economy.mode: path``):

@@ -98,7 +98,7 @@ class RunResult:
         self._monthly_frame = monthly_frame
         self._monthly_balance_sheets = monthly_balance_sheets
         self.seed = seed
-        #: The household spec the model was built from (a Plan 25 ``HouseholdSpec``), when known.
+        #: The household spec the model was built from (a :class:`~life_model.spec.schema.HouseholdSpec`), when known.
         self.spec = spec
         #: Cumulative inflation factor per simulated year (start year = 1.0).
         self.deflators: dict[int, float] = dict(deflators or {})
@@ -530,7 +530,7 @@ class RunResult:
                 drawn += amount
                 lines.append(f"- from {source}{why}: {_money(amount)}")
         borrowed = rows[(rows["kind"] == "borrow") & rows["from_account"].fillna("").str.startswith("Debt:")]
-        # Plan 31 D3: a return's balance due (or refund) accrued in December is settled in April of the next year.
+        # A return's balance due (or refund) accrued in December is settled in April of the next year.
         accrued = taxes[taxes["from_account"].fillna("").str.startswith(("TaxDue:", "TaxRefund:"))]["amount"].sum()
         settled = transfers[
             (transfers["kind"] == "tax")

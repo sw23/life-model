@@ -3,13 +3,12 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Deprecated constructor argument names (Plan 27 D8).
+"""Deprecated constructor argument names.
 
-Plan 27 gives the core constructors the spec's canonical argument names: ``owner=`` for the person who
-owns the object, ``rate_pct=`` / ``*_pct`` for percentages, ``*_monthly`` / ``*_annual`` for flows. The
-old names keep working for one release as deprecated aliases (a ``DeprecationWarning`` names the
-replacement), and so do positional arguments after the owner for the constructors that became
-keyword-only.
+The core constructors use the spec's canonical argument names: ``owner=`` for the person who owns the
+object, ``rate_pct=`` / ``*_pct`` for percentages, ``*_monthly`` / ``*_annual`` for flows. The earlier
+names are accepted for one release as deprecated aliases (a ``DeprecationWarning`` names the
+replacement), as are positional arguments after the owner for the keyword-only constructors.
 """
 
 import functools
