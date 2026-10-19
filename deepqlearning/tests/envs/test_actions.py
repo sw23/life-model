@@ -259,8 +259,8 @@ class TestWithdrawalTaxDifferential(unittest.TestCase):
 
 class TestContributionTaxTreatment(unittest.TestCase):
     """Bank-to-401k transfers stand in for payroll deferrals: pre-tax ones are deductible, and both
-    kinds share the 402(g) elective-deferral limit (regression: pre-tax was taxed going in and
-    coming out, and 401k transfers were uncapped, so Roth always won)."""
+    kinds share the 402(g) elective-deferral limit (otherwise pre-tax money would be taxed going in and
+    coming out, and uncapped 401k transfers would make Roth always win)."""
 
     def _fresh_env(self):
         env = FinancialLifeEnv()

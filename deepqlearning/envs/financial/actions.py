@@ -338,7 +338,7 @@ class TransferAction(FinancialAction):
 
         if self.action_type == ActionType.TRANSFER_BANK_TO_401K_PRETAX:
             # A pre-tax deferral comes out of this year's taxable wages (like Job.pre_step), so it
-            # is recorded as an above-the-line deduction; without it the money was taxed going in
+            # is recorded as an above-the-line deduction; without it the money would be taxed going in
             # (as salary) and again coming out (as a distribution).
             target.pretax_balance += amount
             self.person.income.add_deduction(amount)

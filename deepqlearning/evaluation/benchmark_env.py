@@ -51,7 +51,7 @@ def _build_model(collect_data: bool, seed: int = 0) -> LifeModel:
         age=25,
         retirement_age=65,
         spending=Spending(model=model, base_annual=30000, growth_pct=2),
-        state="DEFAULT",  # the flat default state rate, chosen explicitly (Plan 31 D4)
+        state="DEFAULT",  # the flat default state rate, chosen explicitly
     )
     BankAccount(person, company="Bank", type="Checking", balance=10000, interest_pct=0.5)
     job = Job(

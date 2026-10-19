@@ -242,7 +242,8 @@ class EpisodeSampler:
             choice = s.economy_scenarios[int(rng.integers(0, len(s.economy_scenarios)))]
             household["economy_scenario"] = choice
 
-        # Drawn after every pre-existing draw so the households above are unchanged by them.
+        # Drawn after every draw above, so these draws do not shift the start age, salary, spending and
+        # other values a seed produces.
         match_rate, match_cap = MATCH_OFFERS[int(rng.integers(0, len(MATCH_OFFERS)))]
         retirement_savings = salary * savings_benchmark_multiple(start_age) * rng.uniform(*s.savings_factor_range)
         roth_share = rng.uniform(*s.roth_share_range)
@@ -372,7 +373,7 @@ def household_spec(
                 "start_year": start_year,
                 "end_year": start_year + max_steps,
                 "scenario": household.get("economy_scenario"),
-                # The flat DEFAULT state rate, chosen explicitly (Plan 31 D4: no silent fallback).
+                # The flat DEFAULT state rate, chosen explicitly rather than left to the config default.
                 "default_state": "DEFAULT",
             },
             "people": [person],

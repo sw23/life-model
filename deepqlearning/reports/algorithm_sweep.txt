@@ -1,5 +1,5 @@
 Algorithm sweep - financial:basic, retirement_security, protocol n=200 per condition (master_seed 12345),
-Plan 32 engine (monthly model steps), regenerated 2026-10-18. Seeds 0-4 were fixed in advance and are pooled
+Monthly engine (one model step per month), regenerated 2026-10-18. Seeds 0-4 were fixed in advance and are pooled
 below; seed 0 is the committed per-run report (reports/retirement_security, reports/retirement_security_ppo,
 reports/factored_ppo_year, reports/factored_ppo_quarter). Mean return: agent vs best policy in the bar
 (PLANNER_BASELINES, in the run's action space: flat or factored heuristics). Returns are comparable across the

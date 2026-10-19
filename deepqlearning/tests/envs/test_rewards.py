@@ -6,8 +6,8 @@
 """Pure unit tests for the utility-based reward.
 
 Properties covered: CRRA monotonicity and concavity, the log branch at gamma==1, deflation
-correctness, ruin alignment / terminal-branch selection, and — the float-type regression — that every
-returned value is a genuine Python float, not an ``np.float64``.
+correctness, ruin alignment / terminal-branch selection, and that every returned value is a genuine
+Python float, not an ``np.float64``.
 """
 
 import itertools

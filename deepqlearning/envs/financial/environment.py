@@ -94,7 +94,7 @@ OBS_SPEC = [
     ("years_to_ss_claim", 0.0, 1.0),  # max(0, claim_age - age) / 50
     ("employer_match_rate", 0.0, 2.0),  # employer dollars per deferred dollar
     ("employer_match_cap", 0.0, 1.0),  # matched deferrals as a share of pay
-    # --- decision timing (Plan 32 D9) ---
+    # --- decision timing ---
     ("month_of_year", 0.0, 1.0),  # (month of the upcoming decision - 1) / 12: 0 at a January decision
     ("months_to_next_decision", 0.0, 1.0),  # months the step will simulate / 12
 ]
@@ -129,9 +129,8 @@ class FinancialLifeEnv(gym.Env):
     ``reset(seed=..., options=...) -> (obs, info)`` and
     ``step(action) -> (obs, reward, terminated, truncated, info)``.
 
-    **Decision interval and action space (Plan 32 D8/D9).** ``config["decision_interval"]`` is
-    ``"year"`` (default: one ``env.step`` simulates twelve months, the pre-Plan-32 episode),
-    ``"quarter"`` or ``"month"``; the reward accumulates over the interval. ``config["action_space"]``
+    **Decision interval and action space.** ``config["decision_interval"]`` is
+    ``"year"`` (default: one ``env.step`` simulates twelve months), ``"quarter"`` or ``"month"``; the reward accumulates over the interval. ``config["action_space"]``
     is ``"flat"`` (default: ``Discrete(52)``, one one-off money move per decision, see ``actions.py``)
     or ``"factored"`` (``MultiDiscrete``: a vector of standing policies that persist until changed,
     see ``policies.py``).
@@ -176,7 +175,7 @@ class FinancialLifeEnv(gym.Env):
             "max_action_amount": 50000,  # Max amount for transfer/withdrawal actions
             # Annual growth (percent) for the created 401k. None follows the economy's equity
             # return each year like every other investment account, so a 401k-heavy plan faces
-            # market risk; a number pins it (the pre-OBS_VERSION-4 world used a fixed 6.0).
+            # market risk; a number pins it at that rate.
             "account_growth": None,
             # Yearly spending / salary growth (percent). None follows the economy's inflation /
             # wage growth, so a high-inflation draw raises costs instead of a fixed 2%.
@@ -584,11 +583,11 @@ class FinancialLifeEnv(gym.Env):
 
     def spending_rate(self) -> float:
         """The yearly living-spending rate in force: the base plus every categorized line active this
-        year (Plan 27 D6), at their annual amounts. One-time expenses are not a rate and are left out.
+        year, at their annual amounts. One-time expenses are not a rate and are left out.
 
-        At a year boundary this is what ``Spending.get_yearly_spending()`` read before categories
-        existed (the year-end reset clears the paid categories and one-time expenses), so yearly
-        rewards are unchanged; within a year it does not depend on how much of the year has been paid.
+        Without categorized lines it is the base yearly spending (what ``Spending.get_yearly_spending()``
+        returns at a year boundary, after the year-end reset clears the paid categories and one-time
+        expenses); within a year it does not depend on how much of the year has been paid.
         """
         spending = self.person.spending
         year = self.model.year
@@ -605,11 +604,10 @@ class FinancialLifeEnv(gym.Env):
         """The person's age as the environment reports it at a decision: their age in the most
         recently simulated month (the start age before the first step).
 
-        With yearly decisions this is the age during the year just simulated (``age_in(year - 1)``):
-        the annual engine's convention (its ``Person.age`` advanced at the start of each simulated
-        year), kept on the monthly engine — where ``Person.age`` is the age in the model's current
-        month, i.e. in January of the upcoming year between env steps — so episode length,
-        observations and termination keep their meaning.
+        With yearly decisions this is the age during the year just simulated (``age_in(year - 1)``),
+        not ``Person.age``: between env steps the model sits in January of the upcoming year, and
+        ``Person.age`` is the age in that month. Reporting the age reached during the simulated year keeps
+        one step per year of age, which fixes the episode length, the age observations and termination.
         """
         if self.current_step == 0:
             return self.person.age
@@ -745,8 +743,8 @@ class FinancialLifeEnv(gym.Env):
         hsa = sum(acc.balance for acc in person.hsas)
         brokerage = sum(acc.balance for acc in person.brokerage_accounts)
         retirement_balance = pretax_401k + roth_401k + traditional_ira + roth_ira
-        # Real debt (car loans, credit cards, student loans, mortgages) — not the dead
-        # unpaid-bills carryover `person.debt` the old observation read.
+        # Real debt (car loans, credit cards, student loans, mortgages), not the unpaid-bills
+        # carryover `person.debt`.
         debt = person.outstanding_debt_balance
         annual_income = sum(job.salary.base for job in person.jobs if not job.retired)
         annual_spending = person.spending.get_yearly_spending()
@@ -869,8 +867,7 @@ class FinancialLifeEnv(gym.Env):
 
         The agent earns the CRRA utility of its **real** consumption rate (:meth:`spending_rate`, in
         force at the end of the interval, deflated to the start of the next month), weighted by the
-        share of a year the step simulated (``months / 12``: 1 for yearly decisions, exactly the
-        pre-Plan-32 reward), and on the terminal step earns either a bequest utility on the real net
+        share of a year the step simulated (``months / 12``: 1 for yearly decisions), and on the terminal step earns either a bequest utility on the real net
         worth it leaves behind or, if it went bankrupt, a large ruin penalty. The spending rate is
         read from ``Spending`` (not from a flow stat), so the year-end reset of flow stats and the
         December tax settlement inside an interval cannot distort it. Time preference is handled

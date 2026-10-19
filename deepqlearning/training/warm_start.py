@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Seed an off-policy agent's replay buffer with a scripted teacher's experience (Plan 19 D2).
+"""Seed an off-policy agent's replay buffer with a scripted teacher's experience.
 
 Off by default: imitation can bias the learned policy toward the teacher. The CLI exposes it as
 ``--warm-start-teacher`` / ``--warm-start-seeds`` so a run can be compared with and without it.

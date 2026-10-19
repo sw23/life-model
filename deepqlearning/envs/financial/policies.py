@@ -3,13 +3,13 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""The factored, persistent action space (Plan 32 D8): standing policies the agent sets and keeps.
+"""The factored, persistent action space: standing policies the agent sets and keeps.
 
 The flat ``Discrete(52)`` space is one-off money moves ("transfer 25% of the bank to the 401k"). People
 set *rates and rules* that persist, so the factored space is a vector of standing policies, one small
 discrete slot each. A slot's value stays in force until the agent changes it; every slot has a
 ``NO_CHANGE`` value (index 0), so "do nothing" is one cheap choice per slot. The slots map onto the
-core engine's own standing-policy objects (Plan 27 D4, :mod:`life_model.policies`), so the RL agent, the
+core engine's own standing-policy objects (:mod:`life_model.policies`), so the RL agent, the
 household spec and the adviser share one vocabulary:
 
 =========================  ====================================================  ==========================
@@ -165,7 +165,7 @@ _ROTH_BRACKETS = {"to_bracket_12": 12, "to_bracket_22": 22}
 
 def scale_discretionary_spending(spending, factor: float) -> None:
     """Scale what a household can adjust: the uncategorized ``base`` and every discretionary
-    (``essential=False``) categorized line (Plan 27 D6). Essential lines — the needs a household
+    (``essential=False``) categorized line. Essential lines — the needs a household
     itemized — are left alone."""
     spending.base *= factor
     for line in getattr(spending, "categories", {}).values():
