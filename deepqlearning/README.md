@@ -440,7 +440,7 @@ only configuration whose pooled interval clears zero. What the factored space bu
 — the yearly agent's policy reads as "defer 15% pre-tax and 15% Roth, fund a traditional IRA, convert to
 the top of the 22% bracket while working, claim at retirement, draw taxable before pre-tax before Roth"
 (`reports/factored_ppo_year/policy_vector_by_age.txt`) — and the shared vocabulary with the adviser,
-not return. It stays opt-in (`--action-space factored`).
+not return. It is opt-in (`--action-space factored`).
 
 An independent Stable-Baselines3 cross-check (`reports/sb3_cross_check/`, produced on the earlier
 yearly-step engine, so its returns are on that engine's scale; seed 0, 200k timesteps, no action masking,
