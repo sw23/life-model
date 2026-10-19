@@ -133,6 +133,26 @@ class TestOutputsDoc(unittest.TestCase):
             "docs/outputs.md is stale: run python scripts/generate_outputs_doc.py",
         )
 
+    def test_union_types_render_the_same_on_every_python(self):
+        """Python 3.14 merged ``X | None`` into ``typing.Union`` (whose ``__name__`` is ``"Union"``);
+        both spellings must render as the same text so the generated doc does not depend on the version."""
+        import importlib.util
+        import typing
+        from pathlib import Path
+
+        from ..tax.return_record import StateReturn
+
+        script = Path(__file__).resolve().parents[3] / "scripts" / "generate_outputs_doc.py"
+        spec = importlib.util.spec_from_file_location("generate_outputs_doc", script)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        expected = "StateReturn | None"
+        self.assertEqual(module._type_text(StateReturn | None), expected)
+        self.assertEqual(module._type_text(typing.Optional[StateReturn]), expected)  # noqa: UP045
+        self.assertEqual(module._type_text(typing.Union[StateReturn, None]), expected)  # noqa: UP007
+        self.assertEqual(module._type_text(dict[str, float]), "dict")
+        self.assertEqual(module._type_text(float), "float")
+
 
 if __name__ == "__main__":
     unittest.main()

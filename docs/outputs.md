@@ -163,7 +163,7 @@ year was settled with. `total_income - total_adjustments = agi`; `agi - deductio
 | `social_security_tax` | `float` | Social Security tax (all members). |
 | `medicare_tax` | `float` | Medicare tax including the additional Medicare tax (all members). |
 | `additional_medicare_tax` | `float` | Additional Medicare tax on combined wages over the threshold. |
-| `state_return` | `life_model.tax.return_record.StateReturn \| None` | State return lines. |
+| `state_return` | `StateReturn \| None` | State return lines. |
 | `state_tax` | `float` | State income tax. |
 | `total_tax` | `float` | Everything the unit paid in tax this year: federal + state + payroll + self-employment tax. |
 | `marginal_rate` | `float` | Ordinary-bracket rate (percent) of the last taxable ordinary dollar. |

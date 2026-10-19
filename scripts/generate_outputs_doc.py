@@ -21,6 +21,8 @@ import argparse
 import importlib
 import pkgutil
 import sys
+import types
+import typing
 from dataclasses import fields
 from pathlib import Path
 
@@ -54,6 +56,22 @@ def _owners(stat_name: str) -> list[str]:
 
 def _escape(text: str) -> str:
     return text.replace("|", "\\|")
+
+
+def _type_text(annotation: object) -> str:
+    """Name a dataclass field's type the same way on every supported Python.
+
+    ``getattr(type, "__name__")`` is not portable: Python 3.14 merged ``X | None`` into
+    ``typing.Union``, whose ``__name__`` is ``"Union"``, while 3.12/3.13 have no ``__name__`` on it.
+    Unions are therefore spelled out from their arms; other types use their short name.
+    """
+    if isinstance(annotation, str):
+        return annotation
+    if annotation is type(None):
+        return "None"
+    if typing.get_origin(annotation) in (typing.Union, types.UnionType):
+        return " | ".join(_type_text(arm) for arm in typing.get_args(annotation))
+    return getattr(annotation, "__name__", str(annotation))
 
 
 def render() -> str:
@@ -146,8 +164,7 @@ def render() -> str:
         "| --- | --- | --- |",
     ]
     for field in fields(TaxReturn):
-        type_name = field.type if isinstance(field.type, str) else getattr(field.type, "__name__", str(field.type))
-        out.append(f"| `{field.name}` | `{_escape(str(type_name))}` | {_escape(FIELD_DOCS[field.name])} |")
+        out.append(f"| `{field.name}` | `{_escape(_type_text(field.type))}` | {_escape(FIELD_DOCS[field.name])} |")
 
     entry_docs = {
         "seq": "Position in the ledger (0-based, increasing).",
