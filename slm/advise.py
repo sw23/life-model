@@ -59,7 +59,7 @@ class ToolLoopConfig:
     # simulator's label instead (the simulator-grounded correction).
     dominance_margin: float = 0.0
     trust_simulation: bool = True
-    # Opt-in (off by default, so trained behaviour and committed reports are unchanged): before the
+    # Opt-in (off by default; the trained adapters and committed reports do not use it): before the
     # draft, show the wrapped model a deterministic baseline projection of the household from the
     # one-call functions (``life_model.run`` on the profile's HouseholdSpec). Scoring itself stays on
     # the RL environment: the decision levers (contribution routing, claiming age, drawdown) and the

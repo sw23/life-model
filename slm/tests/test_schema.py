@@ -126,7 +126,7 @@ def test_refusal_example_has_no_household():
     assert ex.out_of_scope is True
 
 
-# --- Plan 25: HouseholdProfile is a projection of the HouseholdSpec ---------------------------
+# --- HouseholdProfile is a projection of the HouseholdSpec -----------------------------------
 
 
 def test_profile_round_trips_through_the_household_spec():

@@ -48,7 +48,7 @@ pipeline-validation dataset as a pipeline-validation artifact, not a publishable
 The English profile rounds dollars and rates to what a reader needs; the JSON channel beside it
 round-trips a `HouseholdProfile` exactly. When a prompt carries a `Household JSON: {...}` line the
 tool-loop reads the household from it instead of regex-parsing the text; no committed dataset or
-report prompt carries one, so their results are unchanged.
+report prompt carries one, so the committed results come from the text path.
 
 `ToolLoopConfig(simulator_context=True)` (off by default) gives the wrapped model the household's
 baseline projection from `life_model.run` on the profile's spec (final net worth, run totals,
@@ -71,9 +71,9 @@ functions; an API tool-use loop can (see `docs/cli.md`).
 | claim | `claimret` at retirement · `claimfra` at full retirement age · `claim70` at 70 (never before retirement) |
 | drawdown | `conventional` (the simulator's default order) · `bracketfill` (draw pre-tax savings up to the top of the 12% bracket each retired year) |
 
-The old menu (four planner heuristics plus max pre-tax / max Roth) had two near-duplicate pairs and
-none of the levers advice actually turns on; those heuristics remain as **reference policies** the
-eval scores on the same seeds, not answers.
+Four planner heuristics plus max pre-tax / max Roth are **reference policies** the eval scores on the
+same seeds, not answers: they include two near-duplicate pairs and none of the levers advice actually
+turns on.
 
 `households.py` widens the RL environment's four scenarios (ages 19–38) with `late_career` (46–54)
 and `pre_retiree` (54–60), draws each household's economy (about half the stochastic baseline,
@@ -107,7 +107,7 @@ out-of-scope topics × 6 phrasings with rotating wording; the eval uses 3 held-o
 ## Teacher gating (why no RL policy is a teacher)
 
 No learned policy has cleared the RL protocol's pre-registered bar (see
-`deepqlearning/README.md`; the bar now includes `always_max_401k` and pools five pre-registered
+`deepqlearning/README.md`; the bar includes `always_max_401k` and pools five pre-registered
 seeds). A mediocre teacher silently caps the student, so the candidates are the searched plans
 only. A policy that passes the pooled verdict can be added as a candidate.
 
@@ -161,7 +161,7 @@ What this says:
 1. **The labels carry learnable signal.** A small tabular model reading the same facts the language
    model reads cuts regret by more than half against every constant answer, in both conditions.
    The world (Social Security, match, balances, overlays), the evidence-backed labels and the plan
-   menu do what they were meant to: the decision now depends on the household.
+   menu do what they were meant to: the decision depends on the household.
 2. **The simulator in the loop works.** The tool loop starts from a fixed, mediocre plan and lands
    within noise of the best plan for 75% of households.
 3. **The fine-tuned 1.5B model does not beat a constant answer.** SFT converged to the default plan
@@ -172,7 +172,7 @@ What this says:
 
 How the SFT runs failed, so the next run does not repeat it:
 
-* **Full-text loss** (the default before this change): the 1.5B model emitted one constant plan,
+* **Full-text loss** (training on the whole answer): the 1.5B model emitted one constant plan,
   switching which one between checkpoints. Training only on the answer (`completion_only_loss`)
   did not change that.
 * **The plan token is a few percent of the answer.** Before training, Qwen2.5-1.5B puts ~80% on

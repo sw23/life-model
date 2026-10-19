@@ -19,11 +19,11 @@ bracket-filling withdrawal) through the env's own action executor, so each move 
 legality, 402(g), employer-match, and tax rules as an RL action; the policy then returns
 ``NO_ACTION`` for the year.
 
-**Policy vectors (Plan 32 D8).** With ``action_space="factored"`` a candidate runs on the RL env's
+**Policy vectors.** With ``action_space="factored"`` a candidate runs on the RL env's
 standing-policy space instead: :func:`plan_policy_vector` writes the plan in that vocabulary (a
 401(k) rate per bucket, an IRA / HSA choice, a sweep, a withdrawal order, a claim, a Roth
-conversion) and :func:`candidate_policy` returns the action vector each decision. The flat path stays
-the default, so committed SLM data and reports are unchanged.
+conversion) and :func:`candidate_policy` returns the action vector each decision. The flat path is
+the default, and the committed SLM data and reports were generated on it.
 
 **Teacher gating:** no trained RL policy is a candidate. Per the committed protocol reports no
 learned policy cleared the pre-registered bar, so distilling from one would silently cap the

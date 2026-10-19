@@ -45,7 +45,7 @@ BOOTSTRAP_SEED = 0
 def make_scoring_env(household: dict, reward_preset: str, *, action_space: str = "flat") -> FinancialLifeEnv:
     """Build a fixed-household env for scoring (the household is the env's point configuration).
 
-    ``action_space="factored"`` scores candidates as standing-policy vectors (Plan 32 D8; see
+    ``action_space="factored"`` scores candidates as standing-policy vectors (see
     ``candidates.plan_policy_vector``); the flat default is what the committed data was scored on.
     """
     config = dict(household)
