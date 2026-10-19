@@ -17,7 +17,7 @@ a field marked *typically > 1* warns "did you mean 4.5?". Every flow states its 
 varies under stochastic and path economies. Unknown keys are errors.
 
 **Not yet supported.** Fields and kinds marked *not yet supported* are declared so statements can
-be written down now; the validator rejects a spec that sets one, naming the plan that adds it.
+be written down now; the validator rejects a spec that sets one, saying what the engine does not model.
 
 **Construction order.** The builder never uses the order lists are written in: it sorts each list
 (kind, `primary` bank first, then id and content) and builds model, family, people, bank
@@ -69,7 +69,7 @@ Builds: `LifeModel`.
 | `seed` | integer (optional) |  | — | `LifeModel.seed` | Random seed (stochastic economy and mortality draws). |
 | `scenario` | string (optional) |  | — | `LifeModel.scenario` | Named economic/regulatory scenario from life_model.config.scenarios (e.g. 'recession'). |
 | `default_state` | string (optional) |  | — | `config.tax.state.default_state` | Two-letter state of residence for people without their own 'state'. Must have a state tax pack (unknown codes are errors, never a silent flat 6%). |
-| `accepted_warnings` | list[string] (optional) |  | — |  | Validator warning codes the household keeps on purpose (e.g. [default_child_costs, cash_not_invested]): the validator drops them, so they no longer fail --checks strict. Record why with the assumptions you report. Errors cannot be accepted. |
+| `accepted_warnings` | list[string] (optional) |  | — |  | Validator warning codes the household keeps on purpose (e.g. [default_child_costs, cash_not_invested]): the validator drops them, so they do not fail --checks strict. Record why with the assumptions you report. Errors cannot be accepted. |
 
 ## Economy
 
@@ -128,9 +128,9 @@ Builds: `Person`.
 | `gender` | `"male"` \\| `"female"` \\| `"other"` |  | `"other"` | `Person.gender` | Gender at birth for the mortality table ('other' blends). |
 | `retirement_age` | number | age | **required** | `Person.retirement_age` | Age at which every job stops. |
 | `state` | string (optional) |  | — | `Person.state` | Two-letter state of residence with a state tax pack, or 'DEFAULT' (the flat default rate, chosen deliberately); defaults to meta.default_state. A state without a pack is an error. |
-| `residency` | list[list[string, string]] (optional) |  | — | `Person.residency` | Moves: [[YYYY-MM, state], ...], the state from each month on (before the first, 'state'). A year with a move files part-year state returns: wages by the months worked in each state, other income by residence when received (Plan 31 D4). |
-| `widowed_year` | integer (optional) | year | — | `Person.widowed_year` | The year a spouse died before the run: qualifying surviving spouse for the two following years while a dependent child lives with the person (Plan 31 D5). |
-| `estimated_payments` | [EstimatedPayments](#estimatedpayments) (optional) |  | — | `Person.estimated_payments` | Federal estimated tax payments (Plan 31 D3). |
+| `residency` | list[list[string, string]] (optional) |  | — | `Person.residency` | Moves: [[YYYY-MM, state], ...], the state from each month on (before the first, 'state'). A year with a move files part-year state returns: wages by the months worked in each state, other income by residence when received. |
+| `widowed_year` | integer (optional) | year | — | `Person.widowed_year` | The year a spouse died before the run: qualifying surviving spouse for the two following years while a dependent child lives with the person. |
+| `estimated_payments` | [EstimatedPayments](#estimatedpayments) (optional) |  | — | `Person.estimated_payments` | Federal estimated tax payments. |
 | `mortality` | `"immortal"` \\| `"stochastic"` \\| `"fixed_age"` |  | `"immortal"` | `Person.mortality_mode` | How death is decided each year. |
 | `death_age` | integer (optional) | age | — | `Person.death_age` | Age of death for mortality 'fixed_age'. |
 | `spending` | [Spending](#spending) (optional) |  | — |  | This person's living spending. Spending is per person and adds across the household: the household's budget is the sum of every person's amount_annual, so give the whole household budget on one spouse (and leave the other spouse's spending out, or 0) or split it between them, never the full budget on each. Required for a person without a spouse (relationships.marriages) whose spending holds the budget; a spouse who leaves it out spends nothing of their own. |
@@ -143,7 +143,7 @@ Builds: `Person`.
 | `healthcare` | [Healthcare](#healthcare) (optional) |  | — |  | Opt-in healthcare cost agents. |
 | `giving` | list[[Donation](#donation)] |  | [] |  | Charitable giving. |
 | `children` | list[[Child](#child)] |  | [] |  | Child dependents. |
-| `dependents` | list[[Dependent](#dependent)] |  | [] |  | Dependents other than children (a supported parent; Plan 31 D5). |
+| `dependents` | list[[Dependent](#dependent)] |  | [] |  | Dependents other than children (e.g. a supported parent). |
 | `self_employment` | [SelfEmployment](#selfemployment) (optional) |  | — |  | Self-employment income (Schedule C). |
 | `contribution_plans` | list[[ContributionPlan](#contributionplan)] (optional) |  | — | `ContributionPlan` | Recurring contributions (person.add_contribution_plan). |
 | `savings_policy` | [SavingsPolicy](#savingspolicy) (optional) |  | — | `SavingsPolicy` | Surplus sweep above a cash floor (person.savings_policy). |
@@ -151,7 +151,7 @@ Builds: `Person`.
 
 ## EstimatedPayments
 
-Federal estimated tax payments (Form 1040-ES; Plan 31 D3): fixed quarterly amounts or a safe-harbor policy.
+Federal estimated tax payments (Form 1040-ES): fixed quarterly amounts or a safe-harbor policy.
 
 Builds: `EstimatedPayments`.
 
@@ -177,7 +177,7 @@ Builds: `Spending`.
 
 ## SpendingCategory
 
-A categorized spending line (Plan 27 D6): a yearly or monthly amount in start-year dollars, grown every year, paid in the years ``start_year`` through ``end_year`` (a multi-year expense).
+A categorized spending line: a yearly or monthly amount in start-year dollars, grown every year, paid in the years ``start_year`` through ``end_year`` (a multi-year expense).
 
 | Field | Type | Unit | Default | Maps to | Description |
 |---|---|---|---|---|---|
@@ -237,7 +237,7 @@ Builds: `StockPlan`.
 
 ## StockGrant
 
-An existing (already granted, partly unvested) equity grant (Plan 27 D1). Vests before the start are taken as done (a vest happens in January; a run starting later in the year has had that year's).
+An existing (already granted, partly unvested) equity grant. Vests before the start are taken as done (a vest happens in January; a run starting later in the year has had that year's).
 
 Builds: `StockGrant`.
 
@@ -250,7 +250,7 @@ Builds: `StockGrant`.
 
 ## StockOption
 
-A stock option exercised in a planned year (Plan 31): an NSO's spread is wages; an ISO exercised and held puts its spread into AMT (Form 6251 line 2i), and the minimum tax credit follows in later years.
+A stock option exercised in a planned year: an NSO's spread is wages; an ISO exercised and held puts its spread into AMT (Form 6251 line 2i), and the minimum tax credit follows in later years.
 
 Builds: `StockOption`.
 
@@ -264,7 +264,7 @@ Builds: `StockOption`.
 
 ## Payroll
 
-Pre-tax payroll deductions from the pay stub (Plan 27 D3; see :mod:`life_model.work.payroll`).
+Pre-tax payroll deductions from the pay stub (see :mod:`life_model.work.payroll`).
 
 Builds: `PayrollDeductions`.
 
@@ -277,7 +277,7 @@ Builds: `PayrollDeductions`.
 | `hsa_employee_annual` | number | USD/year | `0.0` | `PayrollDeductions.hsa_employee_annual` | Employee HSA contributions through payroll (pre-tax §125, W-2 box 12 W) into the person's first HSA, within the HSA limit. |
 | `hsa_employer_annual` | number | USD/year | `0.0` | `PayrollDeductions.hsa_employer_annual` | Employer HSA contributions (never wages), paid a twelfth a month while the job pays. The preferred place for employer HSA money: leave the HSA account's employer_contribution_annual unset (both set is a validation error). |
 | `commuter_monthly` | number | USD/month | `0.0` | `PayrollDeductions.commuter_monthly` | Transit / parking through payroll, excluded from wages and FICA up to the year's §132(f) monthly limit. |
-| `withholding` | `"w4_default"` \\| [Withholding](#withholding) (optional) |  | — | `PayrollDeductions.withholding` | Tax withholding (Plan 31 D3): 'w4_default' (a W-4 with no entries), or {w4: {...}} / {wages_pct} / {amount_monthly}. Federal (Pub. 15-T; bonuses and RSU vests as supplemental wages), Social Security, Medicare and state tax are withheld from each paycheck, and the household's balance due or refund is settled in April of the next year. Unset: no withholding, the year's taxes paid as a December lump. |
+| `withholding` | `"w4_default"` \\| [Withholding](#withholding) (optional) |  | — | `PayrollDeductions.withholding` | Tax withholding: 'w4_default' (a W-4 with no entries), or {w4: {...}} / {wages_pct} / {amount_monthly}. Federal (Pub. 15-T; bonuses and RSU vests as supplemental wages), Social Security, Medicare and state tax are withheld from each paycheck, and the household's balance due or refund is settled in April of the next year. Unset: no withholding, the year's taxes paid as a December lump. |
 
 ## Withholding
 
@@ -293,7 +293,7 @@ Builds: `W4 | FlatWithholding`.
 
 ## W4Spec
 
-A Form W-4 (2020 or later): the inputs of IRS Pub. 15-T's percentage method (Plan 31 D3).
+A Form W-4 (2020 or later): the inputs of IRS Pub. 15-T's percentage method.
 
 Builds: `W4`.
 
@@ -327,7 +327,7 @@ Builds: `BankAccount`.
 
 ## FixedIncomeAccount
 
-A CD, Treasury, I bond or bond fund holding (Plan 27 D2; see :mod:`life_model.account.fixed_income`). A bank account named "Bonds" is spent like checking; this keeps the instrument's own rules: a CD's interest and early-withdrawal penalty, a Treasury's state-exempt coupon and maturity, an I bond's composite rate, lock and tax deferral, a bond fund's distributions and average-cost basis.
+A CD, Treasury, I bond or bond fund holding (see :mod:`life_model.account.fixed_income`). A bank account named "Bonds" is spent like checking; this keeps the instrument's own rules: a CD's interest and early-withdrawal penalty, a Treasury's state-exempt coupon and maturity, an I bond's composite rate, lock and tax deferral, a bond fund's distributions and average-cost basis.
 
 Builds: `FixedIncomeHolding`.
 
@@ -598,7 +598,7 @@ Builds: `Trust`.
 
 ## CarLoan
 
-An auto loan. Enter a loan the way its statement shows it (Plan 27 D1/D7): the original amount and term with an origination month (or payments_made) give today's balance and payment with no other input; or give the current balance with the months remaining (or the payment). Any three of balance / months remaining / payment determine the fourth; inputs that contradict each other are a validation error naming the field. The first payment is in the month after origination; a balance below the original schedule is a prepaid loan (it pays off early at the contract payment). A balance above it (a loan behind on its payments) needs schedule: statement.
+An auto loan. Enter a loan the way its statement shows it: the original amount and term with an origination month (or payments_made) give today's balance and payment with no other input; or give the current balance with the months remaining (or the payment). Any three of balance / months remaining / payment determine the fourth; inputs that contradict each other are a validation error naming the field. The first payment is in the month after origination; a balance below the original schedule is a prepaid loan (it pays off early at the contract payment). A balance above it (a loan behind on its payments) needs schedule: statement.
 
 Builds: `CarLoan`.
 
@@ -621,7 +621,7 @@ Builds: `CarLoan`.
 
 ## StudentLoan
 
-A student loan. Enter a loan the way its statement shows it (Plan 27 D1/D7): the original amount and term with an origination month (or payments_made) give today's balance and payment with no other input; or give the current balance with the months remaining (or the payment). Any three of balance / months remaining / payment determine the fourth; inputs that contradict each other are a validation error naming the field. The first payment is in the month after origination; a balance below the original schedule is a prepaid loan (it pays off early at the contract payment). A balance above it (a loan behind on its payments) needs schedule: statement.
+A student loan. Enter a loan the way its statement shows it: the original amount and term with an origination month (or payments_made) give today's balance and payment with no other input; or give the current balance with the months remaining (or the payment). Any three of balance / months remaining / payment determine the fourth; inputs that contradict each other are a validation error naming the field. The first payment is in the month after origination; a balance below the original schedule is a prepaid loan (it pays off early at the contract payment). A balance above it (a loan behind on its payments) needs schedule: statement.
 
 Builds: `StudentLoan`.
 
@@ -649,7 +649,7 @@ Builds: `StudentLoan`.
 
 ## CreditCard
 
-A credit card (revolving debt). ``spending_charged_pct`` routes part of the owner's monthly living spending through the card (Plan 27 D7).
+A credit card (revolving debt). ``spending_charged_pct`` routes part of the owner's monthly living spending through the card.
 
 Builds: `CreditCard`.
 
@@ -669,7 +669,7 @@ Builds: `CreditCard`.
 
 ## HomeEquityLine
 
-A home equity line of credit secured by one of the person's homes (Plan 27 D7). Interest on the part of the balance used to improve the home is deductible acquisition-debt interest; the rest is not.
+A home equity line of credit secured by one of the person's homes. Interest on the part of the balance used to improve the home is deductible acquisition-debt interest; the rest is not.
 
 Builds: `HomeEquityLine`.
 
@@ -712,7 +712,7 @@ Builds: `Home`.
 
 ## Mortgage
 
-The mortgage on a home. Enter a loan the way its statement shows it (Plan 27 D1/D7): the original amount and term with an origination month (or payments_made) give today's balance and payment with no other input; or give the current balance with the months remaining (or the payment). Any three of balance / months remaining / payment determine the fourth; inputs that contradict each other are a validation error naming the field. The first payment is in the month after origination; a balance below the original schedule is a prepaid loan (it pays off early at the contract payment). A balance above it (a loan behind on its payments) needs schedule: statement. With escrow_monthly, payment_monthly is the statement's total payment and the escrow (property tax and insurance, paid through the home's expenses) is subtracted. A mortgage originated on or before 2017-12 keeps the $1,000,000 acquisition-debt limit.
+The mortgage on a home. Enter a loan the way its statement shows it: the original amount and term with an origination month (or payments_made) give today's balance and payment with no other input; or give the current balance with the months remaining (or the payment). Any three of balance / months remaining / payment determine the fourth; inputs that contradict each other are a validation error naming the field. The first payment is in the month after origination; a balance below the original schedule is a prepaid loan (it pays off early at the contract payment). A balance above it (a loan behind on its payments) needs schedule: statement. With escrow_monthly, payment_monthly is the statement's total payment and the escrow (property tax and insurance, paid through the home's expenses) is subtracted. A mortgage originated on or before 2017-12 keeps the $1,000,000 acquisition-debt limit.
 
 Builds: `Mortgage`.
 
@@ -794,7 +794,7 @@ Builds: `LifeInsurance`.
 | `cash_value` | number (optional) | USD | — | `LifeInsurance.cash_value` | Existing whole-life cash value. |
 | `loan_balance` | number (optional) | USD | — | `LifeInsurance.loan_balance` | Existing policy loan. |
 | `premiums_paid` | number (optional) | USD | — | `LifeInsurance.premiums_paid` | Premiums paid so far: the policy's cost basis on a surrender (defaults to cash_value). |
-| `group` | boolean |  | `False` |  | Employer group life. NOT YET SUPPORTED (Plan 27 item 13): rejected by the validator. |
+| `group` | boolean |  | `False` |  | Employer group life. NOT YET SUPPORTED (employer group life is not modeled): rejected by the validator. |
 
 ## GeneralInsurance
 
@@ -825,7 +825,7 @@ Builds: `Insurance`.
 
 ## Marketplace
 
-ACA marketplace coverage (Form 1095-A): the premium tax credit's inputs (Plan 31 task 6).
+ACA marketplace coverage (Form 1095-A): the premium tax credit's inputs.
 
 Builds: `MarketplaceCoverage`.
 
@@ -911,7 +911,7 @@ What a child costs unless the spec says otherwise, in start-year dollars a year,
 
 ## Dependent
 
-A dependent other than a child: a qualifying relative such as a parent the person supports (Plan 31 D5). Gives the credit for other dependents ($500) while the dependent's gross income is under the year's limit, and head of household to an unmarried supporter (a parent need not live with them).
+A dependent other than a child: a qualifying relative such as a parent the person supports. Gives the credit for other dependents ($500) while the dependent's gross income is under the year's limit, and head of household to an unmarried supporter (a parent need not live with them).
 
 Builds: `Dependent`.
 
@@ -927,7 +927,7 @@ Builds: `Dependent`.
 
 ## SelfEmployment
 
-Self-employment income (Plan 31): a sole proprietorship built as ``Job(kind="self_employed")``. The net profit (gross receipts less expenses) is paid to the bank like wages, taxed as Schedule C income with self-employment tax (Schedule SE, sharing the Social Security wage base with W-2 wages), half of it deducted, the SEP / solo 401(k) contribution deducted, and the qualified business income deduction. Withholding and estimated payments are not modeled yet (the tax is settled with the year, Plan 31 D3). A ``kind: 401k`` account whose ``job`` is this entry's ``id`` is a solo 401(k).
+Self-employment income: a sole proprietorship built as ``Job(kind="self_employed")``. The net profit (gross receipts less expenses) is paid to the bank like wages, taxed as Schedule C income with self-employment tax (Schedule SE, sharing the Social Security wage base with W-2 wages), half of it deducted, the SEP / solo 401(k) contribution deducted, and the qualified business income deduction. Nothing is withheld from the profit: the person's ``estimated_payments`` prepay its tax, and any balance is paid when the year's tax is settled. A ``kind: 401k`` account whose ``job`` is this entry's ``id`` is a solo 401(k).
 
 Builds: `Job (kind='self_employed')`.
 
@@ -945,7 +945,7 @@ Builds: `Job (kind='self_employed')`.
 
 ## ContributionPlan
 
-A recurring contribution (Plan 27 D4; ``life_model.policies.ContributionPlan``).
+A recurring contribution (``life_model.policies.ContributionPlan``).
 
 Builds: `ContributionPlan`.
 
@@ -964,7 +964,7 @@ Builds: `ContributionPlan`.
 
 ## SavingsPolicy
 
-Surplus sweep above a cash floor, once a year after the taxes are paid (Plan 27 D4).
+Surplus sweep above a cash floor, once a year after the taxes are paid.
 
 Builds: `SavingsPolicy`.
 
@@ -975,7 +975,7 @@ Builds: `SavingsPolicy`.
 
 ## RothConversion
 
-A standing Roth conversion every December before the year's taxes (Plan 27).
+A standing Roth conversion every December before the year's taxes.
 
 Builds: `RothConversionPolicy`.
 
@@ -1042,9 +1042,9 @@ A time relative to another event.
 
 ## DivorceEvent
 
-Divorce (backlog).
+Divorce from a spouse in the household.
 
-**Not yet supported (backlog (divorce)).**
+**Not yet supported (divorce is not modeled).**
 
 | Field | Type | Unit | Default | Maps to | Description |
 |---|---|---|---|---|---|
@@ -1184,7 +1184,7 @@ Open an account.
 
 ## ContributeEvent
 
-A one-time contribution from the bank into an account. Tax-advantaged accounts take at most their remaining annual room (the rest stays in the bank); the tax treatment is whatever the account's own ``contribute()`` applies. Recurring contributions are Plan 27 D4 (``contribution_plans``).
+A one-time contribution from the bank into an account. Tax-advantaged accounts take at most their remaining annual room (the rest stays in the bank); the tax treatment is whatever the account's own ``contribute()`` applies. Recurring contributions are ``contribution_plans``.
 
 | Field | Type | Unit | Default | Maps to | Description |
 |---|---|---|---|---|---|
@@ -1269,7 +1269,7 @@ Death at a given time (sets fixed-age mortality).
 
 ## RefinanceEvent
 
-Refinance a mortgage (``debt`` is the home's id) or a car or student loan (Plan 27 D7): a new loan for the balance (plus any cash-out, and the costs when financed) at the new rate and term.
+Refinance a mortgage (``debt`` is the home's id) or a car or student loan: a new loan for the balance (plus any cash-out, and the costs when financed) at the new rate and term.
 
 | Field | Type | Unit | Default | Maps to | Description |
 |---|---|---|---|---|---|
@@ -1394,7 +1394,7 @@ A representative paystub, converted to monthly amounts.
 
 ## SpendingActuals
 
-Year totals from bank/card statements, for calibration against the model's assumptions (D6).
+Year totals from bank/card statements, for calibration against the model's assumptions.
 
 | Field | Type | Unit | Default | Maps to | Description |
 |---|---|---|---|---|---|

@@ -301,7 +301,7 @@ notebook table (`_repr_html_`) shows the life story; detail kinds are kept but n
 
 | Kind | Detail | Meaning |
 | --- | --- | --- |
-| `note` |  | Free-text event (what Event(message) creates); most legacy messages. |
+| `note` |  | Free-text event (what Event(message) creates); the engine's untyped messages. |
 | `life_event_fired` |  | A scheduled LifeEvent fired (details: stage; the record also has name and scheduled_year). |
 | `retired` |  | A job ended (retirement, a layoff, death). |
 | `retirement_age` |  | A person reached the federal retirement age (59.5). |
