@@ -350,7 +350,7 @@ class WithholdingTable(StrictModel):
 
 
 class WithholdingYear(StrictModel):
-    """Federal income tax withholding for a year (Plan 31 D3): IRS Pub. 15-T Worksheet 1A's Step 1g amounts
+    """Federal income tax withholding for a year: IRS Pub. 15-T Worksheet 1A's Step 1g amounts
     and annual percentage method tables (standard and Form W-4 Step 2 checkbox), and Pub. 15 section 7's
     supplemental-wage rates. A projected year (past the published table) has no tables: they are derived
     from the year's brackets and standard deduction the way Pub. 15-T builds them."""
@@ -377,7 +377,7 @@ class PovertyLine(StrictModel):
 
 
 class PremiumTaxCreditYear(StrictModel):
-    """ACA premium tax credit for a year (IRC §36B, Form 8962; Plan 31 task 6)."""
+    """ACA premium tax credit for a year (IRC §36B, Form 8962)."""
 
     #: ``[low, high, initial, final]``: household income as a percent of the poverty line from ``low`` to
     #: ``high``, applicable percentage rising linearly from ``initial`` to ``final`` (percents).
@@ -393,7 +393,7 @@ class PremiumTaxCreditYear(StrictModel):
 
 
 class EstimatedTaxConfig(StrictModel):
-    """Estimated tax and the underpayment penalty (IRC §6654, Form 2210; Plan 31 D3).
+    """Estimated tax and the underpayment penalty (IRC §6654, Form 2210).
 
     The penalty is Form 2210's regular method: each due date's required installment is a quarter of the
     required annual payment (the smaller of ``required_current_pct`` of this year's tax and
@@ -452,7 +452,7 @@ class FederalTaxConfig(StrictModel):
     senior_deduction: SeniorDeductionConfig = Field(default_factory=SeniorDeductionConfig)
     charitable: CharitableConfig = Field(default_factory=CharitableConfig)
     credits: CreditStatuteConfig = Field(default_factory=CreditStatuteConfig)
-    # Year-indexed parameters of the Plan 31 credits, deductions and regimes. They live in ``tax_years``
+    # Year-indexed parameters of the credits, deductions and regimes. They live in ``tax_years``
     # only (no static mirror): simulated years read them through ``model.year_config``, where
     # ``FinancialConfig.year_view`` copies the year's values in. None (a config without them, such as the
     # frozen test fixture) leaves the feature off.
@@ -469,7 +469,7 @@ class FederalTaxConfig(StrictModel):
     ltc_premium_limits: list[LTCPremiumLimit] | None = None
     #: §401(a)(17) compensation limit (caps the pay a SEP / solo 401(k) contribution is figured on).
     compensation_limit: float | None = Field(default=None, ge=0)
-    # Plan 31 task 6-7 (year-indexed, copied from ``tax_years``).
+    # Withholding, premium tax credit and qualifying-relative limit (year-indexed, copied from ``tax_years``).
     withholding: WithholdingYear | None = None
     premium_tax_credit: PremiumTaxCreditYear | None = None
     qualifying_relative_income_limit: float | None = Field(default=None, ge=0)
@@ -546,7 +546,7 @@ DEFAULT_STATE_KEY = "DEFAULT"
 
 class StateStandardDeductionConfig(StrictModel):
     """State standard deduction by filing status (defaults to 0 — no deduction). Head of household and
-    married filing separately fall back to ``single`` when not given (Plan 31 D4)."""
+    married filing separately fall back to ``single`` when not given."""
 
     single: int = Field(default=0, ge=0)
     married_filing_jointly: int = Field(default=0, ge=0)
@@ -556,7 +556,7 @@ class StateStandardDeductionConfig(StrictModel):
 
 class StateRetirementExclusion(StrictModel):
     """A state's partial exclusion of retirement income (pre-tax distributions and pensions), or an age
-    deduction against any income (``applies_to: any``) (Plan 31 D4).
+    deduction against any income (``applies_to: any``).
 
     Per person who is ``min_age`` (to ``max_age``) by the end of the year and born in ``born_from`` -
     ``born_through``: up to ``amount`` (or ``amount_by_status``) of that person's retirement income. With
@@ -602,7 +602,7 @@ class StateTaxPack(StrictModel):
     keyed by filing status (``single`` required; head of household and married filing separately fall
     back to ``single``, a qualifying surviving spouse to ``married_filing_jointly``).
 
-    Plan 31 D4: ``years`` holds a full pack per tax year (each validated like a pack); a simulated year
+    ``years`` holds a full pack per tax year (each validated like a pack); a simulated year
     uses the latest entry at or before it (the earliest before the table, the latest after it: state
     amounts are not inflation-projected). A pack with ``years`` sets nothing else.
     ``personal_exemption`` / ``dependent_exemption`` are subtracted per filer / dependent with the
@@ -621,7 +621,7 @@ class StateTaxPack(StrictModel):
     # Whether capital gains and qualified dividends are taxed by the state. The large majority of
     # states tax them as ordinary income, so this defaults to True and only the exceptions set it.
     capital_gains_taxable: bool = True
-    # Plan 31 D4
+    # Exemptions (subtracted with the standard deduction) and nonrefundable credits, per filer / dependent.
     personal_exemption: float = Field(default=0.0, ge=0)
     dependent_exemption: float = Field(default=0.0, ge=0)
     personal_credit: float = Field(default=0.0, ge=0)
@@ -708,7 +708,7 @@ class StateTaxPack(StrictModel):
 
 
 class UnknownStateError(ValueError):
-    """A state code with no state tax pack (Plan 31 D4: never a silent flat-rate fallback)."""
+    """A state code with no state tax pack (raised rather than silently falling back to a flat rate)."""
 
 
 class StateTaxConfig(StrictModel):
@@ -720,7 +720,7 @@ class StateTaxConfig(StrictModel):
 
     ``DEFAULT`` is an explicit choice (a flat rate on the federal-style base): a person with no state
     files there (``default_state``), and anyone may select it by name. A state code with no pack is an
-    error (:class:`UnknownStateError`), never a silent fallback (Plan 31 D4).
+    error (:class:`UnknownStateError`), never a silent fallback.
     """
 
     tax_rate: float | None = Field(default=6.0, ge=0, le=100)
@@ -803,8 +803,8 @@ class Job401kContribLimitConfig(StrictModel):
 
 class IRAConfig(StrictModel):
     contribution_limit: int = Field(ge=0)
-    #: Deprecated and ignored (Plan 27 D8): growth follows the economy or the account's own rate. Removed
-    #: from the packaged defaults; still accepted in an overlay for one release.
+    #: Deprecated and ignored: growth follows the economy or the account's own rate. Not in the packaged
+    #: defaults; still accepted in an overlay for one release.
     default_growth_rate: float | None = Field(default=None, ge=0)
 
 
@@ -922,7 +922,7 @@ class SocialSecurityConfig(StrictModel):
     # Provisional-income taxation of benefits
     benefit_taxation: SocialSecurityBenefitTaxationConfig
 
-    # Plan 27 D10 (defaults keep existing configs loadable).
+    # Claiming refinements (defaulted so configs without them load).
     # Full retirement age by birth year: [first birth year, years, months], ascending.
     full_retirement_age_by_birth_year: list[list[int]] = Field(default_factory=_default_fra_table)
     # vintage: statutory, source: 42 U.S.C. 402(b)-(c) (half of the worker's PIA); reduction 25/36 of 1% a
@@ -933,20 +933,20 @@ class SocialSecurityConfig(StrictModel):
 
 
 class BankAccountConfig(StrictModel):
-    #: Deprecated and ignored (Plan 27 D8): cash earns the economy's cash yield or the account's own rate.
-    #: Removed from the packaged defaults; still accepted in an overlay for one release.
+    #: Deprecated and ignored: cash earns the economy's cash yield or the account's own rate. Not in the
+    #: packaged defaults; still accepted in an overlay for one release.
     default_interest_rate: float | None = Field(default=None, ge=0)
     compound_rate: int = Field(ge=1)
 
 
 class BrokerageAccountConfig(StrictModel):
-    #: Deprecated and ignored (Plan 27 D8): growth follows the economy or the account's own rate. Removed
-    #: from the packaged defaults; still accepted in an overlay for one release.
+    #: Deprecated and ignored: growth follows the economy or the account's own rate. Not in the packaged
+    #: defaults; still accepted in an overlay for one release.
     default_growth_rate: float | None = None
     # Share of the growth rate paid out as qualified dividends rather than accruing as untaxed
     # price appreciation. Defaults to 0 so accounts are pure-appreciation unless opted in.
     dividend_yield: float = Field(default=0.0, ge=0)
-    # How often dividends are paid (Plan 32): "quarterly" (March, June, September, December) or
+    # How often dividends are paid: "quarterly" (March, June, September, December) or
     # "monthly"; each payment is the yield's share of the balance (a quarter or a twelfth).
     dividend_frequency: Literal["quarterly", "monthly"] = "quarterly"
 
@@ -966,8 +966,8 @@ class HSAAccountConfig(StrictModel):
 class Plan529Config(StrictModel):
     annual_contribution_limit: int = Field(ge=0)
     lifetime_contribution_limit: int = Field(ge=0)
-    #: Deprecated and ignored (Plan 27 D8): growth follows the economy or the account's own rate. Removed
-    #: from the packaged defaults; still accepted in an overlay for one release.
+    #: Deprecated and ignored: growth follows the economy or the account's own rate. Not in the packaged
+    #: defaults; still accepted in an overlay for one release.
     default_growth_rate: float | None = Field(default=None, ge=0)
     qualified_expense_penalty: float = Field(ge=0, le=100)
 
@@ -1046,7 +1046,7 @@ def _simplified_method_joint() -> list[list[int]]:
 
 
 class PensionConfig(StrictModel):
-    """Defined-benefit pension parameters (Plan 27 item 5)."""
+    """Defined-benefit pension parameters."""
 
     simplified_method_single: list[list[int]] = Field(default_factory=_simplified_method_single)
     simplified_method_joint: list[list[int]] = Field(default_factory=_simplified_method_joint)
@@ -1132,7 +1132,7 @@ class EstateConfig(StrictModel):
       :class:`~life_model.account.inherited.InheritedPretaxAccount` that keeps growing and pays out
       an even slice each year over ten years, spreading (and deferring) the beneficiary's tax.
     * ``"lump_sum"`` — the lump-sum simplification: the whole pre-tax balance is distributed to the
-      beneficiary and taxed in the death year. Retained for comparability with older frames.
+      beneficiary and taxed in the death year. An option for comparing against the simpler treatment.
     """
 
     inherited_pretax_mode: Literal["ten_year", "lump_sum"] = "ten_year"
@@ -1202,7 +1202,7 @@ class DependentsConfig(StrictModel):
     # config without it is unchanged. vintage: statutory, source: IRC §24(h)(4) (made permanent by OBBBA).
     odc_per_dependent: float | None = Field(default=None, ge=0)
     # Additional child tax credit (Schedule 8812 Part II-A): 15% of earned income over $2,500, up to the
-    # refundable maximum per child. None keeps the legacy approximation (no earned-income limit).
+    # refundable maximum per child. None: no earned-income limit (the unused credit up to that maximum).
     # vintage: statutory, source: IRC §24(d)(1)(B)(i), §24(h)(6).
     actc_earned_income_threshold: float | None = Field(default=None, ge=0)
     actc_rate: float = Field(default=15.0, ge=0, le=100)
@@ -1237,8 +1237,8 @@ class YearlyTaxParameters(StrictModel):
     #: money per plan). Optional so older tables still load; None keeps the static
     #: ``retirement.job_401k_contrib_limit.annual_additions_limit``.
     limit_415c: int | None = Field(default=None, ge=0)
-    # Plan 29 task 3: year-varying parameters that used to be static. Each is optional (None keeps
-    # the static value) so older tables and the frozen test fixture still load unchanged.
+    # Year-varying parameters with a static fallback. Each is optional (None keeps the static value) so
+    # tables without them and the frozen test fixture load.
     #: Long-term capital gains / qualified dividend brackets (§1(h); thresholds indexed).
     capital_gains: TaxBracketsConfig | None = None
     #: Child Tax Credit per child and the refundable (additional child tax credit) maximum per child.
@@ -1250,9 +1250,9 @@ class YearlyTaxParameters(StrictModel):
     senior_deduction_amount: float | None = Field(default=None, ge=0)
     #: Net investment income tax thresholds (statutory, never indexed).
     niit: NIITConfig | None = None
-    #: §63(f) additional standard deduction per person 65+ (Plan 31).
+    #: §63(f) additional standard deduction per person 65+.
     additional_standard_deduction: AdditionalStandardDeduction | None = None
-    # Plan 31: year-indexed parameters of the credits, deductions and regimes (see the same-named fields
+    # Year-indexed parameters of the credits, deductions and regimes (see the same-named fields
     # of ``FederalTaxConfig``, where ``year_view`` copies them). Each optional: None leaves it off.
     eitc: EITCYear | None = None
     dependent_care: DependentCareYear | None = None
@@ -1265,7 +1265,7 @@ class YearlyTaxParameters(StrictModel):
     qcd_limit: float | None = Field(default=None, ge=0)
     ltc_premium_limits: list[LTCPremiumLimit] | None = None
     compensation_limit: float | None = Field(default=None, ge=0)
-    # Plan 27 (payroll and contributions). Each optional: None leaves the limit off.
+    # Payroll and contribution limits. Each optional: None leaves the limit off.
     #: IRC §414(v)(2)(E) catch-up for ages 60-63 (2025+).
     limit_401k_catch_up_60_63: int | None = Field(default=None, ge=0)
     #: IRC §125(i) health FSA salary reduction limit (a year).
@@ -1273,7 +1273,7 @@ class YearlyTaxParameters(StrictModel):
     #: IRC §132(f)(2) monthly qualified transportation fringe exclusion (transit and vanpool; parking has
     #: the same limit).
     limit_commuter_monthly: int | None = Field(default=None, ge=0)
-    # Plan 31 tasks 6-7. Each optional: None leaves the feature off.
+    # Withholding, premium tax credit and dependency tests. Each optional: None leaves the feature off.
     #: Pub. 15-T withholding tables and supplemental rates.
     withholding: WithholdingYear | None = None
     #: ACA premium tax credit tables (Form 8962).
@@ -1326,9 +1326,8 @@ class EconomyConfig(StrictModel):
     A single :class:`~life_model.economy.EconomyModel` per simulation reads this section
     and answers per-year rate queries. In ``fixed`` mode every year returns these constants;
     in ``path`` mode the ``paths`` table overrides individual years; in ``stochastic`` mode
-    rates are drawn from ``stochastic``. All rates are percentages. The defaults reproduce
-    the pre-economy per-account constants, so a fixed economy leaves simulation output
-    unchanged.
+    rates are drawn from ``stochastic``. All rates are percentages. The defaults are long-run
+    assumptions (in ``fixed`` mode every account grows at them unless it sets its own rate).
     """
 
     mode: Literal["fixed", "path", "stochastic"] = "fixed"
@@ -1511,7 +1510,7 @@ class EquityCompConfig(StrictModel):
 
 
 class PayrollConfig(StrictModel):
-    """Payroll timing (Plan 32). Modeling conventions, not published figures: no ``vintage`` stamp.
+    """Payroll timing. Modeling conventions, not published figures: no ``vintage`` stamp.
     Every field is defaulted so configs that omit the section still load."""
 
     # Month (1-12) a yearly bonus is paid in (a Salary's bonus_month overrides it).

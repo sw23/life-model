@@ -26,7 +26,7 @@ class Trust(LifeModelAgent):
     of the given asset class). The grantor moves cash in with :meth:`fund` and money reaches
     beneficiaries through :meth:`distribute`.
 
-    Tax treatment (v1, deliberately minimal):
+    Tax treatment (deliberately minimal):
 
     * **Revocable** trusts are transparent: the balance counts in the grantor's gross estate
       (``Person._gross_estate_value``) and, at the grantor's death, pays out directly to the
@@ -140,7 +140,7 @@ class Trust(LifeModelAgent):
         return transferred
 
     def distribute(self, amount: float, beneficiary: Person) -> float:
-        """Distribute cash from the trust to a beneficiary (tax-free basis, v1 simplification).
+        """Distribute cash from the trust to a beneficiary (tax-free basis, a simplification).
 
         Args:
             amount: Amount to distribute (limited by the trust balance).

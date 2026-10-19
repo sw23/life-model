@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Tax payments during the year: withholding, estimated payments and the underpayment penalty (Plan 31 D3).
+"""Tax payments during the year: withholding, estimated payments and the underpayment penalty.
 
 * **Withholding** is a payroll policy (``PayrollDeductions(withholding=...)``): ``"w4_default"`` (a Form W-4
   with no entries, its filing status from the employee's return), a :class:`W4`, or a
@@ -21,7 +21,7 @@
   (``"safe_harbor"``: 100% of last year's tax, 110% when last year's AGI was over $150,000; ``"current_year"``:
   90% of this year's projected tax), less the withholding expected, paid on the Form 1040-ES due dates (April,
   June, September and January of the next year; the model pays in that month).
-* **Settlement.** December still computes the year's return; a unit that withholds or pays estimates then
+* **Settlement.** December computes the year's return; a unit that withholds or pays estimates then
   carries the balance due (or the refund) to April of the next year, a liability (or receivable) on the
   balance sheet in between. The underpayment penalty is Form 2210's regular method (:func:`underpayment_penalty`).
 """

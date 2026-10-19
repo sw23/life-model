@@ -8,8 +8,8 @@
 Two code paths coexist:
 
 * The scalar path — :func:`state_income_tax` / :func:`get_state_tax_rate` — applies the
-  ``DEFAULT`` flat rate to a federal-style AGI base. It is the path every ``DEFAULT`` resident
-  uses: a single flat rate on the federal-style AGI base.
+  ``DEFAULT`` flat rate to the federal taxable-income base (income less the federal deductions). It is
+  the path every ``DEFAULT`` resident uses.
 * The pack path — :func:`state_income_tax_for_unit` — resolves a per-state
   :class:`~life_model.config.models.StateTaxPack` and computes a real state taxable-income base
   (exempting retirement distributions and/or Social Security where the state does) before applying
@@ -38,7 +38,7 @@ def state_income_tax(income: float, config: "FinancialConfig | None" = None) -> 
     """Calculate state income taxes due at the DEFAULT flat rate.
 
     Args:
-        income (float): Income subject to state income taxes (a federal-style AGI base).
+        income (float): Income subject to state income taxes (the federal taxable-income base).
         config (FinancialConfig, optional): Per-model config. Defaults to the packaged defaults.
 
     Returns:
@@ -53,7 +53,7 @@ _STATUS_KEYS = {
     "MARRIED_FILING_JOINTLY": ("married_filing_jointly", "single"),
     "HEAD_OF_HOUSEHOLD": ("head_of_household", "single"),
     "MARRIED_FILING_SEPARATELY": ("married_filing_separately", "single"),
-    # A qualifying surviving spouse files with the joint schedule where a state has one (Plan 31 D5).
+    # A qualifying surviving spouse files with the joint schedule where a state has one.
     "QUALIFYING_SURVIVING_SPOUSE": ("married_filing_jointly", "single"),
 }
 
@@ -90,9 +90,9 @@ def _filers(filing_status: "FilingStatus") -> int:
 class StateTaxDetail:
     """How a unit's state income tax was computed (one return's state lines).
 
-    ``method`` is ``"flat_agi"`` for the ``DEFAULT`` flat rate on the federal-style base,
+    ``method`` is ``"flat_agi"`` for the ``DEFAULT`` flat rate on the federal taxable-income base,
     ``"flat"`` or ``"brackets"`` for a state pack, ``"part_year"`` for a year with more than one state of
-    residence (each state's share in ``parts``; Plan 31 D4).
+    residence (each state's share in ``parts``).
     """
 
     #: Resolved state code (``DEFAULT`` for the flat-rate default state).
@@ -113,11 +113,11 @@ class StateTaxDetail:
     #: The state bracket segments reached (``(lower, upper, rate_percent, amount, tax)``).
     brackets: tuple[tuple[float, float, float, float, float], ...]
     tax: float
-    #: Personal and dependent exemptions included in ``deduction`` (Plan 31).
+    #: Personal and dependent exemptions included in ``deduction``.
     exemptions: float = 0.0
     #: Nonrefundable state credits (personal / dependent exemption credits) subtracted in ``tax``.
     credits: float = 0.0
-    #: A part-year return: each state of residence's share (Plan 31 D4).
+    #: A part-year return: each state of residence's share.
     parts: "tuple[StateTaxDetail, ...]" = ()
 
 
@@ -130,7 +130,7 @@ def state_income_tax_for_unit(
 ) -> float:
     """Compute state income tax for a tax unit resolving the resident's state pack.
 
-    ``DEFAULT`` residents use the federal-style AGI base with the flat rate. Real state packs
+    ``DEFAULT`` residents use the federal taxable-income base with the flat rate. Real state packs
     build a state taxable-income base from the income ledger totals: ordinary
     income minus exempt retirement distributions (when ``not retirement_income_taxable``) minus the
     Social Security taxable portion (when ``not ss_taxable``) minus the state standard deduction,
@@ -141,7 +141,8 @@ def state_income_tax_for_unit(
             (see :meth:`~life_model.tax.income.IncomeLedger.totals_by_type`).
         filing_status: Filing status of the unit.
         state: The resident's state code (``None`` → the config default state).
-        legacy_agi_base: The federal-style AGI base used for the ``DEFAULT`` flat-rate path.
+        legacy_agi_base: The federal taxable-income base (income less the federal deductions) used for
+            the ``DEFAULT`` flat-rate path.
         config: Per-model config. Defaults to the packaged defaults.
     """
     return state_income_tax_detail(totals_by_type, filing_status, state, legacy_agi_base, config).tax
@@ -178,7 +179,7 @@ class StateMember:
 
 @dataclass(frozen=True)
 class StateHousehold:
-    """What a state's exemptions, credits and exclusions read about the return besides its income (Plan 31)."""
+    """What a state's exemptions, credits and exclusions read about the return besides its income."""
 
     federal_agi: float = 0.0
     #: Children under 17 (the federal child tax credit's) and other dependents (older children, relatives).
@@ -330,7 +331,7 @@ def state_income_tax_detail(
     # treated as in-state, so exempt here too) never enter a state base.
     treasury = totals_by_type.get(IncomeType.TREASURY_INTEREST, 0.0)
     if resolved == DEFAULT_STATE_KEY:
-        # ``DEFAULT`` flat rate applied to the federal AGI base (which includes Treasury interest).
+        # ``DEFAULT`` flat rate applied to the federal taxable-income base, less Treasury interest.
         taxable = max(legacy_agi_base - treasury, 0.0)
         rate = pack.flat_rate or 0.0
         return StateTaxDetail(
@@ -398,7 +399,7 @@ def part_year_state_tax_detail(
     household: StateHousehold | None = None,
     final_state: str | None = None,
 ) -> StateTaxDetail:
-    """State tax for a year with more than one state of residence (Plan 31 D4), by the income-ratio method
+    """State tax for a year with more than one state of residence, by the income-ratio method
     of the part-year returns of California (Form 540NR) and New York (IT-203), which many states share.
 
     ``allocations`` maps each state of residence (in the order lived in) to the income received while

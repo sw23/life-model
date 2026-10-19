@@ -67,10 +67,10 @@ class RothIRA(TaxAdvantagedAccount):
                 Defers to the economy's equity return when None.
             contribution_limit_annual: Override for the annual contribution limit (deprecated alias
                 ``contribution_limit``); the year's IRA limit plus the age-50 catch-up when None.
-            contribution_basis: Regular contributions still in the account (Plan 27 D1). When None the
+            contribution_basis: Regular contributions still in the account. When None the
                 whole balance less ``conversion_basis`` is treated as contributions (no earnings).
             conversion_basis: Converted amounts still in the account (assumed more than five years old).
-            allocation: Target allocation in percent by asset class (Plan 27 D5).
+            allocation: Target allocation in percent by asset class, rebalanced yearly.
             expense_ratio_pct: Fund expense ratio (percent a year).
         """
         if conversion_basis < 0 or conversion_basis > balance + 1e-9:

@@ -95,7 +95,7 @@ class IncomeEntry:
     #: each entry on the right line (adjustments vs. other income, pensions vs. annuities, ...).
     source: str | None = None
     #: The month (1-12) the entry was booked in, when the ledger has a clock: a part-year return allocates
-    #: income to the state of residence that month (Plan 31 D4).
+    #: income to the state of residence that month.
     month: int | None = None
 
 
@@ -196,7 +196,7 @@ class IncomeLedger:
         other.clear()
 
     def clear(self) -> None:
-        """Reset the ledger for the next year (mirrors the old ``taxable_income = 0``)."""
+        """Empty the ledger for the next year: entries, penalties, AMT adjustments and excluded dependent care."""
         self.entries.clear()
         self.penalties_by_source = {}
         self.amt_adjustments = {}
@@ -258,7 +258,7 @@ class IncomeLedger:
         return sum(e.amount for e in self.entries if e.income_type == IncomeType.WAGES)
 
     def totals_by_type_and_month(self) -> "dict[int | None, dict[IncomeType, float]]":
-        """:meth:`totals_by_type` split by the month each entry was booked in (Plan 31 D4)."""
+        """:meth:`totals_by_type` split by the month each entry was booked in (for part-year state returns)."""
         out: dict[int | None, dict[IncomeType, float]] = {}
         for entry in self.entries:
             totals = out.setdefault(entry.month, {income_type: 0.0 for income_type in IncomeType})

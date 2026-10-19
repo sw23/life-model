@@ -35,10 +35,12 @@ class Pension(Benefit):
     year of service, so an unvested participant vests by working, and a formula benefit grows with
     service, its ``final_salary`` following that job's base salary.
 
-    Simplifications (documented, backlog for later refinement):
-      * The formula uses the latest base salary as "final salary" (no final-average window).
+    Simplifications:
+      * Without ``salary_history`` and ``final_average_years`` the formula uses the latest base salary
+        as "final salary" (no final-average window).
       * Survivor benefits are a flat ``survivor_percent`` of the benefit continued to a surviving
-        spouse at the retiree's death (see :meth:`Person.die`); no joint-life actuarial factor.
+        spouse at the retiree's death (see :meth:`Person.die`); the retiree's own benefit is reduced
+        for the election only as ``survivor_reduction`` says.
     """
 
     STATS_OWNED = frozenset({"stat_pension_income"})
@@ -95,7 +97,7 @@ class Pension(Benefit):
             vesting_years: Number of years required for vesting
             benefit_annual: Flat annual benefit amount (ignored when the accrual formula is given)
             start_age: Age at which benefits begin. Defaults to None, meaning benefits start at the
-                person's retirement age (today's eligibility rule).
+                person's retirement age.
             cola_pct: Annual cost-of-living adjustment applied to the benefit once in pay
                 (e.g. 2.0 for +2% per year). Defaults to 0.0 (level benefit).
             survivor_pct: Percentage of the benefit continued to a surviving spouse when the
@@ -106,8 +108,8 @@ class Pension(Benefit):
             final_salary_annual: Final (or final-average) salary used by the accrual formula.
             job: The sponsoring job whose service accrues to this pension. Defaults to None, which
                 uses the person's job at ``company`` (if any) each year.
-            salary_history: Covered pay by year from the plan statement ``{year: salary}`` (Plan 27
-                item 5; keyword-only). With ``final_average_years`` the formula's final salary is the
+            salary_history: Covered pay by year from the plan statement ``{year: salary}``
+                (keyword-only). With ``final_average_years`` the formula's final salary is the
                 highest average of that many consecutive years (the sponsoring job's pay is added as
                 service accrues); without it, the latest year.
             final_average_years: Length of the final-average-pay window (3 or 5 are common).

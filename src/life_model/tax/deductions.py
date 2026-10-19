@@ -62,7 +62,7 @@ def deductible_insurance_premiums(person: "Person") -> float:
     """Long-term care insurance premiums the person paid this year, up to the year's §213(d)(10) limit
     for their age (a medical expense, IRS Pub. 502, and a qualified HSA expense, §223(d)(2)(C)(ii)).
     Medicare premiums are already in the person's medical costs; other health premiums are left out
-    (only some are qualified HSA expenses, and pre-tax payroll premiums are Plan 27 D3)."""
+    (only some are qualified HSA expenses, and pre-tax payroll premiums are already excluded from wages)."""
     from ..insurance.general_insurance import InsuranceType
 
     year = person.model.year
@@ -123,7 +123,7 @@ def deductible_charity(members: "list[Person]", agi: float, config: "FinancialCo
 
 
 # --------------------------------------------------------------------------------------------------
-# The full charitable deduction (Plan 31 task 2)
+# The charitable deduction: cash and property buckets, the 0.5% floor, the non-itemizer deduction
 # --------------------------------------------------------------------------------------------------
 
 

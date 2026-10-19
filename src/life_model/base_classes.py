@@ -130,7 +130,7 @@ class FinancialAccount(LifeModelAgent, ABC):
         self.record_balance_history()
 
 
-#: Deprecated loan argument names (Plan 27 D8) and their canonical replacements.
+#: Deprecated loan argument names and their canonical replacements.
 LOAN_RENAMES = {
     "person": "owner",
     "loan_amount": "original_amount",
@@ -150,10 +150,10 @@ class Loan(LifeModelAgent, ABC):
     pays the loan off. The tax unit services each loan once a month (:meth:`service_month`) with the
     month's bills; ``interest_paid_this_year`` accumulates the year's interest (reset at each year
     start) for the interest deductions and stats. :meth:`make_yearly_payment` (twelve payments at
-    once) remains for direct callers. Concrete subclasses supply only rate/term/identification and
+    once) is for direct callers. Concrete subclasses supply only rate/term/identification and
     register themselves; they do not re-implement payment math.
 
-    Terms are in months (Plan 27 D7): ``term_months`` is canonical and ``term_years`` is sugar for
+    Terms are in months: ``term_months`` is canonical and ``term_years`` is sugar for
     ``term_months / 12`` (the ``length_years`` attribute). A loan already in progress is entered the way
     its statement shows it — an ``origination`` month (or ``payments_made``), the ``remaining_months``,
     the ``current_balance`` and the payment — and :func:`~life_model.debt.terms.resolve_loan_terms` fills in
@@ -266,7 +266,7 @@ class Loan(LifeModelAgent, ABC):
         self.payments_made = terms.payments_made
         #: Origination ``(year, month)`` when known (None: unknown).
         self.origination = terms.origination
-        #: Extra principal paid with every scheduled payment (Plan 27 D7).
+        #: Extra principal paid with every scheduled payment.
         self.extra_principal_monthly = float(extra_principal_monthly)
 
     @property
@@ -294,7 +294,7 @@ class Loan(LifeModelAgent, ABC):
         finance_costs: bool = False,
         cash_out: float = 0.0,
     ) -> float:
-        """Refinance (Plan 27 D7): a new loan at ``rate_pct`` for the current balance (plus ``cash_out``,
+        """Refinance: a new loan at ``rate_pct`` for the current balance (plus ``cash_out``,
         and ``costs`` when ``finance_costs``), amortized over the new term from this month.
 
         Closing ``costs`` not financed are paid now through the household waterfall; ``cash_out`` is
@@ -526,7 +526,7 @@ class Investment(FinancialAccount, ABC):
         if asset_class not in self._ASSET_CLASS_RATES:
             raise ValueError(f"Unknown asset_class {asset_class!r}; expected one of {list(self._ASSET_CLASS_RATES)}")
         self.asset_class = asset_class
-        #: Target allocation as fractions by asset class (Plan 27 D5), or None (one ``asset_class``).
+        #: Target allocation as fractions by asset class, or None (one ``asset_class``).
         self.allocation: dict[str, float] | None = None
         # The allocation's current (drifted) weights; reset to the target at each year end.
         self._weights: dict[str, float] = {}
@@ -683,8 +683,8 @@ class TaxAdvantagedAccount(Investment, ABC):
         )
         # Contributions made this year (reset at year end).
         self.contributions_ytd = 0.0
-        # Cumulative contribution basis still in the account. Without ``basis`` (Plan 27 D1: the
-        # statement's contribution total) the opening balance is treated as basis rather than earnings;
+        # Cumulative contribution basis still in the account. Without ``basis`` (the statement's
+        # contribution total) the opening balance is treated as basis rather than earnings;
         # growth accrues to earnings, not basis.
         if basis is not None and not 0 <= basis <= balance + 1e-9:
             raise ValueError(f"basis {basis:,.2f} must be between 0 and the balance {balance:,.2f}")

@@ -24,8 +24,8 @@ Conventions (enforced by the field types and :mod:`life_model.spec.validate`):
 * **Strictness.** Every model forbids unknown keys, so a typo fails loudly.
 * **Not yet supported.** Fields marked ``x-not-yet-supported`` in the JSON Schema (and "NOT YET
   SUPPORTED" in their description) are declared so statements can be written down today, but the
-  engine cannot simulate them yet; the validator rejects a spec that sets one. A later plan flips a
-  field on by removing its marker and teaching the builder and extractor to map it.
+  engine cannot simulate them yet; the validator rejects a spec that sets one. Supporting such a
+  field means removing its marker and teaching the builder and extractor to map it.
 """
 
 from typing import Annotated, Any, ClassVar, Literal
@@ -59,8 +59,9 @@ def spec_field(
         description: Human/LLM-facing description; should state unit and period.
         unit: Unit label (``percent``, ``USD``, ``USD/year``, ``USD/month``, ``year``, ``age``...).
         core: The core constructor argument the field maps to (``Class.argument``).
-        not_yet_supported: When set, the plan that will add engine support. The validator rejects
-            any non-default value for the field until the marker is removed.
+        not_yet_supported: When set, a short reason the engine cannot simulate the field yet (e.g.
+            ``"employer group life is not modeled"``). The validator rejects any non-default value
+            for the field while the marker is present.
         typical_above_one: For ``_pct`` fields whose real-world values are normally above 1
             (growth, contribution, interest rates): a value in ``(0, 1)`` triggers a warning.
     """
@@ -82,7 +83,7 @@ class SpecModel(BaseModel):
 
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
-    #: Set on a model class that the engine cannot simulate yet (the plan that will add it).
+    #: Set on a model class that the engine cannot simulate yet: a short reason (e.g. "divorce is not modeled").
     NOT_YET_SUPPORTED: ClassVar[str | None] = None
     #: The core class this model is built into (documentation only).
     CORE_CLASS: ClassVar[str | None] = None
@@ -165,7 +166,7 @@ class Meta(SpecModel):
     accepted_warnings: list[Annotated[str, Field(pattern=r"^[a-z_.]+$")]] | None = spec_field(
         None,
         description="Validator warning codes the household keeps on purpose (e.g. [default_child_costs, "
-        "cash_not_invested]): the validator drops them, so they no longer fail --checks strict. Record why with "
+        "cash_not_invested]): the validator drops them, so they do not fail --checks strict. Record why with "
         "the assumptions you report. Errors cannot be accepted.",
     )
 
@@ -319,7 +320,7 @@ class At(SpecModel):
 
 
 class SpendingCategory(SpecModel):
-    """A categorized spending line (Plan 27 D6): a yearly or monthly amount in start-year dollars, grown
+    """A categorized spending line: a yearly or monthly amount in start-year dollars, grown
     every year, paid in the years ``start_year`` through ``end_year`` (a multi-year expense)."""
 
     amount_annual: NonNegativeMoney | None = spec_field(
@@ -391,7 +392,7 @@ class Spending(SpecModel):
 
 
 class W4Spec(SpecModel):
-    """A Form W-4 (2020 or later): the inputs of IRS Pub. 15-T's percentage method (Plan 31 D3)."""
+    """A Form W-4 (2020 or later): the inputs of IRS Pub. 15-T's percentage method."""
 
     CORE_CLASS = "W4"
 
@@ -452,7 +453,7 @@ class Withholding(SpecModel):
 
 
 class Payroll(SpecModel):
-    """Pre-tax payroll deductions from the pay stub (Plan 27 D3; see :mod:`life_model.work.payroll`)."""
+    """Pre-tax payroll deductions from the pay stub (see :mod:`life_model.work.payroll`)."""
 
     CORE_CLASS = "PayrollDeductions"
 
@@ -507,7 +508,7 @@ class Payroll(SpecModel):
     )
     withholding: Literal["w4_default"] | Withholding | None = spec_field(
         None,
-        description="Tax withholding (Plan 31 D3): 'w4_default' (a W-4 with no entries), or {w4: {...}} / {wages_pct} / "
+        description="Tax withholding: 'w4_default' (a W-4 with no entries), or {w4: {...}} / {wages_pct} / "
         "{amount_monthly}. Federal (Pub. 15-T; bonuses and RSU vests as supplemental wages), Social Security, "
         "Medicare and state tax are withheld from each paycheck, and the household's balance due or refund is "
         "settled in April of the next year. Unset: no withholding, the year's taxes paid as a December lump.",
@@ -516,7 +517,7 @@ class Payroll(SpecModel):
 
 
 class StockGrant(SpecModel):
-    """An existing (already granted, partly unvested) equity grant (Plan 27 D1). Vests before the start are
+    """An existing (already granted, partly unvested) equity grant. Vests before the start are
     taken as done (a vest happens in January; a run starting later in the year has had that year's)."""
 
     CORE_CLASS = "StockGrant"
@@ -547,7 +548,7 @@ class StockGrant(SpecModel):
 
 
 class StockOption(SpecModel):
-    """A stock option exercised in a planned year (Plan 31): an NSO's spread is wages; an ISO exercised and
+    """A stock option exercised in a planned year: an NSO's spread is wages; an ISO exercised and
     held puts its spread into AMT (Form 6251 line 2i), and the minimum tax credit follows in later years."""
 
     CORE_CLASS = "StockOption"
@@ -792,7 +793,7 @@ class BankAccount(SpecModel):
 
 
 class FixedIncomeAccount(SpecModel):
-    """A CD, Treasury, I bond or bond fund holding (Plan 27 D2; see :mod:`life_model.account.fixed_income`).
+    """A CD, Treasury, I bond or bond fund holding (see :mod:`life_model.account.fixed_income`).
 
     A bank account named "Bonds" is spent like checking; this keeps the instrument's own rules: a CD's
     interest and early-withdrawal penalty, a Treasury's state-exempt coupon and maturity, an I bond's
@@ -1548,7 +1549,7 @@ def _string_kind(item: Any) -> Any:
 # --- Debts ---------------------------------------------------------------------------------------
 
 _LOAN_STATEMENT = (
-    "Enter a loan the way its statement shows it (Plan 27 D1/D7): the original amount and term with an "
+    "Enter a loan the way its statement shows it: the original amount and term with an "
     "origination month (or payments_made) give today's balance and payment with no other input; or give the "
     "current balance with the months remaining (or the payment). Any three of balance / months remaining / "
     "payment determine the fourth; inputs that contradict each other are a validation error naming the field. "
@@ -1683,7 +1684,7 @@ class StudentLoan(_LoanTerms):
 
 class CreditCard(SpecModel):
     """A credit card (revolving debt). ``spending_charged_pct`` routes part of the owner's monthly living
-    spending through the card (Plan 27 D7)."""
+    spending through the card."""
 
     CORE_CLASS = "CreditCard"
 
@@ -1727,7 +1728,7 @@ class CreditCard(SpecModel):
 
 
 class HomeEquityLine(SpecModel):
-    """A home equity line of credit secured by one of the person's homes (Plan 27 D7). Interest on the part
+    """A home equity line of credit secured by one of the person's homes. Interest on the part
     of the balance used to improve the home is deductible acquisition-debt interest; the rest is not."""
 
     CORE_CLASS = "HomeEquityLine"
@@ -2050,7 +2051,9 @@ class LifeInsurance(SpecModel):
         unit="USD",
         core="LifeInsurance.premiums_paid",
     )
-    group: bool = spec_field(False, description="Employer group life.", not_yet_supported="Plan 27 item 13")
+    group: bool = spec_field(
+        False, description="Employer group life.", not_yet_supported="employer group life is not modeled"
+    )
 
     @model_validator(mode="after")
     def _schedule(self) -> "LifeInsurance":
@@ -2062,7 +2065,7 @@ class LifeInsurance(SpecModel):
 
 
 class Marketplace(SpecModel):
-    """ACA marketplace coverage (Form 1095-A): the premium tax credit's inputs (Plan 31 task 6)."""
+    """ACA marketplace coverage (Form 1095-A): the premium tax credit's inputs."""
 
     CORE_CLASS = "MarketplaceCoverage"
 
@@ -2293,7 +2296,7 @@ Giving = Annotated[Donation, Field(discriminator="kind")]
 
 
 class Dependent(SpecModel):
-    """A dependent other than a child: a qualifying relative such as a parent the person supports (Plan 31 D5).
+    """A dependent other than a child: a qualifying relative such as a parent the person supports.
     Gives the credit for other dependents ($500) while the dependent's gross income is under the year's
     limit, and head of household to an unmarried supporter (a parent need not live with them)."""
 
@@ -2325,7 +2328,7 @@ class Dependent(SpecModel):
 
 
 class EstimatedPayments(SpecModel):
-    """Federal estimated tax payments (Form 1040-ES; Plan 31 D3): fixed quarterly amounts or a safe-harbor policy."""
+    """Federal estimated tax payments (Form 1040-ES): fixed quarterly amounts or a safe-harbor policy."""
 
     CORE_CLASS = "EstimatedPayments"
 
@@ -2423,11 +2426,11 @@ class Child(SpecModel):
     )
 
 
-# --- Plan 27 / Plan 31 person-level policies ----------------------------------------------------
+# --- Person-level policies -----------------------------------------------------------------------
 
 
 class ContributionPlan(SpecModel):
-    """A recurring contribution (Plan 27 D4; ``life_model.policies.ContributionPlan``)."""
+    """A recurring contribution (``life_model.policies.ContributionPlan``)."""
 
     CORE_CLASS = "ContributionPlan"
 
@@ -2495,7 +2498,7 @@ class ContributionPlan(SpecModel):
 
 
 class SavingsPolicy(SpecModel):
-    """Surplus sweep above a cash floor, once a year after the taxes are paid (Plan 27 D4)."""
+    """Surplus sweep above a cash floor, once a year after the taxes are paid."""
 
     CORE_CLASS = "SavingsPolicy"
 
@@ -2512,7 +2515,7 @@ class SavingsPolicy(SpecModel):
 
 
 class RothConversion(SpecModel):
-    """A standing Roth conversion every December before the year's taxes (Plan 27)."""
+    """A standing Roth conversion every December before the year's taxes."""
 
     CORE_CLASS = "RothConversionPolicy"
 
@@ -2543,12 +2546,13 @@ class RothConversion(SpecModel):
 
 
 class SelfEmployment(SpecModel):
-    """Self-employment income (Plan 31): a sole proprietorship built as ``Job(kind="self_employed")``.
+    """Self-employment income: a sole proprietorship built as ``Job(kind="self_employed")``.
 
     The net profit (gross receipts less expenses) is paid to the bank like wages, taxed as Schedule C income
     with self-employment tax (Schedule SE, sharing the Social Security wage base with W-2 wages), half of it
     deducted, the SEP / solo 401(k) contribution deducted, and the qualified business income deduction.
-    Withholding and estimated payments are not modeled yet (the tax is settled with the year, Plan 31 D3).
+    Nothing is withheld from the profit: the person's ``estimated_payments`` prepay its tax, and any balance is
+    paid when the year's tax is settled.
     A ``kind: 401k`` account whose ``job`` is this entry's ``id`` is a solo 401(k).
     """
 
@@ -2644,18 +2648,18 @@ class Person(SpecModel):
         None,
         description="Moves: [[YYYY-MM, state], ...], the state from each month on (before the first, 'state'). A year "
         "with a move files part-year state returns: wages by the months worked in each state, other income by "
-        "residence when received (Plan 31 D4).",
+        "residence when received.",
         core="Person.residency",
     )
     widowed_year: Year | None = spec_field(
         None,
         description="The year a spouse died before the run: qualifying surviving spouse for the two following years "
-        "while a dependent child lives with the person (Plan 31 D5).",
+        "while a dependent child lives with the person.",
         unit="year",
         core="Person.widowed_year",
     )
     estimated_payments: EstimatedPayments | None = spec_field(
-        None, description="Federal estimated tax payments (Plan 31 D3).", core="Person.estimated_payments"
+        None, description="Federal estimated tax payments.", core="Person.estimated_payments"
     )
     mortality: Literal["immortal", "stochastic", "fixed_age"] = spec_field(
         "immortal", description="How death is decided each year.", core="Person.mortality_mode"
@@ -2681,7 +2685,7 @@ class Person(SpecModel):
     giving: list[Giving] = spec_field(default_factory=list, description="Charitable giving.")
     children: list[Child] = spec_field(default_factory=list, description="Child dependents.")
     dependents: list[Dependent] = spec_field(
-        default_factory=list, description="Dependents other than children (a supported parent; Plan 31 D5)."
+        default_factory=list, description="Dependents other than children (e.g. a supported parent)."
     )
     self_employment: SelfEmployment | None = spec_field(None, description="Self-employment income (Schedule C).")
     contribution_plans: list[ContributionPlan] | None = spec_field(
@@ -2754,9 +2758,9 @@ class MarryEvent(EventBase):
 
 
 class DivorceEvent(EventBase):
-    """Divorce (backlog)."""
+    """Divorce from a spouse in the household."""
 
-    NOT_YET_SUPPORTED = "backlog (divorce)"
+    NOT_YET_SUPPORTED = "divorce is not modeled"
 
     action: Literal["divorce"]
     spouse: Identifier = spec_field(description="Person id of the spouse.")
@@ -2857,7 +2861,7 @@ class ContributeEvent(EventBase):
 
     Tax-advantaged accounts take at most their remaining annual room (the rest stays in the bank);
     the tax treatment is whatever the account's own ``contribute()`` applies. Recurring
-    contributions are Plan 27 D4 (``contribution_plans``).
+    contributions are ``contribution_plans``.
     """
 
     action: Literal["contribute"]
@@ -2927,7 +2931,7 @@ class ConvertToRothEvent(EventBase):
 
 
 class RefinanceEvent(EventBase):
-    """Refinance a mortgage (``debt`` is the home's id) or a car or student loan (Plan 27 D7): a new loan
+    """Refinance a mortgage (``debt`` is the home's id) or a car or student loan: a new loan
     for the balance (plus any cash-out, and the costs when financed) at the new rate and term."""
 
     action: Literal["refinance"]

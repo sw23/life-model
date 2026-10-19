@@ -3,11 +3,11 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Standing savings policies (Plan 27 D4): recurring contributions, a surplus sweep, Roth conversions.
+"""Standing savings policies: recurring contributions, a surplus sweep, Roth conversions.
 
 Each policy is a plain object attached to a person; the engine carries it out every period until it is
 changed or removed, so a running model can change it between months (the RL environment's standing
-policies, Plan 32 D8, are these objects):
+policies are these objects):
 
 * :class:`ContributionPlan` (``person.add_contribution_plan(plan)``, ``person.contribution_plans``):
   money into an account every month. ``source="payroll"`` into a 401(k) sets the plan's deferral percent
@@ -579,7 +579,7 @@ def _available_cash(person: "Person") -> float:
     due on last year's return until April, plus the month's share of this year's tax not yet paid: the
     projected year's tax times the share of the year elapsed, less the withholding and estimated payments so
     far (:meth:`TaxUnit.expected_unpaid_tax`). Holding it back month by month means a contribution is never
-    sold back to pay the same year's taxes (Plan 31 D3)."""
+    sold back to pay the same year's taxes."""
     from .people.tax_unit import TaxUnit
 
     cash = person.usable_bank_balance

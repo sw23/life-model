@@ -49,7 +49,7 @@ class HealthSavingsAccount(TaxAdvantagedAccount):
 
         The HSA grows like any other investment (monthly), uses the correct self-only/family
         contribution limit (including the age-55 catch-up), and counts employer contributions against
-        that limit. Payroll contributions (employee and employer, Plan 27 D3) come through the job's
+        that limit. Payroll contributions (employee and employer) come through the job's
         :class:`~life_model.work.payroll.PayrollDeductions`.
 
         Args:
@@ -64,9 +64,9 @@ class HealthSavingsAccount(TaxAdvantagedAccount):
                 default if None.
             growth_pct: Expected annual growth rate percentage (deprecated alias ``growth_rate``).
                 Defers to the economy's equity return when None (HSAs are typically invested).
-            basis: Contribution basis (Plan 27 D1); the whole balance when None. Informational: every
+            basis: Contribution basis; the whole balance when None. Informational: every
                 HSA distribution is tax-free for medical costs and fully taxable otherwise.
-            allocation: Target allocation in percent by asset class (Plan 27 D5).
+            allocation: Target allocation in percent by asset class, rebalanced yearly.
             expense_ratio_pct: Fund expense ratio (percent a year).
         """
         person = owner
@@ -175,9 +175,9 @@ class HealthSavingsAccount(TaxAdvantagedAccount):
         return employer_room
 
     def on_year_start(self):
-        """Add the legacy yearly employer contribution (at the year start, counted against the limit).
-        Plan 27 D3: it stops once the owner's jobs have all ended (an owner modeled without any job keeps
-        receiving it, the legacy behavior)."""
+        """Add the yearly employer contribution (``employer_contribution_annual``) at the year start,
+        counted against the limit. It stops once all the owner's W-2 jobs have ended; an owner modeled
+        without any W-2 job keeps receiving it every year."""
         if self.employer_contribution <= 0:
             return
         jobs = [job for job in self.person.jobs if job.kind == "w2"]

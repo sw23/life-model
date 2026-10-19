@@ -90,12 +90,12 @@ class Insurance(LifeModelAgent):
             premium_increase_pct: Annual premium increase percentage. Configured default if None
                 (``premium_increase_rate=`` is deprecated).
             max_claims_per_year: Maximum claims allowed per year. Configured default if None.
-            oop_max_annual: HEALTH: the out-of-pocket maximum per year (keyword-only; Plan 27 D9). With
+            oop_max_annual: HEALTH: the out-of-pocket maximum per year (keyword-only). With
                 it or ``coinsurance_pct`` the policy caps the person's ``MedicalCosts``: they pay the
                 year's costs up to ``deductible``, then ``coinsurance_pct`` of the rest, at most
                 ``oop_max_annual``.
             coinsurance_pct: HEALTH: the person's share of costs above the deductible (100 when unset).
-            benefit_pct: DISABILITY: the share of pre-disability pay replaced (Plan 27; e.g. 60).
+            benefit_pct: DISABILITY: the share of pre-disability pay replaced (e.g. 60).
             benefit_max_monthly: DISABILITY: the monthly benefit cap.
             elimination_months: DISABILITY: months from the disability before benefits start.
             benefit_end_age: DISABILITY: age benefits stop (``coverage_end_age``, else 65, when unset).
@@ -103,7 +103,7 @@ class Insurance(LifeModelAgent):
                 (benefits are then taxable income, IRC §104(a)(3), §105(a)); False (default): an
                 individually paid policy, whose benefits are tax-free.
             marketplace: HEALTH bought on the ACA marketplace
-                (:class:`~life_model.tax.ptc.MarketplaceCoverage`; keyword-only, Plan 31 task 6): the premium
+                (:class:`~life_model.tax.ptc.MarketplaceCoverage`; keyword-only): the premium
                 is paid a twelfth a month while coverage is active, net of any advance premium tax credit,
                 and the year's premium tax credit is figured on the return (Form 8962).
         """
@@ -173,7 +173,7 @@ class Insurance(LifeModelAgent):
         """Years the policy has been active"""
         return self.model.year - self.policy_start_year
 
-    # --- health: cost sharing (Plan 27 D9) ---
+    # --- health: cost sharing (deductible, coinsurance, out-of-pocket maximum) ---
 
     @property
     def caps_medical_costs(self) -> bool:

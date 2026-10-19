@@ -82,7 +82,7 @@ extend-select = ["I"]
 
 [tool.mypy]
 ignore_missing_imports = true
-# Lenient during Phase 0/1; strict flags will be enabled as later plans land.
+# Lenient: no strict flags yet, so mypy reports without enforcing full typing.
 warn_unused_configs = true
 
 [tool.pytest.ini_options]
@@ -102,7 +102,7 @@ omit = [
 ]
 
 [tool.coverage.report]
-# Ratcheted to lock in current coverage (Plan 13 target was 85).
+# Ratcheted to the current coverage: raise it as coverage grows, never lower it.
 fail_under = 88
 exclude_lines = [
     "pragma: no cover",

@@ -37,9 +37,9 @@ if TYPE_CHECKING:
     from .family import Family
     from .person import Person
 
-#: The household payment waterfall, in draw order (D4). ``bank`` is cash already in members' bank
+#: The household payment waterfall, in draw order. ``bank`` is cash already in members' bank
 #: accounts (emergency-reserve accounts excluded); ``fixed_income`` redeems non-reserve CDs, Treasuries, I
-#: bonds and bond funds (Plan 27 D2); ``brokerage`` sells taxable holdings (gains taxed this year);
+#: bonds and bond funds; ``brokerage`` sells taxable holdings (gains taxed this year);
 #: ``roth_basis`` draws Roth IRA contribution (and seasoned conversion) basis of members under the federal
 #: retirement age (59.5), which is tax- and penalty-free; ``pretax`` draws 401k / Traditional IRA / HSA
 #: money (ordinary income, plus the early-withdrawal penalty when young); ``roth_earnings`` draws the
@@ -55,7 +55,8 @@ DEFAULT_WITHDRAWAL_ORDER: tuple[str, ...] = (
     "reserve",
 )
 
-#: Sources an order may leave out (Plan 27 added them): they go to their default place.
+#: Sources an order may leave out, and where they go then: ``fixed_income`` right after ``bank``,
+#: ``reserve`` (None) last.
 _OPTIONAL_SOURCES = {"fixed_income": "bank", "reserve": None}
 
 
@@ -64,8 +65,8 @@ def validate_withdrawal_order(order: "tuple[str, ...] | list[str] | None") -> tu
 
     A valid order names every source of :data:`DEFAULT_WITHDRAWAL_ORDER` exactly once, ``bank``
     first (cash on hand is always spent before anything is sold or withdrawn). ``fixed_income`` and
-    ``reserve`` (Plan 27) may be left out: ``fixed_income`` then follows ``bank`` and ``reserve`` comes
-    last, so an order written before they existed keeps its meaning.
+    ``reserve`` may be left out: ``fixed_income`` then follows ``bank`` and ``reserve`` comes last, so an
+    order that names only the other five sources still works.
     """
     if order is None:
         return DEFAULT_WITHDRAWAL_ORDER
@@ -90,10 +91,11 @@ class TaxUnit:
       1. Each month (:meth:`settle_month`), gather the month's non-tax bills (spending, housing
          payments, apartment rent, loan payments, and personal debt carried by members) exactly once
          and pay them through one household waterfall (``withdrawal_order``, default
-         :data:`DEFAULT_WITHDRAWAL_ORDER`): every member's bank, then every member's brokerage, then
-         Roth basis of members under 59.5, then pre-tax money, then the remaining Roth money. Each
-         step raises only what the previous ones could not cover; what a draw makes taxable is on the
-         members' ledgers for the year's return. A shortfall becomes debt on the first member.
+         :data:`DEFAULT_WITHDRAWAL_ORDER`): every member's bank, then fixed income, then every member's
+         brokerage, then Roth basis of members under 59.5, then pre-tax money, then the remaining Roth
+         money, and emergency reserves last. Each step raises only what the previous ones could not
+         cover; what a draw makes taxable is on the members' ledgers for the year's return. A shortfall
+         becomes debt on the first member.
       2. In December (:meth:`settle_year`), compute income taxes on the unit's combined taxable
          income for the year and fund them through the same waterfall, the taxable steps sized
          against the tax they trigger (brokerage: the gains; pre-tax: the ordinary income and
@@ -103,12 +105,13 @@ class TaxUnit:
     tax math. This single abstraction is what makes married-couple housing, family debt,
     and mixed-filing-status families settle correctly.
 
-    **Single-state simplification:** the whole unit files in the *head's* state
+    **Head's-state simplification:** the whole unit files in the *head's* state
     (``members[0].state``), and the head is whichever spouse was constructed first (agent order ==
     construction order). A CA-head/TX-spouse couple therefore pays CA tax on the full
-    combined income — and swapping the construction order flips that to TX. Part-year and
-    multi-state filing are not modeled; a ``UserWarning`` is emitted (once per head, per run) when
+    combined income — and swapping the construction order flips that to TX. Spouses residing in
+    different states are not modeled; a ``UserWarning`` is emitted (once per head, per run) when
     unit members declare differing states so the order-dependence is visible rather than silent.
+    A head who moves during the year files part-year returns (see :meth:`state_income_tax_due`).
     """
 
     def __init__(self, members: list["Person"], *, withdrawal_order: "tuple[str, ...] | None" = None):
@@ -119,7 +122,7 @@ class TaxUnit:
         self.filing_status = members[0].filing_status
         # The year's tax parameters (brackets, deductions, wage base) for this settlement.
         self.config = members[0].model.year_config
-        # A tax unit files in a single state — the head's. No part-year/multi-state.
+        # A tax unit files in the head's state (part-year when the head moves; spouses' states are ignored).
         self.state = members[0].state
         self._warn_if_mixed_states()
 
@@ -147,7 +150,7 @@ class TaxUnit:
 
         A married-filing-jointly member and their spouse (when both are in the family) form one
         joint unit; every other member is its own unit. An unmarried member files (the unit's status
-        only — the person's own ``filing_status`` is untouched; Plan 31 D5):
+        only — the person's own ``filing_status`` is untouched):
 
         * QUALIFYING_SURVIVING_SPOUSE in the two years after the year their spouse died, while a dependent
           child (a qualifying child: under 19, or a student under 24) lives with them (IRC §2(a));
@@ -280,7 +283,7 @@ class TaxUnit:
         return allocation
 
     def federal_deductions_combined(self, additional_income: float = 0.0, state_income_tax_paid: float = 0.0) -> float:
-        """Federal deductions folding in BOTH plans' income-dependent itemized adjustments.
+        """Federal deductions with both income-dependent itemized adjustments folded in.
 
         - The 7.5%-of-income medical floor depends on ordinary income, so a prospective
           401k withdrawal (``additional_income``) changes the deduction. It is allocated across
@@ -397,7 +400,7 @@ class TaxUnit:
         the same way the federal one sees them, so a brokerage draw is sized against the state tax
         it triggers too.
         """
-        # Gains are part of the state base as much as the federal one, so the legacy flat-rate AGI
+        # Gains are part of the state base as much as the federal one, so the DEFAULT flat-rate AGI
         # includes preferential income; the pack path picks it up through totals_by_type.
         return self._state_income_tax_detail(
             additional_income,
@@ -414,7 +417,7 @@ class TaxUnit:
     ) -> StateTaxDetail:
         """:meth:`state_income_tax_due` with the state computation's lines (the one computation).
 
-        A year in which the head lived in more than one state (the residency timeline, Plan 31 D4) files
+        A year in which the head lived in more than one state (the residency timeline) files
         part-year returns: each income entry belongs to the head's state in the month it was booked (wages
         by the months worked there, investment income by residence at receipt), and each state taxes its
         share by the income-ratio method (:func:`~life_model.tax.state.part_year_state_tax_detail`).
@@ -879,9 +882,9 @@ class TaxUnit:
         Settlement nets gains and losses (and applies prior-year carryforwards) only after the
         brokerage sale. When that netting would change anything (a carryforward, or a net loss) the
         sale's previewed gains are booked on a scratch copy of the members' ledgers, netted exactly
-        as settlement will net them, taxed, and rolled back; without this the sale was sized against
-        tax on gains a carryforward was about to cancel, over-selling and leaving the excess in the
-        bank (the invariant checker's ``no_draw_above_cash_floor`` found it, Plan 29).
+        as settlement will net them, taxed, and rolled back. Sizing against the plain preview would
+        tax gains a carryforward is about to cancel, over-selling and leaving the excess in the bank
+        (which the invariant checker's ``no_draw_above_cash_floor`` reports).
         """
         previews = {}
         remaining = gross
@@ -929,7 +932,7 @@ class TaxUnit:
         retirement account is touched.
 
         The gross to sell is fixed-point sized against a *preview* of the capital gains the sale
-        would realize (approach B), so the account is sold exactly once: ``gross = bills +
+        would realize, so the account is sold exactly once: ``gross = bills +
         taxes(gains(gross)) - bank``, capped at the available brokerage balance. Because the
         marginal rate is below 100% the map is a contraction and converges quickly. When the
         brokerage can't cover the whole shortfall it is fully drained and the residual is left for
@@ -981,7 +984,7 @@ class TaxUnit:
         attribution is what makes the spouse-death case come out right without a special case: the
         survivor keeps only the share they generated, and the decedent's share dies with them.
 
-        **v1 simplification:** a carryforward is a single netted figure with no short/long
+        **Simplification:** a carryforward is a single netted figure with no short/long
         character, and it is applied against short-term (ordinary-rate) gains before long-term
         ones. Character only changes the answer when a carryforward meets a same-year gain of the
         opposite character.
@@ -990,8 +993,8 @@ class TaxUnit:
         raw_net = sum(sum(g.values()) for g in gains_by_member.values())
         carryforward = sum(m.capital_loss_carryforward for m in self.members)
 
-        # The overwhelmingly common case: no prior losses and no losses this year. Leaving the
-        # ledger untouched here is what keeps gain-free simulations byte-identical.
+        # The overwhelmingly common case: no prior losses and no losses this year, so there is
+        # nothing to net and the ledger is left untouched.
         if carryforward == 0 and raw_net >= 0:
             return
 
@@ -1095,7 +1098,7 @@ class TaxUnit:
             month = member.spending.take_month_lines()
             amount = sum(month.values())
             spending_by_member[member.unique_id] = spending_by_member.get(member.unique_id, 0.0) + amount
-            # Cards that take a share of the month's spending (Plan 27 D7) are charged; the rest is a bill.
+            # Cards that take a share of the month's spending are charged; the rest is a bill.
             charged = 0.0
             for card in member.credit_cards:
                 take = card.spending_charge(amount - charged)
@@ -1191,7 +1194,7 @@ class TaxUnit:
             member.stat_interest_paid = snap_money(member.stat_interest_paid + interest_by_member.get(uid, 0.0))
 
     # ------------------------------------------------------------------
-    # Tax payments during the year (Plan 31 D3)
+    # Tax payments during the year
     # ------------------------------------------------------------------
 
     @property
@@ -1201,7 +1204,7 @@ class TaxUnit:
         return any(_pays_during_year(m) for m in self.members)
 
     def _receive_refunds(self) -> None:
-        """April: last year's refunds arrive in the highest-yield bank (Plan 31 D3)."""
+        """April: last year's refunds arrive in the highest-yield bank."""
         from ..tax.payments import SETTLEMENT_MONTH
 
         model = self.members[0].model
@@ -1382,7 +1385,8 @@ class TaxUnit:
     def expected_unpaid_tax(self) -> float:
         """The tax this year's income so far still owes beyond what has been paid toward it: the projected
         year's tax (income tax, payroll and state taxes) times the share of the year elapsed, less the year's
-        withholding and estimated payments so far. The bank-sourced contributions hold it back (Plan 31)."""
+        withholding and estimated payments so far. Contributions funded from the bank hold this much back
+        (see :mod:`life_model.policies`)."""
         from ..tax.payments import payments_of
 
         model = self.members[0].model
@@ -1401,10 +1405,11 @@ class TaxUnit:
         """Settle the tax year for this unit (in December, after the month's bills): the year's
         taxes, from the year's income ledger.
 
-        The household waterfall (all banks, all brokerage, Roth basis under 59.5, pre-tax, remaining
-        Roth) moves into the banks only what the taxes still need, each taxable step sized against
-        the tax it triggers. The taxes are posted to the ledger by line (``_BillLine``) from the
-        household's payer account (:meth:`_payer_account`); a shortfall becomes debt.
+        The household waterfall (all banks, fixed income, all brokerage, Roth basis under 59.5, pre-tax,
+        remaining Roth, emergency reserves) moves into the banks only what the taxes still need, each
+        taxable step sized against the tax it triggers. The taxes are posted to the ledger by line
+        (``_BillLine``) from the household's payer account (:meth:`_payer_account`); a shortfall
+        becomes debt.
         """
         model = self.members[0].model
         year = model.year
@@ -1436,7 +1441,7 @@ class TaxUnit:
         # later compares the return's MAGI against filing-status thresholds with a two-year
         # lookback. Recorded after withdrawal solving so 401k distributions are included. AGI is
         # gross income less above-the-line adjustments only: the standard/itemized deductions come
-        # after AGI, so subtracting them (as this once did) understated MAGI and the surcharges.
+        # after AGI, so subtracting them would understate MAGI and the surcharges.
         agi = self.agi()
         for member in self.members:
             member.agi_history[year] = agi
@@ -1499,8 +1504,8 @@ class TaxUnit:
         }
 
     def _settle_year_paid_as_you_go(self) -> None:
-        """December settlement of a unit that withholds or pays estimates (Plan 31 D3): the return is computed
-        as always (no waterfall draw: nothing is paid now), the January installment and the Form 2210 penalty
+        """December settlement of a unit that withholds or pays estimates: the return is computed the
+        usual way (no waterfall draw: nothing is paid now), the January installment and the Form 2210 penalty
         are figured, and the balance due (or refund) is accrued to the head's tax balance, paid (received) in
         April of the next year. The ledger's tax lines for the year are the return's liabilities: the
         withholding and estimated payments already posted, and here each line's remainder."""
@@ -1802,7 +1807,7 @@ class TaxUnit:
     )
 
     def _fold_decedent_stats(self) -> None:
-        """A spouse who died this year is no longer reported: their share of the joint return's
+        """A spouse who died this year is not reported on their own: their share of the joint return's
         stats goes to the survivor (the head)."""
         head = self.members[0]
         for member in self.members:
@@ -1928,12 +1933,12 @@ def _loan_lines(
 
 
 def tax_due_label(person) -> str:
-    """Label of a person's balance due on a filed return, payable in April (a liability; Plan 31 D3)."""
+    """Label of a person's balance due on a filed return, payable in April (a liability)."""
     return f"TaxDue:{person.unique_id}"
 
 
 def tax_refund_label(person) -> str:
-    """Label of a person's tax refund receivable in April (an asset; Plan 31 D3)."""
+    """Label of a person's tax refund receivable in April (an asset)."""
     return f"TaxRefund:{person.unique_id}"
 
 

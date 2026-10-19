@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""The synthetic 2020-2025 backtest example (Plan 29 D5).
+"""The synthetic 2020-2025 backtest example.
 
 ``python scripts/backtest_example.py statements`` writes the example household
 (``src/life_model/tests/goldens/backtest/synthetic_2020_2025.yaml``) with December 31 statement

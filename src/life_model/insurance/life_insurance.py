@@ -93,7 +93,7 @@ class LifeInsurance(LifeModelAgent):
             beneficiary: Optional designated beneficiary for the death benefit. When set (and
                 surviving), the benefit is paid to this person; otherwise it defaults to the
                 surviving spouse, then the first family member with a bank account.
-            issue_year: Year the policy was issued (keyword-only; Plan 27 D1). Defaults to the current
+            issue_year: Year the policy was issued (keyword-only). Defaults to the current
                 year. A term policy expires ``term_years`` after it; whole-life cash value is credited
                 at the later-year rate after the first year.
             issue_month: The month (1-12) the policy was issued (keyword-only). With it the policy year runs

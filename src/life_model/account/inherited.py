@@ -14,15 +14,15 @@ class InheritedPretaxAccount(Investment):
     """A non-spouse beneficiary's inherited pre-tax retirement balance under the SECURE Act 10-year rule.
 
     When a non-spouse inherits a decedent's pre-tax retirement money (traditional 401k / IRA), the
-    balance moves into this account instead of being dumped into the beneficiary's income as a
-    single-year lump sum (the lump-sum simplification). The account keeps growing like any equity
+    balance moves into this account rather than into the beneficiary's income as a single-year lump
+    sum. The account keeps growing like any equity
     :class:`~life_model.base_classes.Investment`, and each year distributes an even slice —
     ``balance / years_remaining`` — over ten years, recording each distribution as
     :class:`~life_model.tax.income.IncomeType.PRETAX_DISTRIBUTION` (ordinary income, no FICA) and
     depositing the cash. Because growth continues, the ten distributions sum to more than the
     starting balance; the tax is spread and deferred instead of stacked into the death year.
 
-    Simplifications (documented, backlog for later refinement):
+    Simplifications:
       * Even-spread strategy only (equal fractional withdrawals); real beneficiaries may bunch or
         defer distributions within the ten-year window to manage brackets.
       * No separate RMD-continuation rule for eligible designated beneficiaries; every non-spouse

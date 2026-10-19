@@ -63,7 +63,7 @@ class BankAccount(FinancialAccount):
                 alias ``interest_rate``. Defers to the economy's cash yield each year if None.
             compounding (str, optional): ``"monthly"`` or ``"annual"`` compounding of
                 ``interest_pct``. Defaults to the configured ``accounts.bank.compound_rate`` (monthly).
-            reserve (bool, optional): An emergency reserve (Plan 27 D2/D4): income is not deposited here
+            reserve (bool, optional): An emergency reserve: income is not deposited here
                 and the household waterfall draws it only after every other source (the ``reserve``
                 step). Defaults to False.
             joint_owner (Person, optional): The spouse who owns the account jointly with ``owner``. Either
@@ -74,7 +74,7 @@ class BankAccount(FinancialAccount):
             joint_primary (bool, optional): The joint owner's income is paid here even when they have bank
                 accounts of their own.
 
-        Every argument after ``owner`` is keyword-only (positional use is deprecated, Plan 27 D8).
+        Every argument after ``owner`` is keyword-only (positional use is deprecated).
         """
         interest_rate = interest_pct
         super().__init__(owner, balance)

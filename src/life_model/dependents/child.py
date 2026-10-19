@@ -44,7 +44,7 @@ class Child(LifeModelAgent):
                 household's balances) each year, for the kiddie tax (the parents report it on Form 8814).
             dividends_annual: The child's own qualified dividends each year (same).
             cost_annual: This child's yearly cost while a dependent (birth to ``adult_age``), in
-                start-year dollars, instead of the configured childcare and school-age bands (Plan 27 D6).
+                start-year dollars, instead of the configured childcare and school-age bands.
                 Unlike the childcare band it is not counted as dependent care for the credit: enter care
                 in ``care_expenses_annual``.
             college_cost_annual: This child's yearly college cost, in start-year dollars, instead of the
@@ -148,9 +148,9 @@ class Child(LifeModelAgent):
         """Promote this child to an independent ``Person`` in the same family and stop modeling
         them as a dependent.
 
-        v1 has no automatic promotion; call this manually or schedule it via a ``LifeEvent``. The
+        There is no automatic promotion: call this manually or schedule it via a ``LifeEvent``. The
         new person joins the child's parent's family; the ``Child`` is unregistered and removed so
-        it no longer incurs costs.
+        it stops incurring costs.
 
         Args:
             retirement_age: Retirement age for the new adult (keyword-only, default 65).
@@ -201,8 +201,8 @@ class Child(LifeModelAgent):
             # into the owner's bank tax-free, so college is funded from the 529 before other
             # assets. The full tuition is then charged to spending; because the qualified
             # withdrawal already sits in the bank, only the shortfall the 529 could not cover
-            # actually reduces other assets. This keeps bank+529 conservation intact while
-            # making the 529 machinery load-bearing.
+            # actually reduces other assets. This keeps bank+529 money conserved while paying
+            # college from the 529 first.
             #
             # Expenses paid with tax-free 529 money cannot also earn the American opportunity credit
             # (Pub. 970 ch. 7), so while AOTC years remain and the parents' last AGI was not past the

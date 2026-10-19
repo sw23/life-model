@@ -3,12 +3,12 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Compute the household goldens' expected returns from the IRS forms (Plan 29 D3).
+"""Compute the household goldens' expected returns from the IRS forms.
 
 This script is deliberately independent of ``life_model`` (it imports nothing from it, and a test
 checks that): it works the 2024, 2025 and 2026 Form 1040 line by line, with the Social Security
 Benefits Worksheet, the Qualified Dividends and Capital Gain Tax Worksheet, the Tax Table / Tax
-Computation Worksheet rule, Schedule A, Schedule 8812, Form 8959 and Form 8960, and (Plan 31) the EIC
+Computation Worksheet rule, Schedule A, Schedule 8812, Form 8959 and Form 8960, and the EIC
 Table, Forms 2441, 8863, 8880, 8814, 6251 (with Part III), 8801 and 8995, Schedules C and SE, Pub.
 560's self-employed SEP worksheet, Pub. 526's charitable limits, and the 2026 OBBBA changes (the
 non-itemizer charitable deduction, the 0.5% floor, the 2/37 limit), from the year's published amounts
@@ -110,7 +110,7 @@ MEDICARE_2026 = {
     "tier2_mfj": 218000,
 }
 
-# --- Plan 31: credits, deductions and regimes (fetched from irs.gov / govinfo 2026-10-18) -----------
+# --- Credits, deductions and regimes (fetched from irs.gov / govinfo 2026-10-18) --------------------
 
 #: Earned income credit table amounts for 0 / 1 / 2 / 3+ children: earned income amount, maximum credit,
 #: phase-out threshold (all but joint), threshold (joint). Rev. Procs. 2023-34 §3.06, 2024-40 §2.06,
@@ -185,7 +185,7 @@ QCD_LIMIT = {2024: 105000, 2025: 108000, 2026: 111000}
 IRA_PHASEOUT_SINGLE = {2024: (77000, 87000), 2025: (79000, 89000), 2026: (81000, 91000)}
 IRA_LIMIT = {2024: 7000, 2025: 7000, 2026: 7500}
 
-# --- Plan 31 tasks 6-7: payments, the premium tax credit, states (fetched 2026-10-18) ----------------
+# --- Payments, the premium tax credit, states (fetched 2026-10-18) ---------------------------------
 
 #: A qualifying surviving spouse uses the joint rate schedule, standard deduction and capital-gains
 #: breakpoints (IRC §1(a), §63(c)(2)(B), §1(h)); "joint" amounts elsewhere only where the statute says
@@ -417,7 +417,7 @@ class Return:
     charity_cash: float = 0.0
     children_under_17: int = 0
     ages_65_plus: int = 0
-    # Plan 31 documents
+    # credits, deductions and regimes
     dependents: list = field(default_factory=list)
     filer_ages: tuple = ()
     business_profit: float = 0.0
@@ -429,7 +429,7 @@ class Return:
     savers_contributions: list = field(default_factory=list)
     #: A traditional IRA contribution by a single active participant in a workplace plan.
     ira_contribution: float = 0.0
-    # Plan 31 tasks 6-7
+    # payments, the premium tax credit, filing statuses
     pension: float = 0.0
     #: Qualifying relatives (the credit for other dependents; not EIC children).
     relatives: int = 0
@@ -1460,13 +1460,13 @@ def households(year: int) -> dict[str, dict]:
             ),
         ],
     }
-    out.update(plan31_households(year))
-    out.update(plan31b_households(year))
+    out.update(credit_and_deduction_households(year))
+    out.update(payment_and_regime_households(year))
     return out
 
 
 # --------------------------------------------------------------------------------------------------
-# State returns (Plan 31 D4): a single filer with wages only, from each state's 2025 / 2026 rules
+# State returns: a single filer with wages only, from each state's 2025 / 2026 rules
 # --------------------------------------------------------------------------------------------------
 
 
@@ -1653,8 +1653,8 @@ def california_540nr(r: "Return", total: float, california: float) -> dict:
     return {"state": "CA", "agi": cents(california), "taxable_income": cents(l35), "tax": cents(tax)}
 
 
-def plan31b_households(year: int) -> dict[str, dict]:
-    """Plan 31 tasks 6-7 goldens: payments, the premium tax credit, filing statuses, residency, state packs."""
+def payment_and_regime_households(year: int) -> dict[str, dict]:
+    """Goldens of payments, the premium tax credit, filing statuses, residency and state packs."""
     out = {}
     alex = W2("alex", "Example Analytics", 85000.0, 85000.0 * 0.05, w4_status="single", year=year)
     out["withholding_single"] = {
@@ -1709,8 +1709,8 @@ def plan31b_households(year: int) -> dict[str, dict]:
     return out
 
 
-def plan31_households(year: int) -> dict[str, dict]:
-    """The Plan 31 goldens of ``year`` (credits, deductions and regimes; each spec's documents)."""
+def credit_and_deduction_households(year: int) -> dict[str, dict]:
+    """The credit, deduction and regime goldens of ``year`` (each spec's documents)."""
     out = {}
     out["eitc_head_of_household"] = {
         "description": "head of household with two school-age children and $28,000 of wages: earned income credit, "
@@ -2003,7 +2003,7 @@ def write(name: str, year: int, info: dict) -> None:
         expected["actuals"]["spending"] = {"medicare_premiums_annual": premium}
         expected["prior_magi"] = {"2024": 230000}
         xfail["spending:medicare_premiums_annual"] = (
-            "missing_input (Plan 27): the spec cannot carry the 2024 MAGI the 2026 IRMAA tier is based on; the "
+            "missing_input: the spec cannot carry the 2024 MAGI the 2026 IRMAA tier is based on; the "
             "engine has no AGI history before its first year and charges the base premium"
         )
     (directory / "expected.json").write_text(json.dumps(expected, indent=2) + "\n", encoding="utf-8")

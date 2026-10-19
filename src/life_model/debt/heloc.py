@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""A home equity line of credit (Plan 27 D7): revolving debt secured by a home."""
+"""A home equity line of credit: revolving debt secured by a home."""
 
 import html
 from typing import TYPE_CHECKING

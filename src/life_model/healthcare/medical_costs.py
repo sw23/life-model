@@ -9,7 +9,7 @@
 configured cost curve, indexes it by cumulative *medical* inflation (CPI plus a health-spending
 premium), and charges the result through ``person.spending.add_expense`` so it settles with every
 other bill. The curve captures chronic-care and general medical spend inside a single age band
-rather than modeling each condition separately (documented v1 simplification).
+rather than modeling each condition separately (a documented simplification).
 """
 
 from typing import cast
@@ -30,7 +30,7 @@ class MedicalCosts(LifeModelAgent):
         Args:
             person: The person who incurs these costs.
             annual_cost: The person's own yearly medical cost in start-year dollars instead of the
-                configured age bands (keyword-only; Plan 27 D9), indexed by medical inflation.
+                configured age bands (keyword-only), indexed by medical inflation.
 
         A HEALTH :class:`~life_model.insurance.general_insurance.Insurance` policy with an out-of-pocket
         maximum or coinsurance caps the charge: the cost is then what the plan covers, and the person

@@ -12,7 +12,7 @@ income with a **two-year lookback** (``person.agi_history[year - 2]``, recorded 
 ``TaxUnit.settle_year``) is compared against the configured MAGI thresholds for the person's
 filing status.
 
-Documented simplifications (v1):
+Documented simplifications:
 
 * Part A is premium-free (assumes sufficient work history).
 * MAGI is approximated by AGI (no tax-exempt-interest add-back — the model has none).
@@ -25,8 +25,9 @@ Documented simplifications (v1):
   thresholds — premiums can jump on identical income history. SSA's "life-changing event"
   reassessment (form SSA-44), which can soften this in reality, is not modeled. This behavior is
   intentional and pinned by a test.
-* Employer coverage before 65 is out of scope (backlog).
-* Prescription-drug coverage is modeled via the Part D premium (per plan; finer detail backlog).
+* Employer coverage before 65 is not modeled.
+* Prescription-drug coverage is modeled only through the Part D premium (one configured base premium
+  plus the IRMAA surcharge; no plan-specific premiums or drug costs).
 """
 
 from typing import cast

@@ -43,7 +43,7 @@ class TaxLot:
 
 @dataclass(frozen=True)
 class Lot:
-    """An opening tax lot from a brokerage statement (Plan 27 D1): its market value, its cost basis and
+    """An opening tax lot from a brokerage statement: its market value, its cost basis and
     when it was acquired (``"YYYY-MM"``, a year meaning January of it, or None for the first simulated
     month). Pass a list of these as ``BrokerageAccount(lots=)``."""
 
@@ -114,7 +114,7 @@ class BrokerageAccount(Investment):
                 balance and acquired in the first simulated month, i.e. an account opened with no
                 embedded gain. Mutually exclusive with ``lots``.
             lots: The statement's tax lots (:class:`Lot`: value, cost basis, acquired), so embedded
-                gains and holding periods are what the statement says (Plan 27 D1).
+                gains and holding periods are what the statement says.
             growth_pct: Expected annual growth rate percentage (deprecated alias ``growth_rate``).
                 Defers to the economy's equity return (or the allocation's blend) when None.
             dividend_yield_pct: Percentage of the balance paid out as qualified dividends each year,
@@ -122,7 +122,7 @@ class BrokerageAccount(Investment):
                 ``dividend_yield``). Defers to the config default when None.
             reinvest_dividends: Reinvest dividends as new lots (default) or pay them to the owner's bank.
             allocation: Target allocation in percent by asset class (``{"equity": 70, "bond": 30}``),
-                rebalanced yearly (Plan 27 D5).
+                rebalanced yearly.
             expense_ratio_pct: Fund expense ratio (percent a year), netted out of the return.
             joint_owner: The spouse who owns the account jointly with ``owner``: dividends and realized gains
                 are split half and half between their returns, and at a death the account passes to the

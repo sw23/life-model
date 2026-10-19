@@ -31,9 +31,8 @@ LIFE_EVENT_STAGES = ("pre_step", "events", "post_step")
 class LifeEventRecord(Event):
     """Event-log entry written when a scheduled life event fires.
 
-    A typed stand-in for the richer event model of a later plan: it carries the event's name, the
-    year (and month, when one was given) it was scheduled for and the stage it fired in, alongside the
-    usual message.
+    It carries the event's name, the year (and month, when one was given) it was scheduled for and the
+    stage it fired in, alongside the usual message.
     """
 
     def __init__(self, life_event: "LifeEvent", stage: str):

@@ -57,9 +57,9 @@ class Plan529(Investment):
             contribution_limit_annual: Annual contribution limit (deprecated alias
                 ``annual_contribution_limit``). Uses configured default if None.
             lifetime_contribution_limit: Lifetime contribution limit. Uses configured default if None.
-            basis: Contributions in the balance (Plan 27 D1); the rest is earnings, taxed and penalized
+            basis: Contributions in the balance; the rest is earnings, taxed and penalized
                 pro rata on a non-qualified withdrawal. The whole balance when None.
-            allocation: Target allocation in percent by asset class (Plan 27 D5).
+            allocation: Target allocation in percent by asset class, rebalanced yearly.
             expense_ratio_pct: Fund expense ratio (percent a year).
         """
         growth_rate = growth_pct

@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Loan terms from what a statement shows (Plan 27 D1/D7).
+"""Loan terms from what a statement shows.
 
 A loan statement shows some of: the original amount, the origination month, the original term, the
 current balance, the months remaining and the monthly payment (principal and interest). With the

@@ -38,7 +38,7 @@ a field marked *typically > 1* warns "did you mean 4.5?". Every flow states its 
 varies under stochastic and path economies. Unknown keys are errors.
 
 **Not yet supported.** Fields and kinds marked *not yet supported* are declared so statements can
-be written down now; the validator rejects a spec that sets one, naming the plan that adds it.
+be written down now; the validator rejects a spec that sets one, saying what the engine does not model.
 
 **Construction order.** The builder never uses the order lists are written in: it sorts each list
 (kind, `primary` bank first, then id and content) and builds model, family, people, bank
@@ -202,9 +202,9 @@ def render_markdown() -> str:
         if doc:
             lines.append(doc + "\n")
         core = getattr(model, "CORE_CLASS", None)
-        plan = getattr(model, "NOT_YET_SUPPORTED", None)
-        if plan:
-            lines.append(f"**Not yet supported ({plan}).**\n")
+        reason = getattr(model, "NOT_YET_SUPPORTED", None)
+        if reason:
+            lines.append(f"**Not yet supported ({reason}).**\n")
         if core:
             lines.append(f"Builds: `{core}`.\n")
         lines.append("| Field | Type | Unit | Default | Maps to | Description |")

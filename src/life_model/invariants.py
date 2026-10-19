@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""The simulation invariant checker (Plan 29 D4).
+"""The simulation invariant checker.
 
 Every invariant is a rule a correct simulated year must satisfy, written against the year's
 *results* (the balance sheets around the year and around each of its months, the cash-flow ledger,
@@ -17,10 +17,10 @@ produces those results. They run once a year, at the year end (after December's 
   it moves);
 * ``no_negative_balances``: at no month end is an asset below zero or a liability negative;
 * ``no_draw_above_cash_floor``: no taxable sale or pre-tax withdrawal by the payment waterfall in a
-  month the tax unit ended with cash above its floor (the rule Plan 26 item 4 broke): the waterfall
-  runs monthly, so a draw in a lean month is legitimate even when later months' pay refills the bank,
-  and money that reached the bank after the month's last draw (a year-end insurance payout, a tax
-  refund) does not count;
+  month the tax unit ended with cash above its floor (cash is spent before anything is sold): the
+  waterfall runs monthly, so a draw in a lean month is legitimate even when later months' pay refills
+  the bank, and money that reached the bank after the month's last draw (a year-end insurance payout,
+  a tax refund) does not count;
 * ``contribution_limits``: 401(k) elective deferrals (402(g) + catch-up), 415(c) annual additions per
   plan, IRA and HSA contributions stay within the year's limits;
 * ``no_income_after_job_end``: no wages, bonus or vests from an employer after the job ended;
@@ -63,8 +63,8 @@ MONEY_TOLERANCE = 0.01
 #: Dollars a tax unit may hold in its banks after a waterfall draw: the draw is rounded up to the cent
 #: and the pre-tax solve converges to a tenth of a cent, so anything above a dollar is real cash.
 CASH_FLOOR_TOLERANCE = 1.0
-#: The household cash floor (dollars kept in the bank before anything is sold). The engine has no
-#: floor yet (Plan 27 D4 adds a savings policy with one), so it is zero.
+#: The household cash floor (dollars kept in the bank before anything is sold). The payment waterfall
+#: keeps none (a ``SavingsPolicy``'s ``cash_floor`` only bounds its year-end sweep), so it is zero.
 DEFAULT_CASH_FLOOR = 0.0
 
 _WATERFALL_DRAW_KINDS = ("forced_sale", "pretax_withdrawal")
@@ -373,7 +373,7 @@ def _inflows_after_last_draw(ctx: YearContext, month: int | None, banks: "set[st
 def no_draw_above_cash_floor(ctx: YearContext) -> list[Violation]:
     """A tax unit whose payment waterfall sold taxable holdings or withdrew pre-tax money in a month must
     end that month with no more than its cash floor in its banks: money sitting in a member's bank
-    should have been spent before anything taxable was sold (Plan 26 item 4). The waterfall pays each
+    should have been spent before anything taxable was sold. The waterfall pays each
     month's bills (December's also funds the year's taxes), so the rule looks at the draw's month: a
     draw in a lean month is fine when a later month's pay refills the bank, and money that reached the
     banks after the month's last draw does not count. Reported once per unit and year, at the first
@@ -726,7 +726,7 @@ def return_identities(ctx: YearContext) -> list[Violation]:
                 - r.total_credits
                 + r.total_penalties,
             ),
-            # Plan 31 D3: 1040 lines 33-37 (the balance due or overpayment, with the Form 2210 penalty).
+            # Form 1040 lines 33-37: the balance due or overpayment, with the Form 2210 penalty.
             "amount owed - overpaid = total tax - payments + penalty": (
                 r.amount_owed - r.overpayment,
                 r.federal_tax

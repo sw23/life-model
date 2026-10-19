@@ -360,8 +360,8 @@ def _contribute(builder: "_Builder", person, account_id: str, amount: float) -> 
         account.contribute(available)  # debits the bank itself
     elif hasattr(account, "contribute"):
         # Tax-advantaged / 529: the account accepts at most its remaining room; debit what it took, bank by
-        # bank, posting each part as a transfer from that bank (Plan 31: the debit used to go unposted while
-        # the account posted new money from outside, so the ledger did not conserve).
+        # bank, posting each part as a transfer from that bank so the ledger records a move between the
+        # household's own accounts rather than new money from outside.
         remaining = available
         for bank in person.usable_bank_accounts:
             if remaining <= 0:

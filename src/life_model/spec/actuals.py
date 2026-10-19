@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Actual records for a simulated year (Plan 29 D1): what the household's real documents say.
+"""Actual records for a simulated year: what the household's real documents say.
 
 ``HouseholdSpec.actuals`` maps a tax year to an :class:`ActualRecords`: the filed Form 1040 and its
 schedules (by the official line numbers of that year), W-2s, 1099s, the state return, a paystub,
@@ -242,8 +242,9 @@ _SCHEDULE_1A_2026 = {
     "44": "Total additional deductions (to Form 1040 line 13a)",
 }
 
-#: The forms and schedules Plan 31 added (same line numbers 2024-2026 for the lines read).
-_PLAN_31_FORMS = {
+#: Schedules and forms whose lines read here have the same numbers in every tabled year (2024-2026):
+#: Schedules C and SE, the credit forms, AMT, QBI, the premium tax credit and the underpayment penalty.
+_FORMS_SAME_EVERY_YEAR = {
     "C": {"31": "Net profit or (loss)"},
     "SE": {
         "2": "Net profit from Schedule C",
@@ -261,7 +262,6 @@ _PLAN_31_FORMS = {
     "8995": {"1": "Qualified business income", "15": "Qualified business income deduction"},
     "6251": {"4": "Alternative minimum taxable income", "9": "Tentative minimum tax", "11": "Alternative minimum tax"},
     "8814": {"15": "Tax on the child's income (to Form 1040 line 16)"},
-    # Plan 31 tasks 6-7
     "8962": {
         "1": "Tax family size",
         "3": "Household income",
@@ -300,7 +300,7 @@ SCHEDULE_LINES: dict[int, dict[str, dict[str, str]]] = {
         "A": _SCHEDULE_A,
         "B": _SCHEDULE_B,
         "D": _SCHEDULE_D,
-        **_PLAN_31_FORMS,
+        **_FORMS_SAME_EVERY_YEAR,
     },
     2025: {
         "1": _SCHEDULE_1,
@@ -310,7 +310,7 @@ SCHEDULE_LINES: dict[int, dict[str, dict[str, str]]] = {
         "A": _SCHEDULE_A,
         "B": _SCHEDULE_B,
         "D": _SCHEDULE_D,
-        **_PLAN_31_FORMS,
+        **_FORMS_SAME_EVERY_YEAR,
     },
     2026: {
         "1": _SCHEDULE_1,
@@ -320,7 +320,7 @@ SCHEDULE_LINES: dict[int, dict[str, dict[str, str]]] = {
         "A": _SCHEDULE_A,
         "B": _SCHEDULE_B,
         "D": _SCHEDULE_D,
-        **_PLAN_31_FORMS,
+        **_FORMS_SAME_EVERY_YEAR,
     },
 }
 
@@ -467,7 +467,7 @@ class ReturnActuals(SpecModel):
 
 
 class SpendingActuals(SpecModel):
-    """Year totals from bank/card statements, for calibration against the model's assumptions (D6)."""
+    """Year totals from bank/card statements, for calibration against the model's assumptions."""
 
     living_annual: NonNegativeMoney | None = spec_field(None, description="Living spending.", unit="USD/year")
     medical_out_of_pocket_annual: NonNegativeMoney | None = spec_field(

@@ -16,7 +16,7 @@ lines follow Form 1040's structure:
   deduction, plus the senior deduction and the QBI deduction;
 * ``ordinary_tax + preferential_tax + kiddie_tax + niit + amt + excess_advance_ptc_repayment - total_credits +
   total_penalties == federal_tax``;
-* (Plan 31 D3) ``amount_owed - overpayment == federal_tax + refundable_credits + self_employment_tax +
+* ``amount_owed - overpayment == federal_tax + refundable_credits + self_employment_tax +
   additional_medicare_tax - total_payments + estimated_tax_penalty`` (Form 1040 lines 24-38);
 * ``federal_tax + state_tax + social_security_tax + medicare_tax + self_employment_tax == total_tax``
   (``TaxesDue.total``).
@@ -48,7 +48,7 @@ ADJUSTMENT_SOURCES = frozenset(
         "student_loan_interest",
         "se_tax_deduction",
         "self_employed_plan",
-        # Plan 27 D2: a CD's early withdrawal penalty (IRC §62(a)(9), Schedule 1 line 18).
+        # A CD's early withdrawal penalty (IRC §62(a)(9), Schedule 1 line 18).
         "early_withdrawal_penalty",
     }
 )
@@ -85,7 +85,7 @@ class StateReturn:
     flat_rate: float | None
     brackets: tuple[tuple[float, float, float, float, float], ...]
     tax: float
-    #: Plan 31: exemptions (in ``deduction``), credits (out of ``tax``) and a part-year return's states.
+    #: Exemptions (in ``deduction``), credits (out of ``tax``) and a part-year return's states.
     exemptions: float = 0.0
     credits: float = 0.0
     parts: "tuple[StateReturn, ...]" = ()
@@ -205,7 +205,8 @@ class TaxReturn:
     total_tax: float
     marginal_rate: float
     effective_rate: float
-    # Plan 31 (defaults let records saved before it load)
+    # Self-employment, additional deductions, AMT and credit detail (the defaults let records saved
+    # without these fields load)
     business_income: float = 0.0
     taxable_dependent_care_benefits: float = 0.0
     additional_standard_deduction: float = 0.0
@@ -223,7 +224,7 @@ class TaxReturn:
     self_employment_tax: float = 0.0
     self_employment_tax_deduction: float = 0.0
     additional_medicare_tax_self_employment: float = 0.0
-    # Plan 31 tasks 6-7: payments (Form 1040 lines 25-38) and the premium tax credit (Form 8962)
+    # Payments (Form 1040 lines 25-38) and the premium tax credit (Form 8962)
     federal_income_tax_withheld: float = 0.0
     additional_medicare_tax_withheld: float = 0.0
     social_security_withheld: float = 0.0

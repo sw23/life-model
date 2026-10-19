@@ -3,11 +3,10 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Fixed-income holdings (Plan 27 D2): CDs, Treasuries, I bonds and bond funds.
+"""Fixed-income holdings: CDs, Treasuries, I bonds and bond funds.
 
-A statement's bonds used to be entered as a bank account named "Bonds", which the waterfall spent like
-checking and whose interest was not taxed as the instrument's is. A :class:`FixedIncomeHolding` keeps
-the instrument's own rules:
+A :class:`FixedIncomeHolding` is not cash (the waterfall spends a bank account like checking, and its
+interest is ordinary income); it keeps each instrument's own rules:
 
 * **cd**: interest at ``rate_pct`` (an APR) credited monthly to the CD (ordinary interest, taxable when
   credited); at ``maturity`` the balance moves to the owner's bank. An early withdrawal forfeits

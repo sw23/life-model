@@ -155,9 +155,9 @@ def silent_defaults() -> list[tuple[str, str, str]]:
             "`Person(state=None)`",
             f"`tax.state.default_state` = {state.default_state!r}",
             (
-                f"The DEFAULT pack: a flat {state.tax_rate:g}% on the federal AGI base. A state code without a pack "
-                "raises `UnknownStateError` (core and spec alike; Plan 31 D4); pass `state='DEFAULT'` to choose the flat "
-                "rate deliberately."
+                f"The DEFAULT pack: a flat {state.tax_rate:g}% on federal taxable income. A state code without a pack "
+                "raises `UnknownStateError` (core and spec alike, never a silent fallback); pass `state='DEFAULT'` to "
+                "choose the flat rate deliberately."
             ),
         ),
         (
@@ -165,8 +165,7 @@ def silent_defaults() -> list[tuple[str, str, str]]:
             "None",
             (
                 "No withholding or estimated payments: the year's taxes are paid as a December lump. With either, "
-                "taxes are withheld from paychecks / paid quarterly and the balance due or refund settles in April "
-                "(Plan 31 D3)."
+                "taxes are withheld from paychecks / paid quarterly and the balance due or refund settles in April."
             ),
         ),
         (
@@ -420,12 +419,12 @@ def render() -> str:
 
 
 def _deprecated_rows() -> list[str]:
-    """The documented list of deprecated constructor names (Plan 27 D8; ``life_model.deprecated_names``)."""
+    """The documented list of deprecated constructor names (``life_model.deprecated_names``)."""
     from life_model.deprecated_names import POSITIONAL, deprecated_names
 
     lines = [
         "",
-        "## Deprecated constructor names (Plan 27 D8)",
+        "## Deprecated constructor names",
         "",
         (
             "These still work for one release with a `DeprecationWarning` naming the replacement. Constructors "

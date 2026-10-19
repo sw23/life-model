@@ -60,7 +60,7 @@ class TraditionalIRA(TaxAdvantagedAccount):
             nondeductible_basis: Form 8606 basis (nondeductible contributions not yet recovered, line
                 14 of the last filed 8606). The year's nondeductible contributions (the deduction
                 phase-out) are added at settlement; distributions recover it pro rata.
-            allocation: Target allocation in percent by asset class (Plan 27 D5).
+            allocation: Target allocation in percent by asset class, rebalanced yearly.
             expense_ratio_pct: Fund expense ratio (percent a year).
         """
         person = owner

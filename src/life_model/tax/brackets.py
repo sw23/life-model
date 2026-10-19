@@ -25,8 +25,8 @@ def apply_brackets(income: float, brackets: "list[Bracket]") -> float:
 
     Brackets are treated as half-open marginal segments ``[prev_upper, upper)`` where ``upper`` is
     each row's second column (the last row uses ``inf``). Using the upper bound as the segment
-    boundary — rather than the row's own ``start`` (``prev_upper + 1``) — closes the $1 gaps the old
-    ``[start, end]`` rows left between brackets. The result is not rounded; callers
+    boundary — rather than the row's own ``start`` (``prev_upper + 1``) — leaves no $1 gap between
+    one row's ``end`` and the next row's ``start``. The result is not rounded; callers
     round the final total tax bill once.
 
     Args:

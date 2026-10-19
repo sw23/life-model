@@ -475,7 +475,7 @@ class HomeExpenses(LifeModelAgent):
             inflation (bool, optional): True: maintenance, improvements and HOA dues grow with the
                 economy's inflation (their growth arguments are ignored).
 
-        The Plan 25 names (``property_tax_percent``, ``home_insurance_percent``, ``maintenance_amount``,
+        The names (``property_tax_percent``, ``home_insurance_percent``, ``maintenance_amount``,
         ``maintenance_increase``, ``improvement_amount``, ``improvement_increase``, ``hoa_amount``,
         ``hoa_increase``) are deprecated aliases.
         """
@@ -587,12 +587,11 @@ class Mortgage(Loan):
     """A home mortgage.
 
     A Mortgage is an amortizing :class:`~life_model.base_classes.Loan`, so it shares the ABC's
-    monthly amortization (with clamps and a zero-rate guard) instead of its own annual
-    simple-interest formula. Because a Mortgage is constructed *before* its :class:`Home` (which
-    supplies the owning person/model), it initializes its loan data eagerly and defers agent
-    registration until the Home adopts it via :meth:`_attach`.
+    monthly amortization (with clamps and a zero-rate guard). Because a Mortgage is constructed
+    *before* its :class:`Home` (which supplies the owning person/model), it initializes its loan data
+    eagerly and defers agent registration until the Home adopts it via :meth:`_attach`.
 
-    Entering a mortgage from its statement (Plan 27 D1): ``origination`` (``"YYYY-MM"``) with the
+    Entering a mortgage from its statement: ``origination`` (``"YYYY-MM"``) with the
     original amount and term gives the balance and payment today with no other input; or give the
     current balance (``principal``) and ``remaining_months``. ``monthly_payment`` is principal and
     interest; with ``escrow_monthly`` it is the statement's total payment and the escrow (property tax
@@ -626,7 +625,7 @@ class Mortgage(Loan):
     ):
         """Mortgage
 
-        Every argument is keyword-only (positional use and the old names ``loan_amount``, ``start_date``,
+        Every argument is keyword-only (positional use and the names ``loan_amount``, ``start_date``,
         ``length_years``, ``yearly_interest_rate``, ``principal`` and ``monthly_payment`` are deprecated).
 
         Args:
