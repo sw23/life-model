@@ -582,8 +582,6 @@ class HomeExpenses(LifeModelAgent):
 # https://www.valuepenguin.com/mortgages/mortgage-payments-calculator
 # https://www.investopedia.com/calculate-principal-and-interest-5211981
 class Mortgage(Loan):
-    STATS_OWNED = frozenset({"stat_mortgage_principal"})
-
     """A home mortgage.
 
     A Mortgage is an amortizing :class:`~life_model.base_classes.Loan`, so it shares the ABC's
@@ -600,6 +598,8 @@ class Mortgage(Loan):
     before 2017-12-15 is grandfathered under the $1,000,000 acquisition-debt limit (IRC
     §163(h)(3)(F)(i)(IV)).
     """
+
+    STATS_OWNED = frozenset({"stat_mortgage_principal"})
 
     @deprecated_arguments(
         {**{k: v for k, v in LOAN_RENAMES.items() if k != "person"}, "start_date": "start_year"},

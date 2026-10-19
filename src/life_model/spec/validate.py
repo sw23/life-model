@@ -685,7 +685,8 @@ class _SpecChecker:
                     self.warn(
                         f"{path}.accounts[{j}]",
                         f"bank account '{bank.company} {bank.type}' looks like a stand-in for bonds/CDs/Treasuries; "
-                        "it is spent like checking and its interest is not taxed.",
+                        "it is spent like checking, and its interest is taxed as ordinary bank interest "
+                        "(no state exemption for Treasuries, no deferral for I bonds).",
                         "use kind: fixed_income (a CD, Treasury, I bond or bond fund), or reserve: true for an emergency "
                         "fund.",
                         "bonds_as_bank",

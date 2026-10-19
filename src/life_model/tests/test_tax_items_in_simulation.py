@@ -320,10 +320,6 @@ class TestIncomeTypeIsOrdinary(unittest.TestCase):
         self.assertEqual(ledger.self_employment_income, 1000)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class TestSpecFields(unittest.TestCase):
     """The self-employment, payroll, stock option, child and QCD spec fields build into the core objects and
     extract back."""
@@ -487,3 +483,7 @@ class TestTaxYearAges(unittest.TestCase):
         _job(pat, 50000)
         model.step_year()
         self.assertEqual(model.tax_returns[2026].additional_standard_deduction, 2050)
+
+
+if __name__ == "__main__":
+    unittest.main()

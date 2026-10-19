@@ -23,8 +23,9 @@ Feeding real statements: describe the household as of January 1 of the first yea
 the December 31 statements before it), put each later December 31 statement balance under
 ``actuals.<year>.balances.<account id>``, set ``growth_pct: economy`` on accounts invested like the
 S&P 500 (or a fixed rate for those that are not), and run :func:`backtest`. Differences then come
-from what the spec does not capture: contribution timing (the engine credits a year's contributions
-before that year's growth; monthly deposits earn about half a year less), fees, the actual fund mix.
+from what the spec does not capture: contribution timing (the engine credits each paycheck's
+contributions at the start of its month; a plan that deposits at month end earns about a month's
+growth less), fees, the actual fund mix.
 """
 
 import json

@@ -31,9 +31,6 @@ class PaymentStrategy(Enum):
 
 
 class RevolvingDebt(LifeModelAgent):
-    #: The registry (``model.registries.<name>``) the debt is listed in.
-    REGISTRY = "credit_cards"
-
     """Open-ended revolving debt (e.g. a credit card).
 
     Unlike an amortizing :class:`~life_model.base_classes.Loan`, revolving debt has no fixed term:
@@ -42,6 +39,9 @@ class RevolvingDebt(LifeModelAgent):
     month (a percentage of balance, floored at a dollar amount), so it tracks the balance instead
     of being frozen at construction.
     """
+
+    #: The registry (``model.registries.<name>``) the debt is listed in.
+    REGISTRY = "credit_cards"
 
     @deprecated_arguments(
         {
