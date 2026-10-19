@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""A dependent other than a child: a qualifying relative (IRC §152(d)) such as a parent (Plan 31 D5)."""
+"""A dependent other than a child: a qualifying relative (IRC §152(d)) such as a parent."""
 
 import html
 from typing import TYPE_CHECKING

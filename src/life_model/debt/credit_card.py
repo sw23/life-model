@@ -91,7 +91,7 @@ class RevolvingDebt(LifeModelAgent):
             payment_strategy: How the balance is paid down each month.
             payment_monthly: Monthly payment when ``payment_strategy`` is ``FIXED``.
             spending_charge_pct: Percent of the owner's monthly living spending charged to this debt
-                (up to the available credit) instead of paid from the bank (Plan 27 D7). The card then
+                (up to the available credit) instead of paid from the bank. The card then
                 pays it down under ``payment_strategy``: ``FULL_BALANCE`` pays the month's charges with
                 no interest; ``MINIMUM`` carries a balance. Defaults to 0 (no charges).
         """

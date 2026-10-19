@@ -82,13 +82,13 @@ class Job401kAccount(RetirementAccount):
 
         Args:
             job (Job, optional): Job offering the plan. None for a standalone plan (an old employer's
-                401(k), Plan 27 D3): pass ``owner``; it grows, pays RMDs and is drawn by the waterfall
+                401(k)): pass ``owner``; it grows, pays RMDs and is drawn by the waterfall
                 but receives no contributions.
             owner (Person, optional): The participant, for a standalone plan (defaults to ``job.owner``).
             pretax_balance (float, optional): Initial pre-tax balance of account. Defaults to 0.
             roth_balance (float, optional): Initial roth balance of account. Defaults to 0.
             after_tax_balance (float, optional): After-tax (non-Roth) bucket: contributions plus their
-                earnings, which are pre-tax money (Plan 27 D3). Defaults to 0.
+                earnings, which are pre-tax money. Defaults to 0.
             pretax_contrib_pct (float, optional): Pre-tax deferral, percent of plan pay (deprecated alias
                 ``pretax_contrib_percent``). Defaults to 0.
             roth_contrib_pct (float, optional): Roth deferral, percent of plan pay (deprecated alias
@@ -118,7 +118,7 @@ class Job401kAccount(RetirementAccount):
                 deferral; with a true-up (default True) the December paycheck tops it up to the plan
                 formula on the year's totals, so front-loading deferrals (reaching the 402(g) limit
                 before December) loses no match. False models a plan without a true-up.
-            roth_basis (float, optional): Roth contributions in ``roth_balance`` (Plan 27 D3). A Roth 401(k)
+            roth_basis (float, optional): Roth contributions in ``roth_balance``. A Roth 401(k)
                 distribution before 59.5 is taxed and penalized on its earnings share, pro rata (IRC §72).
                 None (default) treats the whole Roth balance as basis (no earnings tracked).
             after_tax_basis (float, optional): After-tax contributions in ``after_tax_balance`` (defaults to
@@ -126,7 +126,7 @@ class Job401kAccount(RetirementAccount):
             in_plan_roth_conversion (bool, optional): Convert each after-tax contribution to Roth as it is
                 made (the "mega backdoor" in-plan conversion): it lands in the Roth bucket as basis.
 
-        Every argument after ``job`` is keyword-only (positional use is deprecated, Plan 27 D8).
+        Every argument after ``job`` is keyword-only (positional use is deprecated).
         """
         if job is None and owner is None:
             raise ValueError("Job401kAccount needs a job, or an owner for a standalone plan")
@@ -296,7 +296,7 @@ class Job401kAccount(RetirementAccount):
 
     @balance.setter
     def balance(self, value):
-        # Balance is derived; never silently discard a write (fixes the silent-discard bug).
+        # Balance is derived from the buckets: a direct write raises rather than being silently discarded.
         raise AttributeError(
             "Job401kAccount.balance is derived from pretax_balance + roth_balance + after_tax_balance; "
             "set those directly instead of assigning balance."

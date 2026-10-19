@@ -11,9 +11,9 @@ seed, the same pattern as stochastic mortality). On trigger, the person enters a
 whose duration is drawn from an exponential distribution with the configured mean (rounded up to
 whole years). While in care, the annual care cost (indexed by medical inflation) is charged
 through ``person.spending.add_expense``; any active ``InsuranceType.LONG_TERM_CARE`` policies
-offset the cost up to their annual benefit via the existing claim machinery.
+offset the cost up to their annual benefit via the insurance claim machinery.
 
-Documented simplifications (v1):
+Documented simplifications:
 
 * Mortality stays independent of the care state.
 * At most one episode is active at a time; a new episode can begin after one ends.
