@@ -46,7 +46,7 @@ class TestBank(unittest.TestCase):
 
         for i in range(1, 11):
             account.balance += 100
-            # A year of monthly interest (Plan 32: interest accrues monthly; APR/12 compounds to the
+            # A year of monthly interest (interest accrues monthly; APR/12 compounds to the
             # same yearly figure up to floating-point rounding).
             run_months(account.model, account.step)
             self.assertAlmostEqual(account.balance, check_interest_table[i], places=8)

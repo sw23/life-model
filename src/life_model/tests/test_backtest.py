@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""The backtest harness (Plan 29 D5): the realized economy path and the synthetic 2020-2025 example,
+"""The backtest harness: the realized economy path and the synthetic 2020-2025 example,
 whose statement balances ``scripts/backtest_example.py`` computes independently."""
 
 import importlib.util

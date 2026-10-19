@@ -242,7 +242,7 @@ class TestPlan529(unittest.TestCase):
         initial_balance = self.plan.balance
         initial_earnings = self.plan.total_earnings
 
-        self.plan.step()  # Plan 32: a month's growth runs in step
+        self.plan.step()  # a month's growth runs in step
 
         # Balance should increase by growth
         # Note: calculate_growth uses current balance which changed, so recalculate
@@ -257,7 +257,7 @@ class TestPlan529(unittest.TestCase):
         self.plan.contributions_this_year = 5000.0
         self.plan.qualified_withdrawals = 2000.0
 
-        # Plan 32: statistics are taken at year end (collect_stats, then on_year_end's history).
+        # Statistics are taken at year end (collect_stats, then on_year_end's history).
         self.plan.collect_stats()
         self.plan.on_year_end()
 
@@ -272,7 +272,7 @@ class TestPlan529(unittest.TestCase):
         self.plan.qualified_withdrawals = 2000.0
         self.plan.non_qualified_withdrawals = 500.0
 
-        self.plan.on_year_end()  # Plan 32: annual resets run at year end
+        self.plan.on_year_end()  # annual resets run at year end
 
         self.assertEqual(self.plan.contributions_this_year, 0)
         self.assertEqual(self.plan.qualified_withdrawals, 0)
@@ -287,7 +287,7 @@ class TestPlan529(unittest.TestCase):
         self.assertEqual(plan.balance, 10000.0)
         self.assertEqual(plan.total_contributions, 10000.0)
 
-        # A year of monthly growth (Plan 32)
+        # A year of monthly growth
         run_months(plan.model, plan.step)
         self.assertAlmostEqual(plan.balance, 10700.0, places=0)
         self.assertAlmostEqual(plan.total_earnings, 700.0, places=0)

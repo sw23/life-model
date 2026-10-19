@@ -326,7 +326,7 @@ class TestSocialSecurityPerModelConfig(unittest.TestCase):
 
 
 class TestSocialSecurityFollowsTheEconomy(unittest.TestCase):
-    """Projections past the published SSA tables use the economy's realized rates (Plan 10 D3)."""
+    """Projections past the published SSA tables use the economy's realized rates."""
 
     def setUp(self):
         config = FinancialConfig()

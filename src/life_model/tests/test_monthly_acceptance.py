@@ -3,12 +3,13 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Plan 32 acceptance tests: the monthly engine against its acceptance criteria.
+"""Acceptance tests for the monthly engine.
 
 * A household started in October books three months of salary, rent and growth in its first year,
   and its first tax return matches a hand computation of a three-month W-2.
-* Under a fixed economy, year-end net worth stays within the recorded tolerances of the pre-plan
-  annual engine (``docs/rebaseline-plan-32.md`` explains every source of the difference).
+* Under a fixed economy, year-end net worth stays within recorded tolerances of a year-step reference
+  engine; the difference comes from monthly compounding and from paying bills, income and taxes within
+  the year instead of once a year.
 * Sequence-of-returns risk is visible: a crash early in the year hurts more than the same crash late.
 * A person born in July 1966 reaches 59½ in January 2026.
 * Money is conserved every month for 50 years under a stochastic economy on every example spec.
@@ -97,8 +98,8 @@ def _spec_fixed(name: str) -> LifeModel:
     return build_model(HouseholdSpec.model_validate(data))
 
 
-#: Year-end net worth from the pre-plan annual engine (fourth-wave at f66307f, with Plans 29 and 30) under
-#: the fixed economy, in years 1, 5, 10 and 20 (``docs/rebaseline-plan-32.md``, "Fixed-economy tolerance").
+#: Year-end net worth from a year-step reference engine (one period per year, recorded at commit f66307f) under
+#: the fixed economy, in years 1, 5, 10 and 20.
 ANNUAL_ENGINE_NET_WORTH = {
     "spec_single_renter": {2026: 81906.82, 2030: 182710.97, 2035: 426597.66, 2045: 1232550.88},
     "spec_married_homeowners": {2026: 546979.78, 2030: 941760.71, 2035: 1407704.97, 2045: 2499441.99},
@@ -139,8 +140,8 @@ class TestFixedEconomyMatchesTheAnnualEngine(unittest.TestCase):
 
 class TestSequenceOfReturns(unittest.TestCase):
     """A retiree drawing $5k a month from $1M: a -20% quarter in January-March hurts more than the
-    same quarter in October-December. The annual engine saw only the year's return, which is the same
-    for both paths, so it gave both retirees the same result (docs/rebaseline-plan-32.md)."""
+    same quarter in October-December. A year-step engine sees only the year's return, which is the same
+    for both paths, so it cannot tell the two retirees apart."""
 
     @staticmethod
     def _retiree(crash_months) -> LifeModel:
@@ -196,7 +197,7 @@ class TestMonthlyConservationOnEveryExample(unittest.TestCase):
                 try:
                     model = build_model(HouseholdSpec.model_validate(data))
                 except SpecValidationError:
-                    continue  # uses a field the engine does not support yet (self-employment, Plan 31)
+                    continue  # uses a field the engine does not support yet
                 with self.subTest(example=name, seed=seed):
                     model.run()
                     self.assertEqual(len(model.month_balance_sheets), 50 * 12)

@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Integration tests for Plan 06 — account subsystem unification.
+"""Integration tests for the account subsystem: every account type behaves alike through the simulation.
 
 Exercises several account types together through the real simulation pipeline: registry surfacing,
 the withdrawal order, annual contribution-limit resets, and the tax treatment of contributions,
@@ -53,7 +53,7 @@ class TestAccountSurfacing(unittest.TestCase):
 
 class TestLiquidationOrder(unittest.TestCase):
     def test_brokerage_drained_before_pretax_401k(self):
-        """D3: cash is raised from taxable brokerage before pre-tax 401k."""
+        """Cash is raised from taxable brokerage before pre-tax 401k."""
         model = LifeModel(end_year=2020, start_year=2020)
         person = Person(Family(model), "Retiree", 65, 60, Spending(model, base_annual=5000))
         BankAccount(person, company="Bank", balance=0)
@@ -72,7 +72,7 @@ class TestLiquidationOrder(unittest.TestCase):
 
 class TestAnnualContributionReset(unittest.TestCase):
     def test_401k_deferrals_reset_each_year(self):
-        """Item 3/7: 402(g) room resets annually rather than being a lifetime cap."""
+        """402(g) room resets annually rather than being a lifetime cap."""
         model = LifeModel(end_year=2022, start_year=2020)
         person = Person(Family(model), "P", 40, 65, Spending(model, base_annual=0))
         BankAccount(person, company="Bank", balance=0)
@@ -91,7 +91,7 @@ class TestAnnualContributionReset(unittest.TestCase):
         for _ in range(3):
             hsa.contribute(1000)
             self.assertEqual(hsa.contributions_ytd, 1000)
-            hsa.on_year_end()  # Plan 32: annual resets run at year end
+            hsa.on_year_end()  # annual resets run at year end
             self.assertEqual(hsa.contributions_ytd, 0)
 
 

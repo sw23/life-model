@@ -16,12 +16,12 @@ class TestBrokerage(unittest.TestCase):
         # Create a mock person with required attributes
         self.mock_person = Mock(spec=Person)
         self.mock_person.model = Mock()
-        # A brokerage with no explicit growth_rate now defers to the economy's equity return.
+        # A brokerage with no explicit growth_rate defers to the economy's equity return.
         self.mock_person.model.economy.rate.return_value = 7.0
         # Lots record the acquisition year, and growth splits out a dividend slice — both need
         # real numbers rather than Mocks.
         self.mock_person.model.year = 2020
-        self.mock_person.model.month = 1  # Plan 32: lots record their month; growth is monthly
+        self.mock_person.model.month = 1  # lots record their month; growth is monthly
         self.mock_person.model.economy.monthly_rate.return_value = 0.5654145387405274
         self.mock_person.model.config.accounts.brokerage.dividend_yield = 0.0
         self.mock_person.model.config.accounts.brokerage.dividend_frequency = "quarterly"
@@ -212,7 +212,7 @@ class TestBrokerage(unittest.TestCase):
     def test_apply_growth_integration(self):
         """Test integration with inherited apply_growth method."""
         initial_balance = self.brokerage.balance
-        expected_growth = self.brokerage.calculate_monthly_growth()  # Plan 32: growth is monthly
+        expected_growth = self.brokerage.calculate_monthly_growth()  # growth is monthly
 
         # Apply growth using inherited method
         actual_growth = self.brokerage.apply_growth()
@@ -226,7 +226,7 @@ class TestBrokerage(unittest.TestCase):
         """Test integration with inherited step method."""
         initial_balance = self.brokerage.balance
 
-        # Call step method (a month's growth), then the year end records the balance (Plan 32)
+        # Call step method (a month's growth), then the year end records the balance
         self.brokerage.step()
         self.brokerage.on_year_end()
 

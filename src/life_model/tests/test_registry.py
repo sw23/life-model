@@ -167,8 +167,8 @@ class TestRegistry(unittest.TestCase):
         self.assertEqual(len(self.person.jobs), 0)
 
     def test_no_self_appending(self):
-        """Test that lists are not stored on Person objects anymore"""
-        # Check that Person doesn't have list attributes (they are now properties)
+        """Person stores no ownership lists; they are registry-backed properties."""
+        # Check that Person doesn't have list attributes (they are registry-backed properties)
         self.assertFalse(hasattr(self.person, "_jobs"))
         self.assertFalse(hasattr(self.person, "_bank_accounts"))
         self.assertFalse(hasattr(self.person, "_homes"))

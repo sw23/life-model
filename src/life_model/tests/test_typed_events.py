@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Typed events (Plan 28, task 4)."""
+"""Typed events."""
 
 import unittest
 
@@ -85,7 +85,7 @@ class TestEngineEvents(unittest.TestCase):
         job.retired = True
         Job401kAccount(job, pretax_balance=500000)
         model.run()
-        # Plan 32: the month's bills sell the brokerage until it is gone, then draw pre-tax money,
+        # The month's bills sell the brokerage until it is gone, then draw pre-tax money,
         # month by month; December's tax settlement draws a sized pre-tax amount for the taxes.
         sales = model.event_log.of_kind(EventKind.FORCED_SALE)
         self.assertGreater(sum(sale.amount for sale in sales), 40000)  # the whole (grown) brokerage account

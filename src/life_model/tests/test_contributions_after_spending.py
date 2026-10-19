@@ -3,10 +3,11 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Plan 27's two halves together: 27b's spending categories and age schedule with 27a's bank-sourced
-contribution plans and savings sweep. A contribution is made after the month's bills, so it is never
-funded by money the month's spending (categories included) needs; nothing is sold to pay a bill a
-contribution emptied the bank for; net worth covers both halves' new assets and liabilities."""
+"""Spending categories and the age schedule together with bank-sourced contribution plans and the savings sweep.
+
+A contribution is made after the month's bills, so it is never funded by money the month's spending
+(categories included) needs; nothing is sold to pay a bill a contribution emptied the bank for; net worth
+covers statement-entered assets and liabilities (a home, a HELOC, a policy's cash value and loan, a CD)."""
 
 import unittest
 from pathlib import Path
@@ -64,13 +65,12 @@ class TestContributionsAfterSpendingCategories(unittest.TestCase):
             "groceries": SpendingLine(1500, period="monthly", growth_pct=0),
             "travel": SpendingLine(30000, growth_pct=0, essential=False),
         }
-        # $90,000 of pay (Plan 31: was $60,000, whose year's tax, held back since Plan 31 D3, left nothing).
+        # $90,000 of pay: at $60,000 the year's tax, which the plan holds back, would leave nothing to contribute.
         model, person, _bank, brokerage = _household(categories=categories, salary=90000)
         person.add_contribution_plan(ContributionPlan(brokerage, amount_annual=24000))
         by_month, kinds = self._eleven_months(model, brokerage)
         # $7,500 of pay a month, $4,000 of categorized spending: $3,500 left, less the month's share of the year's
-        # (unwithheld) tax, which the plan holds back for December (Plan 31 D3); not the plan's $2,000... unless
-        # that is less.
+        # (unwithheld) tax, which the plan holds back for December; not the plan's $2,000... unless that is less.
         left = 7500.0 - 4000.0 - _tax_month(categories=categories, salary=90000)
         self.assertGreater(left, 0)
         self.assertLess(left, 2000.0)
@@ -111,7 +111,7 @@ class TestContributionsAfterSpendingCategories(unittest.TestCase):
         self.assertEqual(person.debt, 0)
 
 
-class TestNetWorthCoversBothHalves(unittest.TestCase):
+class TestNetWorthCoversStatementItems(unittest.TestCase):
     def test_every_new_asset_and_liability_is_on_the_balance_sheet(self):
         from ..account.fixed_income import FixedIncomeHolding
 

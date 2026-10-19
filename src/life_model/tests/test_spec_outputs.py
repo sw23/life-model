@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Plan 28 outputs on the Plan 25 spec examples: money conservation and tax-return identities over
+"""Outputs on the packaged spec examples: money conservation and tax-return identities over
 50 years (stochastic economy and mortality included), and the spec on the RunResult."""
 
 import tempfile
@@ -30,7 +30,7 @@ def _buildable_examples() -> list[str]:
         try:
             build_model(load_example(name))
         except SpecValidationError:
-            continue  # uses a field the engine does not support yet (e.g. self-employment, Plan 31)
+            continue  # uses a field the engine does not support yet
         names.append(name)
     return names
 

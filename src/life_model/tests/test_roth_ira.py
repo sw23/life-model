@@ -70,21 +70,21 @@ class TestRothIRA(unittest.TestCase):
         self.assertEqual(ira.contribute(1000), 1000)
 
 
-def _plan06_person(age: int = 40, year: int = 2020) -> Person:
+def _person_at(age: int = 40, year: int = 2020) -> Person:
     model = LifeModel(end_year=year, start_year=year)
     return Person(Family(model), "P", age, 65, Spending(model))
 
 
 class TestRothIRATaxSemantics(unittest.TestCase):
     def test_contribution_basis_withdrawn_tax_free(self):
-        person = _plan06_person(age=40)
+        person = _person_at(age=40)
         roth = RothIRA(person, balance=1000, growth_pct=0)
         self.assertEqual(roth.withdraw(500), 500)
         self.assertEqual(person.income.ordinary_taxable, 0)
         self.assertEqual(person.income.penalties, 0)
 
     def test_non_qualified_earnings_taxed_and_penalized(self):
-        person = _plan06_person(age=40)
+        person = _person_at(age=40)
         roth = RothIRA(person, balance=1000, growth_pct=10)
         run_months(person.model, roth.apply_growth)  # a year of growth: balance 1100, basis 1000, earnings 100
         roth.withdraw(1000)  # basis first: tax-free
@@ -94,7 +94,7 @@ class TestRothIRATaxSemantics(unittest.TestCase):
         self.assertAlmostEqual(person.income.penalties, 10)
 
     def test_qualified_earnings_tax_free_at_retirement_age(self):
-        person = _plan06_person(age=66)
+        person = _person_at(age=66)
         roth = RothIRA(person, balance=1000, growth_pct=10)
         roth.apply_growth()
         roth.withdraw(1100)
@@ -102,15 +102,15 @@ class TestRothIRATaxSemantics(unittest.TestCase):
         self.assertEqual(person.income.penalties, 0)
 
     def test_tax_free_withdrawable_is_basis_before_59_and_a_half(self):
-        roth = RothIRA(_plan06_person(age=40), balance=1000, growth_pct=10)
-        run_months(roth.model, roth.apply_growth)  # a year of growth (Plan 32: monthly)
+        roth = RothIRA(_person_at(age=40), balance=1000, growth_pct=10)
+        run_months(roth.model, roth.apply_growth)  # a year of growth (monthly)
         self.assertAlmostEqual(roth.tax_free_withdrawable(), 1000)
-        old_roth = RothIRA(_plan06_person(age=66), balance=1000, growth_pct=10)
+        old_roth = RothIRA(_person_at(age=66), balance=1000, growth_pct=10)
         run_months(old_roth.model, old_roth.apply_growth)
         self.assertAlmostEqual(old_roth.tax_free_withdrawable(), 1100)
 
     def test_ira_limit_shared_with_traditional(self):
-        person = _plan06_person()
+        person = _person_at()
         roth = RothIRA(person, growth_pct=0)
         trad = TraditionalIRA(person, growth_pct=0)
         limit = roth.annual_contribution_limit()

@@ -3,12 +3,11 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Plan 32: the natively monthly engine.
+"""The natively monthly engine.
 
 ``LifeModel.step()`` simulates one calendar month; a year is a reporting cadence (``step_year()``,
-data collected at each year end). These tests pin the period plumbing (task 1), the monthly flows and
-their December settlement (task 3), exact ages (task 2) and the money-conservation guard that runs
-every month.
+data collected at each year end). These tests pin the period plumbing, the monthly flows and their
+December settlement, exact ages and the money-conservation guard that runs every month.
 """
 
 import unittest

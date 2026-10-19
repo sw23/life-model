@@ -3,11 +3,11 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Plan 31's tax functions against the forms' worked numbers.
+"""The credit, AMT, QBI and self-employment tax functions against the forms' worked numbers.
 
-Dollar assertions read published years (2024-2026) of the packaged ``tax_years`` table: those values
-are history (each verified against its Rev. Proc. / IRS notice), so they do not drift when a later year
-is added. Expected values are worked by hand in each test's comment.
+Dollar assertions read published years (2024-2026) of the packaged ``tax_years`` table: published values
+(each verified against its Rev. Proc. / IRS notice) do not drift when a later year is added. Expected
+values are worked by hand in each test's comment.
 """
 
 import unittest

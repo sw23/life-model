@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Table-driven, cent-exact checks against the 2026 published federal tables (Plan 05 / Plan 13).
+"""Table-driven, cent-exact checks against the 2026 published federal tables.
 
 Every expected value is hand-computed from IRS Rev. Proc. 2025-32 (2026 brackets, standard deduction,
 capital-gains breakpoints), SSA's 2026 wage base ($184,500), and the statutory FICA/NIIT rates and

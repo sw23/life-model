@@ -3,11 +3,11 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Plan 27 PR D: insurance, Social Security and spending entered from statements.
+"""Insurance, Social Security and spending entered from statements.
 
-Life insurance, annuities and pensions already in force (D1), health cost sharing and disability income
-(D9), Social Security's spousal benefit, full retirement age by birth year, PIA override and earnings
-test (D10), spending categories, schedules, recurring expenses and per-child costs (D6). Dollar
+Life insurance, annuities and pensions already in force, health cost sharing and disability income,
+Social Security's spousal benefit, full retirement age by birth year, PIA override and earnings test,
+spending categories, schedules, recurring expenses and per-child costs. Dollar
 assertions use the frozen fixture config; Social Security amounts are checked against SSA's published
 rules (the spousal reduction table on ssa.gov/oact/quickcalc/earlyretire.html, the 2026 exempt amounts on
 ssa.gov/oact/cola/rtea.html).
@@ -55,7 +55,7 @@ def _person(model, *, birth="1966-01", bank=200000.0, spending=None, family=None
 
 
 class TestExistingLifePolicy(unittest.TestCase):
-    """Acceptance (Plan 27 PR D): an existing whole-life policy with $20k cash value and a $5k loan."""
+    """An existing whole-life policy with $20k cash value and a $5k loan."""
 
     def test_cash_value_and_loan_on_the_balance_sheet(self):
         model = _model(checks="strict")
@@ -332,7 +332,7 @@ class TestSocialSecurityStatement(unittest.TestCase):
         self.assertAlmostEqual(500 * spousal_reduction_factor(56), 333.33, places=2)
 
     def test_spousal_benefit_beats_the_low_earners_own(self):
-        """Acceptance (Plan 27 PR D)."""
+        """A lower earner is paid their own benefit plus the spousal excess (up to half the other's PIA at FRA)."""
         model = _model(start="2027-01", end_year=2028)
         family = Family(model)
         high = _person(model, birth="1960-01", family=family, name="High")
@@ -410,7 +410,7 @@ class TestSocialSecurityStatement(unittest.TestCase):
 
 class TestSpendingModel(unittest.TestCase):
     def test_age_schedule_100_80_70(self):
-        """Acceptance (Plan 27 PR D): 100/80/70% of the entered spending by age band."""
+        """An age schedule spends 100/80/70% of the entered amount by age band."""
         model = _model(start="2026-01", end_year=2047)
         spending = Spending(model, 60000, 0, schedule=[(65, 100), (75, 80), (85, 87.5)])
         _person(model, birth="1961-01", spending=spending, bank=5e6)

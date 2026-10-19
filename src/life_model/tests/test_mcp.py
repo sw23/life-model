@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""The MCP server (Plan 30 D3): tool bodies (no SDK needed) and a stdio smoke test (needs ``mcp``)."""
+"""The MCP server: tool bodies (no SDK needed) and a stdio smoke test (needs ``mcp``)."""
 
 import importlib.util
 import json

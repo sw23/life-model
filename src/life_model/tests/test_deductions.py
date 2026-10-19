@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""AGI-dependent deductions (Plan 05 items 11 and 15).
+"""AGI-dependent deductions.
 
 - OBBBA senior deduction (IRC §151(d)(5)(C)): $6,000 per person 65+ in 2025-2028, reduced by 6% of
   MAGI over $75,000 ($150,000 joint); not available on separate returns.
@@ -60,8 +60,8 @@ class TestSeniorDeduction(unittest.TestCase):
 
     def test_reduces_settled_federal_tax(self):
         """Single 70-year-old, $60,000 of ordinary income in 2026: taxable 60,000 - (16,100 + the §63(f)
-        $2,050) - 6,000 = 35,850 -> 10% x 12,400 + 12% x 23,450 = $4,054. (Plan 31 re-baseline: $4,300
-        before the §63(f) amount was applied; docs/rebaseline-plan-31.md.)"""
+        $2,050) - 6,000 = 35,850 -> 10% x 12,400 + 12% x 23,450 = $4,054. The §63(f) additional standard
+        deduction for age 65+ applies alongside the senior deduction."""
         person = _person(self.model, 70)
         person.income.add(IncomeType.ORDINARY, 60000)
         taxes = TaxUnit([person]).get_income_taxes_due()
@@ -79,7 +79,7 @@ class TestCharitableLimit(unittest.TestCase):
 
         # 60% of $50k AGI = $30k allowed; the other $10k carries forward from 2026. From 2026 (OBBBA) the
         # 0.5%-of-AGI floor ($250) also comes off, and because the year has a carryover the floor amount
-        # joins it (§170(d)(1)(C)). (Plan 31 re-baseline: [(2026, 10000)] and $30,000 before the floor.)
+        # joins it (§170(d)(1)(C)).
         self.assertEqual(person.charitable_carryforwards, [(2026, 10250)])
         self.assertAlmostEqual(person.stat_itemized_deductions, 29750 + person.stat_taxes_paid_state, places=2)
 

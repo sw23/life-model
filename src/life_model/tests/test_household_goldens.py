@@ -3,12 +3,12 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Household goldens (Plan 29 D3): synthetic households whose full-year return was worked from the
+"""Household goldens: synthetic households whose full-year return was worked from the
 IRS forms independently of the library (``scripts/household_goldens.py``; every line's arithmetic is
 in the golden's ``worksheet.md``). Each golden's ``expected.json`` is an ``actuals`` record, so the
 test is the reconciliation itself: every line the golden states must match the engine within the
-golden's tolerance (a cent, except where its JSON says otherwise), and lines marked ``xfail`` (a tax
-feature Plan 31 adds) must still differ, so they are noticed when the feature lands.
+golden's tolerance (a cent, except where its JSON says otherwise), and lines marked ``xfail`` (an input
+or feature the engine lacks) must still differ, so they are noticed when the feature lands.
 
 See ``goldens/households/README.md`` for the format and how to add a golden.
 """
@@ -31,7 +31,7 @@ HOUSEHOLDS = (
     "retiree_couple",
     "early_retiree",
     "married_separately",
-    # Plan 31: credits, deductions and regimes
+    # Credits, deductions and regimes
     "eitc_head_of_household",
     "dependent_care_mfj",
     "education_aotc_mfj",
@@ -43,7 +43,7 @@ HOUSEHOLDS = (
     "qcd_retiree",
     "ira_deduction_phaseout",
     "student_loan_phaseout",
-    # Plan 31 tasks 6-7: payments, the premium tax credit, filing statuses
+    # Payments, the premium tax credit, filing statuses
     "withholding_single",
     "estimated_payments_penalty",
     "aca_ptc_early_retirees",
@@ -51,7 +51,7 @@ HOUSEHOLDS = (
     "hoh_dependent_parent",
 )
 #: Goldens that need a prior year (the minimum tax credit after an ISO exercise), or whose state rules are
-#: packed for 2025 and 2026 only (part-year residency, one golden per Plan 31 state pack): 2025 and 2026.
+#: packed for 2025 and 2026 only (part-year residency, one golden per state pack): 2025 and 2026.
 FOLLOW_ON = (
     "iso_amt_credit",
     "part_year_mover",

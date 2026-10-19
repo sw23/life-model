@@ -63,7 +63,7 @@ def _shuffled(data, rng: random.Random):
 
 
 class TestConstructionOrderIndependence(unittest.TestCase):
-    """D5: the builder owns construction order, so list order never changes the result."""
+    """The builder owns construction order, so list order never changes the result."""
 
     def _frames(self, data: dict):
         model = build(data).model
@@ -287,7 +287,7 @@ class TestBuildChecks(unittest.TestCase):
 
 class TestEventTiming(unittest.TestCase):
     def test_age_events_resolve_through_get_year_at_age(self):
-        """No age arithmetic of its own: the builder defers to Person.get_year_at_age (Plan 26 item 1)."""
+        """No age arithmetic of its own: the builder defers to Person.get_year_at_age."""
         data = minimal()
         data["meta"]["end_year"] = 2100
         data["events"] = [{"at": {"age": 50}, "person": "alex", "action": "one_time_expense", "amount": 1}]
@@ -318,8 +318,8 @@ class TestEventTiming(unittest.TestCase):
 
 
 class TestEventActions(unittest.TestCase):
-    """Each action compiles to a LifeEvent whose effect is checked by firing it directly (the engine's
-    firing stage is Plan 26's concern)."""
+    """Each action compiles to a LifeEvent whose effect is checked by firing it directly (when the engine
+    fires events is tested in test_engine_timing.py)."""
 
     def _fire(self, data: dict, events: list[dict]):
         data["meta"]["end_year"] = 2035
@@ -556,7 +556,7 @@ if __name__ == "__main__":
 
 
 class TestMonthlyFields(unittest.TestCase):
-    """Plan 32: meta.start, Person.birth and At.month are supported."""
+    """``meta.start``, ``Person.birth`` and ``At.month`` are supported."""
 
     def test_start_birth_and_event_months_reach_the_model(self):
         data = minimal(birth="1986-04", age=40)

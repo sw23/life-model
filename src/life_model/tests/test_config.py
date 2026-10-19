@@ -12,10 +12,10 @@ from ..tax.federal import FilingStatus
 
 
 class TestFinancialConfigApi(unittest.TestCase):
-    """FinancialConfig exposes typed access only; the old dict API is gone."""
+    """FinancialConfig exposes typed access only; there is no untyped dict API."""
 
     def test_untyped_dict_api_removed(self):
-        """set/update/get_all used to write to a dict nothing read (silent no-ops); get() was deprecated."""
+        """There is no get/set/update/get_all: a write through an untyped dict would reach no reader."""
         config = FinancialConfig()
         for name in ("get", "set", "update", "get_all"):
             self.assertFalse(hasattr(config, name), msg=f"FinancialConfig.{name} should not exist")
@@ -301,7 +301,7 @@ class TestYearIndexedTax(unittest.TestCase):
 
 
 class TestYearConfig(unittest.TestCase):
-    """Simulated years read tax parameters and limits from the year table (Plan 05 D2)."""
+    """Simulated years read tax parameters and limits from the year table."""
 
     def test_published_year_values_are_in_effect(self):
         from ..model import LifeModel
@@ -328,7 +328,7 @@ class TestYearConfig(unittest.TestCase):
         self.assertEqual(model.config_for_year(2030).tax.federal.standard_deduction.single, 16100)
 
     def test_scenario_static_override_applies_to_every_year(self):
-        """Regression: high_tax's static brackets must reach simulated years, not just the fallback."""
+        """high_tax's static brackets must reach simulated years, not just the fallback."""
         from ..model import LifeModel
         from ..tax.federal import FilingStatus, get_federal_tax_brackets
 
@@ -353,7 +353,7 @@ class TestYearConfig(unittest.TestCase):
 
 
 class TestPlan529ConfigFlows(unittest.TestCase):
-    """Regression: the accounts.plan_529 block is validated and reaches consumers."""
+    """The accounts.plan_529 block is validated and reaches consumers."""
 
     def test_plan_529_defaults_present(self):
         config = FinancialConfig()

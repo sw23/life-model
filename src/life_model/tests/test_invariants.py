@@ -3,9 +3,9 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""The invariant checker (Plan 29 D4): every packaged example and broad scenario passes under
-``checks="strict"``, each invariant catches the violation it exists for, and the cash-floor rule
-flags the pre-Plan-26 married-homeowner waterfall."""
+"""The invariant checker: every packaged example and broad scenario passes under ``checks="strict"``,
+each invariant catches the violation it exists for, and the cash-floor rule flags a married unit that
+sells brokerage while a spouse's bank still holds cash."""
 
 import unittest
 import warnings
@@ -64,7 +64,7 @@ class TestExamplesAndScenariosAreClean(unittest.TestCase):
             "renter_buys_home": scenarios.renter_buys_home,
             "mortality_and_estate": scenarios.mortality_and_estate,
         }
-        # Seeds 4, 7 and 11 used to over-sell brokerage in a year with a capital-loss carryforward.
+        # Seeds 4, 7 and 11 reach a year with a capital-loss carryforward, where the sale must not over-sell.
         for seed in (1, 4, 7, 11, 22):
             builders[f"stochastic_retiree_{seed}"] = lambda seed=seed: scenarios.stochastic_retiree(seed)
             builders[f"everything_stochastic_{seed}"] = lambda seed=seed: scenarios.everything_stochastic(seed)
@@ -280,10 +280,11 @@ class TestEachInvariant(unittest.TestCase):
             self.assertIn(name, found)
 
 
-class TestCashFloorRegressionGuard(unittest.TestCase):
-    """Before Plan 26 each spouse settled through their own waterfall: the head sold brokerage to pay
-    the household's bills while the spouse's bank still held cash. Reconstructing that sizing (the
-    unit sees only the head's bank) must trip ``no_draw_above_cash_floor``; the real engine must not."""
+class TestCashFloorCatchesAPerSpouseWaterfall(unittest.TestCase):
+    """A married unit pays from every member's bank before selling anyone's brokerage. A per-spouse
+    waterfall (the unit sees only the head's bank) sells the head's brokerage to pay the household's bills
+    while the spouse's bank still holds cash: simulating it must trip ``no_draw_above_cash_floor``; the
+    real engine must not."""
 
     def _couple(self) -> LifeModel:
         model = LifeModel(start_year=2026, end_year=2027)
@@ -310,7 +311,7 @@ class TestCashFloorRegressionGuard(unittest.TestCase):
         sales = [e.year for e in model.event_log.list if e.kind.value == "forced_sale"]
         self.assertEqual(sorted(set(sales)), [2027])
 
-    def test_pre_plan_26_waterfall_is_flagged(self):
+    def test_head_only_waterfall_is_flagged(self):
         model = self._couple()
         # The unit sees (sizes against, and pays from) only the head's bank.
         head_only = property(lambda self: self.members[0].bank_account_balance)
@@ -327,7 +328,7 @@ class TestCashFloorRegressionGuard(unittest.TestCase):
 
 class TestBrokerageSizingWithCarryforward(unittest.TestCase):
     """The sale that funds the year is sized against the gains *after* a prior-year loss carryforward
-    nets them, so nothing is over-sold into the bank (found by ``no_draw_above_cash_floor``)."""
+    nets them, so nothing is over-sold into the bank (``no_draw_above_cash_floor`` would flag it)."""
 
     def test_no_cash_left_after_a_netted_sale(self):
         model = LifeModel(start_year=2026, end_year=2026, checks="strict")

@@ -60,7 +60,7 @@ class TestTaxLots(unittest.TestCase):
 
     def test_growth_is_untaxed_until_sale(self):
         account = BrokerageAccount(self.person, company="B", balance=10000, growth_pct=10)
-        run_months(self.model, account.apply_growth)  # a year of monthly growth (Plan 32)
+        run_months(self.model, account.apply_growth)  # a year of monthly growth
         self.assertEqual(account.balance, 11000)
         self.assertEqual(account.cost_basis, 10000)
         self.assertEqual(account.unrealized_gain, 1000)
@@ -165,7 +165,7 @@ class TestDividends(unittest.TestCase):
     def test_dividend_splits_total_return_without_changing_it(self):
         account = BrokerageAccount(self.person, company="B", balance=10000, growth_pct=7, dividend_yield_pct=2)
         run_months(self.model, account.apply_growth)
-        # Total return is still 7%: appreciation plus a 2% dividend that is reinvested. Plan 32: the
+        # Total return is still 7%: appreciation plus a 2% dividend that is reinvested. The
         # dividend is paid quarterly (0.5% of the balance at the start of March, June, ...).
         self.assertAlmostEqual(account.balance, 10700.0, places=6)
         self.assertAlmostEqual(self.person.income.preferential_income, _quarterly_dividends(10000), places=6)
@@ -175,7 +175,7 @@ class TestDividends(unittest.TestCase):
     def test_reinvested_dividend_gets_full_basis(self):
         account = BrokerageAccount(self.person, company="B", balance=10000, growth_pct=7, dividend_yield_pct=2)
         run_months(self.model, account.apply_growth)
-        # $10,000 original basis plus the dividends (four quarterly ones, Plan 32) reinvested at cost.
+        # $10,000 original basis plus the dividends (four quarterly ones) reinvested at cost.
         dividends = _quarterly_dividends(10000)
         self.assertAlmostEqual(account.cost_basis, 10000 + dividends, places=6)
         self.assertAlmostEqual(account.unrealized_gain, 700.0 - dividends, places=6)
@@ -428,7 +428,7 @@ class TestWithdrawalSolverWithGains(unittest.TestCase):
 
 
 def _settle_a_year(person) -> None:
-    """Plan 32: the month's bills are paid monthly and the year's taxes in December."""
+    """The month's bills are paid monthly and the year's taxes in December."""
     unit = TaxUnit([person])
     run_months(person.model, unit.settle_month)
     unit.settle_year()
@@ -504,7 +504,7 @@ if __name__ == "__main__":
 
 
 class TestRothVersusBrokerageOverThirtyYears(unittest.TestCase):
-    """Plan 22 acceptance: identical saving into a Roth IRA vs a taxable brokerage diverges as the
+    """Identical saving into a Roth IRA vs a taxable brokerage diverges as the
     tax code says it should over a 30-year horizon."""
 
     def _run(self, use_roth: bool):
@@ -545,7 +545,7 @@ class TestRothVersusBrokerageOverThirtyYears(unittest.TestCase):
         gain = brokerage.unrealized_gain
         self.assertGreater(gain, 0)
         brk_person.withdraw_from_brokerage_accounts(brokerage.balance)
-        # Plan 32: dividend lots reinvested in the last 12 months (quarterly) sell at a short-term gain.
+        # Dividend lots reinvested in the last 12 months (quarterly) sell at a short-term gain.
         short_term = brk_person.income.totals_by_type()[IncomeType.SHORT_TERM_CAPITAL_GAIN]
         self.assertAlmostEqual(brk_person.preferential_income + short_term, gain, places=2)
         self.assertLess(short_term, 0.01 * gain)

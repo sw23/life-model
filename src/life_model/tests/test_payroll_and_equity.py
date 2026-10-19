@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Plan 27 PR B: jobs and payroll as the pay stub and offer letter show them.
+"""Jobs and payroll as the pay stub and offer letter show them.
 
 Pre-tax payroll deductions (§125 premiums, health FSA, HSA through payroll, employer HSA, commuter), job
 start and end, structured bonuses and raise schedules, existing RSU grants and the ESPP. Dollar assertions

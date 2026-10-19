@@ -33,7 +33,7 @@ from ..spec.schema import NYS_KEY, At
 from .spec_helpers import minimal, spec_of
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-# Every packaged example is buildable since Plan 31 (self_employed was the not-yet-supported one).
+# Every packaged example is buildable.
 RUNNABLE_EXAMPLES = EXAMPLES
 
 
@@ -78,8 +78,8 @@ class TestSchema(unittest.TestCase):
         self.assertEqual(schema["title"], "HouseholdSpec")
         self.assertIn("$defs", schema)
         json.dumps(schema)  # serializable as-is
-        # Not-yet-supported fields are flagged in the schema itself (Plan 27 made every mortgage field
-        # supported; group life is still declared ahead of the engine).
+        # Not-yet-supported fields are flagged in the schema itself (group life is declared ahead of the
+        # engine).
         self.assertIn(NYS_KEY, json.dumps(schema["$defs"]["LifeInsurance"]))
 
     def test_every_rate_field_ends_in_pct(self):
@@ -147,14 +147,14 @@ class TestExamples(unittest.TestCase):
                 self.assertEqual([str(f) for f in validate_spec(load_example(name))], [])
 
     def test_self_employed_is_supported(self):
-        """Plan 31 made the example buildable; a spec using a not-yet-supported field is still rejected."""
+        """The self-employed example is buildable; a spec using a not-yet-supported field is rejected."""
         from .spec_helpers import not_yet_supported
 
         self.assertEqual(validate_spec(load_example("self_employed")), [])
         findings = validate_spec(HouseholdSpec.model_validate(not_yet_supported()))
         self.assertTrue(findings)
         self.assertTrue(all(f.code == "not_yet_supported" for f in findings), findings)
-        self.assertTrue(any("Plan 27" in f.message for f in findings))
+        self.assertTrue(all("not yet supported" in f.message.lower() for f in findings), findings)
 
     def test_load_build_extract_dump_is_stable(self):
         for name in RUNNABLE_EXAMPLES:

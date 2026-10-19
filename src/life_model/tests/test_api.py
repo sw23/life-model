@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""The one-call functions (Plan 30 D2): life_model.run/validate/explain/compare and helpers."""
+"""The one-call functions: life_model.run/validate/explain/compare and helpers."""
 
 import tempfile
 import unittest
@@ -48,7 +48,7 @@ class TestLoadSpec(unittest.TestCase):
             api.example_spec("nope")
         rows = {row["name"]: row for row in api.list_examples()}
         self.assertTrue(rows["single_renter"]["runnable"])
-        # Plan 31 made the self-employed example buildable (it was the not-yet-supported example).
+        # Every packaged example is buildable, the self-employed one included.
         self.assertTrue(rows["self_employed"]["runnable"])
         self.assertFalse(rows["self_employed"]["blocked_by"])
 

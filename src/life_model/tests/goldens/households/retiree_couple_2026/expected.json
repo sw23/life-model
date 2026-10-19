@@ -90,7 +90,7 @@
     "1040:24c": 3.5
   },
   "xfail": {
-    "spending:medicare_premiums_annual": "missing_input (Plan 27): the spec cannot carry the 2024 MAGI the 2026 IRMAA tier is based on; the engine has no AGI history before its first year and charges the base premium"
+    "spending:medicare_premiums_annual": "missing_input: the spec cannot carry the 2024 MAGI the 2026 IRMAA tier is based on; the engine has no AGI history before its first year and charges the base premium"
   },
   "prior_magi": {
     "2024": 230000
