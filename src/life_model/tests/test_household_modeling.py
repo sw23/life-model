@@ -535,7 +535,7 @@ class TestStatementTiming(unittest.TestCase):
         )  # taxed at maturity, with its own interest
 
 
-FIXTURE = Path(__file__).parent / "fixtures" / "dogfood_household.yaml"
+FIXTURE = Path(__file__).parent / "fixtures" / "two_earner_household.yaml"
 #: The warnings the dogfood household keeps on purpose for the strict runs (each is asserted separately).
 KEPT = ["cash_not_invested", "default_child_costs", "no_health_coverage", "ss_estimate_assumes_work"]
 
