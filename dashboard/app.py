@@ -27,7 +27,7 @@ from life_model.spec import HouseholdSpec, populate_model
 SCENARIO_DEFAULT_LABEL = "(default)"
 
 # State-of-residence choices for the state dropdown: the packs shipped in the packaged defaults.
-# DEFAULT (the legacy flat rate) stays first so it is the dropdown's default selection.
+# DEFAULT (the flat-rate pack) stays first so it is the dropdown's default selection.
 STATE_CHOICES = [DEFAULT_STATE_KEY] + sorted(
     code for code in FinancialConfig().tax.state.packs if code != DEFAULT_STATE_KEY
 )
@@ -271,8 +271,10 @@ def _scenario_value(raw: Any) -> str | None:
 
 
 def _state_value(raw: Any) -> str:
-    """Map the state dropdown selection to a Person ``state`` (``DEFAULT``, the flat-rate pack, chosen explicitly
-    when nothing is selected: Plan 31 D4)."""
+    """Map the state dropdown selection to a Person ``state``.
+
+    With nothing selected the person gets ``DEFAULT`` (the flat-rate pack), passed explicitly rather than left to
+    the config's default state."""
     value = param_value(raw)
     if value is None:
         return DEFAULT_STATE_KEY
@@ -297,7 +299,7 @@ class DashboardLifeModel(LifeModel):
             collect="month",
         )
         if self.household_spec is None:
-            Family(self)  # nobody enabled: an empty family, as before
+            Family(self)  # nobody enabled: an empty family
             return
         # The sliders bound every value, and a retirement age below the current age is allowed (the
         # person retires in the first year), so the build skips the validator's errors.
