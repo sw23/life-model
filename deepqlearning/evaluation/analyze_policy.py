@@ -15,11 +15,11 @@ Turns a black-box checkpoint into human-checkable pictures of *what the policy d
   year of age across eval episodes.
 * **Lifetime trace** — one annotated episode: a year-by-year table of age, net worth, action, and
   reward, saved as JSON and rendered as a net-worth-over-life figure.
-* **Policy vector by age** (factored action space, Plan 32 D8) — the standing policies the agent
+* **Policy vector by age** (factored action space) — the standing policies the agent
   keeps in force at each age: per slot, the modal value across greedy episodes and the share of
   decisions at that age that held it, as a table (``policy_vector_by_age.txt`` / ``.json``) and a
-  slot x age figure. This replaces the action-category heatmap and the dollar schedule, which
-  describe one-off money moves the factored agent does not make.
+  slot x age figure. For a factored agent it takes the place of the action-category heatmap and the
+  dollar schedule, which describe one-off money moves the factored agent does not make.
 
 All figures are written with the headless Agg backend, so artifacts generate on servers/CI. The
 functions return the underlying data too, so a notebook can render them inline.

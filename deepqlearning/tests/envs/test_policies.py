@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""The factored standing-policy action space (Plan 32 D8): slots, masks, and the engine objects
+"""The factored standing-policy action space: slots, masks, and the engine objects
 each slot sets."""
 
 import unittest

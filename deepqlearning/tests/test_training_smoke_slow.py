@@ -16,8 +16,7 @@ and robust across platforms/torch builds:
   comparison flips with the seed and platform.
 
 The gap to ``save_25_percent`` is printed, not asserted: at 150 (or even 400) episodes the agent
-beats it on only 2-3 of 6 seeds, so asserting it fails on noise (it was the comparison failing on
-this branch before the retirement-income world, too).
+beats it on only 2-3 of 6 seeds, so asserting it fails on noise.
 
 The smoke test deliberately does not assert that eval return "improves over the first third" of
 training: at 150 episodes the eval trajectory on ``retirement_security`` is dominated

@@ -7,7 +7,7 @@ scenario is reachable by name.
 ```bash
 python -m deepqlearning.train --env financial:basic      --algo dqn --total-env-steps 200000 --num-envs 8
 python -m deepqlearning.train --env financial:mid_career --algo ppo --total-env-steps 200000
-# the factored standing-policy actions (Plan 32), decided every quarter
+# the factored standing-policy actions, decided every quarter
 python -m deepqlearning.train --env financial:basic --algo ppo --action-space factored --decision-interval quarter
 ```
 
@@ -50,15 +50,15 @@ entry point arrange that themselves.
 | `financial` (= `financial:basic`) | financial | `Box(40,)` (flat), `Box(51,)` (factored) | `Discrete(52)` (flat, default) or `MultiDiscrete([7,7,4,3,4,6,5,3,3,4])` (factored) | one simulated year per step by default (`decision_interval`) |
 | `financial:high_earner`, `financial:low_earner`, `financial:mid_career` | financial | " | " | different point households |
 
-Two env-config keys choose the decision problem (Plan 32 D8/D9):
+Two env-config keys choose the decision problem:
 
 - `action_space`: `"flat"` (default) is one one-off money move per decision (`Discrete(52)`, below);
   `"factored"` is a vector of **standing policies** that persist until changed (see
   [Factored action space](#factored-action-space--standing-policies)).
 - `decision_interval`: `"year"` (default), `"quarter"` or `"month"` — how many monthly model steps one
-  `env.step` simulates. `"year"` is exactly the pre-Plan-32 episode (one step per year,
-  `max_age - start_age` steps; a test drives a twin env with `model.step_year()` and checks every
-  reward and observation matches); quarterly and monthly episodes are 4x and 12x longer.
+  `env.step` simulates. `"year"` is one step per year (`max_age - start_age` steps; a test drives a
+  twin env with `model.step_year()` and checks every reward and observation matches); quarterly and
+  monthly episodes are 4x and 12x longer.
 
 ```python
 from deepqlearning.envs.registry import make_env, make_vector_env
@@ -160,8 +160,8 @@ twelve months by default (income, account growth, RMDs, taxes, death), three or 
 
 **Reward over an interval.** A step earns the CRRA utility of the yearly spending rate in force at
 the end of the interval (deflated to the start of the next month), weighted by `months / 12`, plus
-the terminal bequest or ruin term. With yearly decisions the weight is 1 and the reward is
-bit-for-bit the pre-Plan-32 one. The spending rate is read from `Spending`, not from a flow stat, so
+the terminal bequest or ruin term. With yearly decisions the weight is 1, so a step earns the
+year's utility. The spending rate is read from `Spending`, not from a flow stat, so
 the December tax settlement and the year-end reset of flow stats inside a quarter cannot distort
 it; four quarters at a constant real spending rate earn one year's utility. Two consequences when
 comparing intervals: returns are only comparable within an interval (a quarterly episode stops
@@ -178,8 +178,8 @@ per step, so use `gamma ** (1/4)` per quarter to keep the yearly discount.
   estate settlement) inside the reward-visible world.
 - **The economy is stochastic by default.** Correlated equity/bond/inflation draws each year
   (seeded, reproducible); `{"economy_mode": "fixed"}` restores constant rates for unit tests.
-  The 401k grows with the economy's equity return like every other account (it was pinned at a
-  fixed 6%), spending grows with inflation, and wages with the economy's wage growth.
+  The 401k grows with the economy's equity return like every other account, spending grows with
+  inflation, and wages with the economy's wage growth.
 - **Named economy scenarios are overlays.** `economy_scenario` (e.g. `recession`) layers the
   scenario on the stochastic economy (`envs/financial/economy_overlay.py`): level overrides shift
   the draws for `scenario_regime_years` (default 10) and path overrides script their listed
@@ -195,12 +195,14 @@ per step, so use `gamma ** (1/4)` per quarter to keep the yearly discount.
 - **After-tax terminal wealth.** With `bequest_pretax_tax_rate` set (0.22 in every named
   `financial:*` env; 0.0 in the bare `FinancialLifeEnv()` used by unit tests), the bequest the
   reward values and the terminal net worth the protocol reports count pre-tax 401k, traditional
-  IRA and HSA balances net of that tax, since heirs pay it. Counting them at face value made
+  IRA and HSA balances net of that tax, since heirs pay it. Counting them at face value would make
   deferring tax look like creating wealth. Ruin is still decided on raw net worth.
 - **Savings boost.** `savings_boost_pct` cuts working-years spending by that many points of
   salary and restores it at retirement (a plan lever the SLM adviser uses).
-- **Early-withdrawal penalties** (10% before age 59.5 on tax-advantaged accounts) are applied
-  at the action level, pending the core penalty backlog item.
+- **Early-withdrawal penalties** (10% before age 59.5) are charged by the core model and settled
+  with the year's taxes, except on Roth 401k withdrawals: the action deducts 10% of the whole
+  withdrawal from the bank (a conservative stand-in for the pro-rata earnings rule; see
+  `envs/financial/actions.py`).
 
 ### Flat action space — `Discrete(52)` (default)
 
@@ -236,8 +238,8 @@ executes successfully.
 
 `action_space="factored"` (`envs/financial/policies.py`) replaces the one-off moves with ten slots,
 each a small discrete choice that **persists until changed**; index 0 of every slot is `NO_CHANGE`,
-so "do nothing" is cheap. Each slot maps onto the core engine's standing-policy objects (Plan 27 D4,
-`life_model/policies.py`), so the engine carries the policy out month by month and posts every
+so "do nothing" is cheap. Each slot maps onto the core engine's standing-policy objects
+(`life_model/policies.py`), so the engine carries the policy out month by month and posts every
 dollar; nothing moves money at decision time.
 
 | Slot | Values (after `no_change`) | Engine object |
@@ -327,8 +329,9 @@ Outputs are keyed `{env}_{algo}` under `models/`, `results/`, and `plots/`, so r
 pairings never overwrite each other.
 
 > **Checkpoint compatibility:** DQN checkpoints carry `MODEL_VERSION` (currently **5**) and the
-> environment's `obs_version` (currently **5**: Plan 32 added the two decision-timing features), saved as tensor-only `.pt` files plus a `.history.json` sidecar so
-> they load under modern PyTorch defaults (`torch.load(..., weights_only=True)`). Loading a
+> environment's `obs_version` (currently **5**: the layout above, including the two decision-timing
+> features), saved as tensor-only `.pt` files plus a `.history.json` sidecar so they load under
+> modern PyTorch defaults (`torch.load(..., weights_only=True)`). Loading a
 > checkpoint from a different version **fails with a clear error** — a checkpoint's weights are tied
 > to a specific observation layout, action space, and reward scale. An environment with no versioned
 > observation layout leaves `obs_version` unset and the gate off. REINFORCE and
@@ -363,7 +366,7 @@ Roth (`brokerage_first`), `emergency_fund_first` holds cash below six months of 
 factored baseline claims Social Security at the household's configured age, as the flat env does on
 its own, so the factored `do_nothing` reproduces the flat `do_nothing` episode exactly (tested). `always_max_401k` is part of the bar too (`PLANNER_BASELINES`): it scored at least
 as well as every planner heuristic, and a bar that leaves out the strongest scripted policy
-certifies nothing. `do_nothing` / `save_25_percent` remain as regression detectors.
+certifies nothing. `do_nothing` / `save_25_percent` serve as regression detectors.
 
 ## 🔬 Evaluation protocol & reading the report
 
@@ -398,10 +401,10 @@ the bar, so it carries training-seed variance.
 
 ### Committed reports and the algorithm sweep (default preset)
 
-Every committed report was regenerated on the Plan 32 monthly engine (an env step runs twelve monthly
-model steps; the flat yearly env is bit-identical to driving the model with `step_year()`), with
-`--protocol-n-eval 200`. Seeds 0-4 were fixed before the sweeps ran. `reports/algorithm_sweep.txt` lists
-every run, the pooled verdicts and the comparison with the previous (annual-engine) sweep;
+Every committed report except the SB3 cross-check comes from the monthly engine (an env step runs
+twelve monthly model steps; the flat yearly env is bit-identical to driving the model with `step_year()`),
+with `--protocol-n-eval 200`. Seeds 0-4 were fixed before the sweeps ran. `reports/algorithm_sweep.txt`
+lists every run, the pooled verdicts and, for reference, a sweep on an earlier yearly-step engine;
 `reports/retirement_security/` (flat DQN) and `reports/retirement_security_ppo/` (flat PPO) hold the
 seed-0 protocol report, the pooled report and the policy-analysis artifacts;
 `reports/factored_ppo_year/` and `reports/factored_ppo_quarter/` hold the same for PPO on the factored
@@ -417,18 +420,18 @@ Train condition, pooled over the five seeds: the paired gap of the agent's mean 
 policy in the bar (flat bar: `always_max_401k`, 35.30; factored bar: `contribution_waterfall`, 35.31;
 quarterly factored bar 34.94), Student-t 95% interval over seeds:
 
-| Configuration | Pooled gap | Runs above the bar | Previous sweep (annual engine) |
-|---|---|---|---|
-| DQN, flat, yearly | **+0.19 [+0.01, +0.38]: passes** | 4/5 | -0.39 [-2.11, +1.33] |
-| PPO, flat, yearly | -0.57 [-1.37, +0.22] | 0/5 | +0.11 [-0.36, +0.59] |
-| PPO, factored, yearly | -0.66 [-1.56, +0.24] | 1/5 | — |
-| PPO, factored, quarterly | -0.79 [-2.65, +1.08] | 2/5 | — |
+| Configuration | Pooled gap | Runs above the bar |
+|---|---|---|
+| DQN, flat, yearly | **+0.19 [+0.01, +0.38]: passes** | 4/5 |
+| PPO, flat, yearly | -0.57 [-1.37, +0.22] | 0/5 |
+| PPO, factored, yearly | -0.66 [-1.56, +0.24] | 1/5 |
+| PPO, factored, quarterly | -0.79 [-2.65, +1.08] | 2/5 |
 
-The flat DQN sweep is the Plan 32 regression check: no regression against the committed reports (the
-absolute returns moved with the engine, e.g. the bar from 33.50 to 35.30, so the comparison is the gap
-to the bar). DQN's pooled interval now clears zero, but narrowly, and the winning runs again do it
-partly by **spending more**: seed 0 has a 0.5% ruin rate and a median estate of $850k against
-always-max's $1.07M (`protocol_table.txt`). Flat PPO lands just under the bar on every seed.
+DQN's pooled interval clears zero, but narrowly, and the winning runs do it partly by **spending
+more**: seed 0 has a 0.5% ruin rate and a median estate of $850k against
+always-max's $1.07M (`protocol_table.txt`). Flat PPO lands just under the bar on every seed. Treat the
+DQN pass as fragile: on the earlier yearly-step engine (same protocol and seeds) the verdicts were
+reversed, DQN -0.39 [-2.11, +1.33] and PPO +0.11 [-0.36, +0.59] (`reports/algorithm_sweep.txt`).
 
 **Factored space: not the default.** On the same engine, seeds and protocol, factored PPO scores like
 flat PPO (mean agent return over the seeds 34.64 vs 34.72; the best factored and flat heuristics are
@@ -437,12 +440,12 @@ only configuration whose pooled interval clears zero. What the factored space bu
 — the yearly agent's policy reads as "defer 15% pre-tax and 15% Roth, fund a traditional IRA, convert to
 the top of the 22% bracket while working, claim at retirement, draw taxable before pre-tax before Roth"
 (`reports/factored_ppo_year/policy_vector_by_age.txt`) — and the shared vocabulary with the adviser,
-not return. It stays opt-in (`--action-space factored`).
+not return. It is opt-in (`--action-space factored`).
 
-An independent Stable-Baselines3 cross-check (`reports/sb3_cross_check/`, run on the annual engine before
-Plan 32 and not regenerated; seed 0, 200k timesteps,
-no action masking, n=50) found the same pattern then: SB3 PPO 34.49 and SB3 DQN 34.17, both with no ruin, against
-always-max's 34.66 on the same 50 seeds.
+An independent Stable-Baselines3 cross-check (`reports/sb3_cross_check/`, produced on the earlier
+yearly-step engine, so its returns are on that engine's scale; seed 0, 200k timesteps, no action masking,
+n=50) found neither external algorithm above the bar: SB3 PPO 34.49 and SB3 DQN 34.17, both with no ruin,
+against always-max's 34.66 on the same 50 seeds.
 
 ## 🏋️ Training-stack features
 

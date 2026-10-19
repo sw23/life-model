@@ -1,5 +1,5 @@
-Factored standing-policy actions (Plan 32 D8/D9) - PPO on financial:basic, retirement_security
-=================================================================================================
+Factored standing-policy actions and decision intervals - PPO on financial:basic, retirement_security
+=====================================================================================================
 
 Action space. MultiDiscrete nvec = [7, 7, 4, 3, 4, 6, 5, 3, 3, 4]: ten slots (pretax_401k_rate,
 roth_401k_rate, ira_contribution, hsa_contribution, sweep_policy, spending_adjust, withdrawal_order,

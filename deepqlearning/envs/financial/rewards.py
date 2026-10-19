@@ -21,7 +21,7 @@ Design notes:
   deflation correctness, ruin alignment).
 * **No double discounting.** Time preference is the algorithm's ``gamma`` alone. The per-year reward
   is the *undiscounted* utility of that year's consumption; the optimizer discounts across steps.
-  With sub-year decisions (Plan 32 D9) a step earns ``months / 12`` of the year's utility, and
+  With sub-year decisions a step earns ``months / 12`` of the year's utility, and
   ``gamma`` is per step (``gamma ** 4`` per year at quarterly decisions).
 * **CRRA.** ``u(x) = (x**(1-g) - 1)/(1-g)`` for risk-aversion ``g != 1`` and ``log(x)`` at
   ``g == 1``. It is increasing and concave for ``x > 0`` and every ``g >= 0``, so more real
@@ -32,8 +32,8 @@ Design notes:
 conclusions materially, so they are configuration recorded in the eval report, never buried
 constants):
 
-* ``wealth_max`` — bequest-dominant; approximates the old wealth-accumulation objective so the new
-  and old worlds are comparable.
+* ``wealth_max`` — bequest-dominant; a wealth-accumulation objective, kept as a comparison point for
+  the consumption-based presets.
 * ``retirement_security`` — *the default*; ruin-avoidance dominant (large ruin penalty, moderate
   risk aversion, modest bequest).
 * ``smooth_consumption`` — high CRRA risk aversion, so the policy is pushed toward a smooth

@@ -110,7 +110,7 @@ def test_search_scores_default_variants_and_a_combination():
     assert all(Plan.parse(n) is not None for n in names)
 
 
-# --- the plan in the RL env's standing-policy vocabulary (Plan 32 D8) ---
+# --- the plan in the RL env's standing-policy vocabulary ---
 
 
 def _factored_env(**config) -> FinancialLifeEnv:

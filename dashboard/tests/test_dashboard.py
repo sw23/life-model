@@ -206,8 +206,8 @@ def test_scenario_default_label_uses_packaged_defaults():
 
 
 def test_state_dropdown_maps_to_person_state():
-    """The state dropdown sets Person.state; DEFAULT is passed explicitly (Plan 31 D4: the flat-rate pack is a
-    deliberate choice, with the same numbers as the config default it used to fall back to)."""
+    """The state dropdown sets Person.state; DEFAULT (the flat-rate pack) is passed explicitly as a deliberate
+    choice, with the same numbers as the config's default state."""
     assert app.model_params["state"]["value"] == "DEFAULT"
     assert "CA" in app.model_params["state"]["values"]
     assert app._state_value("DEFAULT") == "DEFAULT"
@@ -283,7 +283,7 @@ def test_healthcare_toggle_default_off_and_opt_in():
 
 
 def test_dashboard_models_conserve_money():
-    """Every dollar the dashboard's household gains or loses is on the ledger (Plan 28)."""
+    """Every dollar the dashboard's household gains or loses is on the ledger."""
     from life_model.checks import assert_conservation
 
     for kwargs in ({}, {"home_enabled": True, "healthcare_enabled": True, "scenario": "recession"}):
@@ -293,12 +293,12 @@ def test_dashboard_models_conserve_money():
         assert result.model_frame["Net Worth"].notna().all()
 
 
-# --- Plan 25: the dashboard builds through life_model.spec ------------------------------------
+# --- the dashboard builds through life_model.spec ---------------------------------------------
 
 
-def _legacy_single_person_model(prefix, **kwargs):
-    """The pre-spec dashboard construction for one person (verbatim core calls, as of the Plan 26
-    merge), for parity checks."""
+def _direct_single_person_model(prefix, **kwargs):
+    """The same one-person household built with direct core constructor calls, for parity checks against the
+    spec builder."""
     from life_model.account.bank import BankAccount
     from life_model.account.job401k import Job401kAccount
     from life_model.healthcare import LongTermCare, MedicalCosts, Medicare
@@ -338,8 +338,7 @@ def _legacy_single_person_model(prefix, **kwargs):
             job=job,
             pretax_balance=d["retirement_balance"],
             pretax_contrib_pct=d["retirement_contrib"],
-            # As the pre-spec dashboard wrote it after Plan 26 (fourth-wave 18ece11): a dollar-for-dollar
-            # match up to the slider's percent of pay.
+            # The company-match slider is a dollar-for-dollar match up to its percent of pay.
             match_tiers=[(100, d["company_match"])] if d["company_match"] > 0 else None,
             growth_pct=d["retirement_growth"],
         )
@@ -398,21 +397,21 @@ def _legacy_single_person_model(prefix, **kwargs):
         ("john", {"john_retirement_enabled": False, "healthcare_enabled": True, "start_year": 2026, "end_year": 2066}),
     ],
 )
-def test_single_person_dashboard_matches_legacy_construction(prefix, params):
-    """One person (no marriage involved) builds exactly as the hand-written construction did."""
+def test_single_person_dashboard_matches_direct_construction(prefix, params):
+    """One person (no marriage involved) builds exactly as the direct constructor calls do."""
     other = "jane" if prefix == "john" else "john"
     model = DashboardLifeModel(**{**params, f"{other}_enabled": False})
-    legacy = _legacy_single_person_model(prefix, **params)
-    for m in (model, legacy):
+    direct = _direct_single_person_model(prefix, **params)
+    for m in (model, direct):
         m.random.seed(11)  # long-term care draws from the model RNG
         m.run()
-    new_df = model.datacollector.get_model_vars_dataframe()
-    legacy_df = legacy.datacollector.get_model_vars_dataframe()
-    assert new_df.equals(legacy_df)
+    spec_df = model.datacollector.get_model_vars_dataframe()
+    direct_df = direct.datacollector.get_model_vars_dataframe()
+    assert spec_df.equals(direct_df)
 
 
 def test_couple_is_married_and_files_jointly(couple_model):
-    """Plan 25 D6: the dashboard's two adults are a married couple filing one joint return."""
+    """The dashboard's two adults are a married couple filing one joint return."""
     from life_model.people.tax_unit import TaxUnit
     from life_model.tax.federal import FilingStatus
 
@@ -443,7 +442,7 @@ def test_nobody_enabled_builds_an_empty_family():
 
 
 def test_one_step_is_a_year_and_months_feed_the_liquidity_chart():
-    """Plan 32: the engine is monthly; a dashboard Step simulates a year and collects its months."""
+    """The engine is monthly; a dashboard Step simulates a year and collects its months."""
     import solara
 
     model = DashboardLifeModel(start_year=2023, end_year=2025, jane_enabled=False)

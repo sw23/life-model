@@ -45,8 +45,8 @@ are used. Called without `config`, a helper falls back to the packaged defaults
 ### The deprecated global `config`
 
 `life_model.config.config_manager.config` is deprecated and emits a
-`DeprecationWarning` on use. It never affected `LifeModel` instances, which own
-their config; mutating it only changed the fallback used by helpers called without
+`DeprecationWarning` on use. It does not affect `LifeModel` instances, which own
+their config; mutating it only changes the fallback used by helpers called without
 `config`. Pass `LifeModel(config=..., scenario=...)` instead. It will be removed in
 a future release.
 
@@ -64,8 +64,8 @@ Read values through the typed properties on `FinancialConfig`:
 | `config.debt` | credit card defaults |
 | `config.equity_comp` | stock compensation vesting defaults |
 
-The dot-notation accessor `config.get("tax.state.tax_rate")`, deprecated since
-v0.3.1, has been removed; use the typed properties above.
+There is no dot-notation accessor (`config.get("tax.state.tax_rate")`); use the
+typed properties above.
 
 ## Authoring scenarios
 
@@ -105,7 +105,7 @@ describes one state's tax; a person opts in with the keyword-only
 `tax.state.default_state` (packaged default: `DEFAULT`, the flat rate on the
 federal-style base). `DEFAULT` is a deliberate choice: a state code without a
 pack raises `UnknownStateError` when the person is built (and is a spec
-validation error); nothing falls back silently (Plan 31 D4). A married couple
+validation error); nothing falls back silently. A married couple
 files in the head-of-unit's state; a year in which the head moved files
 part-year returns (below).
 
@@ -120,7 +120,7 @@ tax:
         retirement_income_taxable: false   # exempt pre-tax 401k/IRA distributions & RMDs
         ss_taxable: false                  # exempt the taxable portion of Social Security
       NJ:
-        years:                         # one full pack per tax year (Plan 31)
+        years:                         # one full pack per tax year
           2025:
             brackets:                  # ... OR progressive [lower, upper, rate] rows
               single: [[0, 20000, 1.4], [20001, 35000, 1.75], ...]   # last upper .inf
@@ -177,7 +177,7 @@ way). `TaxReturn.state_return.parts` lists each state's share; states with
 other part-year methods are approximated by this one.
 
 **Packs.** CA, NY (2025 and 2026, with head-of-household schedules; California's
-exemption credits) and the eleven added by Plan 31 (OH, GA, NC, MI, NJ, VA, AZ,
+exemption credits) and eleven more (OH, GA, NC, MI, NJ, VA, AZ,
 TN, IN, MO, MD: 2025 and 2026, from each state's revenue department; the ten
 next-largest states by Census Bureau Vintage 2025 estimates, plus Maryland,
 11th) are year-keyed; TX, FL, WA, PA, IL and MA are single 2025-vintage packs.
@@ -191,16 +191,16 @@ rows double the thresholds), Arizona's dependent credit phase-out and public
 pension subtraction, New Jersey's pension exclusion between $100,000 and $150,000
 of income (the full cap applies to $150,000), Maryland's 2% capital gain surtax.
 Georgia's retirement exclusion is applied to retirement income only (the state
-also lets it cover investment income and $5,000 of wages). The packs' items marked
-`TODO(verify)` (2026 amounts the states had not published by October 2026) are
-listed in [rebaseline-plan-31.md](rebaseline-plan-31.md).
+also lets it cover investment income and $5,000 of wages). Pack items marked
+`TODO(verify)` in the YAML are 2026 amounts the states had not published by
+October 2026.
 
 **State withholding** (with `payroll.withholding`): the pack's tax on each
 paycheck's taxable wages annualized, a twelfth a month; bonuses and RSU vests at
 the flat rate or the marginal rate at the annualized wages. An approximation of
 each state's own withholding formula.
 
-## Withholding, estimated tax and the premium tax credit (Plan 31)
+## Withholding, estimated tax and the premium tax credit
 
 `tax_years.<year>.withholding` holds IRS Pub. 15-T's Worksheet 1A amounts and
 annual percentage method tables (2024-2026; projected years derive the tables
@@ -220,14 +220,14 @@ A multi-decade simulation should not apply a single frozen year's brackets to
 incomes decades later. The `tax_years` table in the YAML holds published values
 for 2022–2026 (standard deduction, brackets, Social Security wage base, 401k/IRA/
 HSA limits including the §415(c) annual-additions limit `limit_415c`, gift
-exclusion, RMD start age) and, since Plan 29, the long-term capital-gains brackets
+exclusion, RMD start age), the long-term capital-gains brackets
 (`capital_gains`, with married-filing-separately set explicitly), the Child Tax Credit
 (`ctc_per_child`, `ctc_refundable_max`), the SALT cap (`salt: {cap,
 phaseout_threshold}`), the OBBBA senior deduction (`senior_deduction_amount`), the
 NIIT thresholds (`niit`) and the §63(f) additional standard deduction
-(`additional_standard_deduction`, applied since Plan 31). Each
-was verified against the year's Rev. Proc. or the statute; see
-[rebaseline-plan-29.md](rebaseline-plan-29.md). Access them with:
+(`additional_standard_deduction`). Each
+was verified against the year's Rev. Proc. or the statute and carries its source
+stamp in the YAML. Access them with:
 
 ```python
 params = model.config.tax_year(2025)
@@ -235,10 +235,9 @@ params.standard_deduction.single  # 15750
 params.ss_wage_base  # 176100
 ```
 
-### Credits, deductions and regimes (Plan 31)
+### Credits, deductions and regimes
 
-The 2024-2026 entries also carry (each stamped with its Rev. Proc., IRS notice or OBBBA section; see
-[rebaseline-plan-31.md](rebaseline-plan-31.md)):
+The 2024-2026 entries also carry (each stamped with its Rev. Proc., IRS notice or OBBBA section):
 
 | Key | What | Source |
 |---|---|---|
@@ -265,7 +264,7 @@ SECURE 2.0 §103), the credit for other dependents and the additional child tax 
 (`tax.self_employment`). Past 2026 each indexed amount is scaled by inflation and rounded the way its
 statute rounds the yearly adjustment (EITC amounts to $10, IRA ranges down to $1,000, the student-loan
 range down to $5,000, AMT amounts to $100, the QCD limit down to $1,000, the compensation limit down
-to $5,000; `financial_config._project_plan31_params`).
+to $5,000; see `life_model/config/financial_config.py`).
 
 **Refreshing them** (add these rows to the annual refresh): the Rev. Proc. sections on the earned
 income credit (§32), AMT exemptions (§55), the kiddie tax (§1(g)), qualified business income
@@ -273,7 +272,7 @@ income credit (§32), AMT exemptions (§55), the kiddie tax (§1(g)), qualified 
 retirement-limits notice for the IRA and Roth phase-outs, saver's credit ceilings, the QCD limit and
 §401(a)(17). The §25A phase-outs, §21/§129 amounts and the 2026 charitable rules are statutory.
 
-### Payroll and contribution limits (Plan 27)
+### Payroll and contribution limits
 
 | Key | What | Source |
 |---|---|---|
@@ -281,16 +280,17 @@ retirement-limits notice for the IRA and Roth phase-outs, saver's credit ceiling
 | `limit_health_fsa` | §125(i) health FSA salary-reduction limit ($3,200 / $3,300 / $3,400 for 2024-2026) | Rev. Procs. 2023-34 §3.16, 2024-40, 2025-32 |
 | `limit_commuter_monthly` | §132(f) monthly transit / parking exclusion ($315 / $325 / $340) | Rev. Procs. 2023-34 §3.17, 2024-40, 2025-32 |
 
-`limit_ira_catch_up` (§219(b)(5)(B), $1,000; $1,100 from 2026) is read since Plan 27 (it was validated
-but unread). Statutory rules sit in the code: the §423(b)(8) $25,000 ESPP limit and the §423(b)(6) 15%
+`limit_ira_catch_up` (§219(b)(5)(B), $1,000; $1,100 from 2026) is added to the IRA limit from age 50.
+Statutory rules sit in the code: the §423(b)(8) $25,000 ESPP limit and the §423(b)(6) 15%
 maximum discount (`work/stock.py`), and the I bond rules from TreasuryDirect (12-month lock, the
 three-month interest forfeiture before five years, 30-year maturity, the composite rate formula;
 `account/fixed_income.py`). Past 2026 the IRA catch-up is rounded down to $100 (§219(b)(5)(C)), the
 health FSA down to $50 (§125(i)(2)) and the commuter limit down to $5 (§132(f)(6)); the 60-63 catch-up
-is rounded to $500 (`TODO(verify)`: its post-2025 rounding rule). The dead keys
+is rounded to $500 (`TODO(verify)`: its post-2025 rounding rule). The keys
 `accounts.brokerage.default_growth_rate`, `accounts.bank.default_interest_rate`,
-`retirement.ira.default_growth_rate` and `accounts.plan_529.default_growth_rate` were removed from the
-packaged defaults (Plan 27 D8); an overlay that still sets them is accepted and ignored for one release.
+`retirement.ira.default_growth_rate` and `accounts.plan_529.default_growth_rate` are deprecated and
+ignored (growth follows the economy or the account's own rate); they are not in the packaged defaults,
+and an overlay that still sets them is accepted for one release.
 
 ### Projection rule for years outside the table
 
@@ -390,7 +390,7 @@ given no explicit schedule (`four_year`, `three_year`, `front_loaded`, `back_loa
 or `even`, which spans `equity_comp.default_vesting_years`). These are modeling
 conventions rather than published figures, so they carry no `vintage` stamp.
 
-## Housing, insurance and Social Security statement rules (Plan 27, 27b)
+## Housing, insurance and Social Security statement rules
 
 | Config path | What it sets | Source |
 |---|---|---|
@@ -406,8 +406,8 @@ conventions rather than published figures, so they carry no `vintage` stamp.
 
 A single `EconomyModel` per simulation supplies the year's economic rates —
 inflation, wage growth, and the returns on cash, bonds, equities, and homes — to
-every account, salary, spending, and housing object. This replaces the old
-per-object rate constants with one coherent economic assumption. Configure it in
+every account, salary, spending, and housing object, so one coherent economic
+assumption drives every rate. Configure it in
 the `economy` section of the YAML (or via a scenario):
 
 ```yaml
@@ -421,8 +421,7 @@ economy:
   home_appreciation: 4.0
 ```
 
-- **`fixed`** — every year returns these constants. The defaults reproduce the
-  pre-economy per-object constants exactly, so existing simulations are unchanged.
+- **`fixed`** — every year returns these constants.
 - **`path`** — an explicit per-year series overrides individual years; unlisted
   years fall back to the fixed constants. Use it to model, e.g., a multi-year
   recession:

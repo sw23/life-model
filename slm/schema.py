@@ -59,7 +59,7 @@ class HouseholdProfile(StrictModel):
     economy_scenario: str | None = None
     # Household composition. ``children_ages`` are the ages (at the start year) of modeled child
     # dependents; ``models_healthcare`` marks that age-banded medical costs and Medicare premiums
-    # are priced for the person. Defaults keep older/simple households unchanged.
+    # are priced for the person. The defaults model neither (a childless household without health costs).
     children_ages: list[int] = Field(default_factory=list)
     models_healthcare: bool = False
     # Retirement-income context (all default to "absent" so older rows still validate):

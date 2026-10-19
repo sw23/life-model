@@ -3,12 +3,12 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""RL episodes under the core invariant checker (Plan 29 D4).
+"""RL episodes under the core invariant checker.
 
 Actions run between ``model.step()`` calls, so whatever money they move must be posted to the
 ledger or the between-year ``continuity`` invariant fails. Every scenario household runs a full
 episode of random legal actions under ``checks="strict"``, in the flat space and in the factored
-standing-policy space (Plan 32 D8) at yearly and quarterly decisions (and one monthly run).
+standing-policy space at yearly and quarterly decisions (and one monthly run).
 """
 
 import unittest
@@ -162,7 +162,7 @@ class TestActionsPostTheirMoney(unittest.TestCase):
 
         def post(self, amount, kind, **kwargs):
             if kind == FlowKind.MATCH and kwargs.get("cause") == "employer match (RL deferral)":
-                return None  # the pre-Plan-29 action layer: the match appeared from nowhere
+                return None  # an action layer that skips the ledger: the match appears from nowhere
             return original(self, amount, kind, **kwargs)
 
         with mock.patch.object(CashFlowLedger, "post", post), self.assertRaises(InvariantError) as raised:

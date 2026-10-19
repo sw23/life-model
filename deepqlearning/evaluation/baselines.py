@@ -17,7 +17,7 @@ Every policy is a pure function of the environment's current state and returns a
 action index (or ``NO_ACTION``, which is always legal), so a policy never desyncs from the action
 mask. Being a deterministic function of the seeded state, each policy is reproducible per seed.
 
-**Factored space (Plan 32 D8).** :data:`FACTORED_BASELINES` expresses the same heuristics, under the
+**Factored space.** :data:`FACTORED_BASELINES` expresses the same heuristics, under the
 same names, as standing-policy vectors (``envs/financial/policies.py``), so an agent trained on the
 factored space is compared with like: e.g. ``always_max_401k`` sets the pre-tax deferral to the
 highest rate the household's take-home pay can carry, ``four_percent_drawdown`` draws taxable, then

@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""The decision interval (Plan 32 D9): an env step simulates a year, a quarter or a month."""
+"""The decision interval: an env step simulates a year, a quarter or a month."""
 
 import unittest
 import warnings
@@ -46,7 +46,7 @@ class TestYearReproducesTheAnnualEpisode(unittest.TestCase):
         self.assertEqual(monthly.max_steps, 12 * (119 - 25))
 
     def test_twelve_monthly_steps_are_step_year(self):
-        """The yearly env is the pre-Plan-32-task-5 env: driving the model with ``step_year`` instead of
+        """A yearly env step is exactly ``model.step_year()``: driving the model with ``step_year`` instead of
         twelve ``step`` calls changes nothing (rewards, observations, episode length)."""
         rng = np.random.default_rng(3)
 

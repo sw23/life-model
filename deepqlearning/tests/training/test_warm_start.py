@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Teacher warm-start of the DQN replay buffer (Plan 19 D2)."""
+"""Teacher warm-start of the DQN replay buffer."""
 
 import unittest
 

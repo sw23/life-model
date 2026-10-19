@@ -3,13 +3,12 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""The RL household is built through life_model.spec without changing a single number.
+"""The RL household built through life_model.spec matches the same household built by direct constructor calls.
 
-Plan 25 routed the environment's household construction through the declarative spec builder and
-deleted the hand-written constructor calls. This test keeps a verbatim copy of the pre-spec
-construction code (``_legacy_populate``) and swaps it in for the builder, then plays the same seeded
-episodes both ways and requires bit-identical observations, rewards, info and model stats. It runs
-side by side in one process, so it does not depend on platform floating-point details.
+The environment builds its household with the declarative spec builder. This test keeps an equivalent
+construction from direct core constructor calls (``_direct_populate``) and swaps it in for the builder, then
+plays the same seeded episodes both ways and requires bit-identical observations, rewards, info and model
+stats. It runs side by side in one process, so it does not depend on platform floating-point details.
 """
 
 import unittest
@@ -53,8 +52,8 @@ from life_model.work.job import Job, Salary
 STATS = LifeModel.STATS + LifeModel.EXTRA_STATS
 
 
-def _legacy_populate(env: FinancialLifeEnv):
-    """The pre-spec construction code of ``FinancialLifeEnv.reset``, verbatim, as a populate_model stand-in."""
+def _direct_populate(env: FinancialLifeEnv):
+    """The episode household built with direct core constructor calls, as a populate_model stand-in."""
 
     def populate(model, spec, check=False):
         household: dict[str, Any] = env.episode_household
@@ -195,20 +194,20 @@ CASES: list[tuple[str, Any, int, dict | None]] = [
 
 
 class TestHouseholdSpecParity(unittest.TestCase):
-    def test_spec_built_episodes_match_the_legacy_construction(self):
+    def test_spec_built_episodes_match_the_direct_construction(self):
         for name, make, seed, options in CASES:
             for noop in (False, True):
                 with self.subTest(case=name, noop=noop):
-                    new_env = make()
-                    new = _episode(new_env, seed, options, noop)
-                    new_autoreset = _episode(new_env, None, options, noop, steps=15)
-                    legacy_env = make()
-                    with mock.patch.object(environment, "populate_model", _legacy_populate(legacy_env)):
-                        legacy = _episode(legacy_env, seed, options, noop)
-                        legacy_autoreset = _episode(legacy_env, None, options, noop, steps=15)
-                    self.assertEqual(len(new), len(legacy))
-                    self.assertEqual(new, legacy)
-                    self.assertEqual(new_autoreset, legacy_autoreset)
+                    spec_env = make()
+                    spec_built = _episode(spec_env, seed, options, noop)
+                    spec_autoreset = _episode(spec_env, None, options, noop, steps=15)
+                    direct_env = make()
+                    with mock.patch.object(environment, "populate_model", _direct_populate(direct_env)):
+                        direct = _episode(direct_env, seed, options, noop)
+                        direct_autoreset = _episode(direct_env, None, options, noop, steps=15)
+                    self.assertEqual(len(spec_built), len(direct))
+                    self.assertEqual(spec_built, direct)
+                    self.assertEqual(spec_autoreset, direct_autoreset)
 
     def test_episode_spec_describes_the_built_household(self):
         env = FinancialLifeEnvGenerator.create_scenario_env(

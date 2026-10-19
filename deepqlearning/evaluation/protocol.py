@@ -5,9 +5,8 @@
 
 """Statistical evaluation protocol for RL policies.
 
-The old evaluation was a hand-rolled mean of a handful of greedy episodes with no statistics. This
-module replaces it with a defensible protocol that runs **every policy (the trained agent plus all
-baselines) on identical seed sets** and reports, per policy:
+The protocol runs **every policy (the trained agent plus all baselines) on identical seed sets**
+and reports, per policy:
 
 * mean return with a bootstrap confidence interval,
 * ruin rate (fraction of episodes ending in bankruptcy),

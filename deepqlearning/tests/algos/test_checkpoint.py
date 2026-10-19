@@ -20,8 +20,8 @@ from deepqlearning.envs.financial.environment import OBS_VERSION
 # A locally trained checkpoint, exercised read-only when present. Checkpoints are not committed
 # (see .gitignore), so this is a local-developer check that skips in CI rather than a hard gate.
 # ``financial_basic_dqn.pt`` is what ``python -m deepqlearning.train`` writes (outputs are keyed
-# ``{env}_{algo}``); ``financial_dqn_basic.pt`` is the name the pre-refactor trainer used, kept so an
-# older local checkpoint still proves the refactor did not break loading.
+# ``{env}_{algo}``); ``financial_dqn_basic.pt``, the name earlier trainer versions wrote, is checked too so a
+# checkpoint saved under it is still exercised.
 _MODELS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "models")
 _LOCAL_MODEL = next(
     (
@@ -150,7 +150,7 @@ if __name__ == "__main__":
 
 
 class TestDQNCheckpointRecordsAlgorithm(unittest.TestCase):
-    """Plan 23: DQN checkpoints carry the algorithm name like REINFORCE/PPO ones."""
+    """DQN checkpoints carry the algorithm name like REINFORCE/PPO ones."""
 
     def test_algo_key_written_and_cross_algorithm_load_refused(self):
         dqn = DQNAgent(8, 4, {"verbose": False, "obs_version": None})

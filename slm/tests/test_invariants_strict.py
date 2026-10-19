@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Adviser households under the core invariant checker (Plan 29 D4): every SLM scenario's sampled
+"""Adviser households under the core invariant checker: every SLM scenario's sampled
 households play each of a few plans to the end of the episode, and run 50 years as a spec, with
 ``checks="strict"``."""
 
