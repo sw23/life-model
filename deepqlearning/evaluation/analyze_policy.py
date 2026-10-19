@@ -216,7 +216,8 @@ def policy_vector_schedule(trajectories: list[list[dict]], out_png: str, out_txt
                 cells.append(f"{text:<{widths[name]}}")
             lines.append(f"{age:<4d} " + " ".join(cells))
         with open(out_txt, "w") as f:
-            f.write("\n".join(lines) + "\n")
+            # The last column is padded like the others; strip it so committed reports carry no trailing spaces.
+            f.write("\n".join(line.rstrip() for line in lines) + "\n")
 
     if ages:
         grid = np.array(

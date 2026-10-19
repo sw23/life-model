@@ -1,20 +1,20 @@
-age  pretax          roth            ira             hsa             sweep           spend           order           retired         ss              conversion     
-25   15              15              traditional_max none            hold_cash       hold            default         no              not_yet         to_bracket_22  
-26   15              15              traditional_max none            hold_cash       hold            default         no              not_yet         to_bracket_22  
-27   15              15              traditional_max none            hold_cash       hold            default         no              not_yet         to_bracket_22  
-28   15              15              traditional_max none            hold_cash       hold            default         no              not_yet         to_bracket_22  
-29   15 98%          15 98%          traditional_max 98% none            hold_cash       hold            default         no              not_yet         to_bracket_22  
-30   15              15              traditional_max none            hold_cash       hold            default         no              not_yet         to_bracket_22  
-31   15              15              traditional_max none            hold_cash       hold            default         no              not_yet         to_bracket_22  
-32   15              15              traditional_max none            hold_cash       hold            default         no              not_yet         to_bracket_22  
-33   15              15              traditional_max none            hold_cash       hold            default         no              not_yet         to_bracket_22  
-34   15              15              traditional_max none            hold_cash       hold            default         no              not_yet         to_bracket_22  
-35   15              15              traditional_max none            hold_cash       hold            default         no              not_yet         to_bracket_22  
-36   15 98%          15              traditional_max none            hold_cash       hold            default         no              not_yet         to_bracket_22  
-37   15              15              traditional_max none            hold_cash       hold            default         no              not_yet         to_bracket_22  
-38   15 98%          15              traditional_max none            hold_cash       hold            default         no              not_yet         to_bracket_22  
-39   15 98%          15              traditional_max none            hold_cash       hold            default         no              not_yet         to_bracket_22  
-40   15 98%          15              traditional_max none            hold_cash       hold            default         no              not_yet         to_bracket_22  
+age  pretax          roth            ira             hsa             sweep           spend           order           retired         ss              conversion
+25   15              15              traditional_max none            hold_cash       hold            default         no              not_yet         to_bracket_22
+26   15              15              traditional_max none            hold_cash       hold            default         no              not_yet         to_bracket_22
+27   15              15              traditional_max none            hold_cash       hold            default         no              not_yet         to_bracket_22
+28   15              15              traditional_max none            hold_cash       hold            default         no              not_yet         to_bracket_22
+29   15 98%          15 98%          traditional_max 98% none            hold_cash       hold            default         no              not_yet         to_bracket_22
+30   15              15              traditional_max none            hold_cash       hold            default         no              not_yet         to_bracket_22
+31   15              15              traditional_max none            hold_cash       hold            default         no              not_yet         to_bracket_22
+32   15              15              traditional_max none            hold_cash       hold            default         no              not_yet         to_bracket_22
+33   15              15              traditional_max none            hold_cash       hold            default         no              not_yet         to_bracket_22
+34   15              15              traditional_max none            hold_cash       hold            default         no              not_yet         to_bracket_22
+35   15              15              traditional_max none            hold_cash       hold            default         no              not_yet         to_bracket_22
+36   15 98%          15              traditional_max none            hold_cash       hold            default         no              not_yet         to_bracket_22
+37   15              15              traditional_max none            hold_cash       hold            default         no              not_yet         to_bracket_22
+38   15 98%          15              traditional_max none            hold_cash       hold            default         no              not_yet         to_bracket_22
+39   15 98%          15              traditional_max none            hold_cash       hold            default         no              not_yet         to_bracket_22
+40   15 98%          15              traditional_max none            hold_cash       hold            default         no              not_yet         to_bracket_22
 41   15 92%          15 98%          traditional_max 98% none            hold_cash       hold            default         no              not_yet         to_bracket_22 98%
 42   15 92%          15              traditional_max none            hold_cash       hold            default         no              not_yet         to_bracket_22 98%
 43   15 90%          15              traditional_max none            hold_cash       hold            default         no              not_yet         to_bracket_22 98%
@@ -39,35 +39,35 @@ age  pretax          roth            ira             hsa             sweep      
 62   15 66%          15              traditional_max none            hold_cash       hold            default         no              not_yet 56%     to_bracket_22 63%
 63   3 56%           15              traditional_max 85% none            hold_cash       hold            default         no              not_yet 54%     to_bracket_22 61%
 64   0               0               none            none            hold_cash       hold            default         yes             now 51%         to_bracket_22 66%
-65   0               0               none            none            hold_cash       hold            default         yes             now 68%         none           
-66   0               0               none            none            hold_cash       hold            brokerage_first yes             now 85%         none           
-67   0               0               none            none            hold_cash       hold            brokerage_first yes             now 90%         none           
-68   0               0               none            none            hold_cash       hold            brokerage_first yes             now 89%         none           
-69   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none           
-70   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none           
-71   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none           
-72   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none           
-73   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none           
-74   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none           
-75   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none           
-76   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none           
-77   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none           
-78   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none           
-79   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none           
-80   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none           
-81   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none           
-82   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none           
-83   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none           
-84   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none           
-85   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none           
-86   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none           
-87   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none           
-88   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none           
-89   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none 92%       
-90   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none 89%       
-91   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none 86%       
-92   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none 83%       
-93   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none 75%       
-94   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none 75%       
-95   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none 75%       
-96   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none           
+65   0               0               none            none            hold_cash       hold            default         yes             now 68%         none
+66   0               0               none            none            hold_cash       hold            brokerage_first yes             now 85%         none
+67   0               0               none            none            hold_cash       hold            brokerage_first yes             now 90%         none
+68   0               0               none            none            hold_cash       hold            brokerage_first yes             now 89%         none
+69   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none
+70   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none
+71   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none
+72   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none
+73   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none
+74   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none
+75   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none
+76   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none
+77   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none
+78   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none
+79   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none
+80   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none
+81   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none
+82   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none
+83   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none
+84   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none
+85   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none
+86   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none
+87   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none
+88   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none
+89   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none 92%
+90   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none 89%
+91   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none 86%
+92   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none 83%
+93   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none 75%
+94   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none 75%
+95   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none 75%
+96   0               0               none            none            hold_cash       hold            brokerage_first yes             now             none

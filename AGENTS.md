@@ -30,7 +30,7 @@ life-model montecarlo my-models/h.yaml --scenario stochastic --n 500
 ```python
 import life_model
 
-result = life_model.run("my-models/h.yaml", seed=1)   # RunResult
+result = life_model.run("my-models/h.yaml", seed=1)  # RunResult
 print(life_model.explain(result, 2035))
 ```
 

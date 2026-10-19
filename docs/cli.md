@@ -208,14 +208,14 @@ definitions (whose input schema is `life_model.spec.json_schema()`):
 import life_model
 from life_model import api
 
-result = life_model.run("my-models/h.yaml", seed=1, years=30)    # RunResult
-findings = life_model.validate("my-models/h.yaml")               # list[Finding]
-print(life_model.explain(result, 2035))                          # markdown
+result = life_model.run("my-models/h.yaml", seed=1, years=30)  # RunResult
+findings = life_model.validate("my-models/h.yaml")  # list[Finding]
+print(life_model.explain(result, 2035))  # markdown
 comparison = life_model.compare("my-models/h.yaml", {"people": {"jane": {"retirement_age": 62}}})
 print(comparison.to_dict()["deltas"])
 mc = api.run_montecarlo("my-models/h.yaml", n=500, scenario="stochastic", seed=7)
 print(api.montecarlo_summary(mc)["success_rate"])
-report = life_model.reconcile("my-models/h.yaml", 2025)           # ReconciliationReport
+report = life_model.reconcile("my-models/h.yaml", 2025)  # ReconciliationReport
 print(report.to_markdown())
 ```
 

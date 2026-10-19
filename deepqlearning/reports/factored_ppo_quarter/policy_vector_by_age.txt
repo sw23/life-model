@@ -1,73 +1,73 @@
-age  pretax          roth            ira             hsa             sweep           spend           order           retired         ss              conversion     
-25   0               15              traditional_max none            hold_cash       hold            default         no              not_yet         none           
-26   0               15              traditional_max none            hold_cash       hold            default         no              not_yet         none           
-27   0               15              traditional_max none            hold_cash       hold            default         no              not_yet         none           
-28   0               15              traditional_max none            hold_cash       hold            default         no              not_yet         none           
-29   0               15              traditional_max none            hold_cash       hold            default         no              not_yet         none           
-30   0               15              traditional_max none            hold_cash       hold            default         no              not_yet         none           
-31   0               15              traditional_max none            hold_cash       hold            default         no              not_yet         none           
-32   0               15              traditional_max none            hold_cash       hold            default         no              not_yet         none           
-33   0               15              traditional_max none            hold_cash       hold            default         no              not_yet         none           
-34   0               15              traditional_max none            hold_cash       hold            default         no              not_yet         none           
-35   0               15              traditional_max none            hold_cash       hold            default         no              not_yet         none           
-36   0               15              traditional_max none            hold_cash       hold            default         no              not_yet         none           
-37   0               15              traditional_max none            hold_cash       hold            default         no              not_yet         none           
-38   0               15              traditional_max none            hold_cash       hold            default         no              not_yet         none           
-39   0               15              traditional_max 98% none            hold_cash       hold            default         no              not_yet         none           
-40   0               15              traditional_max 97% none            hold_cash 96%   hold            default         no              not_yet         none           
-41   0               15              traditional_max 96% none            hold_cash 92%   hold            default         no              not_yet         none           
-42   0               15              traditional_max 93% none            hold_cash 87%   hold            default         no              not_yet         none           
-43   0               15              traditional_max 91% none            hold_cash 79%   hold            default         no              not_yet         none           
-44   0               15              traditional_max 86% none            hold_cash 71%   hold            default         no              not_yet         none           
-45   0               15              traditional_max 88% none            hold_cash 61%   hold            default         no              not_yet         none           
-46   0               15              traditional_max 86% none            hold_cash 50%   hold            default         no              not_yet         none           
-47   0               15              traditional_max 83% none            sweep_to_bonds 58% hold            default         no              not_yet         none           
-48   0               15              traditional_max 79% none            sweep_to_bonds 68% hold            default         no              not_yet         none           
-49   0               15              traditional_max 77% none            sweep_to_bonds 72% hold            default 98%     no              not_yet         none           
-50   0               15 97%          traditional_max 69% none            sweep_to_bonds 79% hold            default 99%     no 98%          not_yet         none           
-51   0               15 97%          traditional_max 63% none            sweep_to_bonds 84% hold            default 99%     no 97%          not_yet         none           
-52   0               15 96%          traditional_max 58% none            sweep_to_bonds 91% hold            default 97%     no 96%          not_yet         none           
-53   0               15 96%          traditional_max 57% none            sweep_to_bonds 96% hold            default 96%     no 96%          not_yet         none           
-54   0               15 93%          traditional_max 52% none            sweep_to_bonds 98% hold            default 94%     no 93%          not_yet         none           
-55   0               15 93%          traditional_max 44% none            sweep_to_bonds 98% hold            default 93%     no 93%          not_yet         none           
-56   0               15 87%          traditional_max 42% none            sweep_to_bonds 98% hold            default 89%     no 87%          not_yet         none           
-57   0               15 83%          none 41%        none            sweep_to_bonds 98% hold            default 85%     no 83%          not_yet         none           
-58   0               15 79%          none 51%        none            sweep_to_bonds 98% hold            default 85%     no 80%          not_yet         none           
-59   0               15 74%          none 54%        none            sweep_to_bonds 98% hold            default 81%     no 74%          not_yet         none           
-60   0               15 69%          none 56%        none            sweep_to_bonds 99% hold            default 77%     no 69%          not_yet         none           
-61   0               15 60%          none 60%        none            sweep_to_bonds  hold            default 69%     no 62%          not_yet         none           
-62   0               0 52%           none 79%        none            sweep_to_bonds  hold            default 63%     yes 52%         now             none 99%       
-63   0               0 59%           none 77%        none            sweep_to_bonds 99% hold            default 50%     yes 59%         now             none 93%       
-64   0               0 73%           none 84%        none            sweep_to_bonds 97% hold            brokerage_first 51% yes 73%         now             none 90%       
-65   0               0               none            none            sweep_to_bonds 93% hold            default 53%     yes             now             none 84%       
-66   0               0               none            none            sweep_to_bonds 89% hold            default 61%     yes             now             none 84%       
-67   0               0               none            none            sweep_to_bonds 90% hold            default 61%     yes             now             none 84%       
-68   0               0               none            none            sweep_to_bonds 92% hold            default 64%     yes             now             none 84%       
-69   0               0               none            none            sweep_to_bonds 91% hold            default 66%     yes             now             none 89%       
-70   0               0               none            none            sweep_to_bonds 90% hold            default 63%     yes             now             none 85%       
-71   0               0               none            none            sweep_to_bonds 83% hold            default 61%     yes             now             none 79%       
-72   0               0               none            none            sweep_to_bonds 81% hold            default 66%     yes             now             none 81%       
-73   0               0               none            none            sweep_to_bonds 81% hold            default 60%     yes             now             none 77%       
-74   0               0               none            none            sweep_to_bonds 78% hold            default 58%     yes             now             none 75%       
-75   0               0               none            none            sweep_to_bonds 75% hold            default 56%     yes             now             none 68%       
-76   0               0               none            none            sweep_to_bonds 69% hold            default 51%     yes             now             none 63%       
-77   0               0               none            none            sweep_to_bonds 60% hold            default 51%     yes             now             none 55%       
-78   0               0               none            none            sweep_to_bonds 52% hold            default 51%     yes             now             none 51%       
-79   0               0               none            none            sweep_to_bonds 55% hold            brokerage_first 48% yes             now             none 55%       
-80   0               0               none            none            sweep_to_bonds 54% hold            brokerage_first 49% yes             now             none 54%       
-81   0               0               none            none            sweep_to_bonds 58% hold            brokerage_first 46% yes             now             none 57%       
-82   0               0               none            none            sweep_to_bonds 68% hold            brokerage_first 51% yes             now             none 67%       
-83   0               0               none            none            sweep_to_bonds 69% hold            brokerage_first 45% yes             now             none 68%       
-84   0               0               none            none            sweep_to_bonds 65% hold            brokerage_first 44% yes             now             none 64%       
-85   0               0               none            none            sweep_to_bonds 68% hold            brokerage_first 52% yes             now             none 66%       
-86   0               0               none            none            sweep_to_bonds 69% hold            brokerage_first 46% yes             now             none 69%       
-87   0               0               none            none            sweep_to_bonds 67% hold            default 43%     yes             now             none 67%       
-88   0               0               none            none            sweep_to_bonds 65% hold            default 46%     yes             now             none 65%       
-89   0               0               none            none            sweep_to_bonds 61% hold            brokerage_first 44% yes             now             none 61%       
-90   0               0               none            none            sweep_to_bonds 58% hold            brokerage_first 42% yes             now             none 58%       
-91   0               0               none            none            sweep_to_bonds 62% hold            default 46%     yes             now             none 65%       
-92   0               0               none            none            sweep_to_bonds 57% hold            brokerage_first 57% yes             now             none 57%       
-93   0               0               none            none            sweep_to_bonds 75% hold            brokerage_first 75% yes             now             none 75%       
-94   0               0               none            none            sweep_to_bonds 75% hold            brokerage_first 75% yes             now             none 75%       
-95   0               0               none            none            sweep_to_bonds 77% hold            brokerage_first 77% yes             now             none 77%       
-96   0               0               none            none            sweep_to_bonds  hold            brokerage_first yes             now             none           
+age  pretax          roth            ira             hsa             sweep           spend           order           retired         ss              conversion
+25   0               15              traditional_max none            hold_cash       hold            default         no              not_yet         none
+26   0               15              traditional_max none            hold_cash       hold            default         no              not_yet         none
+27   0               15              traditional_max none            hold_cash       hold            default         no              not_yet         none
+28   0               15              traditional_max none            hold_cash       hold            default         no              not_yet         none
+29   0               15              traditional_max none            hold_cash       hold            default         no              not_yet         none
+30   0               15              traditional_max none            hold_cash       hold            default         no              not_yet         none
+31   0               15              traditional_max none            hold_cash       hold            default         no              not_yet         none
+32   0               15              traditional_max none            hold_cash       hold            default         no              not_yet         none
+33   0               15              traditional_max none            hold_cash       hold            default         no              not_yet         none
+34   0               15              traditional_max none            hold_cash       hold            default         no              not_yet         none
+35   0               15              traditional_max none            hold_cash       hold            default         no              not_yet         none
+36   0               15              traditional_max none            hold_cash       hold            default         no              not_yet         none
+37   0               15              traditional_max none            hold_cash       hold            default         no              not_yet         none
+38   0               15              traditional_max none            hold_cash       hold            default         no              not_yet         none
+39   0               15              traditional_max 98% none            hold_cash       hold            default         no              not_yet         none
+40   0               15              traditional_max 97% none            hold_cash 96%   hold            default         no              not_yet         none
+41   0               15              traditional_max 96% none            hold_cash 92%   hold            default         no              not_yet         none
+42   0               15              traditional_max 93% none            hold_cash 87%   hold            default         no              not_yet         none
+43   0               15              traditional_max 91% none            hold_cash 79%   hold            default         no              not_yet         none
+44   0               15              traditional_max 86% none            hold_cash 71%   hold            default         no              not_yet         none
+45   0               15              traditional_max 88% none            hold_cash 61%   hold            default         no              not_yet         none
+46   0               15              traditional_max 86% none            hold_cash 50%   hold            default         no              not_yet         none
+47   0               15              traditional_max 83% none            sweep_to_bonds 58% hold            default         no              not_yet         none
+48   0               15              traditional_max 79% none            sweep_to_bonds 68% hold            default         no              not_yet         none
+49   0               15              traditional_max 77% none            sweep_to_bonds 72% hold            default 98%     no              not_yet         none
+50   0               15 97%          traditional_max 69% none            sweep_to_bonds 79% hold            default 99%     no 98%          not_yet         none
+51   0               15 97%          traditional_max 63% none            sweep_to_bonds 84% hold            default 99%     no 97%          not_yet         none
+52   0               15 96%          traditional_max 58% none            sweep_to_bonds 91% hold            default 97%     no 96%          not_yet         none
+53   0               15 96%          traditional_max 57% none            sweep_to_bonds 96% hold            default 96%     no 96%          not_yet         none
+54   0               15 93%          traditional_max 52% none            sweep_to_bonds 98% hold            default 94%     no 93%          not_yet         none
+55   0               15 93%          traditional_max 44% none            sweep_to_bonds 98% hold            default 93%     no 93%          not_yet         none
+56   0               15 87%          traditional_max 42% none            sweep_to_bonds 98% hold            default 89%     no 87%          not_yet         none
+57   0               15 83%          none 41%        none            sweep_to_bonds 98% hold            default 85%     no 83%          not_yet         none
+58   0               15 79%          none 51%        none            sweep_to_bonds 98% hold            default 85%     no 80%          not_yet         none
+59   0               15 74%          none 54%        none            sweep_to_bonds 98% hold            default 81%     no 74%          not_yet         none
+60   0               15 69%          none 56%        none            sweep_to_bonds 99% hold            default 77%     no 69%          not_yet         none
+61   0               15 60%          none 60%        none            sweep_to_bonds  hold            default 69%     no 62%          not_yet         none
+62   0               0 52%           none 79%        none            sweep_to_bonds  hold            default 63%     yes 52%         now             none 99%
+63   0               0 59%           none 77%        none            sweep_to_bonds 99% hold            default 50%     yes 59%         now             none 93%
+64   0               0 73%           none 84%        none            sweep_to_bonds 97% hold            brokerage_first 51% yes 73%         now             none 90%
+65   0               0               none            none            sweep_to_bonds 93% hold            default 53%     yes             now             none 84%
+66   0               0               none            none            sweep_to_bonds 89% hold            default 61%     yes             now             none 84%
+67   0               0               none            none            sweep_to_bonds 90% hold            default 61%     yes             now             none 84%
+68   0               0               none            none            sweep_to_bonds 92% hold            default 64%     yes             now             none 84%
+69   0               0               none            none            sweep_to_bonds 91% hold            default 66%     yes             now             none 89%
+70   0               0               none            none            sweep_to_bonds 90% hold            default 63%     yes             now             none 85%
+71   0               0               none            none            sweep_to_bonds 83% hold            default 61%     yes             now             none 79%
+72   0               0               none            none            sweep_to_bonds 81% hold            default 66%     yes             now             none 81%
+73   0               0               none            none            sweep_to_bonds 81% hold            default 60%     yes             now             none 77%
+74   0               0               none            none            sweep_to_bonds 78% hold            default 58%     yes             now             none 75%
+75   0               0               none            none            sweep_to_bonds 75% hold            default 56%     yes             now             none 68%
+76   0               0               none            none            sweep_to_bonds 69% hold            default 51%     yes             now             none 63%
+77   0               0               none            none            sweep_to_bonds 60% hold            default 51%     yes             now             none 55%
+78   0               0               none            none            sweep_to_bonds 52% hold            default 51%     yes             now             none 51%
+79   0               0               none            none            sweep_to_bonds 55% hold            brokerage_first 48% yes             now             none 55%
+80   0               0               none            none            sweep_to_bonds 54% hold            brokerage_first 49% yes             now             none 54%
+81   0               0               none            none            sweep_to_bonds 58% hold            brokerage_first 46% yes             now             none 57%
+82   0               0               none            none            sweep_to_bonds 68% hold            brokerage_first 51% yes             now             none 67%
+83   0               0               none            none            sweep_to_bonds 69% hold            brokerage_first 45% yes             now             none 68%
+84   0               0               none            none            sweep_to_bonds 65% hold            brokerage_first 44% yes             now             none 64%
+85   0               0               none            none            sweep_to_bonds 68% hold            brokerage_first 52% yes             now             none 66%
+86   0               0               none            none            sweep_to_bonds 69% hold            brokerage_first 46% yes             now             none 69%
+87   0               0               none            none            sweep_to_bonds 67% hold            default 43%     yes             now             none 67%
+88   0               0               none            none            sweep_to_bonds 65% hold            default 46%     yes             now             none 65%
+89   0               0               none            none            sweep_to_bonds 61% hold            brokerage_first 44% yes             now             none 61%
+90   0               0               none            none            sweep_to_bonds 58% hold            brokerage_first 42% yes             now             none 58%
+91   0               0               none            none            sweep_to_bonds 62% hold            default 46%     yes             now             none 65%
+92   0               0               none            none            sweep_to_bonds 57% hold            brokerage_first 57% yes             now             none 57%
+93   0               0               none            none            sweep_to_bonds 75% hold            brokerage_first 75% yes             now             none 75%
+94   0               0               none            none            sweep_to_bonds 75% hold            brokerage_first 75% yes             now             none 75%
+95   0               0               none            none            sweep_to_bonds 77% hold            brokerage_first 77% yes             now             none 77%
+96   0               0               none            none            sweep_to_bonds  hold            brokerage_first yes             now             none

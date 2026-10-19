@@ -50,8 +50,8 @@ home, insurance, Social Security records and dated events) instead of Python:
 ```python
 from life_model.spec import build_model, load, validate_spec
 
-spec = load("my-models/household.yaml")   # my-models/ is git-ignored: keep real data there
-for finding in validate_spec(spec):       # errors and warnings before anything runs
+spec = load("my-models/household.yaml")  # my-models/ is git-ignored: keep real data there
+for finding in validate_spec(spec):  # errors and warnings before anything runs
     print(finding)
 model = build_model(spec)
 model.run()

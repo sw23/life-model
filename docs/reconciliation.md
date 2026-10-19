@@ -49,8 +49,10 @@ life-model reconcile my-models/h.yaml --year 2025 [--actuals my-models/2025.yaml
 ```
 
 ```python
-report = life_model.reconcile("my-models/h.yaml", 2025)     # ReconciliationReport
-print(report.to_markdown()); report.to_dict(); report.red
+report = life_model.reconcile("my-models/h.yaml", 2025)  # ReconciliationReport
+print(report.to_markdown())
+report.to_dict()
+report.red
 ```
 
 The household is run from its first simulated month through the year's December (describe it as of
