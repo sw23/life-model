@@ -5,6 +5,7 @@
 
 """RunResult, exports, explain() and Monte Carlo outputs (Plan 28, task 6)."""
 
+import importlib.util
 import json
 import sys
 import tempfile
@@ -24,6 +25,10 @@ from ..people.person import Person, Spending
 from ..results import RunResult, _require_parquet
 from ..work.job import Job, Salary
 from .scenarios import married_homeowners, stochastic_retiree
+
+# Parquet export needs the optional `life-model[parquet]` extra (pyarrow); CI installs it via requirements-dev.txt.
+HAS_PYARROW = importlib.util.find_spec("pyarrow") is not None
+SKIP_NO_PYARROW = "the parquet extra is not installed (pip install 'life-model[parquet]')"
 
 
 def _early_retiree(start_year=2026, years=5) -> LifeModel:
@@ -91,6 +96,7 @@ class TestExports(unittest.TestCase):
     def setUpClass(cls):
         cls.result = married_homeowners(years=6).run()
 
+    @unittest.skipUnless(HAS_PYARROW, SKIP_NO_PYARROW)
     def test_parquet_round_trip(self):
         with tempfile.TemporaryDirectory() as directory:
             self.result.to_parquet(directory)
@@ -217,8 +223,14 @@ class TestYearlyStatFrame(unittest.TestCase):
 
 
 class TestMonteCarloOutputs(unittest.TestCase):
-    def test_seeds_frames_events_parquet_and_real_dollars(self):
-        result = MonteCarlo(_build_stochastic, n=3, seed=9, workers=1, keep_agent_frames=True, keep_events=True).run()
+    @classmethod
+    def setUpClass(cls):
+        cls.result = MonteCarlo(
+            _build_stochastic, n=3, seed=9, workers=1, keep_agent_frames=True, keep_events=True
+        ).run()
+
+    def test_seeds_frames_events_and_real_dollars(self):
+        result = self.result
         self.assertEqual(len(result.seeds), 3)
         rebuilt = _build_stochastic(result.seeds[1])
         rebuilt.run()
@@ -227,12 +239,6 @@ class TestMonteCarloOutputs(unittest.TestCase):
         )
         self.assertEqual(len(result.agent_frames), 3)
         self.assertEqual(len(result.events), 3)
-        with tempfile.TemporaryDirectory() as directory:
-            result.to_parquet(directory)
-            loaded = MonteCarloResult.load(directory)
-        self.assertEqual(loaded.seeds, result.seeds)
-        for mine, theirs in zip(loaded.frames, result.frames, strict=True):
-            pd.testing.assert_frame_equal(mine, theirs, check_dtype=False)
         real = result.real_dollars()
         last = real.frames[0]["Year"].iloc[-1]
         factor = result.deflators[0][int(last)]
@@ -240,6 +246,16 @@ class TestMonteCarloOutputs(unittest.TestCase):
             real.frames[0]["Net Worth"].iloc[-1], result.frames[0]["Net Worth"].iloc[-1] / factor, places=6
         )
         self.assertEqual(real.percentiles("Net Worth").shape, (8, 3))
+
+    @unittest.skipUnless(HAS_PYARROW, SKIP_NO_PYARROW)
+    def test_parquet_round_trip(self):
+        result = self.result
+        with tempfile.TemporaryDirectory() as directory:
+            result.to_parquet(directory)
+            loaded = MonteCarloResult.load(directory)
+        self.assertEqual(loaded.seeds, result.seeds)
+        for mine, theirs in zip(loaded.frames, result.frames, strict=True):
+            pd.testing.assert_frame_equal(mine, theirs, check_dtype=False)
 
 
 if __name__ == "__main__":
