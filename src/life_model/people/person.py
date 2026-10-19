@@ -99,25 +99,25 @@ class Person(LifeModelAgent):
             gender (GenderAtBirth, optional): Gender at birth, used for the mortality table. Defaults
                 to ``OTHER``, which draws against a male/female blended rate.
             mortality_mode (MortalityMode, optional): How death is determined each year. Defaults to
-                ``IMMORTAL`` (the person never dies) so existing simulations stay deterministic.
+                ``IMMORTAL`` (the person never dies), which keeps runs deterministic.
             death_age (int, optional): Age of death when ``mortality_mode`` is ``FIXED_AGE``.
             state (str, optional): Two-letter state of residence for state income tax (a state with a
                 tax pack, or ``"DEFAULT"`` for the flat default rate). Defaults to ``None``, which falls
                 back to ``config.tax.state.default_state``. A code without a pack raises
-                :class:`~life_model.config.models.UnknownStateError` (Plan 31 D4).
+                :class:`~life_model.config.models.UnknownStateError`.
             birth (str, optional): Birth month ``"YYYY-MM"`` (keyword-only). When given with
                 ``age``, the two must agree.
-            residency (optional): The residency timeline ``[("YYYY-MM", state), ...]`` (keyword-only; Plan
-                31 D4): the state from each month on. Before its first entry the person lives in
+            residency (optional): The residency timeline ``[("YYYY-MM", state), ...]`` (keyword-only):
+                the state from each month on. Before its first entry the person lives in
                 ``state``. A unit files in its head's state each month: a year with moves files part-year
                 returns (wages by the months worked in each state, other income by residence at receipt).
             widowed_year (int, optional): The year a spouse died before the run (keyword-only): the person
                 files as a qualifying surviving spouse for the two following years while a dependent child
-                lives with them (IRC §2(a); Plan 31 D5).
+                lives with them (IRC §2(a)).
             estimated_payments (optional): Quarterly federal estimated tax payments
-                (:class:`~life_model.tax.payments.EstimatedPayments`; keyword-only, Plan 31 D3).
+                (:class:`~life_model.tax.payments.EstimatedPayments`; keyword-only).
         """
-        # A state without a tax pack is refused before the person joins the model (Plan 31 D4).
+        # A state without a tax pack is refused before the person joins the model.
         for code in [state, *(entry[1] for entry in residency or ())]:
             if code is not None:
                 family.model.config.tax.state.resolve_state_code(code)
@@ -148,17 +148,17 @@ class Person(LifeModelAgent):
         if getattr(spending, "person", None) is None:
             spending.person = self  # whose spending it is (reporting: the agent frame's Owner column)
             spending._start_schedule()
-        #: The residency timeline: ``(month index, state)`` from that month on (Plan 31 D4).
+        #: The residency timeline: ``(month index, state)`` from that month on.
         self._residency: list[tuple[int, str | None]] = []
         self._set_residency(state, residency)
-        #: The year this person's spouse died (qualifying surviving spouse for two years after; Plan 31 D5).
+        #: The year this person's spouse died (qualifying surviving spouse for two years after, IRC §2(a)).
         self.spouse_death_year: int | None = widowed_year
-        #: Federal estimated tax payments policy (Plan 31 D3).
+        #: Federal estimated tax payments policy.
         self.estimated_payments = estimated_payments
-        #: Tax payments by tax year (withholding, estimated payments; Plan 31 D3).
+        #: Tax payments by tax year (withholding, estimated payments).
         self.tax_payments: dict = {}
         #: The balance due on a filed return, payable in April (a liability, ``TaxDue:<id>``), and a refund
-        #: receivable in April (an asset, ``TaxRefund:<id>``) (Plan 31 D3).
+        #: receivable in April (an asset, ``TaxRefund:<id>``).
         self.taxes_owed = 0.0
         self.tax_refund_due = 0.0
         self.gender = gender
@@ -210,7 +210,7 @@ class Person(LifeModelAgent):
         # across all of the person's jobs so two jobs can't each use the full 402(g) limit. Reset in
         # post_step.
         self._elective_deferrals_ytd = 0.0
-        # Standing savings policies (Plan 27 D4; see life_model.policies).
+        # Standing savings policies (see life_model.policies).
         self._contribution_plans: list = []
         self._savings_policy = None
         self._roth_conversion_policy = None
@@ -231,7 +231,7 @@ class Person(LifeModelAgent):
 
         self.family.members.append(self)
 
-    # --- standing savings policies (Plan 27 D4) ---
+    # --- standing savings policies ---
 
     @property
     def contribution_plans(self) -> tuple:
@@ -339,7 +339,7 @@ class Person(LifeModelAgent):
         """Get all child dependents for this person from the registry"""
         return self.model.registries.children.get_items(self)
 
-    # --- residency (Plan 31 D4) ---
+    # --- residency ---
 
     def _set_residency(self, state: str | None, residency) -> None:
         from ..model import month_index, parse_year_month
@@ -452,7 +452,7 @@ class Person(LifeModelAgent):
 
     @property
     def home_equity_lines(self):
-        """Get all home equity lines of credit for this person from the registry (Plan 27 D7)."""
+        """Get all home equity lines of credit for this person from the registry."""
         return self.model.registries.home_equity_lines.get_items(self)
 
     @property
@@ -514,7 +514,7 @@ class Person(LifeModelAgent):
         Sums the ``stat_medical_costs`` stamped in ``pre_step`` by the person's opt-in healthcare
         agents: age-curve costs (MedicalCosts), Medicare premiums (deductible per IRS Pub. 502),
         and net-of-insurance long-term-care costs, plus long-term care insurance premiums up to the
-        §213(d)(10) age limit (Plan 31).
+        §213(d)(10) age limit.
         """
         from ..tax.deductions import deductible_insurance_premiums
 
@@ -586,8 +586,8 @@ class Person(LifeModelAgent):
         - Charitable contributions
         - Mortgage interest (capped to the first $750k of acquisition debt, TCJA)
         - State and local taxes: property tax plus ``state_income_tax_paid``, capped at the SALT
-          limit. ``state_income_tax_paid`` defaults to 0 so the property-only result
-          is unchanged for every caller that does not thread state income tax.
+          limit. ``state_income_tax_paid`` defaults to 0 (property tax only) for callers that do
+          not thread state income tax.
         - Unreimbursed medical expenses above the 7.5%-of-income floor;
           ``additional_income`` (a prospective 401k withdrawal being sized) raises that floor so
           sized taxes equal settled taxes.
@@ -1135,7 +1135,7 @@ class Person(LifeModelAgent):
 
     @property
     def fixed_income_holdings(self):
-        """CDs, Treasuries, I bonds and bond funds (Plan 27 D2) owned by this person."""
+        """CDs, Treasuries, I bonds and bond funds owned by this person."""
         return self.model.registries.fixed_income.get_items(self)
 
     def fixed_income_balance(self, *, reserve: bool) -> float:
@@ -1480,7 +1480,7 @@ class Person(LifeModelAgent):
     def on_year_start(self):
         # A surviving spouse files jointly for the year of the death, then single the following year; the
         # tax unit files as a qualifying surviving spouse for two years while a dependent child lives with
-        # them (TaxUnit.build_units; Plan 31 D5).
+        # them (TaxUnit.build_units).
         if self._widowed_year is not None and self.model.year > self._widowed_year:
             self.filing_status = FilingStatus.SINGLE
             self._widowed_year = None
@@ -1545,12 +1545,12 @@ class Person(LifeModelAgent):
         survivor adjustments, and remove the deceased (and their emptied accounts) from the
         simulation so nothing of theirs steps again.
 
-        Simplifications (documented, backlog for later refinement):
+        Simplifications:
           * Non-spouse inherited pre-tax accounts follow ``estate.inherited_pretax_mode``: the
             SECURE Act 10-year even spread (default) or the death-year lump sum.
-          * A widowed spouse files jointly in the death year, then (Plan 31 D5) as a qualifying
-            surviving spouse for two years while a dependent child lives with them, else single or
-            head of household.
+          * A widowed spouse files jointly in the death year, then as a qualifying surviving
+            spouse for two years while a dependent child lives with them, else single or head of
+            household.
           * Pensions with a survivor election continue a reduced stream to a surviving spouse;
             single-life pensions and life-only annuities simply stop; no state estate taxes.
         """
@@ -1583,7 +1583,7 @@ class Person(LifeModelAgent):
 
         # 3b. End-of-life costs: funeral plus a final-year medical spike reduce the
         #     estate *before* it is valued, transferred, and estate-taxed. Opt-in: charged only
-        #     when the person has healthcare agents, so other simulations are unchanged.
+        #     when the person has healthcare agents (a household that does not model healthcare has none).
         self._charge_end_of_life_costs()
 
         # 3c. Settle pensions: a survivor election continues a reduced stream to a surviving
@@ -1677,7 +1677,7 @@ class Person(LifeModelAgent):
         """Charge funeral and final-year medical costs against the estate.
 
         Charged only when the person opted into the healthcare subsystem (has any healthcare
-        agent), so simulations without healthcare agents keep today's death flow byte-identical.
+        agent); a person without healthcare agents has no end-of-life costs.
         The funeral cost is CPI-indexed from the start year; the final-year medical spike is the
         configured multiplier times the person's current-year medical cost, and keys off the
         ``MedicalCosts`` agent(s) only — a decedent with just Medicare/LongTermCare agents incurs
@@ -1730,7 +1730,7 @@ class Person(LifeModelAgent):
 
         A pension with ``survivor_percent > 0`` and a surviving spouse transfers to that spouse at
         ``benefit x survivor_percent/100`` (a real single-life-vs-survivor modeling lever). Without
-        a survivor election or a surviving spouse the pension terminates, as it does today.
+        a survivor election or a surviving spouse the pension terminates.
 
         This runs before the estate transfer, so terminated pensions are removed from the registry
         (the generic reassignment won't touch them) and the survivor's pension is already re-owned
@@ -1747,7 +1747,7 @@ class Person(LifeModelAgent):
                 # against the survivor's own retirement status (a working 50-year-old widow still
                 # receives the joint-and-survivor benefit from the year of death).
                 pension.start_age = spouse.age
-                # The survivor's stream is a fixed benefit: it no longer accrues service.
+                # The survivor's stream is a fixed benefit: it accrues no further service.
                 pension.accrues_service = False
                 pension.is_survivor_stream = True
                 pensions.unregister(self, pension)
@@ -1939,8 +1939,8 @@ class Person(LifeModelAgent):
         Under ``estate.inherited_pretax_mode == "ten_year"`` (default) the balance moves into an
         :class:`~life_model.account.inherited.InheritedPretaxAccount` that spreads the distribution
         (and its tax) over ten years per the SECURE Act. Under ``"lump_sum"`` the whole balance is
-        distributed and taxed to the beneficiary in the death year (the lump-sum simplification,
-        retained for comparability).
+        distributed and taxed to the beneficiary in the death year (a simplification, kept as an
+        option to compare against).
         """
         from ..account.job401k import Job401kAccount
         from ..account.traditional_IRA import TraditionalIRA
@@ -2005,12 +2005,12 @@ class Person(LifeModelAgent):
 
     def _pass_cash_and_debt_to(self, inheritor: "Person") -> None:
         """Hand the cash the decedent held outside any bank, and the unpaid bills they carried as
-        debt, to the inheritor (both used to vanish with the decedent)."""
+        debt, to the inheritor (neither leaves the books with the decedent)."""
         cause = f"estate of {self.name}"
         if self.cash:
             inheritor.receive_cash(self.cash, kind=FlowKind.INHERITANCE, from_account=cash_label(self), cause=cause)
             self.cash = 0.0
-        # A return's balance due or refund passes with the estate (Plan 31 D3).
+        # A return's balance due or refund passes with the estate.
         for attribute, prefix in (("taxes_owed", "TaxDue"), ("tax_refund_due", "TaxRefund")):
             amount = getattr(self, attribute)
             if amount:
@@ -2126,7 +2126,8 @@ class Person(LifeModelAgent):
         # never transferred; remove them so they stop stepping.
         for acct in self._owned_financial_agents():
             acct.remove()
-        # Pensions and other benefits are life-only in v1: they stop at death.
+        # Pensions and other benefits still owned by the deceased are life-only: they stop at death (a
+        # survivor pension was already re-owned by the spouse in _settle_pensions_on_death).
         from ..base_classes import Benefit
 
         for benefit in [a for a in self.model.agents if isinstance(a, Benefit) and getattr(a, "person", None) is self]:
@@ -2158,7 +2159,7 @@ class Person(LifeModelAgent):
 
 @dataclass
 class SpendingLine:
-    """A categorized line of living spending (Plan 27 D6).
+    """A categorized line of living spending.
 
     ``amount`` is per ``period`` (``"annual"``: a twelfth is paid each month; ``"monthly"``: paid every
     month) in the run's first-year dollars, grown every year by ``growth_pct`` (None: the economy's
@@ -2190,7 +2191,7 @@ class SpendingLine:
 
 
 class RecurringExpense(SpendingLine):
-    """A multi-year expense (Plan 27 D6): a :class:`SpendingLine` from ``start_year`` through ``end_year``,
+    """A multi-year expense: a :class:`SpendingLine` from ``start_year`` through ``end_year``,
     added to a person's spending with ``Spending.add_line`` (at construction, or from a ``LifeEvent``)."""
 
     def __init__(
@@ -2234,7 +2235,7 @@ class Spending(LifeModelAgent):
                 Pass None to grow with the economy's inflation each year. Defaults to 0 (no increase;
                 ``yearly_increase=`` is a deprecated alias).
             categories (dict, optional): Categorized lines ``{name: SpendingLine(...)}`` on top of
-                ``base`` (keyword-only; Plan 27 D6). Each is paid with the month's bills under its name.
+                ``base`` (keyword-only). Each is paid with the month's bills under its name.
             schedule (list, optional): ``[(age, percent), ...]``: in the month the person reaches each
                 age, every line (base and categories) becomes ``percent`` of what it was (e.g. a
                 retirement spending smile ``[(75, 80), (85, 87.5)]``). Ages already reached when the

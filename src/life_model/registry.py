@@ -169,7 +169,7 @@ class MortgageRegistry(PersonRegistry["Mortgage"]):
 
 
 class HomeEquityLineRegistry(PersonRegistry["HomeEquityLine"]):
-    """Registry for home equity lines of credit (Plan 27 D7)"""
+    """Registry for home equity lines of credit"""
 
 
 class MedicalCostsRegistry(PersonRegistry["MedicalCosts"]):
@@ -189,7 +189,7 @@ class ChildRegistry(PersonRegistry["Child"]):
 
 
 class QualifyingRelativeRegistry(PersonRegistry["Dependent"]):
-    """Registry for qualifying relatives (dependents other than children: a parent; Plan 31 D5)"""
+    """Registry for qualifying relatives (dependents other than children, e.g. a parent)"""
 
 
 class PensionRegistry(PersonRegistry["Pension"]):
@@ -197,7 +197,7 @@ class PensionRegistry(PersonRegistry["Pension"]):
 
 
 class FixedIncomeRegistry(PersonRegistry["FixedIncomeHolding"]):
-    """Registry for managing fixed-income holdings (CDs, Treasuries, I bonds, bond funds; Plan 27 D2)"""
+    """Registry for managing fixed-income holdings (CDs, Treasuries, I bonds, bond funds)"""
 
 
 class TrustRegistry(PersonRegistry["Trust"]):

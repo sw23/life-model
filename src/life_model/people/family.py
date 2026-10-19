@@ -26,12 +26,13 @@ class Family(LifeModelAgent):
             args (Person): Family members.
             withdrawal_order (tuple[str, ...], optional): The household payment waterfall its tax
                 units use (see :data:`~life_model.people.tax_unit.DEFAULT_WITHDRAWAL_ORDER`, the
-                default: bank, brokerage, roth_basis, pretax, roth_earnings). Keyword-only.
+                default: bank, fixed_income, brokerage, roth_basis, pretax, roth_earnings, reserve).
+                Keyword-only.
         """
         super().__init__(model)
         self.members = list(args)
-        # Kept as given (an order written before Plan 27's fixed_income / reserve sources stays as written);
-        # each tax unit normalizes it.
+        # Kept as given (an order may leave out the fixed_income / reserve sources); each tax unit
+        # normalizes it.
         validate_withdrawal_order(withdrawal_order)
         self.withdrawal_order = DEFAULT_WITHDRAWAL_ORDER if withdrawal_order is None else tuple(withdrawal_order)
 

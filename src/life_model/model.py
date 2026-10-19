@@ -151,7 +151,7 @@ class EventKind(str, Enum):
 
 #: One-line meaning of every :class:`EventKind` (rendered into docs/outputs.md).
 EVENT_KIND_DOCS: dict[str, str] = {
-    "note": "Free-text event (what Event(message) creates); most legacy messages.",
+    "note": "Free-text event (what Event(message) creates); the engine's untyped messages.",
     "life_event_fired": "A scheduled LifeEvent fired (details: stage; the record also has name and scheduled_year).",
     "retired": "A job ended (retirement, a layoff, death).",
     "retirement_age": "A person reached the federal retirement age (59.5).",
@@ -198,11 +198,11 @@ class Event:
         """Event
 
         ``Event("free text")`` (a plain string first argument) is a :attr:`EventKind.NOTE` with that
-        message, as events have always been. A typed event passes an :class:`EventKind` first, plus
+        message. A typed event passes an :class:`EventKind` first, plus
         what it is about; its message is generated when not given.
 
         Args:
-            kind (EventKind | str): The event's kind, or (legacy) its message.
+            kind (EventKind | str): The event's kind, or a free-text message (a ``NOTE``).
             year (int, optional): Year; stamped by :meth:`EventLog.add` when None.
             person (Person | str, optional): Who it is about (stored as name and agent id).
             amount (float, optional): Dollar amount involved.
@@ -216,7 +216,7 @@ class Event:
         elif kind is None:
             self.kind = EventKind.NOTE
         else:
-            # Legacy: Event("free text").
+            # Event("free text"): a note.
             self.kind = EventKind.NOTE
             message = kind if message is None else message
         self.year = year
@@ -315,8 +315,8 @@ class EventLog:
         self.list = []
 
     def _repr_html_(self):
-        # The life story: detail events (RMDs, forced sales, ...) are omitted, which keeps this table
-        # exactly as it was before events were typed. Use :meth:`to_frame` for everything.
+        # The life story: detail events (RMDs, forced sales, ...) are omitted. Use :meth:`to_frame`
+        # for everything.
         table = "<table>"
         table += "<tr><th>Year:</th><th>Event:</th></tr>\n"
         table += "".join(x._repr_html_() for x in self.list if not x.is_detail)
@@ -325,7 +325,7 @@ class EventLog:
 
     def add(self, event: Event):
         if event.year is None or event.kind == EventKind.NOTE:
-            # Stamped with the year it was logged (as always for free-text events).
+            # Stamped with the year it was logged (a free-text note always is).
             event.year = self.model.year
         if event.month is None and event.year == self.model.year:
             event.month = self.model.month
@@ -679,7 +679,7 @@ class LifeModel(mesa.Model):
         #: The same around each simulated month, keyed ``(year, month)``.
         self.month_balance_sheets: dict = {}
         self.simulated_years = []
-        # Invariant checker (Plan 29 D4): mode, the violations found, and per-year start snapshots.
+        # Invariant checker: mode, the violations found, and per-year start snapshots.
         from .invariants import validate_mode
 
         self.checks = validate_mode(checks)
@@ -1257,7 +1257,7 @@ class LifeModelAgent(mesa.Agent):
         Args:
             model (LifeModel): LifeModel.
         """
-        super().__init__(model)  # unique_id is now automatically assigned
+        super().__init__(model)  # Mesa assigns unique_id
 
         #: The model period (``LifeModel.period``, months since the start) when this agent was built.
         self.created_period: int = getattr(model, "period", 0)

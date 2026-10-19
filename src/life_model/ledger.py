@@ -47,8 +47,8 @@ if TYPE_CHECKING:
 
 
 class FlowKind(str, Enum):
-    """What a ledger entry is. The plan's list, plus ``borrow``, ``forfeit``, ``opening_balance`` and
-    ``other``."""
+    """What a ledger entry is: the kind of economic event that moved the money (one-line meanings in
+    :data:`FLOW_KIND_DOCS`)."""
 
     WAGE = "wage"  #: Salary paid by an employer.
     BONUS = "bonus"  #: Bonus paid by an employer.
@@ -436,9 +436,9 @@ def balance_sheet_lines(agent: Any) -> list[tuple[str, float, Any]]:
     Included: bank, brokerage, 401k, IRAs, HSAs, 529 plans, inherited IRAs, annuities (accumulation
     balance plus annuitized reserve, while active), revocable trusts, homes (unsold), whole-life cash
     value net of policy loans (active policies), cash held outside banks, a tax refund due in April;
-    liabilities: mortgages, car/student loans, credit cards, unpaid-bills debt, a balance due in April. Excluded: donor-advised funds and
-    irrevocable trusts (no longer the household's), unvested stock, pensions and Social Security
-    (income streams, not balances).
+    liabilities: mortgages, car/student loans, credit cards, unpaid-bills debt, a balance due in April.
+    Excluded: donor-advised funds and irrevocable trusts (given away: not the household's), unvested
+    stock, pensions and Social Security (income streams, not balances).
     """
     Person, FinancialAccount, Loan, RevolvingDebt, Home, Annuity, Trust, TrustType, LifeInsurance = _sheet_types()
 
@@ -447,7 +447,7 @@ def balance_sheet_lines(agent: Any) -> list[tuple[str, float, Any]]:
             (cash_label(agent), agent.cash, agent),
             (debt_label(agent), -agent.debt, agent),
         ]
-        # A filed return's balance due (a liability) or refund (an asset) until April (Plan 31 D3).
+        # A filed return's balance due (a liability) or refund (an asset) until April.
         if getattr(agent, "taxes_owed", 0.0):
             lines.append((f"TaxDue:{agent.unique_id}", -agent.taxes_owed, agent))
         if getattr(agent, "tax_refund_due", 0.0):

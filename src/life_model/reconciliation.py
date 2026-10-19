@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Reconcile a simulated year against the household's real documents (Plan 29 D2).
+"""Reconcile a simulated year against the household's real documents.
 
 :func:`reconcile` runs a household spec through ``year`` and compares the year's results with the
 spec's :class:`~life_model.spec.actuals.ActualRecords` (or records passed in): every Form 1040 and
@@ -22,7 +22,7 @@ green, the likely cause:
 * ``unit_mismatch``: off by a factor of 12 or 100 (a monthly amount entered as annual, a fraction
   entered as a percent);
 * ``timing``: withholding, estimated payments and the refund/balance due of a household without
-  ``payroll.withholding`` or ``estimated_payments`` (its taxes settle as a December lump; Plan 31 D3);
+  ``payroll.withholding`` or ``estimated_payments`` (its taxes settle as a December lump);
 * ``missing_input``: a line that needs a spec input the engine does not take yet (a 1099-B's per-sale
   cost basis, a 1098's escrow lines);
 * ``unmodeled_line``: a line the engine has no equivalent for (household-employee wages, ...);
@@ -34,7 +34,7 @@ line tables). Notable conventions: line 16 is ordinary plus preferential tax (th
 the exact rate schedule; the IRS Tax Table below $100,000 taxes the midpoint of a $50 row, so line
 16 and the totals after it have a wider green tolerance); line 23 adds the NIIT, the Additional
 Medicare Tax, additional taxes on early distributions and self-employment tax (Schedule 2); each
-credit goes to its own line (Plan 31): line 19 / 28 the child tax credit and the additional child tax
+credit goes to its own line: line 19 / 28 the child tax credit and the additional child tax
 credit (Schedule 8812), line 20 the Schedule 3 credits (dependent care line 2, education line 3,
 saver's line 4, prior-year minimum tax line 6b), line 27 (27a) the earned income credit, line 29 the
 refundable American opportunity credit; line 17 is AMT and line 16 includes the Form 8814 tax.
@@ -264,7 +264,7 @@ def form_1040_lines(r: "TaxReturn") -> dict[str, float]:
     other_taxes = r.niit + r.additional_medicare_tax + r.total_penalties + r.self_employment_tax
     total_tax = line_22 + other_taxes
     refundable = r.credits_refundable
-    # Payments (Plan 31 D3): withholding, estimated payments, the refundable credits and excess Social Security.
+    # Payments: withholding, estimated payments, the refundable credits and excess Social Security.
     withheld = r.federal_income_tax_withheld + r.additional_medicare_tax_withheld
     schedule_3_15 = refundable.get("premium_tax_credit", 0.0) + r.excess_social_security_withheld
     other_refundable = (
@@ -652,7 +652,7 @@ def _w2_simulated(sim: _Year, person, employer: str) -> dict[str, float | None]:
     payments = getattr(person, "tax_payments", {}).get(sim.year)
     box_2 = box_17 = None
     if withholds:
-        # Plan 31 D3: what the paychecks (and vests) actually withheld.
+        # What the paychecks (and vests) actually withheld.
         box_2 = payments.federal_by_employer.get(employer, 0.0) if payments is not None else 0.0
         box_17 = payments.state_by_employer.get(employer, 0.0) if payments is not None else 0.0
         if payments is not None:
@@ -905,7 +905,7 @@ def reconcile(
             cause = "timing" if unmatched else "unmodeled_line" if line not in sim_1040 else None
             note = (
                 "taxes settle as a December lump: set payroll.withholding (and estimated_payments) to model the "
-                "payments and the April settlement (Plan 31 D3)"
+                "payments and the April settlement"
                 if unmatched
                 else ""
             )
@@ -939,7 +939,7 @@ def reconcile(
         if state is not None and sim_return is not None:
             detail = sim_return.state_return
             state_tax = sim_return.state_tax
-            # A part-year return (Plan 31 D4): compare with the share of the state the record is for.
+            # A part-year return: compare with the share of the state the record is for.
             for part in detail.parts if detail is not None else ():
                 if part.state == state.state:
                     detail, state_tax = part, part.tax
@@ -982,7 +982,7 @@ def reconcile(
                 amount,
                 sim_value,
                 cause=None if sim_value is not None else "missing_input",
-                note="" if sim_value is not None else "payroll deductions other than 401k are Plan 27 D3",
+                note="" if sim_value is not None else "only the 401k codes (D, AA) are reconciled",
                 source=source,
             )
 
@@ -1026,7 +1026,7 @@ def reconcile(
                 amount,
                 sim_value,
                 cause=None if sim_value is not None else "missing_input",
-                note="" if sim_value is not None else "payroll deductions are Plan 27 D3",
+                note="" if sim_value is not None else "only the 401k and roth_401k deductions are reconciled",
                 source=source,
             )
         withheld = None
@@ -1045,7 +1045,7 @@ def reconcile(
                     amount,
                     sim_value,
                     cause="timing" if sim_value is None else None,
-                    note="" if sim_value is not None else "set payroll.withholding to model withholding (Plan 31 D3)",
+                    note="" if sim_value is not None else "set payroll.withholding to model withholding",
                     source=source,
                 )
 
@@ -1084,7 +1084,7 @@ def reconcile(
     if any(r.cause == "timing" for r in rows):
         report.notes.append(
             "Withholding, estimated payments and the refund have nothing to match: without payroll.withholding or "
-            "estimated_payments the model settles the year's taxes as a December lump (Plan 31 D3)."
+            "estimated_payments the model settles the year's taxes as a December lump."
         )
     return report
 
@@ -1111,7 +1111,7 @@ def _row_order(row: ReconciliationLine) -> tuple:
 
 
 def _spending_lines(sim: _Year, spending, add) -> None:
-    """Calibration (D6): the model's assumed amounts next to the household's actual spending."""
+    """Calibration: the model's assumed amounts next to the household's actual spending."""
     sinks: dict[str, float] = {}
     housing = 0.0
     for entry in sim.entries():
