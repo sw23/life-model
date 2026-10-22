@@ -212,7 +212,9 @@ class AdviserEvaluator:
 
             returns = {c.decision: c.mean_return for c in [*scored, *references]}
             oracle_return = max(c.mean_return for c in scored)
-            worst_return = min(c.mean_return for c in scored)
+            # The span normalizes every constant answer's regret, heuristics included, so its floor
+            # is the worst of everything that can be executed (not only the searched candidates).
+            worst_return = min(c.mean_return for c in [*scored, *references])
             if decision is not None and (decision in by_name or decision == NO_LEVER):
                 executed = NO_LEVER_DEFAULT_PLAN if decision == NO_LEVER else decision
                 adviser_stats = by_name[executed]

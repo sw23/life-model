@@ -46,18 +46,18 @@ class TestEndOfLifeCosts(unittest.TestCase):
         parent = Person(
             family=family,
             name="Parent",
-            age=79,
+            age=80,
             retirement_age=65,
-            spending=Spending(model, base=0),
+            spending=Spending(model, base_annual=0),
             mortality_mode=MortalityMode.FIXED_AGE,
             death_age=80,
         )
-        child = Person(family=family, name="Child", age=50, retirement_age=65, spending=Spending(model, base=0))
+        child = Person(family=family, name="Child", age=51, retirement_age=65, spending=Spending(model, base_annual=0))
         BankAccount(owner=parent, company="Bank", balance=balance)
         BankAccount(owner=child, company="Bank", balance=0)
         if with_medical:
             MedicalCosts(parent)
-        model.step()
+        model.step_year()
         return child, model
 
     def test_estate_reduced_by_funeral_and_final_medical(self):

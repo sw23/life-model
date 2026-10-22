@@ -6,6 +6,8 @@ import html
 from typing import TYPE_CHECKING, Optional
 
 from ..base_classes import Investment
+from ..deprecated_names import deprecated_arguments
+from ..ledger import FlowKind
 from ..model import compound_interest
 from ..tax.income import IncomeType
 
@@ -15,15 +17,33 @@ if TYPE_CHECKING:
 
 
 class Plan529(Investment):
+    STATS_OWNED = frozenset({"stat_529_balance"})
+    BALANCE_STAT = "stat_529_balance"
+
+    @deprecated_arguments(
+        {"growth_rate": "growth_pct", "annual_contribution_limit": "contribution_limit_annual"},
+        positional=(
+            "beneficiary",
+            "balance",
+            "state",
+            "growth_pct",
+            "contribution_limit_annual",
+            "lifetime_contribution_limit",
+        ),
+    )
     def __init__(
         self,
         owner: "Person",
+        *,
         beneficiary: Optional["Child"] = None,
         balance: float = 0,
         state: str = "NY",
-        growth_rate: float | None = None,
-        annual_contribution_limit: float | None = None,
+        growth_pct: float | None = None,
+        contribution_limit_annual: float | None = None,
         lifetime_contribution_limit: float | None = None,
+        basis: float | None = None,
+        allocation: "dict[str, float] | None" = None,
+        expense_ratio_pct: float = 0.0,
     ):
         """Models a 529 education savings plan for a person
 
@@ -32,15 +52,24 @@ class Plan529(Investment):
             beneficiary: The child beneficiary of this plan (optional)
             balance: Current balance in the plan
             state: The state sponsoring the plan
-            growth_rate: Expected annual growth rate percentage. Defers to the economy's equity
-                return when None.
-            annual_contribution_limit: Annual contribution limit. Uses configured default if None.
+            growth_pct: Expected annual growth rate percentage (deprecated alias ``growth_rate``).
+                Defers to the economy's equity return when None.
+            contribution_limit_annual: Annual contribution limit (deprecated alias
+                ``annual_contribution_limit``). Uses configured default if None.
             lifetime_contribution_limit: Lifetime contribution limit. Uses configured default if None.
+            basis: Contributions in the balance; the rest is earnings, taxed and penalized
+                pro rata on a non-qualified withdrawal. The whole balance when None.
+            allocation: Target allocation in percent by asset class, rebalanced yearly.
+            expense_ratio_pct: Fund expense ratio (percent a year).
         """
+        growth_rate = growth_pct
+        annual_contribution_limit = contribution_limit_annual
+        if basis is not None and not 0 <= basis <= balance + 1e-9:
+            raise ValueError("basis must be between 0 and the balance")
         # Get defaults from config
         plan_529_config = owner.model.config.accounts.plan_529
 
-        super().__init__(owner, balance, growth_rate)
+        super().__init__(owner, balance, growth_rate, allocation=allocation, expense_ratio_pct=expense_ratio_pct)
         self.beneficiary = beneficiary
         self.state = state
 
@@ -57,8 +86,9 @@ class Plan529(Investment):
         )
 
         # Track contributions and earnings separately for tax purposes
-        self.total_contributions = balance  # Assume initial balance is all contributions
-        self.total_earnings = 0
+        # Without a basis the opening balance is assumed to be all contributions.
+        self.total_contributions = balance if basis is None else basis
+        self.total_earnings = 0 if basis is None else balance - basis
         self.contributions_this_year = 0
         self.total_withdrawals = 0
         self.qualified_withdrawals = 0
@@ -74,11 +104,15 @@ class Plan529(Investment):
         # Register with the model registry
         self.model.registries.plan_529s.register(owner, self)
 
-    def contribute(self, amount: float) -> float:
+    def contribute(
+        self, amount: float, *, from_account=None, source: str = "contribution from outside the model"
+    ) -> float:
         """Make a contribution to the 529 plan
 
         Args:
             amount: Amount to contribute
+            from_account: Household account the caller already debited for it (keyword-only); when
+                None the money is posted to the ledger as new money from ``source``.
 
         Returns:
             Amount actually contributed (limited by contribution limits)
@@ -98,6 +132,14 @@ class Plan529(Investment):
             self.balance += actual_contribution
             self.total_contributions += actual_contribution
             self.contributions_this_year += actual_contribution
+            self.model.ledger.post(
+                actual_contribution,
+                FlowKind.CONTRIBUTION,
+                from_account=from_account,
+                to_account=self,
+                source=None if from_account is not None else source,
+                agent=self.person,
+            )
 
         return actual_contribution
 
@@ -136,7 +178,13 @@ class Plan529(Investment):
             self.total_withdrawals += actual_withdrawal
             self.qualified_withdrawals += actual_withdrawal
             # Qualified withdrawals are tax-free; deposit the cash to the owner.
-            self.person.receive_cash(actual_withdrawal, source="529 qualified withdrawal")
+            self.person.receive_cash(
+                actual_withdrawal,
+                source="529 qualified withdrawal",
+                kind=FlowKind.WITHDRAWAL,
+                from_account=self,
+                cause=self.model.ledger.current_cause or "qualified education expenses (tax-free)",
+            )
 
         return actual_withdrawal
 
@@ -173,11 +221,15 @@ class Plan529(Investment):
 
         # Route the cash and taxes: full withdrawal to the owner's bank, the earnings portion is
         # ordinary income, and the penalty is debited from the owner.
-        self.person.receive_cash(actual_withdrawal, source="529 non-qualified withdrawal")
+        self.person.receive_cash(
+            actual_withdrawal, source="529 non-qualified withdrawal", kind=FlowKind.WITHDRAWAL, from_account=self
+        )
         if earnings_withdrawn > 0:
-            self.person.income.add(IncomeType.ORDINARY, earnings_withdrawn)
+            self.person.income.add(IncomeType.ORDINARY, earnings_withdrawn, source="529_nonqualified")
         if penalty_amount > 0:
-            self.person.deduct_from_bank_accounts(penalty_amount)
+            self.person.deduct_from_bank_accounts(
+                penalty_amount, kind=FlowKind.PENALTY, sink="IRS", cause="529 non-qualified withdrawal penalty"
+            )
             self.stat_penalties_paid += penalty_amount
 
         return (actual_withdrawal, penalty_amount)
@@ -208,7 +260,7 @@ class Plan529(Investment):
             return self.withdraw_non_qualified(amount)
 
     def calculate_growth(self) -> float:
-        """Calculate investment growth for the period"""
+        """A year of growth on the current balance at the annual rate (display; growth is monthly)."""
         return compound_interest(self.balance, self.growth_rate, 1, 1)
 
     def reset_annual_contributions(self):
@@ -236,26 +288,17 @@ class Plan529(Investment):
         desc += "</ul>"
         return desc
 
-    def pre_step(self):
-        """Pre-step phase: Apply growth and update earnings tracking"""
-        # Calculate growth
-        growth = self.calculate_growth()
-        self.balance += growth
-        self.total_earnings += growth
-        self.stat_growth_history.append(growth)
-
     def step(self):
-        """Step phase: Track statistics"""
-        self.stat_529_balance = self.balance
+        """Apply the month's growth and update earnings tracking."""
+        growth = self.apply_growth()
+        self.total_earnings += growth
+
+    def on_year_end(self):
+        """Track the year's statistics, then reset the annual tracking."""
         self.stat_contributions_history.append(self.contributions_this_year)
         self.stat_qualified_withdrawals_history.append(self.qualified_withdrawals)
         self.stat_non_qualified_withdrawals_history.append(self.non_qualified_withdrawals)
-
-        # Track balance history (from FinancialAccount)
-        self.stat_balance_history.append(self.balance)
-
-    def post_step(self):
-        """Post-step phase: Reset annual tracking"""
+        super().on_year_end()  # balance history
         self.reset_annual_contributions()
         # Reset yearly withdrawal tracking
         self.qualified_withdrawals = 0

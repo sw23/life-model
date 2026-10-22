@@ -1,0 +1,38 @@
+# Household golden (synthetic, not real data). See ../README.md.
+spec_version: 1
+meta:
+  name: Head of household with a dependent parent
+  description: 'Household golden (synthetic): a single filer supporting a parent who lives elsewhere: head of household
+    and the credit for other dependents.'
+  as_of: 2026-01
+  start_year: 2026
+  end_year: 2026
+  seed: 1
+  default_state: TX
+people:
+- id: riley
+  name: Riley
+  age: 50
+  retirement_age: 67
+  spending:
+    amount_annual: 30000
+    growth_pct: 0
+  jobs:
+  - id: riley_job
+    company: Example County
+    salary_annual: 60000
+  accounts:
+  - kind: bank
+    id: riley_checking
+    company: Community Bank
+    type: Checking
+    balance: 20000
+    interest_pct: 0.0
+    compounding: annual
+    primary: true
+  dependents:
+  - id: pat
+    name: Pat
+    relationship: parent
+    gross_income_annual: 3000
+    support_annual: 6000

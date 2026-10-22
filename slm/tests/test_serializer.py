@@ -105,3 +105,55 @@ def test_retirement_context_defaults_render_as_absent():
     recovered = parse_household(text)
     assert recovered["ss_claim_age"] is None
     assert recovered["employer_match_rate"] == 0.0
+
+
+def test_json_channel_round_trips_exactly():
+    from slm.serializer import household_from_json, household_to_json
+
+    p = _profile(
+        initial_salary=123456.789,
+        initial_bank_balance=2000.015,
+        initial_spending=45678.3333333,
+        employer_match_rate=0.333,
+        employer_match_cap=0.0625,
+        retirement_spending_ratio=0.8125,
+        children_ages=[1, 7],
+        models_healthcare=True,
+        ss_claim_age=68,
+        economy_scenario="recession",
+        initial_401k_pretax=1e-7,
+    )
+    text = household_to_json(p)
+    assert household_from_json(text) == p
+    assert household_to_json(household_from_json(text)) == text  # canonical
+    # The English text rounds; the JSON channel does not.
+    assert parse_household(render_household(p))["initial_salary"] != p.initial_salary
+
+
+def test_json_channel_accepts_a_bare_profile_and_checks_the_version():
+    import json
+
+    import pytest
+
+    from slm.serializer import household_from_json, household_to_json
+
+    p = _profile()
+    assert household_from_json(json.dumps(p.model_dump(mode="json"))) == p
+    document = json.loads(household_to_json(p))
+    document["schema_version"] = 999
+    with pytest.raises(ValueError):
+        household_from_json(json.dumps(document))
+
+
+def test_json_line_and_spec_json():
+    import json
+
+    from slm.serializer import find_household_json, household_json_line, household_spec_json
+
+    p = _profile(ss_claim_age=67)
+    text = render_household(p) + "\n" + household_json_line(p) + "\n"
+    assert find_household_json(text) == p
+    assert find_household_json(render_household(p)) is None
+    spec = json.loads(household_spec_json(p))
+    assert spec["people"][0]["age"] == p.person_start_age
+    assert spec["people"][0]["spending"]["amount_annual"] == p.initial_spending

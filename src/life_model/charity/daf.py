@@ -6,6 +6,7 @@ import html
 from typing import TYPE_CHECKING, cast
 
 from ..base_classes import Investment
+from ..ledger import FlowKind
 from ..model import Event, LifeModel
 
 if TYPE_CHECKING:
@@ -13,7 +14,8 @@ if TYPE_CHECKING:
 
 
 class DonorAdvisedFund(Investment):
-    STATS_OWNED = frozenset({"stat_charitable_donations"})
+    STATS_OWNED = frozenset({"stat_charitable_donations", "stat_daf_balance"})
+    BALANCE_STAT = "stat_daf_balance"
 
     def __init__(
         self,
@@ -88,6 +90,9 @@ class DonorAdvisedFund(Investment):
         self.balance -= actual_withdrawal
         return actual_withdrawal
 
+    #: The fund's money has been given to the sponsoring charity: it is not the household's.
+    IN_NET_WORTH = False
+
     def contribute(self, amount: float) -> float:
         """Contribute to DAF from person's bank account (creates tax deduction)
 
@@ -99,7 +104,9 @@ class DonorAdvisedFund(Investment):
         """
         # Withdraw from person's bank account
         # Note: deduct_from_bank_accounts returns amount that COULD NOT be deducted
-        remaining_balance = self.person.deduct_from_bank_accounts(amount)
+        remaining_balance = self.person.deduct_from_bank_accounts(
+            amount, kind=FlowKind.GIFT, sink=f"{self.fund_name} donor-advised fund", cause="DAF contribution"
+        )
         amount_withdrawn = amount - remaining_balance
 
         if amount_withdrawn > 0:
@@ -168,18 +175,26 @@ class DonorAdvisedFund(Investment):
         desc += "</ul>"
         return desc
 
-    def pre_step(self):
+    def on_year_start(self):
         """Reset stats before the year begins"""
         # Reset this year's stats
         self.stat_charitable_donations = 0
         self.stat_contributions_this_year = 0
 
     def step(self):
-        """Execute annual DAF logic: apply growth, fees, and distributions
+        """No monthly work: the fund is not the household's money, so it is grown once a year."""
 
-        We override parent Investment.step() to control the order of operations.
-        """
-        # Apply growth first (inherited from Investment base class)
+    def apply_growth(self):
+        """Apply a year of growth at the annual rate (the fund is updated once a year)."""
+        growth = self.calculate_growth()
+        self.balance += growth
+        self.stat_growth_history.append(growth)
+        self._post_growth(growth)
+        return growth
+
+    def on_year_end(self):
+        """Execute annual DAF logic at year end: apply growth, fees, and distributions."""
+        # Apply growth first
         self.apply_growth()
 
         # Then apply management fee on the grown balance

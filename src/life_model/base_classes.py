@@ -6,8 +6,11 @@ from abc import ABC, abstractmethod
 from enum import Enum
 from typing import TYPE_CHECKING, ClassVar, Optional
 
+from .deprecated_names import deprecated_arguments
+from .economy import annual_to_monthly
+from .ledger import FlowKind
 from .limits import federal_retirement_age
-from .model import LifeModelAgent
+from .model import LifeModelAgent, snap_money
 
 if TYPE_CHECKING:
     from .people.person import Person
@@ -37,12 +40,50 @@ class FinancialAccount(LifeModelAgent, ABC):
     that don't expose the keyword can have ``account.beneficiary`` assigned directly.
     """
 
+    #: Whether the balance is the household's (counted in net worth and the conservation check).
+    #: False for a donor-advised fund, whose money has been given away.
+    IN_NET_WORTH: ClassVar[bool] = True
+    #: The model stat (``LifeModel.EXTRA_STATS`` name) that reports this account's year-end balance.
+    BALANCE_STAT: ClassVar[str | None] = None
+
+    def collect_stats(self):
+        """Report the year-end balance in :attr:`BALANCE_STAT`, when the account type has one."""
+        if self.BALANCE_STAT is not None:
+            setattr(self, self.BALANCE_STAT, self.balance)
+
     def __init__(self, person: "Person", balance: float = 0, *, beneficiary: Optional["Person"] = None):
         super().__init__(person.model)
         self.person = person
         self._balance = float(balance)
         self.beneficiary = beneficiary
+        #: The co-owner of a joint account (a spouse), or None. Bank and brokerage accounts take it
+        #: (``joint_owner=``); see :meth:`income_owners` and ``Person.die``.
+        self.joint_owner: Person | None = None
         self.stat_balance_history = []
+        if self.IN_NET_WORTH:
+            self.model.ledger.post_opening(self, self._balance)
+
+    @property
+    def owner(self) -> "Person":
+        """The account's owner (the same person as ``person``)."""
+        return self.person
+
+    @owner.setter
+    def owner(self, value: "Person") -> None:
+        self.person = value
+
+    def income_owners(self) -> "list[tuple[Person, float]]":
+        """Who reports this account's income, with their shares: the owner, or both owners half and half
+        for a joint account while both are alive (it matters on separate returns)."""
+        joint = self.joint_owner
+        if joint is not None and not joint.is_deceased and not self.person.is_deceased:
+            return [(self.person, 0.5), (joint, 0.5)]
+        return [(self.person, 1.0)]
+
+    def add_income(self, income_type, amount: float, *, source: str) -> None:
+        """Book ``amount`` of this account's income on its owners' ledgers (split for a joint account)."""
+        for person, share in self.income_owners():
+            person.income.add(income_type, amount * share, source=source)
 
     @property
     def balance(self) -> float:
@@ -51,7 +92,8 @@ class FinancialAccount(LifeModelAgent, ABC):
 
     @balance.setter
     def balance(self, value: float) -> None:
-        self._balance = value
+        # Monthly flows add twelfths; drop the floating-point residue (see ``snap_money``).
+        self._balance = snap_money(value)
 
     def get_balance(self) -> float:
         """Get current account balance"""
@@ -79,9 +121,24 @@ class FinancialAccount(LifeModelAgent, ABC):
         self.balance -= amount_withdrawn
         return amount_withdrawn
 
-    def step(self):
-        """Track balance history each step"""
+    def record_balance_history(self) -> None:
+        """Append the year-end balance to ``stat_balance_history`` (one entry per simulated year)."""
         self.stat_balance_history.append(self.balance)
+
+    def on_year_end(self):
+        """Track the year-end balance."""
+        self.record_balance_history()
+
+
+#: Deprecated loan argument names and their canonical replacements.
+LOAN_RENAMES = {
+    "person": "owner",
+    "loan_amount": "original_amount",
+    "yearly_interest_rate": "rate_pct",
+    "length_years": "term_years",
+    "principal": "current_balance",
+    "monthly_payment": "payment_monthly",
+}
 
 
 class Loan(LifeModelAgent, ABC):
@@ -90,28 +147,54 @@ class Loan(LifeModelAgent, ABC):
     The ABC owns amortization: :meth:`make_payment` applies a single **monthly** payment (loans
     compound and amortize monthly) with all the clamps — interest is charged on the current
     principal, principal never goes negative, and extra principal that exceeds the balance simply
-    pays the loan off. :meth:`make_yearly_payment` runs the twelve monthly periods that make up
-    one simulated year, so annual results match a real amortization schedule. Concrete subclasses
-    supply only rate/term/identification and register themselves; they do not re-implement payment
-    math.
+    pays the loan off. The tax unit services each loan once a month (:meth:`service_month`) with the
+    month's bills; ``interest_paid_this_year`` accumulates the year's interest (reset at each year
+    start) for the interest deductions and stats. :meth:`make_yearly_payment` (twelve payments at
+    once) is for direct callers. Concrete subclasses supply only rate/term/identification and
+    register themselves; they do not re-implement payment math.
+
+    Terms are in months: ``term_months`` is canonical and ``term_years`` is sugar for
+    ``term_months / 12`` (the ``length_years`` attribute). A loan already in progress is entered the way
+    its statement shows it — an ``origination`` month (or ``payments_made``), the ``remaining_months``,
+    the ``current_balance`` and the payment — and :func:`~life_model.debt.terms.resolve_loan_terms` fills in
+    the rest and rejects inputs that contradict each other. ``extra_principal_monthly`` is paid with
+    every scheduled payment. ``schedule="statement"`` trusts a current balance above the original schedule
+    (a loan behind on its payments) and amortizes from it.
     """
 
+    @deprecated_arguments(LOAN_RENAMES)
     def __init__(
         self,
-        person: "Person",
-        loan_amount: float,
-        yearly_interest_rate: float,
-        length_years: int,
-        principal: float | None = None,
-        monthly_payment: float | None = None,
+        owner: "Person",
+        *,
+        original_amount: float | None = None,
+        rate_pct: float | None = None,
+        term_years: float | None = None,
+        current_balance: float | None = None,
+        payment_monthly: float | None = None,
+        term_months: int | None = None,
+        origination=None,
+        payments_made: int | None = None,
+        remaining_months: int | None = None,
+        extra_principal_monthly: float = 0.0,
+        schedule: str = "contract",
     ):
-        super().__init__(person.model)
-        self.person = person
-        self.loan_amount = loan_amount
-        self.yearly_interest_rate = yearly_interest_rate
-        self.length_years = length_years
-        self.principal = loan_amount if principal is None else principal
-        self.monthly_payment = self.calculate_monthly_payment() if monthly_payment is None else monthly_payment
+        super().__init__(owner.model)
+        self.person = owner
+        self._set_terms(
+            schedule=schedule,
+            as_of=(self.model.year, self.model.month),
+            loan_amount=original_amount,
+            yearly_interest_rate=rate_pct,
+            length_years=term_years,
+            principal=current_balance,
+            monthly_payment=payment_monthly,
+            term_months=term_months,
+            origination=origination,
+            payments_made=payments_made,
+            remaining_months=remaining_months,
+            extra_principal_monthly=extra_principal_monthly,
+        )
 
         # Interest actually charged over the current year, captured as the year is amortized so the
         # itemized deduction / interest stats aren't understated by reading the post-payment principal.
@@ -125,6 +208,160 @@ class Loan(LifeModelAgent, ABC):
         self.stat_balance_history = []
         self.stat_yearly_principal_payment_history = []
         self.stat_yearly_interest_payment_history = []
+        # A loan taken out mid-run financed something outside the balance sheet (a car, tuition).
+        self.model.ledger.post_opening(self, self.principal, liability=True)
+
+    #: How resolution errors name the arguments (the constructor's names).
+    TERM_NAMES: ClassVar[dict[str, str]] = {"monthly_payment": "payment_monthly"}
+
+    def _set_terms(
+        self,
+        *,
+        as_of: tuple[int, int] | None,
+        loan_amount: float | None,
+        yearly_interest_rate: float | None,
+        length_years: float | None,
+        principal: float | None,
+        monthly_payment: float | None,
+        term_months: int | None,
+        origination,
+        payments_made: int | None,
+        remaining_months: int | None,
+        extra_principal_monthly: float = 0.0,
+        schedule: str = "contract",
+    ) -> None:
+        """Resolve and store the loan's terms (see :func:`~life_model.debt.terms.resolve_loan_terms`;
+        ``schedule="statement"`` trusts the statement's balance over the original schedule)."""
+        from .debt.terms import resolve_loan_terms
+
+        if yearly_interest_rate is None:
+            raise TypeError(f"{type(self).__name__} needs an interest rate")
+        if term_months is None and length_years is not None:
+            term_months = round(length_years * 12)
+        elif term_months is not None and length_years is not None and round(length_years * 12) != term_months:
+            raise ValueError(f"length_years={length_years} and term_months={term_months} disagree")
+        if extra_principal_monthly < 0:
+            raise ValueError("extra_principal_monthly must not be negative")
+        terms = resolve_loan_terms(
+            rate_pct=yearly_interest_rate,
+            as_of=as_of,
+            original_amount=loan_amount,
+            term_months=term_months,
+            origination=origination,
+            payments_made=payments_made,
+            remaining_months=remaining_months,
+            current_balance=principal,
+            monthly_payment=monthly_payment,
+            names=self.TERM_NAMES,
+            schedule=schedule,
+        )
+        #: Which inputs define the schedule: ``"contract"`` (the original terms) or ``"statement"``.
+        self.schedule = schedule
+        self.loan_amount = terms.original_amount
+        self.yearly_interest_rate = yearly_interest_rate
+        self.term_months = terms.term_months
+        self.principal = terms.current_balance
+        self.monthly_payment = terms.monthly_payment
+        #: Scheduled payments made so far (counts on with every payment in the run).
+        self.payments_made = terms.payments_made
+        #: Origination ``(year, month)`` when known (None: unknown).
+        self.origination = terms.origination
+        #: Extra principal paid with every scheduled payment.
+        self.extra_principal_monthly = float(extra_principal_monthly)
+
+    @property
+    def length_years(self) -> float:
+        """The term in years (``term_months / 12``; an int for a whole number of years)."""
+        years = self.term_months / 12
+        return int(years) if years == int(years) else years
+
+    @length_years.setter
+    def length_years(self, value: float) -> None:
+        self.term_months = round(value * 12)
+
+    @property
+    def remaining_months(self) -> int:
+        """Scheduled payments left to maturity (a prepaid loan pays off sooner)."""
+        return max(0, self.term_months - self.payments_made)
+
+    def refinance(
+        self,
+        rate_pct: float,
+        *,
+        term_months: int | None = None,
+        term_years: float | None = None,
+        costs: float = 0.0,
+        finance_costs: bool = False,
+        cash_out: float = 0.0,
+    ) -> float:
+        """Refinance: a new loan at ``rate_pct`` for the current balance (plus ``cash_out``,
+        and ``costs`` when ``finance_costs``), amortized over the new term from this month.
+
+        Closing ``costs`` not financed are paid now through the household waterfall; ``cash_out`` is
+        paid to the owner. Returns the new principal.
+        """
+        from .ledger import FlowKind
+        from .model import Event, EventKind
+
+        if term_months is None:
+            if term_years is None:
+                raise ValueError("refinance needs term_months or term_years")
+            term_months = round(term_years * 12)
+        if costs < 0 or cash_out < 0:
+            raise ValueError("refinance costs and cash_out must not be negative")
+        name = getattr(self, "name", None) or type(self).__name__
+        cause = f"refinance of {name}"
+        ledger = self.model.ledger
+        old_principal = self.principal
+        if cash_out > 0:
+            self._pay_cash_out(cash_out, cause)
+        if costs > 0:
+            if finance_costs:
+                ledger.post(
+                    costs,
+                    FlowKind.DEBT_SERVICE,
+                    from_account=self,
+                    sink="refinance closing costs",
+                    cause=cause,
+                    agent=self.person,
+                )
+            else:
+                from .people.tax_unit import TaxUnit
+
+                unpaid = TaxUnit.for_member(self.person).pay_bills(
+                    costs, kind=FlowKind.DEBT_SERVICE, sink="refinance closing costs", cause=cause
+                )
+                self.person.add_debt(unpaid, kind=FlowKind.DEBT_SERVICE, sink="refinance closing costs", cause=cause)
+        new_principal = old_principal + cash_out + (costs if finance_costs else 0.0)
+        self._on_refinance(old_principal, new_principal)
+        self.principal = new_principal
+        self.loan_amount = new_principal
+        self.yearly_interest_rate = rate_pct
+        self.term_months = int(term_months)
+        self.payments_made = 0
+        self.origination = (self.model.year, self.model.month)
+        self.monthly_payment = self.calculate_monthly_payment()
+        self.model.event_log.add(
+            Event(
+                EventKind.REFINANCED,
+                person=self.person,
+                amount=new_principal,
+                account=self,
+                cause=cause,
+                message=f"{self.person.name} refinanced {name}: ${new_principal:,.0f} at {rate_pct:g}% for "
+                f"{term_months} months (${self.monthly_payment:,.2f}/month)",
+            )
+        )
+        return new_principal
+
+    def _on_refinance(self, old_principal: float, new_principal: float) -> None:
+        """Hook for subclasses (a mortgage keeps its grandfathered acquisition debt)."""
+
+    def _pay_cash_out(self, amount: float, cause: str) -> None:
+        """Pay a refinance's cash-out to the owner (borrowed from this loan)."""
+        from .ledger import FlowKind
+
+        self.person.receive_cash(amount, source=cause, kind=FlowKind.BORROW, from_account=self, cause=cause)
 
     @property
     def monthly_interest_rate(self) -> float:
@@ -136,14 +373,9 @@ class Loan(LifeModelAgent, ABC):
 
         Guards the zero-interest case (avoids division by zero) and a zero-length term.
         """
-        p = self.loan_amount
-        i = self.monthly_interest_rate
-        n = self.length_years * 12
-        if n == 0:
-            return p
-        if i == 0:
-            return p / n
-        return p * (i * ((1 + i) ** n)) / (((1 + i) ** n) - 1)
+        from .debt.terms import amortizing_payment
+
+        return amortizing_payment(self.loan_amount, self.yearly_interest_rate, self.term_months)
 
     def get_interest_amount(self, period: str = "month") -> float:
         """Interest accrued on the current principal for one period.
@@ -183,6 +415,11 @@ class Loan(LifeModelAgent, ABC):
 
         unpaid_interest = monthly_interest - actual_interest_payment
         self.principal = max(0.0, self.principal - principal_payment + unpaid_interest)
+        if self.principal < 0.005:
+            # The last scheduled payment leaves only floating-point residue: the loan is paid off.
+            principal_payment += self.principal
+            self.principal = 0.0
+        self.payments_made = getattr(self, "payments_made", 0) + 1
 
         self.stat_principal_payment_history.append(principal_payment)
         self.stat_interest_payment_history.append(actual_interest_payment)
@@ -217,27 +454,50 @@ class Loan(LifeModelAgent, ABC):
         return total_paid
 
     def service_year(self) -> float:
-        """Service this loan for one simulated year at its scheduled payment.
-
-        Called by the debt-servicing pipeline during tax-unit settlement. Returns the total cash
-        paid this year (which is collected through the unit's bills).
-        """
+        """Service this loan for one simulated year at its scheduled payment (twelve payments)."""
         return self.make_yearly_payment(self.monthly_payment)
 
-    def step(self):
-        """Track loan balance history"""
+    def service_month(self) -> float:
+        """Make this month's scheduled payment (none once the loan is paid off).
+
+        Called by the tax unit with the month's bills. Returns the cash paid; the interest charged is
+        added to ``interest_paid_this_year``.
+        """
+        if self.principal <= 0:
+            return 0.0
+        paid = self.make_payment(self.monthly_payment, self.extra_principal_monthly)
+        self._record_month(self.stat_principal_payment_history[-1], self.stat_interest_payment_history[-1])
+        return paid
+
+    def _record_month(self, principal: float, interest: float) -> None:
+        """Add a month's principal and interest to the year's running totals."""
+        self.interest_paid_this_year += interest
+        self._principal_paid_this_year = getattr(self, "_principal_paid_this_year", 0.0) + principal
+
+    def on_year_start(self):
+        # The year's interest accumulates from zero (the deduction and stats read it at year end).
+        self.interest_paid_this_year = 0.0
+        self._principal_paid_this_year = 0.0
+
+    def on_year_end(self):
+        """Track the year's payments and the year-end balance."""
+        self.stat_yearly_principal_payment_history.append(getattr(self, "_principal_paid_this_year", 0.0))
+        self.stat_yearly_interest_payment_history.append(self.interest_paid_this_year)
         self.stat_balance_history.append(self.principal)
 
 
 class Investment(FinancialAccount, ABC):
     """Abstract base class for investment accounts with growth.
 
-    Growth is applied with **annual compounding** (APY) as the model-wide default so that every
-    ``Investment`` subclass grows identically given the same nominal rate. Subclasses that need a
-    different growth model override :meth:`calculate_growth`.
+    Growth is applied **monthly** at the month's rate: the economy's monthly return for the
+    account's asset class, or, with an explicit annual ``growth_rate`` (an APY), its monthly
+    equivalent ``(1 + rate)^(1/12) - 1``. Twelve months at a constant rate therefore compound to
+    exactly the annual rate, and every ``Investment`` subclass grows identically given the same
+    rate. Money that arrives mid-year grows only from its month on. Subclasses that need a
+    different growth model override :meth:`calculate_monthly_growth`.
     """
 
-    # Apply growth before tax-unit settlement so withdrawals see the grown balance.
+    # Apply growth before the month's bills are paid (0) so withdrawals see the grown balance.
     STEP_PRIORITY: ClassVar[dict[str, int]] = {"step": -10}
 
     # Maps an account's asset class to the economy rate that drives its return.
@@ -255,6 +515,8 @@ class Investment(FinancialAccount, ABC):
         asset_class: str = "equity",
         *,
         beneficiary: Optional["Person"] = None,
+        allocation: "dict[str, float] | None" = None,
+        expense_ratio_pct: float = 0.0,
     ):
         super().__init__(person, balance, beneficiary=beneficiary)
         # An explicit growth_rate overrides the economy; None defers to the economy's
@@ -264,39 +526,121 @@ class Investment(FinancialAccount, ABC):
         if asset_class not in self._ASSET_CLASS_RATES:
             raise ValueError(f"Unknown asset_class {asset_class!r}; expected one of {list(self._ASSET_CLASS_RATES)}")
         self.asset_class = asset_class
+        #: Target allocation as fractions by asset class, or None (one ``asset_class``).
+        self.allocation: dict[str, float] | None = None
+        # The allocation's current (drifted) weights; reset to the target at each year end.
+        self._weights: dict[str, float] = {}
+        self.set_allocation(allocation)
+        if expense_ratio_pct < 0:
+            raise ValueError("expense_ratio_pct must be non-negative")
+        #: Annual fund expense ratio (percent), netted out of the return a twelfth a month.
+        self.expense_ratio_pct = float(expense_ratio_pct)
         self.stat_growth_history = []
+
+    def set_allocation(self, allocation: "dict[str, float] | None") -> None:
+        """Set the target asset allocation (percent by asset class, e.g. ``{"equity": 70, "bond": 30}``;
+        must sum to 100). The account then grows at the blend of the economy's returns for those classes,
+        drifting with them during the year and rebalanced to the target at each year end. None reverts to
+        the single ``asset_class``."""
+        if allocation is None:
+            self.allocation = None
+            self._weights = {}
+            return
+        unknown = set(allocation) - set(self._ASSET_CLASS_RATES)
+        if unknown:
+            raise ValueError(f"Unknown asset classes {sorted(unknown)}; expected {list(self._ASSET_CLASS_RATES)}")
+        if any(value < 0 for value in allocation.values()):
+            raise ValueError("allocation percentages must be non-negative")
+        total = sum(allocation.values())
+        if abs(total - 100.0) > 1e-6:
+            raise ValueError(f"allocation must sum to 100 percent, got {total:g}")
+        self.allocation = {name: value / 100 for name, value in allocation.items() if value > 0}
+        self._weights = dict(self.allocation)
+
+    @property
+    def allocation_pct(self) -> "dict[str, float] | None":
+        """The target allocation in percent (None without one)."""
+        return None if self.allocation is None else {k: v * 100 for k, v in self.allocation.items()}
 
     @property
     def growth_rate(self) -> float:
-        """Annual growth rate (percent): the explicit override if set, else the economy's return."""
+        """Annual growth rate (percent): the explicit override if set, else the economy's return (the
+        target allocation's blend), net of the expense ratio."""
         if self._growth_rate_override is not None:
-            return self._growth_rate_override
-        rate_name = self._ASSET_CLASS_RATES[self.asset_class]
-        return self.model.economy.rate(rate_name, self.model.year)
+            return self._growth_rate_override - self.expense_ratio_pct
+        economy = self.model.economy
+        if self.allocation is not None:
+            gross = sum(
+                w * economy.rate(self._ASSET_CLASS_RATES[c], self.model.year) for c, w in self.allocation.items()
+            )
+        else:
+            gross = economy.rate(self._ASSET_CLASS_RATES[self.asset_class], self.model.year)
+        return gross - self.expense_ratio_pct
 
     @growth_rate.setter
     def growth_rate(self, value: float | None) -> None:
         self._growth_rate_override = value
 
-    def calculate_growth(self) -> float:
-        """Calculate investment growth for the period (annual compounding, APY).
+    @property
+    def monthly_growth_rate(self) -> float:
+        """This month's growth rate (percent): the monthly equivalent of the explicit annual override,
+        else the economy's monthly return for the asset class (or the allocation's current blend), less a
+        twelfth of the expense ratio."""
+        fee = self.expense_ratio_pct / 12
+        if self._growth_rate_override is not None:
+            return annual_to_monthly(self._growth_rate_override) - fee
+        economy = self.model.economy
+        if self._weights:
+            return sum(w * economy.monthly_rate(self._ASSET_CLASS_RATES[c]) for c, w in self._weights.items()) - fee
+        return economy.monthly_rate(self._ASSET_CLASS_RATES[self.asset_class]) - fee
 
-        One year at an APY is ``balance * rate``; written as a product rather than via
-        ``compound_interest`` so it is exact in floating point.
-        """
+    def _drift_allocation(self) -> None:
+        """Let the allocation's weights drift with this month's class returns (call once a month, after
+        the growth is applied). A no-op without an allocation or with an explicit growth rate."""
+        if not self._weights or self._growth_rate_override is not None:
+            return
+        economy = self.model.economy
+        grown = {c: w * (1 + economy.monthly_rate(self._ASSET_CLASS_RATES[c]) / 100) for c, w in self._weights.items()}
+        total = sum(grown.values())
+        if total > 0:
+            self._weights = {c: v / total for c, v in grown.items()}
+
+    def rebalance(self) -> None:
+        """Rebalance to the target allocation (done at each year end)."""
+        if self.allocation is not None:
+            self._weights = dict(self.allocation)
+
+    def calculate_growth(self) -> float:
+        """A year of growth on the current balance at the annual rate (``balance * rate``): an
+        estimate for display; the engine grows the balance monthly (:meth:`calculate_monthly_growth`)."""
         return self.balance * (self.growth_rate / 100)
 
+    def calculate_monthly_growth(self) -> float:
+        """This month's growth on the current balance."""
+        return self.balance * (self.monthly_growth_rate / 100)
+
     def apply_growth(self):
-        """Apply calculated growth to balance"""
-        growth = self.calculate_growth()
+        """Apply this month's growth to the balance."""
+        growth = self.calculate_monthly_growth()
         self.balance += growth
         self.stat_growth_history.append(growth)
+        self._post_growth(growth)
+        self._drift_allocation()
         return growth
 
+    def _post_growth(self, growth: float) -> None:
+        """Post a month's market growth of this account to the ledger."""
+        if self.IN_NET_WORTH:
+            self.model.ledger.post(growth, FlowKind.GROWTH, to_account=self, source="market", agent=self.person)
+
     def step(self):
-        """Apply growth and track statistics"""
+        """Apply the month's growth."""
         self.apply_growth()
-        super().step()
+
+    def on_year_end(self):
+        """Track the year-end balance and rebalance to the target allocation."""
+        super().on_year_end()
+        self.rebalance()
 
 
 class TaxAdvantagedAccount(Investment, ABC):
@@ -324,13 +668,27 @@ class TaxAdvantagedAccount(Investment, ABC):
         asset_class: str = "equity",
         *,
         beneficiary: Optional["Person"] = None,
+        basis: float | None = None,
+        allocation: "dict[str, float] | None" = None,
+        expense_ratio_pct: float = 0.0,
     ):
-        super().__init__(person, balance, growth_rate, asset_class, beneficiary=beneficiary)
-        # Contributions made this year (reset in post_step).
+        super().__init__(
+            person,
+            balance,
+            growth_rate,
+            asset_class,
+            beneficiary=beneficiary,
+            allocation=allocation,
+            expense_ratio_pct=expense_ratio_pct,
+        )
+        # Contributions made this year (reset at year end).
         self.contributions_ytd = 0.0
-        # Cumulative contribution basis still in the account. Any opening balance is treated as
-        # basis (contributions) rather than earnings; growth accrues to earnings, not basis.
-        self.contribution_basis = float(balance)
+        # Cumulative contribution basis still in the account. Without ``basis`` (the statement's
+        # contribution total) the opening balance is treated as basis rather than earnings;
+        # growth accrues to earnings, not basis.
+        if basis is not None and not 0 <= basis <= balance + 1e-9:
+            raise ValueError(f"basis {basis:,.2f} must be between 0 and the balance {balance:,.2f}")
+        self.contribution_basis = float(balance) if basis is None else float(basis)
 
     @abstractmethod
     def annual_contribution_limit(self) -> float:
@@ -355,8 +713,14 @@ class TaxAdvantagedAccount(Investment, ABC):
             if account is not self and account.limit_group == self.limit_group
         )
 
-    def contribute(self, amount: float) -> float:
-        """Contribute up to the remaining annual limit. Returns the amount actually contributed."""
+    def contribute(
+        self, amount: float, *, from_account=None, source: str = "contribution from outside the model"
+    ) -> float:
+        """Contribute up to the remaining annual limit. Returns the amount actually contributed.
+
+        The money comes from ``from_account`` (a household account label or agent, already debited
+        by the caller) when given; otherwise it is posted as new money from ``source``.
+        """
         if amount <= 0:
             return 0.0
         actual = min(amount, self.remaining_contribution_room())
@@ -364,6 +728,14 @@ class TaxAdvantagedAccount(Investment, ABC):
             self.balance += actual
             self.contributions_ytd += actual
             self.contribution_basis += actual
+            self.model.ledger.post(
+                actual,
+                FlowKind.CONTRIBUTION,
+                from_account=from_account,
+                to_account=self,
+                source=None if from_account is not None else source,
+                agent=self.person,
+            )
         return actual
 
     @property
@@ -383,11 +755,12 @@ class TaxAdvantagedAccount(Investment, ABC):
 
     @property
     def is_useable(self) -> bool:
-        """Whether funds can be withdrawn without an early-withdrawal penalty (age-based)."""
-        return self.person.age >= federal_retirement_age(self.model.config)
+        """Whether funds can be withdrawn without an early-withdrawal penalty (exact age >= 59.5)."""
+        return self.person.age_years_fractional >= federal_retirement_age(self.model.config)
 
-    def post_step(self):
-        """Reset the annual contribution counter at year end."""
+    def on_year_end(self):
+        """Track the year-end balance and reset the annual contribution counter."""
+        super().on_year_end()
         self.reset_annual_contributions()
 
 
@@ -404,19 +777,29 @@ class RetirementAccount(Investment, ABC):
         asset_class: str = "equity",
         *,
         beneficiary: Optional["Person"] = None,
+        allocation: "dict[str, float] | None" = None,
+        expense_ratio_pct: float = 0.0,
     ):
-        super().__init__(person, balance, growth_rate, asset_class, beneficiary=beneficiary)
+        super().__init__(
+            person,
+            balance,
+            growth_rate,
+            asset_class,
+            beneficiary=beneficiary,
+            allocation=allocation,
+            expense_ratio_pct=expense_ratio_pct,
+        )
         self.stat_useable_balance = 0
 
     @property
     def is_useable(self) -> bool:
-        """Check if funds can be withdrawn without penalty based on age"""
-        return self.person.age >= federal_retirement_age(self.model.config)
+        """Whether funds can be withdrawn without penalty (exact age >= 59.5)."""
+        return self.person.age_years_fractional >= federal_retirement_age(self.model.config)
 
-    def step(self):
-        """Update useable balance (reset every year, so it never goes stale) and track statistics"""
+    def collect_stats(self):
+        """Year-end useable balance (re-read every year, so it never goes stale)."""
+        super().collect_stats()
         self.stat_useable_balance = self.balance if self.is_useable else 0
-        super().step()
 
 
 class Benefit(LifeModelAgent, ABC):

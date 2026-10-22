@@ -6,7 +6,10 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any, cast
 
 from ..config.financial_config import resolve_financial_config as _fin
-from ..model import Event, LifeModel, LifeModelAgent
+from ..deprecated_names import deprecated_arguments
+from ..economy import annual_to_monthly
+from ..ledger import FlowKind
+from ..model import Event, EventKind, LifeModel, LifeModelAgent
 from ..people.mortality import get_chance_of_mortality
 from ..people.person import GenderAtBirth, Person
 from ..tax.income import IncomeType
@@ -206,48 +209,107 @@ def calculate_annuity_factor(
 
 
 class Annuity(LifeModelAgent):
+    """An annuity: an accumulation balance credited interest monthly, then (once annuitized) a
+    reserve paying one monthly payout per month and credited interest monthly."""
+
+    STATS_OWNED = frozenset({"stat_annuity_balance"})
+
+    @deprecated_arguments(
+        {
+            "person": "owner",
+            "initial_balance": "balance",
+            "interest_rate": "rate_pct",
+            "monthly_payout": "payout_monthly",
+            "surrender_charge_rate": "surrender_charge_pct",
+            "survivor_percent": "survivor_pct",
+            "cola_percent": "cola_pct",
+        },
+        positional=(
+            "annuity_type",
+            "balance",
+            "rate_pct",
+            "payout_type",
+            "payout_start_age",
+            "payout_monthly",
+            "period_certain_years",
+            "surrender_charge_years",
+            "surrender_charge_pct",
+        ),
+    )
     def __init__(
         self,
-        person: Person,
+        owner: Person,
+        *,
         annuity_type: AnnuityType,
-        initial_balance: float = 0.0,
-        interest_rate: float | None = None,
+        balance: float = 0.0,
+        rate_pct: float | None = None,
         payout_type: AnnuityPayoutType = AnnuityPayoutType.LIFE_ONLY,
         payout_start_age: int | None = None,
-        monthly_payout: float | None = None,
+        payout_monthly: float | None = None,
         period_certain_years: int | None = None,
         surrender_charge_years: int | None = None,
-        surrender_charge_rate: float | None = None,
-        *,
+        surrender_charge_pct: float | None = None,
         joint_annuitant: Person | None = None,
-        survivor_percent: float = 100.0,
+        survivor_pct: float = 100.0,
+        basis: float | None = None,
+        purchase_year: int | None = None,
+        qualified: bool = False,
+        in_payout: bool = False,
+        cola_pct: float = 0.0,
     ):
         """Models an annuity for a person
 
+        Every argument after the owner is keyword-only. Deprecated (one release): positional arguments,
+        and the names ``person`` (owner), ``initial_balance`` (balance), ``interest_rate`` (rate_pct),
+        ``monthly_payout`` (payout_monthly), ``surrender_charge_rate`` (surrender_charge_pct),
+        ``survivor_percent`` (survivor_pct) and ``cola_percent`` (cola_pct).
+
         Args:
-            person: The person to which this annuity belongs
+            owner: The person to which this annuity belongs
             annuity_type: The type of annuity
-            initial_balance: Starting balance in the annuity
-            interest_rate: Annual interest rate percentage. Uses configured default if None.
+            balance: Starting balance in the annuity
+            rate_pct: Annual interest rate percentage (the credited rate in accumulation, and
+                the pricing rate at annuitization). If None: the configured default, except that a
+                VARIABLE annuity's accumulation balance then tracks the economy's equity return.
             payout_type: How the annuity pays out
-            payout_start_age: Age when payouts begin (None for immediate)
-            monthly_payout: Fixed monthly payout amount (calculated if None)
+            payout_start_age: Age at which the contract annuitizes automatically. If None: an
+                IMMEDIATE annuity annuitizes at once, a DEFERRED one at the configured
+                ``insurance.annuity.default_payout_start_age``, and a FIXED or VARIABLE one stays in
+                accumulation (it can still be annuitized explicitly with :meth:`annuitize`).
+            payout_monthly: Fixed monthly payout amount (calculated if None)
             period_certain_years: Years of guaranteed payments for period certain. Configured default if None.
             surrender_charge_years: Years during which surrender charges apply. Configured default if None.
-            surrender_charge_rate: Annual surrender charge rate percentage. Configured default if None.
+            surrender_charge_pct: Annual surrender charge rate percentage. Configured default if None.
             joint_annuitant: JOINT_AND_SURVIVOR only: the second life. Defaults to the owner's spouse
                 at annuitization; annuitizing without one raises ``ValueError``.
-            survivor_percent: JOINT_AND_SURVIVOR only: share of the payment continued to the joint
+            survivor_pct: JOINT_AND_SURVIVOR only: share of the payment continued to the joint
                 annuitant after the owner dies (e.g. 50.0 for joint-and-50%-survivor).
+            basis: An existing contract's cost basis (after-tax money paid in; keyword-only). Defaults
+                to ``balance`` (no gain) for a non-qualified contract.
+            purchase_year: Year the contract was bought (the surrender-charge clock and the
+                period-certain guarantee count from it). Defaults to the current year.
+            qualified: Held in a qualified plan or IRA (bought with pre-tax money): no basis, every
+                payout and withdrawal is taxable as a pension/annuity distribution (a 10% additional
+                tax before 59.5).
+            in_payout: An annuity already paying (an existing SPIA): ``monthly_payout`` is paid for
+                life (and to the joint annuitant / for the rest of the period certain under the payout
+                type) by the insurer; there is no reserve on the balance sheet (an income stream,
+                like a pension). Needs ``payout_monthly``.
+            cola_pct: Yearly increase of the payout once in payout (a COLA rider).
 
         Note:
             Payout taxation uses a simplified exclusion-ratio model (basis / expected total
             payout). Real rules differ for qualified vs non-qualified annuities; this is an
             approximation.
         """
+        person, initial_balance, interest_rate, monthly_payout = owner, balance, rate_pct, payout_monthly
+        surrender_charge_rate, survivor_percent, cola_percent = surrender_charge_pct, survivor_pct, cola_pct
         super().__init__(cast(LifeModel, person.model))
         self.model: LifeModel = cast("LifeModel", self.model)
         annuity_config = self.model.config.insurance.annuity
+        # A VARIABLE contract with no stated rate is invested in the market: its accumulation
+        # balance follows the economy's equity return (the configured rate still prices payouts).
+        self.tracks_equity = annuity_type == AnnuityType.VARIABLE and interest_rate is None
         if interest_rate is None:
             interest_rate = annuity_config.default_interest_rate
         if period_certain_years is None:
@@ -261,17 +323,26 @@ class Annuity(LifeModelAgent):
         self.balance = initial_balance
         self.interest_rate = interest_rate
         self.payout_type = payout_type
-        default_payout_age = annuity_config.default_payout_start_age
-        self.payout_start_age = payout_start_age or (
-            default_payout_age if annuity_type == AnnuityType.DEFERRED else person.age
-        )
+        if payout_start_age is None:
+            if annuity_type == AnnuityType.IMMEDIATE:
+                payout_start_age = person.age
+            elif annuity_type == AnnuityType.DEFERRED:
+                payout_start_age = annuity_config.default_payout_start_age
+            # FIXED / VARIABLE: None = stay in accumulation (no automatic annuitization).
+        self.payout_start_age: float | None = payout_start_age
         self.monthly_payout = monthly_payout
         self.period_certain_years = period_certain_years
         self.surrender_charge_years = surrender_charge_years
         self.surrender_charge_rate = surrender_charge_rate
 
         # Cost basis (after-tax investment in the contract) used for exclusion-ratio taxation.
-        self.basis = initial_balance
+        self.qualified = qualified
+        if qualified:
+            if basis:
+                raise ValueError("a qualified annuity has no after-tax basis")
+            basis = 0.0
+        self.basis = initial_balance if basis is None else float(basis)
+        self.cola_percent = cola_percent
 
         self.joint_annuitant = joint_annuitant
         self.survivor_percent = survivor_percent
@@ -284,8 +355,12 @@ class Annuity(LifeModelAgent):
         self.is_active = True
         self.is_annuitized = False
         self.annuitization_year: int | None = None
-        self.purchase_year = self.model.year
+        self.purchase_year = self.model.year if purchase_year is None else int(purchase_year)
+        if self.purchase_year > self.model.year:
+            raise ValueError(f"purchase_year {purchase_year} is after the current year {self.model.year}")
         self.remaining_period_certain_payments = 0
+        #: An existing contract in payout: the insurer pays ``monthly_payout`` (no reserve modeled).
+        self.insurer_funded = in_payout
 
         # Annuitization converts ``balance`` into a reserve that funds payouts and is no longer
         # a withdrawable/surrenderable asset.
@@ -302,6 +377,50 @@ class Annuity(LifeModelAgent):
 
         # Register with model
         self.model.registries.annuities.register(person, self)
+        self.model.ledger.post_opening(self, initial_balance)
+        if in_payout:
+            self._start_existing_payout()
+
+    def _start_existing_payout(self) -> None:
+        """An annuity already in payout: annuitized at purchase, paying the stated monthly payout."""
+        if self.monthly_payout is None or self.monthly_payout <= 0:
+            raise ValueError("an annuity in payout (in_payout=True) needs its monthly_payout")
+        if self.balance:
+            raise ValueError("an annuity in payout has no accumulation balance (initial_balance must be 0)")
+        self.is_annuitized = True
+        self.annuitization_year = self.purchase_year
+        if self.payout_type == AnnuityPayoutType.JOINT_AND_SURVIVOR:
+            self.joint_annuitant = self._joint_life()
+        if self.payout_type == AnnuityPayoutType.LIFE_WITH_PERIOD_CERTAIN:
+            elapsed = 12 * (self.model.year - self.purchase_year)
+            self.remaining_period_certain_payments = max(0, self.period_certain_years * 12 - elapsed)
+        gender = getattr(self.person, "gender", None)
+        joint_kwargs: dict[str, Any] = {}
+        if self.payout_type == AnnuityPayoutType.JOINT_AND_SURVIVOR:
+            joint = self.joint_annuitant
+            joint_kwargs = {
+                "joint_age": joint.age,
+                "joint_gender": getattr(joint, "gender", None),
+                "survivor_percent": self.survivor_percent,
+            }
+        # The exclusion ratio over the payments still expected (Pub. 939 would use the expected return
+        # at the annuity starting date; the remaining basis over today's expectation is equivalent for
+        # a contract whose basis is not yet recovered).
+        expected_total = self.monthly_payout * self._expected_payout_months(gender, **joint_kwargs)
+        self.exclusion_ratio = min(1.0, self.basis / expected_total) if expected_total > 0 else 0.0
+
+    def collect_stats(self):
+        """Year-end value: the accumulation balance plus the annuitized reserve, while in force."""
+        self.stat_annuity_balance = self.balance + self.annuitized_reserve if self.is_active else 0.0
+
+    def _close(self, cause: str) -> None:
+        """End the contract; whatever value it still holds goes to the insurer (posted as forfeited)."""
+        remaining = self.balance + self.annuitized_reserve
+        if self.is_active and remaining:
+            self.model.ledger.post(
+                remaining, FlowKind.FORFEIT, from_account=self, sink="insurer", cause=cause, agent=self.person
+            )
+        self.is_active = False
 
     @property
     def years_since_purchase(self) -> int:
@@ -315,8 +434,22 @@ class Annuity(LifeModelAgent):
 
     @property
     def is_payout_eligible(self) -> bool:
-        """Whether the person is eligible to start receiving payouts"""
-        return self.person.age >= self.payout_start_age
+        """Whether the contract has reached its automatic annuitization age (never, when it has none)."""
+        return self.payout_start_age is not None and self.person.age_years_fractional >= self.payout_start_age
+
+    @property
+    def accumulation_rate(self) -> float:
+        """This year's credited rate (percent) on the accumulation balance."""
+        if self.tracks_equity:
+            return self.model.economy.equity_return(self.model.year)
+        return self.interest_rate
+
+    @property
+    def monthly_accumulation_rate(self) -> float:
+        """This month's credited rate (percent) on the accumulation balance."""
+        if self.tracks_equity:
+            return self.model.economy.monthly_rate("equity_return")
+        return annual_to_monthly(self.interest_rate)
 
     @property
     def surrender_charge_amount(self) -> float:
@@ -335,7 +468,9 @@ class Annuity(LifeModelAgent):
             return False
 
         # Try to deduct from bank accounts
-        remaining_balance = self.person.deduct_from_bank_accounts(amount)
+        remaining_balance = self.person.deduct_from_bank_accounts(
+            amount, kind=FlowKind.CONTRIBUTION, to_account=self, cause="annuity deposit"
+        )
         amount_deposited = amount - remaining_balance
 
         if amount_deposited > 0:
@@ -367,7 +502,17 @@ class Annuity(LifeModelAgent):
         self.balance -= withdrawal_amount
         self._tax_distribution(taxable)
 
-        self.person.receive_cash(net_withdrawal, source="annuity withdrawal")
+        self.person.receive_cash(
+            net_withdrawal, source="annuity withdrawal", kind=FlowKind.WITHDRAWAL, from_account=self
+        )
+        self.model.ledger.post(
+            surrender_charge,
+            FlowKind.FORFEIT,
+            from_account=self,
+            sink="insurer: surrender charge",
+            cause="annuity withdrawal surrender charge",
+            agent=self.person,
+        )
 
         if surrender_charge > 0:
             self.model.event_log.add(
@@ -386,9 +531,12 @@ class Annuity(LifeModelAgent):
         tax before the federal retirement age (IRC §72(q), same rate as §72(t))."""
         if taxable <= 0:
             return
-        self.person.income.add(IncomeType.ORDINARY, taxable)
+        income_type = IncomeType.PENSION if self.qualified else IncomeType.ORDINARY
+        self.person.income.add(income_type, taxable, source="annuity")
         self.stat_taxable_payouts += taxable
-        self.person.income.add_penalty(self.person.early_withdrawal_penalty(taxable))
+        self.person.income.add_penalty(
+            self.person.early_withdrawal_penalty(taxable), source="annuity_early_distribution"
+        )
 
     def _joint_life(self) -> Person:
         """The joint annuitant for a JOINT_AND_SURVIVOR contract (defaults to the living spouse)."""
@@ -404,7 +552,10 @@ class Annuity(LifeModelAgent):
         if self.is_annuitized or not self.is_active or self.balance <= 0:
             return False
 
-        if not self.is_payout_eligible:
+        if self.payout_start_age is None:
+            # An accumulation-only contract annuitizes when the owner elects to, at today's age.
+            self.payout_start_age = self.person.age
+        elif not self.is_payout_eligible:
             return False
 
         self.is_annuitized = True
@@ -463,7 +614,14 @@ class Annuity(LifeModelAgent):
             self.exclusion_ratio = 1.0
 
         self.model.event_log.add(
-            Event(f"{self.person.name} annuitized with ${self.monthly_payout:,.0f}/month payments")
+            Event(
+                EventKind.ANNUITIZED,
+                person=self.person,
+                amount=self.annuitized_reserve,
+                account=self,
+                message=f"{self.person.name} annuitized with ${self.monthly_payout:,.0f}/month payments",
+                monthly_payout=self.monthly_payout,
+            )
         )
         return True
 
@@ -490,9 +648,9 @@ class Annuity(LifeModelAgent):
         if not self.is_annuitized or not self.is_active:
             return 0.0
 
-        if self.annuitized_reserve <= 0:
+        if self.annuitized_reserve <= 0 and not self.insurer_funded:
             # Reserve exhausted: guaranteed payments already accounted for; stop paying.
-            self.is_active = False
+            self._close("annuity reserve exhausted")
             return 0.0
 
         if (
@@ -501,27 +659,39 @@ class Annuity(LifeModelAgent):
             and self.remaining_period_certain_payments <= 0
         ):
             # The annuitant died and the guaranteed period has run out: the contract is complete.
-            self.is_active = False
+            self._close("period-certain guarantee ended after the annuitant's death")
             return 0.0
 
         scheduled = self.monthly_payout or 0.0
         if self.survivor_phase:
             scheduled *= self.survivor_percent / 100
-        payout = min(scheduled, self.annuitized_reserve)
+        payout = scheduled if self.insurer_funded else min(scheduled, self.annuitized_reserve)
         if payout <= 0:
             return 0.0
 
-        self.annuitized_reserve -= payout
+        if not self.insurer_funded:
+            self.annuitized_reserve -= payout
         self.stat_payouts_received += payout
 
-        # Tax the gains portion as ordinary income (exclusion ratio covers return of basis).
-        taxable_portion = payout * (1 - self.exclusion_ratio)
+        # Tax the gains portion as ordinary income (exclusion ratio covers return of basis); once the
+        # basis is recovered every payment is taxable (IRC §72(b)(2)).
+        excluded = min(payout * self.exclusion_ratio, self.basis)
+        self.basis -= excluded
+        taxable_portion = payout - excluded
         if taxable_portion > 0:
-            self.person.income.add(IncomeType.ORDINARY, taxable_portion)
+            income_type = IncomeType.PENSION if self.qualified else IncomeType.ORDINARY
+            self.person.income.add(income_type, taxable_portion, source="annuity")
             self.stat_taxable_payouts += taxable_portion
 
         # Deposit the payout into the person's bank account.
-        self.person.receive_cash(payout, source="annuity payout")
+        if self.insurer_funded:
+            self.person.receive_cash(
+                payout, source="insurer: annuity payout", kind=FlowKind.BENEFIT, cause="annuity payout"
+            )
+        else:
+            self.person.receive_cash(
+                payout, source="annuity payout", kind=FlowKind.WITHDRAWAL, from_account=self, cause="annuity payout"
+            )
 
         # Reduce period certain payments if applicable
         if (
@@ -545,7 +715,15 @@ class Annuity(LifeModelAgent):
         # The gain over basis is ordinary income (a loss is not deducted).
         self._tax_distribution(max(0.0, net_value - self.basis))
         self.basis = 0.0
-        self.person.receive_cash(net_value, source="annuity surrender")
+        self.person.receive_cash(net_value, source="annuity surrender", kind=FlowKind.WITHDRAWAL, from_account=self)
+        self.model.ledger.post(
+            surrender_charge,
+            FlowKind.FORFEIT,
+            from_account=self,
+            sink="insurer: surrender charge",
+            cause="annuity surrender charge",
+            agent=self.person,
+        )
 
         self.model.event_log.add(
             Event(f"{self.person.name} surrendered annuity for ${net_value:,.0f} (${surrender_charge:,.0f} charge)")
@@ -557,38 +735,42 @@ class Annuity(LifeModelAgent):
         return net_value
 
     def step(self):
-        """Process annuity for the current year"""
+        """Credit the month's interest to the reserve (annuitized) or the accumulation balance."""
         if not self.is_active:
             return
 
         # Apply interest growth to the reserve (annuitized) or the accumulation balance.
+        interest_earned = 0.0
         if self.is_annuitized:
             if self.annuitized_reserve > 0:
-                interest_earned = self.annuitized_reserve * (self.interest_rate / 100)
+                interest_earned = self.annuitized_reserve * (annual_to_monthly(self.interest_rate) / 100)
                 self.annuitized_reserve += interest_earned
                 self.stat_interest_earned += interest_earned
         elif self.balance > 0:
-            interest_earned = self.balance * (self.interest_rate / 100)
+            interest_earned = self.balance * (self.monthly_accumulation_rate / 100)
             self.balance += interest_earned
             self.stat_interest_earned += interest_earned
+        self.model.ledger.post(
+            interest_earned, FlowKind.GROWTH, to_account=self, source="insurer: credited interest", agent=self.person
+        )
 
         self.stat_balance = self.balance
         self.stat_annuitized_reserve = self.annuitized_reserve
 
     def pre_step(self):
-        """Pre-step processing: auto-annuitize when eligible, then pay out for the year.
-
-        Payouts are recorded here (in pre_step) so their taxable portion is in the income ledger
-        before the tax unit settles taxes in the step stage.
-        """
-        # Auto-annuitize immediate annuities or any annuity whose payout age has been reached.
+        """Auto-annuitize when eligible, then make the month's payout (its taxable portion lands on
+        the income ledger for the year's return)."""
+        # Auto-annuitize once the contract's payout age is reached (immediately for IMMEDIATE).
         if not self.is_annuitized and self.is_active and self.is_payout_eligible:
             self.annuitize()
 
-        # Make the year's 12 monthly payouts.
         if self.is_annuitized and self.is_active:
-            for _ in range(12):
-                self.make_payout()
+            self.make_payout()
+
+    def on_year_end(self):
+        """A COLA rider raises the payout once a year while in payout."""
+        if self.cola_percent and self.is_annuitized and self.is_active and self.monthly_payout:
+            self.monthly_payout *= 1 + self.cola_percent / 100
 
     def settle_owner_death(self, inheritor: Person | None) -> None:
         """Apply the contract's death terms when its current owner dies.
@@ -608,16 +790,22 @@ class Annuity(LifeModelAgent):
             if inheritor is not None and self.balance > 0:
                 gain = max(0.0, self.balance - self.basis)
                 if gain > 0:
-                    inheritor.income.add(IncomeType.ORDINARY, gain)
-                inheritor.receive_cash(self.balance, source=f"{owner.name}'s annuity death benefit")
+                    inheritor.income.add(IncomeType.ORDINARY, gain, source="annuity_death_benefit")
+                inheritor.receive_cash(
+                    self.balance,
+                    source=f"{owner.name}'s annuity death benefit",
+                    kind=FlowKind.INHERITANCE,
+                    from_account=self,
+                    cause=f"{owner.name}'s annuity death benefit",
+                )
                 self.balance = 0.0
-            self.is_active = False
+            self._close(f"{owner.name}'s annuity ended at death with no heir")
             registry.unregister(owner, self)
             return
         if self.payout_type == AnnuityPayoutType.JOINT_AND_SURVIVOR:
             joint = self.joint_annuitant
             if self.survivor_phase or joint is None or joint is owner or joint.is_deceased:
-                self.is_active = False
+                self._close(f"joint-and-survivor annuity ended at {owner.name}'s death")
                 registry.unregister(owner, self)
                 return
             # Continue to the joint annuitant (not the residual inheritor) at the survivor share.
@@ -634,7 +822,7 @@ class Annuity(LifeModelAgent):
         ):
             self.annuitant_deceased = True  # the estate transfer moves it to the inheritor
             return
-        self.is_active = False
+        self._close(f"life annuity ended at {owner.name}'s death")
         registry.unregister(owner, self)
 
     def _repr_html_(self):

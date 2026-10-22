@@ -3,7 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""AGI-dependent deductions (Plan 05 items 11 and 15).
+"""AGI-dependent deductions.
 
 - OBBBA senior deduction (IRC §151(d)(5)(C)): $6,000 per person 65+ in 2025-2028, reduced by 6% of
   MAGI over $75,000 ($150,000 joint); not available on separate returns.
@@ -26,7 +26,7 @@ from ..tax.income import IncomeType
 
 def _person(model, age, family=None):
     person = Person(family or Family(model), "P", age=age, retirement_age=60, spending=Spending(model, 0))
-    BankAccount(person, "Bank", balance=1_000_000, interest_rate=0)
+    BankAccount(person, company="Bank", balance=1_000_000, interest_pct=0)
     return person
 
 
@@ -59,12 +59,13 @@ class TestSeniorDeduction(unittest.TestCase):
         self.assertEqual(senior_deduction([old], FilingStatus.SINGLE, 50000, 2029, self.config), 0)
 
     def test_reduces_settled_federal_tax(self):
-        """Single 70-year-old, $60,000 of ordinary income in 2026: taxable 60,000 - 16,100 - 6,000 =
-        37,900 -> 10% x 12,400 + 12% x 25,500 = $4,300."""
+        """Single 70-year-old, $60,000 of ordinary income in 2026: taxable 60,000 - (16,100 + the §63(f)
+        $2,050) - 6,000 = 35,850 -> 10% x 12,400 + 12% x 23,450 = $4,054. The §63(f) additional standard
+        deduction for age 65+ applies alongside the senior deduction."""
         person = _person(self.model, 70)
         person.income.add(IncomeType.ORDINARY, 60000)
         taxes = TaxUnit([person]).get_income_taxes_due()
-        self.assertAlmostEqual(taxes.federal, 4300.0, places=2)
+        self.assertAlmostEqual(taxes.federal, 4054.0, places=2)
 
 
 class TestCharitableLimit(unittest.TestCase):
@@ -74,11 +75,13 @@ class TestCharitableLimit(unittest.TestCase):
         person.income.add(IncomeType.ORDINARY, 50000)
         Donation(person, "Charity", annual_amount=40000, start_year=2026, end_year=2026)
 
-        model.step()
+        model.step_year()
 
-        # 60% of $50k AGI = $30k deductible; the other $10k carries forward from 2026.
-        self.assertEqual(person.charitable_carryforwards, [(2026, 10000)])
-        self.assertAlmostEqual(person.stat_itemized_deductions, 30000 + person.stat_taxes_paid_state, places=2)
+        # 60% of $50k AGI = $30k allowed; the other $10k carries forward from 2026. From 2026 (OBBBA) the
+        # 0.5%-of-AGI floor ($250) also comes off, and because the year has a carryover the floor amount
+        # joins it (§170(d)(1)(C)).
+        self.assertEqual(person.charitable_carryforwards, [(2026, 10250)])
+        self.assertAlmostEqual(person.stat_itemized_deductions, 29750 + person.stat_taxes_paid_state, places=2)
 
     def test_expired_carryforward_is_not_deductible(self):
         from ..tax.deductions import deductible_charity
@@ -112,7 +115,7 @@ class TestCharitableLimit(unittest.TestCase):
         model = LifeModel(start_year=2026, end_year=2026)
         person = _person(model, 40)
         person.income.add(IncomeType.ORDINARY, 50000)
-        model.step()
+        model.step_year()
         self.assertEqual(person.stat_itemized_deductions, 0.0)
 
 

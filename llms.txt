@@ -1,0 +1,33 @@
+# life-model
+
+> Python package for month-step personal-finance simulation (Mesa agent-based modeling). Describe a
+> household as a YAML/JSON household spec, then validate, run, explain and compare it with the
+> `life-model` command line, the `life_model.run/validate/explain/compare` functions, or the
+> optional MCP server. Rates are percentages (4.5 = 4.5%); flows say `_annual` or `_monthly`.
+
+Real household data belongs in the git-ignored `my-models/` directory; never commit it.
+
+## Start here
+
+- [AGENTS.md](AGENTS.md): architecture, conventions, landmines, how to run tests
+- [Modeling a household](docs/modeling-a-household.md): statements to spec to run to explain; the agent checklist and privacy rules
+- [Command line and Python API](docs/cli.md): every subcommand and flag, `--json`, exit codes, the MCP tools
+
+## Reference
+
+- [Household spec reference](docs/household-spec.md): every spec field, unit and default (generated from the schema)
+- [Units and conventions](docs/units-and-conventions.md): percent vs fraction, annual vs monthly, nominal vs real, APR, `None` and `"economy"`
+- [Constructor cheat sheet](docs/constructor-cheatsheet.md): silent defaults and core constructor signatures (generated)
+- [Outputs glossary](docs/outputs.md): model and agent frame columns, tax return fields, ledger and event kinds (generated)
+- [Configuration](docs/configuration.md): financial constants, scenarios, the economy, Monte Carlo
+
+## Examples
+
+- [Example specs](src/life_model/spec/examples/): synthetic households (`life-model examples`)
+- [Example notebook](ExampleSimulation.ipynb): the low-level Python API end to end
+
+## Optional
+
+- [model-household skill](docs/agent-skills/model-household/SKILL.md): the household workflow as a Claude Code skill
+- [README](README.md): feature overview, dashboard, reinforcement learning, language-model adviser
+- [Contributing](CONTRIBUTING.md): development setup and tox targets

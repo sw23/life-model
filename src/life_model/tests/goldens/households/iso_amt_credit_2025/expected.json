@@ -1,0 +1,80 @@
+{
+  "golden": "iso_amt_credit_2025",
+  "year": 2025,
+  "description": "the incentive-stock-option household the year after the 2024 exercise: the prior-year minimum tax credit (Form 8801) against regular tax over the tentative minimum tax",
+  "method": "Worked by scripts/household_goldens.py from the year's Form 1040 and instructions (see worksheet.md); independent of the library.",
+  "actuals": {
+    "form_1040": {
+      "1a": 200000.0,
+      "1z": 200000.0,
+      "2a": 0.0,
+      "2b": 0.0,
+      "3a": 0.0,
+      "3b": 0.0,
+      "4a": 0.0,
+      "4b": 0.0,
+      "5b": 0.0,
+      "7a": 0.0,
+      "8": 0.0,
+      "6a": 0.0,
+      "10": 0.0,
+      "6b": 0.0,
+      "9": 200000.0,
+      "11a": 200000.0,
+      "11b": 200000.0,
+      "12e": 15750.0,
+      "13a": 0.0,
+      "13b": 0.0,
+      "14": 15750.0,
+      "15": 184250.0,
+      "16": 37067.0,
+      "17": 0.0,
+      "18": 37067.0,
+      "19": 0.0,
+      "20": 7973.0,
+      "21": 7973.0,
+      "22": 29094.0,
+      "23": 0.0,
+      "24": 29094.0,
+      "28": 0.0
+    },
+    "schedules": {
+      "1": {
+        "26": 0.0
+      },
+      "3": {
+        "6b": 7973.0,
+        "7": 7973.0,
+        "8": 7973.0
+      },
+      "2": {
+        "21": 0.0
+      }
+    },
+    "w2": [
+      {
+        "person": "morgan",
+        "employer": "Example Analytics",
+        "boxes": {
+          "1": 200000.0,
+          "3": 176100.0,
+          "4": 10918.2,
+          "5": 200000.0,
+          "6": 2900.0
+        },
+        "box12": {}
+      }
+    ]
+  },
+  "exact": {
+    "1040:16": 37067.0
+  },
+  "tolerance": {
+    "default": 0.01,
+    "1040:16": 0.01,
+    "1040:18": 0.01,
+    "1040:22": 0.01,
+    "1040:24": 0.01
+  },
+  "xfail": {}
+}

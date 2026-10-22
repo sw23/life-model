@@ -14,8 +14,12 @@ source .venv/bin/activate
 pip install -e . -r requirements.txt -r requirements-dev.txt
 ```
 
-The financial config YAML is loaded relative to the repository root at import
-time, so run tests from the repo root.
+The financial config ships inside the package and is loaded with
+`importlib.resources`, so the package works from any directory; run pytest from
+the repo root anyway, since the generated-docs tests read `docs/`.
+
+[AGENTS.md](AGENTS.md) summarizes the architecture, conventions and known
+landmines; read it before a substantial change.
 
 Install the pre-commit hooks once per clone so lint/format run automatically:
 
@@ -37,6 +41,14 @@ We use [tox](https://tox.wiki) as the local and CI runner. Common targets:
 | `tox -e dashboard` | Solara dashboard tests |
 | `tox -e deepqlearning` | Reinforcement-learning tests (installs torch) |
 | `tox -e docs` | Builds the Sphinx HTML docs with warnings treated as errors |
+| `tox -e slm` | Language-model adviser tests (stub model; no weights) |
+
+CI also builds the wheel, installs it into a clean virtual environment and runs
+the `life-model` console script end to end (`build-and-smoke`).
+
+Some docs are generated from the code; regenerate them after changing their
+sources (`make -C docs generated`, or the three `scripts/generate_*.py`
+scripts); tests fail while they are stale.
 
 To run the fast unit suite directly:
 

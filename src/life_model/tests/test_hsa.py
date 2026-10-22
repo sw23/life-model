@@ -64,59 +64,59 @@ class TestHSA(unittest.TestCase):
         self.assertTrue(hsa.contribute(1000))
 
     def test_employer_contribution_added_in_step(self):
-        """The full annual employer contribution lands once per yearly step (was 1/12, Plan 06 item 5)."""
+        """The full annual employer contribution lands once a year, at the year start (not a twelfth of it)."""
         hsa = self._hsa(contribution_limit=8000, employer_contribution=1200, growth_rate=0)
-        hsa.step()
+        hsa.on_year_start()  # the employer contribution lands at each year start
         self.assertAlmostEqual(hsa.balance, 1200, places=6)
         # Employer money counts against the same annual limit.
         self.assertEqual(hsa.contributions_ytd, 1200)
 
     def test_family_limit_higher_than_individual(self):
-        individual = HealthSavingsAccount(self.person, HSAType.INDIVIDUAL)
-        family = HealthSavingsAccount(self.person, HSAType.FAMILY)
+        individual = HealthSavingsAccount(self.person, hsa_type=HSAType.INDIVIDUAL)
+        family = HealthSavingsAccount(self.person, hsa_type=HSAType.FAMILY)
         self.assertGreater(family.annual_contribution_limit(), individual.annual_contribution_limit())
 
 
-def _plan06_person(age: int = 40, year: int = 2020) -> Person:
+def _person_at(age: int = 40, year: int = 2020) -> Person:
     model = LifeModel(end_year=year, start_year=year)
     return Person(Family(model), "P", age, 65, Spending(model))
 
 
 class TestHSALimitsAndTaxes(unittest.TestCase):
     def test_age_55_catch_up(self):
-        young = HealthSavingsAccount(_plan06_person(age=40), HSAType.INDIVIDUAL, employer_contribution=0)
-        old = HealthSavingsAccount(_plan06_person(age=56), HSAType.INDIVIDUAL, employer_contribution=0)
+        young = HealthSavingsAccount(_person_at(age=40), hsa_type=HSAType.INDIVIDUAL, employer_contribution_annual=0)
+        old = HealthSavingsAccount(_person_at(age=56), hsa_type=HSAType.INDIVIDUAL, employer_contribution_annual=0)
         self.assertEqual(old.annual_contribution_limit(), young.annual_contribution_limit() + 1000)
 
     def test_family_limit_includes_employer_contribution(self):
-        person = _plan06_person()
-        hsa = HealthSavingsAccount(person, HSAType.FAMILY, growth_rate=0, employer_contribution=3000)
-        hsa.step()
+        person = _person_at()
+        hsa = HealthSavingsAccount(person, hsa_type=HSAType.FAMILY, growth_pct=0, employer_contribution_annual=3000)
+        hsa.on_year_start()  # the employer contribution lands at each year start
         self.assertEqual(hsa.remaining_contribution_room(), hsa.annual_contribution_limit() - 3000)
 
     def test_personal_contribution_is_deductible(self):
-        person = _plan06_person()
-        hsa = HealthSavingsAccount(person, HSAType.INDIVIDUAL, employer_contribution=0)
+        person = _person_at()
+        hsa = HealthSavingsAccount(person, hsa_type=HSAType.INDIVIDUAL, employer_contribution_annual=0)
         hsa.contribute(2000)
         self.assertEqual(person.income.ordinary_taxable, -2000)
 
     def test_non_medical_withdrawal_is_taxed_and_penalized_under_65(self):
-        person = _plan06_person(age=40)
-        hsa = HealthSavingsAccount(person, HSAType.INDIVIDUAL, balance=1000, employer_contribution=0)
+        person = _person_at(age=40)
+        hsa = HealthSavingsAccount(person, hsa_type=HSAType.INDIVIDUAL, balance=1000, employer_contribution_annual=0)
         self.assertEqual(hsa.withdraw_non_medical(500), 500)
         self.assertEqual(person.income.ordinary_taxable, 500)
         self.assertAlmostEqual(person.income.penalties, 100)  # 20% of 500
 
     def test_non_medical_withdrawal_no_penalty_at_65(self):
-        person = _plan06_person(age=66)
-        hsa = HealthSavingsAccount(person, HSAType.INDIVIDUAL, balance=1000, employer_contribution=0)
+        person = _person_at(age=66)
+        hsa = HealthSavingsAccount(person, hsa_type=HSAType.INDIVIDUAL, balance=1000, employer_contribution_annual=0)
         hsa.withdraw_non_medical(500)
         self.assertEqual(person.income.penalties, 0)
         self.assertEqual(person.income.ordinary_taxable, 500)
 
     def test_medical_withdrawal_is_tax_free(self):
-        person = _plan06_person(age=40)
-        hsa = HealthSavingsAccount(person, HSAType.INDIVIDUAL, balance=1000, employer_contribution=0)
+        person = _person_at(age=40)
+        hsa = HealthSavingsAccount(person, hsa_type=HSAType.INDIVIDUAL, balance=1000, employer_contribution_annual=0)
         hsa.withdraw_medical(500)
         self.assertEqual(person.income.ordinary_taxable, 0)
         self.assertEqual(person.income.penalties, 0)

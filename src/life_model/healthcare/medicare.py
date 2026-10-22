@@ -12,7 +12,7 @@ income with a **two-year lookback** (``person.agi_history[year - 2]``, recorded 
 ``TaxUnit.settle_year``) is compared against the configured MAGI thresholds for the person's
 filing status.
 
-Documented simplifications (v1):
+Documented simplifications:
 
 * Part A is premium-free (assumes sufficient work history).
 * MAGI is approximated by AGI (no tax-exempt-interest add-back — the model has none).
@@ -25,19 +25,23 @@ Documented simplifications (v1):
   thresholds — premiums can jump on identical income history. SSA's "life-changing event"
   reassessment (form SSA-44), which can soften this in reality, is not modeled. This behavior is
   intentional and pinned by a test.
-* Employer coverage before 65 is out of scope (backlog).
-* Prescription-drug coverage is modeled via the Part D premium (per plan; finer detail backlog).
+* Employer coverage before 65 is not modeled.
+* Prescription-drug coverage is modeled only through the Part D premium (one configured base premium
+  plus the IRMAA surcharge; no plan-specific premiums or drug costs).
 """
 
 from typing import cast
 
-from ..model import Event, LifeModel, LifeModelAgent
+from ..model import Event, LifeModel, LifeModelAgent, snap_money
 from ..people.person import Person
 from ..tax.federal import FilingStatus
 from .inflation import medical_inflation_factor
 
 
 class Medicare(LifeModelAgent):
+    """Medicare premiums (Part B, Part D, IRMAA), charged a twelfth of the year's premium each month
+    from the month the person reaches the eligibility age."""
+
     STATS_OWNED = frozenset({"stat_medical_costs"})
 
     def __init__(self, person: Person):
@@ -56,8 +60,8 @@ class Medicare(LifeModelAgent):
 
     @property
     def is_eligible(self) -> bool:
-        """Whether the person has reached the Medicare eligibility age."""
-        return self.person.age >= self.config.eligibility_age
+        """Whether the person has reached the Medicare eligibility age (exact age)."""
+        return self.person.age_years_fractional >= self.config.eligibility_age
 
     def lookback_magi(self) -> float:
         """MAGI for IRMAA: the person's AGI from two years ago.
@@ -105,14 +109,13 @@ class Medicare(LifeModelAgent):
 
     def pre_step(self):
         if self.person.is_deceased or not self.is_eligible:
-            self.stat_medical_costs = 0.0
             return
         if not self._enrollment_logged:
             self.model.event_log.add(Event(f"{self.person.name} enrolled in Medicare at age {self.person.age}"))
             self._enrollment_logged = True
-        premium = self.annual_premium()
-        self.stat_medical_costs = premium
-        self.person.spending.add_expense(premium)
+        premium = self.annual_premium() / 12
+        self.stat_medical_costs = snap_money(self.stat_medical_costs + premium)
+        self.person.spending.add_expense(premium, category="medicare_premium")
 
     def _repr_html_(self):
         return (

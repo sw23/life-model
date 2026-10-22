@@ -5,28 +5,76 @@
 import html
 from typing import TYPE_CHECKING
 
-from ..model import LifeModelAgent
+from ..model import LifeModelAgent, snap_money
 
 if TYPE_CHECKING:
     from ..people.person import Person, Spending
 
 
 class Child(LifeModelAgent):
+    """A child dependent: the age band's yearly cost is charged a twelfth each month (college months
+    drawn from the child's 529 plans first). Bands follow the child's exact age (``birth_month``)."""
+
     STATS_OWNED = frozenset({"stat_dependent_costs"})
 
-    def __init__(self, person: "Person", name: str, birth_year: int):
+    def __init__(
+        self,
+        person: "Person",
+        name: str,
+        birth_year: int,
+        *,
+        care_expenses_annual: float = 0.0,
+        interest_annual: float = 0.0,
+        dividends_annual: float = 0.0,
+        cost_annual: float | None = None,
+        college_cost_annual: float | None = None,
+        birth_month: int | None = None,
+    ):
         """Models a child dependent for a person
 
         Args:
             person: The person to which this child belongs
             name: The name of the child
             birth_year: The year the child was born
+            care_expenses_annual: Dependent care (after-school care, day camp, ...) paid for the child
+                while under 13, on top of the age-band cost, in start-year dollars (grown by inflation like
+                the bands). The childcare band's cost (under 6) already counts as care expenses for the
+                child and dependent care credit and a dependent-care FSA.
+            interest_annual: The child's own interest income (e.g. a custodial account outside the
+                household's balances) each year, for the kiddie tax (the parents report it on Form 8814).
+            dividends_annual: The child's own qualified dividends each year (same).
+            cost_annual: This child's yearly cost while a dependent (birth to ``adult_age``), in
+                start-year dollars, instead of the configured childcare and school-age bands.
+                Unlike the childcare band it is not counted as dependent care for the credit: enter care
+                in ``care_expenses_annual``.
+            college_cost_annual: This child's yearly college cost, in start-year dollars, instead of the
+                configured college band.
+            birth_month: The month (1-12) the child was born. The age bands, the college years and the end
+                of ``care_expenses_annual`` follow the child's exact age: they change in the month of the
+                birthday (care stops at the 13th birthday). None assumes January, so they change in January
+                of the birthday year. Tax rules keep using the age at the end of the year.
         """
         super().__init__(person.model)
         self.person = person
         self.name = name
         self.birth_year = birth_year
+        self.care_expenses_annual = care_expenses_annual
+        self.interest_annual = interest_annual
+        self.dividends_annual = dividends_annual
+        self.cost_annual = cost_annual
+        self.college_cost_annual = college_cost_annual
+        if birth_month is not None and not 1 <= int(birth_month) <= 12:
+            raise ValueError(f"birth_month must be 1-12, got {birth_month}")
+        self.birth_month = None if birth_month is None else int(birth_month)
         self.stat_dependent_costs = 0.0
+        #: This year's dependent care expenses (Form 2441), education expenses and the part of them paid
+        #: with tax-free 529 withdrawals (Form 8863 / Pub. 970), set in ``pre_step``.
+        self.care_expenses_this_year = 0.0
+        self.education_expenses_this_year = 0.0
+        self.education_paid_by_529 = 0.0
+        #: Years the American opportunity credit was claimed for this child (at most four).
+        self.aotc_years_claimed = 0
+        self._aotc_reserved_this_year = 0.0
         # Register so the child is visible to the person (Person.children) and to death-time
         # ownership reassignment (registries.iter_registries drives estate transfer).
         self.model.registries.children.register(person, self)
@@ -38,14 +86,30 @@ class Child(LifeModelAgent):
 
     @property
     def age(self) -> int:
-        """Calculate child's current age based on model year"""
+        """The age the child reaches this year (the age at the end of the year, the one tax rules use)."""
         return self.model.year - self.birth_year
 
     @property
+    def age_now(self) -> int:
+        """The child's exact age in completed years this month: the birthday month (``birth_month``, January
+        when unknown) is the month the age goes up. Costs and care follow this age."""
+        month = getattr(self.model, "month", 1) or 1
+        born = self.birth_month or 1
+        return ((self.model.year * 12 + month) - (self.birth_year * 12 + born)) // 12
+
+    @property
     def in_college_band(self) -> bool:
-        """Whether the child is in the college-cost band this year."""
+        """Whether the child is in the college-cost band this year (by the age reached this year; tax rules
+        such as the student dependent test read it)."""
         cfg = self.model.config.dependents
         return cfg.college_start_age <= self.age < cfg.college_start_age + cfg.college_years
+
+    @property
+    def in_college_band_now(self) -> bool:
+        """Whether this month is one of the child's college months (by exact age: from the month of the
+        ``college_start_age`` birthday for ``college_years`` years)."""
+        cfg = self.model.config.dependents
+        return cfg.college_start_age <= self.age_now < cfg.college_start_age + cfg.college_years
 
     def nominal_cost_for_age(self, age: int) -> float:
         """Start-year-dollar cost of the child at ``age`` (before inflation indexing).
@@ -58,21 +122,24 @@ class Child(LifeModelAgent):
         cfg = self.model.config.dependents
         if age < 0:
             return 0.0
+        if age < cfg.adult_age and self.cost_annual is not None:
+            return self.cost_annual
         if age < self.CHILDCARE_END_AGE:
             return cfg.childcare_annual_cost
         if age < cfg.adult_age:
             return cfg.school_age_annual_cost
         if cfg.college_start_age <= age < cfg.college_start_age + cfg.college_years:
-            return cfg.college_annual_cost
+            return cfg.college_annual_cost if self.college_cost_annual is None else self.college_cost_annual
         return 0.0
 
     def yearly_cost(self) -> float:
-        """This year's child cost in current (nominal) dollars.
+        """The yearly rate of the child's cost this month, in current (nominal) dollars (by the exact age,
+        :attr:`age_now`).
 
         The nominal band cost is grown by cumulative inflation from the start year so a child born
         later costs later-year dollars.
         """
-        nominal = self.nominal_cost_for_age(self.age)
+        nominal = self.nominal_cost_for_age(self.age_now)
         if nominal <= 0:
             return 0.0
         return nominal * self.model.economy.cumulative_inflation(self.model.year)
@@ -81,9 +148,9 @@ class Child(LifeModelAgent):
         """Promote this child to an independent ``Person`` in the same family and stop modeling
         them as a dependent.
 
-        v1 has no automatic promotion; call this manually or schedule it via a ``LifeEvent``. The
+        There is no automatic promotion: call this manually or schedule it via a ``LifeEvent``. The
         new person joins the child's parent's family; the ``Child`` is unregistered and removed so
-        it no longer incurs costs.
+        it stops incurring costs.
 
         Args:
             retirement_age: Retirement age for the new adult (keyword-only, default 65).
@@ -102,30 +169,74 @@ class Child(LifeModelAgent):
         return adult
 
     def pre_step(self):
-        """Charge this year's child cost to the owning person's spending.
+        """Charge this month's child cost (a twelfth of the year's) to the owning person's spending.
 
-        Runs in the pre_step stage so the expense is present when the tax unit reads
-        ``get_yearly_spending()`` during the step stage (cross-stage ordering, safe under
-        construction-order execution). Costs flow through ``Spending.add_expense`` (one-time
-        expenses), never ``base`` — ``base`` is compounded by inflation in ``Spending.post_step``
-        and would otherwise double-count.
+        Runs in the pre_step stage so the expense is pending when the tax unit pays the month's bills
+        in the step stage. Costs flow through ``Spending.add_expense`` (one-time expenses), never
+        ``base`` — ``base`` is compounded by inflation at year end and would otherwise double-count.
         """
-        self.stat_dependent_costs = 0.0
+        if self.model.is_year_start:
+            # The year's Form 2441 / 8863 figures accumulate month by month from the year's first month.
+            self.care_expenses_this_year = 0.0
+            self.education_expenses_this_year = 0.0
+            self.education_paid_by_529 = 0.0
+            self._aotc_reserved_this_year = 0.0
         if self.person.is_deceased:
             return
-        cost = self.yearly_cost()
+        cost = self.yearly_cost() / 12
+        age = self.age_now
+        if 0 <= age < self.CARE_CREDIT_AGE and self.care_expenses_annual > 0:
+            extra = self.care_expenses_annual * self.model.economy.cumulative_inflation(self.model.year) / 12
+            self.person.spending.add_expense(extra, category="dependent_care")
+            self.care_expenses_this_year += extra
+            self.stat_dependent_costs = snap_money(self.stat_dependent_costs + extra)
+        if 0 <= age < self.CHILDCARE_END_AGE and self.cost_annual is None:
+            # The childcare band is the cost of care while the parents work (Form 2441 expenses). An
+            # entered cost_annual is the child's whole cost: its care part goes in care_expenses_annual.
+            self.care_expenses_this_year += cost
         if cost <= 0:
             return
-        if self.in_college_band:
+        if self.in_college_band_now:
             # Draw self-beneficiary 529 plans first: withdraw_qualified deposits the tuition cash
             # into the owner's bank tax-free, so college is funded from the 529 before other
             # assets. The full tuition is then charged to spending; because the qualified
             # withdrawal already sits in the bank, only the shortfall the 529 could not cover
-            # actually reduces other assets. This keeps bank+529 conservation intact while
-            # making the 529 machinery load-bearing.
-            self._draw_college_from_529s(cost)
-        self.person.spending.add_expense(cost)
-        self.stat_dependent_costs = cost
+            # actually reduces other assets. This keeps bank+529 money conserved while paying
+            # college from the 529 first.
+            #
+            # Expenses paid with tax-free 529 money cannot also earn the American opportunity credit
+            # (Pub. 970 ch. 7), so while AOTC years remain and the parents' last AGI was not past the
+            # phase-out, the first $4,000 of the year's expenses is left for other money.
+            reserve = self._aotc_reserve(cost)
+            shortfall = self._draw_college_from_529s(cost - reserve)
+            self.education_expenses_this_year += cost
+            self.education_paid_by_529 += cost - reserve - shortfall
+        self.person.spending.add_expense(cost, category="dependents")
+        self.stat_dependent_costs = snap_money(self.stat_dependent_costs + cost)
+
+    #: Dependent care qualifies for the child and dependent care credit until the child turns 13 (care paid
+    #: from the 13th birthday on does not count, Form 2441), so ``care_expenses_annual`` stops then.
+    CARE_CREDIT_AGE = 13
+
+    def _aotc_reserve(self, cost: float) -> float:
+        """This month's expenses kept out of the 529 draw so they can earn the AOTC: the year's first
+        $4,000 (0 once its years are used, when the parents' prior-year AGI was past the phase-out, or
+        without a 529 to draw)."""
+        if not any(plan.beneficiary is self for plan in self.person.plan_529s):
+            return 0.0
+        federal = self.model.year_config.tax.federal
+        edu = federal.credits.education
+        if edu is None or self.aotc_years_claimed >= edu.aotc_max_years:
+            return 0.0
+        last_agi = self.person.agi_history.get(self.model.year - 1)
+        joint = getattr(self.person.filing_status, "name", "") == "MARRIED_FILING_JOINTLY"
+        phaseout = edu.phaseout_joint if joint else edu.phaseout_single
+        if last_agi is not None and last_agi >= phaseout.end:
+            return 0.0
+        room = edu.aotc_full_expenses + edu.aotc_partial_expenses - self._aotc_reserved_this_year
+        reserve = max(0.0, min(cost, room))
+        self._aotc_reserved_this_year += reserve
+        return reserve
 
     def _draw_college_from_529s(self, amount: float) -> float:
         """Draw ``amount`` of qualified education expenses from the owner's 529 plans whose

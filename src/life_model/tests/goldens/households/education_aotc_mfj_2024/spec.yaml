@@ -1,0 +1,62 @@
+# Household golden (synthetic, not real data). See ../README.md.
+spec_version: 1
+meta:
+  name: Parents of a college student
+  description: 'Household golden (synthetic): parents of a full-time college student with a 529 plan.'
+  as_of: 2024-01
+  start_year: 2024
+  end_year: 2024
+  seed: 1
+  default_state: TX
+people:
+- id: sam
+  name: Sam
+  age: 50
+  retirement_age: 67
+  spending:
+    amount_annual: 40000
+    growth_pct: 0
+  jobs:
+  - id: sam_job
+    company: Example Consulting LLC
+    salary_annual: 120000
+  accounts:
+  - kind: bank
+    id: sam_checking
+    company: Community Bank
+    type: Checking
+    balance: 50000
+    interest_pct: 0.0
+    compounding: annual
+    primary: true
+  - kind: '529'
+    id: sam_529
+    beneficiary: junior
+    balance: 100000
+    growth_pct: 0
+  children:
+  - id: junior
+    name: Junior
+    birth_year: 2005
+- id: ann
+  name: Ann
+  age: 48
+  retirement_age: 67
+  spending:
+    amount_annual: 0
+    growth_pct: 0
+  accounts:
+  - kind: bank
+    id: ann_checking
+    company: Community Bank
+    type: Checking
+    balance: 5000
+    interest_pct: 0.0
+    compounding: annual
+    primary: true
+relationships:
+  marriages:
+  - spouses:
+    - sam
+    - ann
+    filing_status: joint

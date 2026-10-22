@@ -6,13 +6,21 @@
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
-from .federal import FilingStatus, capital_gains_tax, federal_income_tax, net_investment_income_tax
+from .brackets import bracket_slices
+from .federal import (
+    FilingStatus,
+    capital_gains_tax,
+    federal_income_tax,
+    get_federal_tax_brackets,
+    net_investment_income_tax,
+)
 from .fica import (
     get_medicare_additional_rate,
     get_medicare_additional_rate_threshold,
     get_medicare_rate,
     social_security_tax,
 )
+from .self_employment import SelfEmploymentTax, additional_medicare_on_self_employment, self_employment_tax
 from .state import state_income_tax
 
 if TYPE_CHECKING:
@@ -35,6 +43,10 @@ class TaxesDue:
         refundable credit may exceed the federal liability, driving ``total`` negative (a refund).
         ``niit`` is the §1411 net investment income surtax, tracked separately from ``federal``
         because it has its own base and its own unindexed thresholds.
+
+        Besides the totals, :func:`compute_taxes` and ``TaxUnit.get_income_taxes_due`` record the
+        intermediate figures they computed the totals from (the attributes below), so a tax return
+        record can be built from exactly the numbers settlement used without recomputing anything.
         """
         self.federal = federal
         self.state = state
@@ -43,10 +55,93 @@ class TaxesDue:
         self.credits = credits
         self.niit = niit
 
+        #: Ordinary income plus preferential income before deductions (the return's AGI base).
+        self.total_income = 0.0
+        #: Deductions applied (the larger of standard / itemized, plus any senior deduction).
+        self.deductions = 0.0
+        #: ``max(total_income - deductions, 0)``.
+        self.taxable_income = 0.0
+        #: The part of ``taxable_income`` taxed on the ordinary brackets.
+        self.taxable_ordinary = 0.0
+        #: The part of ``taxable_income`` taxed on the preferential (capital-gains) schedule.
+        self.taxable_preferential = 0.0
+        #: Tax on ``taxable_ordinary`` from the ordinary brackets.
+        self.ordinary_tax = 0.0
+        #: Tax on ``taxable_preferential`` stacked above ordinary income.
+        self.preferential_tax = 0.0
+        #: The ordinary bracket segments reached: ``(lower, upper, rate_percent, amount, tax)``.
+        self.ordinary_brackets: list[tuple[float, float, float, float, float]] = []
+        #: Social Security tax per worker, in the order of the wage list passed in.
+        self.ss_by_worker: list[float] = []
+        #: Medicare tax per worker (base rate, plus that worker's wage-share of the additional tax).
+        self.medicare_by_worker: list[float] = []
+        #: Additional Medicare tax on combined wages over the filing-status threshold.
+        self.additional_medicare = 0.0
+        #: Standard deduction, itemized deductions and senior deduction the unit compared/added.
+        self.standard_deduction = 0.0
+        self.itemized_deduction = 0.0
+        self.senior_deduction = 0.0
+        #: Credits by name (``child_tax_credit`` ...); they sum to ``credits``.
+        self.credits_detail: dict[str, float] = {}
+        #: Nonrefundable / refundable split of ``credits``.
+        self.nonrefundable_credits = 0.0
+        self.refundable_credits = 0.0
+        #: Additional taxes (early-withdrawal penalties) by source; included in ``federal``.
+        self.penalties_detail: dict[str, float] = {}
+        #: The state computation's breakdown (a :class:`~life_model.tax.state.StateTaxDetail`), when
+        #: the caller resolved one.
+        self.state_detail = None
+        # --- Schedule SE, return-level deductions, AMT and credit worksheets ---
+        #: Self-employment tax (Schedule SE line 12, all workers); part of ``total``, not of ``federal``.
+        self.se_tax = 0.0
+        #: Each worker's Schedule SE, in the order of the wage list.
+        self.se_by_worker: list[SelfEmploymentTax] = []
+        #: The part of ``additional_medicare`` on self-employment income (Form 8959 Part II).
+        self.additional_medicare_se = 0.0
+        #: §63(f) additional standard deduction included in ``standard_deduction``.
+        self.additional_standard_deduction = 0.0
+        #: Qualified business income deduction (included in ``deductions``) and its worksheet.
+        self.qbi_deduction = 0.0
+        self.qbi_detail = None
+        #: Non-itemizer charitable deduction (2026+, included in ``deductions``).
+        self.charitable_non_itemizer = 0.0
+        #: The charitable worksheet (:class:`~life_model.tax.deductions.CharitableDeduction`).
+        self.charitable = None
+        #: §68 reduction of itemized deductions (2026+); ``itemized_deduction`` is after it.
+        self.itemized_limitation = 0.0
+        #: Whether the return itemizes (itemized beat the standard plus the non-itemizer deduction).
+        self.itemize = False
+        #: Form 8814 tax on a child's interest and dividends (part of the line 16 tax, in ``federal``).
+        self.kiddie_tax = 0.0
+        #: Alternative minimum tax (in ``federal``) and Form 6251's figures.
+        self.amt = 0.0
+        self.amt_detail = None
+        #: Minimum tax credit generated this year for later years (Form 8801), and what is carried in.
+        self.amt_credit_generated = 0.0
+        #: Credits by name split into their nonrefundable and refundable parts.
+        self.credits_nonrefundable: dict[str, float] = {}
+        self.credits_refundable: dict[str, float] = {}
+        #: Worksheet figures of each credit.
+        self.credit_details: dict[str, dict[str, float]] = {}
+        #: Earned income of the return (for the earned-income credits).
+        self.earned_income = 0.0
+        # --- Estimated-tax penalty and the premium tax credit ---
+        #: Form 2210 underpayment penalty (paid with the balance due; not in ``total``).
+        self.estimated_tax_penalty = 0.0
+        #: Excess advance premium tax credit repaid (Form 8962 line 29; in ``federal``).
+        self.excess_advance_ptc = 0.0
+        #: Form 8962's figures (a dict), when the return has marketplace coverage.
+        self.ptc_detail: dict[str, float] | None = None
+
+    @property
+    def penalties(self) -> float:
+        """Additional taxes (penalties) included in ``federal``."""
+        return sum(self.penalties_detail.values())
+
     @property
     def total(self) -> float:
         """Total taxes due for the year, net of credits (negative means a refund)."""
-        return self.federal + self.state + self.ss + self.medicare + self.niit - self.credits
+        return self.federal + self.state + self.ss + self.medicare + self.niit + self.se_tax - self.credits
 
 
 def compute_taxes(
@@ -60,6 +155,8 @@ def compute_taxes(
     state_tax: "float | None" = None,
     preferential_income: float = 0.0,
     net_investment_income: float = 0.0,
+    se_incomes: "Sequence[float] | None" = None,
+    ss_wage_incomes: "Sequence[float] | None" = None,
 ) -> TaxesDue:
     """Compute income and payroll taxes for a tax unit.
 
@@ -77,16 +174,20 @@ def compute_taxes(
         deductions: Deductions applied against ordinary income.
         filing_status: Filing status of the unit.
         wage_incomes: Each member's FICA-subject wages (payroll tax base), one entry per person.
-        config: Per-model config. Defaults to the global config.
+        config: Per-model config. Defaults to the packaged defaults.
         credits: Pre-computed tax credits (e.g. Child Tax Credit) recorded on the result and
             subtracted from ``total``. Defaults to 0 (no credits).
         state_tax: Precomputed state income tax for the unit. When ``None`` the ``DEFAULT`` flat
-            rate is applied to the federal AGI base. Callers that resolve a state pack compute
+            rate is applied to the federal taxable income. Callers that resolve a state pack compute
             state tax from the state base and pass it here so it can also be folded into the SALT
             itemized deduction without circularity.
         preferential_income: Long-term capital gains and qualified dividends, taxed on the
             preferential schedule stacked above ordinary income. Defaults to 0.
         net_investment_income: Investment income subject to the §1411 surtax. Defaults to 0.
+        se_incomes: Each worker's Schedule C net profit (same order as ``wage_incomes``), taxed on
+            Schedule SE with the Social Security wage base shared with that worker's W-2 wages.
+        ss_wage_incomes: Each worker's W-2 Social Security wages for that sharing (defaults to
+            ``wage_incomes``).
     """
     # Deductions are applied to ordinary income first and spill onto the gain only once ordinary
     # income is exhausted — the clamp below is what makes a retiree living on gains alone come out
@@ -96,31 +197,80 @@ def compute_taxes(
     taxable_gains = max(0.0, min(preferential_income, taxable_income))
     taxable_ordinary = taxable_income - taxable_gains
 
-    tax_federal = federal_income_tax(taxable_ordinary, filing_status, config)
-    tax_federal += capital_gains_tax(taxable_ordinary, taxable_gains, filing_status, config)
+    ordinary_tax = federal_income_tax(taxable_ordinary, filing_status, config)
+    preferential_tax = capital_gains_tax(taxable_ordinary, taxable_gains, filing_status, config)
+    tax_federal = ordinary_tax
+    tax_federal += preferential_tax
 
     # The surtax is levied on the lesser of net investment income and the amount by which MAGI
     # exceeds the threshold. MAGI is a pre-deduction figure, unlike the taxable-income base above.
     tax_niit = net_investment_income_tax(net_investment_income, total_income, filing_status, config)
 
-    adjusted_gross_income = taxable_income
     if state_tax is None:
-        # ``DEFAULT`` flat rate on the federal AGI base.
-        tax_state = state_income_tax(adjusted_gross_income, config)
+        # ``DEFAULT`` flat rate on the federal *taxable income* (post-deduction) base, not AGI.
+        tax_state = state_income_tax(taxable_income, config)
     else:
         tax_state = state_tax
 
     # Social Security and base Medicare are per worker; the Additional Medicare surtax applies to
     # the unit's combined wages over the filing-status threshold.
-    tax_ss = sum(social_security_tax(wages, config) for wages in wage_incomes)
+    ss_by_worker = [social_security_tax(wages, config) for wages in wage_incomes]
+    tax_ss = sum(ss_by_worker)
     medicare_rate = get_medicare_rate(config)
-    tax_medicare = sum(wages * medicare_rate / 100 for wages in wage_incomes)
+    medicare_by_worker = [wages * medicare_rate / 100 for wages in wage_incomes]
+    tax_medicare = sum(medicare_by_worker)
     combined_wages = sum(wage_incomes)
     additional_threshold = get_medicare_additional_rate_threshold(filing_status, config)
+    additional_medicare = 0.0
     if combined_wages > additional_threshold:
-        tax_medicare += (combined_wages - additional_threshold) * get_medicare_additional_rate(config) / 100
+        additional_medicare = (combined_wages - additional_threshold) * get_medicare_additional_rate(config) / 100
+        tax_medicare += additional_medicare
+        # Attribute the surtax to workers by their share of the combined wages (reporting only).
+        medicare_by_worker = [
+            base + additional_medicare * wages / combined_wages
+            for base, wages in zip(medicare_by_worker, wage_incomes, strict=True)
+        ]
+    if len(medicare_by_worker) == 1:
+        medicare_by_worker = [tax_medicare]
 
-    return TaxesDue(tax_federal, tax_state, tax_ss, tax_medicare, credits=credits, niit=tax_niit)
+    # Schedule SE per worker (the wage base is shared with the worker's W-2 wages), and Form 8959 Part II:
+    # the Additional Medicare Tax on SE earnings over the threshold left after the return's wages.
+    se_by_worker: list[SelfEmploymentTax] = []
+    additional_medicare_se = 0.0
+    if se_incomes is not None and any(profit > 0 for profit in se_incomes):
+        ss_wages = list(ss_wage_incomes) if ss_wage_incomes is not None else list(wage_incomes)
+        se_by_worker = [
+            self_employment_tax(profit, ss_wages[i] if i < len(ss_wages) else 0.0, config)
+            for i, profit in enumerate(se_incomes)
+        ]
+        additional_medicare_se = additional_medicare_on_self_employment(
+            sum(se.net_earnings for se in se_by_worker),
+            combined_wages,
+            additional_threshold,
+            get_medicare_additional_rate(config),
+        )
+        # In ``medicare`` (Form 8959 total) but not in any worker's FICA line (it is not withheld).
+        tax_medicare += additional_medicare_se
+        additional_medicare += additional_medicare_se
+
+    taxes = TaxesDue(tax_federal, tax_state, tax_ss, tax_medicare, credits=credits, niit=tax_niit)
+    taxes.total_income = total_income
+    taxes.deductions = deductions
+    taxes.taxable_income = taxable_income
+    taxes.taxable_ordinary = taxable_ordinary
+    taxes.taxable_preferential = taxable_gains
+    taxes.ordinary_tax = ordinary_tax
+    taxes.preferential_tax = preferential_tax
+    taxes.ordinary_brackets = bracket_slices(taxable_ordinary, get_federal_tax_brackets(filing_status, config))
+    taxes.ss_by_worker = ss_by_worker
+    taxes.medicare_by_worker = medicare_by_worker
+    taxes.additional_medicare = additional_medicare
+    taxes.additional_medicare_se = additional_medicare_se
+    taxes.se_by_worker = se_by_worker
+    taxes.se_tax = sum(se.total for se in se_by_worker)
+    if credits:
+        taxes.credits_detail = {"credits": credits}
+    return taxes
 
 
 def get_income_taxes_due(
@@ -140,7 +290,7 @@ def get_income_taxes_due(
         gross_income (float): Income subject to income and payroll taxes.
         deductions (float): Deductions from income.
         filing_status (FilingStatus): Filing status.
-        config (FinancialConfig, optional): Per-model config. Defaults to the global config.
+        config (FinancialConfig, optional): Per-model config. Defaults to the packaged defaults.
 
     Returns:
         TaxesDue: Taxes due, split by type.

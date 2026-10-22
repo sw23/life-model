@@ -5,9 +5,10 @@
 
 """Regression tests for core simulation engine correctness.
 
-Each test targets a specific money-flow bug.
-Dollar assertions are derived from the library's own tax/housing helpers (not hardcoded
-constants) so they remain valid as financial data is refreshed.
+Each test pins one money-flow rule (collection timing, retirement crossing, married housing, debts paid
+once, per-unit taxes, conservation, construction-order independence). Dollar assertions are derived from
+the library's own tax/housing helpers (not hardcoded constants) so they remain valid as financial data is
+refreshed.
 """
 
 import unittest
@@ -24,23 +25,23 @@ from ..work.job import Job, Salary
 
 
 def _make_home(person, purchase_price=400000, mortgage_rate=4.5, appreciation=0.0):
-    mortgage = Mortgage(loan_amount=300000, start_date=2020, length_years=30, yearly_interest_rate=mortgage_rate)
+    mortgage = Mortgage(original_amount=300000, start_year=2020, term_years=30, rate_pct=mortgage_rate)
     expenses = HomeExpenses(
         model=person.model,
-        property_tax_percent=1.0,
-        home_insurance_percent=0.0,
-        maintenance_amount=1000,
-        maintenance_increase=0.0,
-        improvement_amount=0,
-        improvement_increase=0.0,
-        hoa_amount=0,
-        hoa_increase=0.0,
+        property_tax_pct=1.0,
+        insurance_pct=0.0,
+        maintenance_annual=1000,
+        maintenance_growth_pct=0.0,
+        improvement_annual=0,
+        improvement_growth_pct=0.0,
+        hoa_annual=0,
+        hoa_growth_pct=0.0,
     )
     return Home(
-        person=person,
+        owner=person,
         name="Test House",
         purchase_price=purchase_price,
-        value_yearly_increase=appreciation,
+        value_growth_pct=appreciation,
         down_payment=100000,
         mortgage=mortgage,
         expenses=expenses,
@@ -54,8 +55,8 @@ class TestDataCollectorTiming(unittest.TestCase):
         model = LifeModel(start_year=2020, end_year=2022)
         family = Family(model)
         person = Person(family, "Ann", age=40, retirement_age=70, spending=Spending(model, 0))
-        BankAccount(person, "Bank", balance=0, interest_rate=0)
-        Job(person, "Co", "Dev", Salary(model=model, base=40000))
+        BankAccount(person, company="Bank", balance=0, interest_pct=0)
+        Job(person, company="Co", role="Dev", salary=Salary(model=model, base_annual=40000))
 
         model.run()
 
@@ -81,17 +82,17 @@ class TestRunningFlag(unittest.TestCase):
         self.assertTrue(model.running)
 
         # Step through the inclusive range; running stays true until the final year is simulated.
-        model.step()  # 2020
+        model.step_year()  # 2020
         self.assertTrue(model.running)
-        model.step()  # 2021
+        model.step_year()  # 2021
         self.assertTrue(model.running)
-        model.step()  # 2022 (final year)
+        model.step_year()  # 2022 (final year)
         self.assertFalse(model.running)
 
         # Stepping past the end is a no-op: no extra year is collected and year doesn't advance.
         self.assertEqual(model.simulated_years, [2020, 2021, 2022])
         year_after_end = model.year
-        model.step()
+        model.step_year()
         self.assertEqual(model.simulated_years, [2020, 2021, 2022])
         self.assertEqual(model.year, year_after_end)
         self.assertFalse(model.running)
@@ -99,15 +100,15 @@ class TestRunningFlag(unittest.TestCase):
     def test_one_time_expense_spent_and_increase_deferred(self):
         model = LifeModel(start_year=2020, end_year=2022)
         family = Family(model)
-        spending = Spending(model, base=10000, yearly_increase=10)
+        spending = Spending(model, base_annual=10000, growth_pct=10)
         person = Person(family, "Bo", age=40, retirement_age=70, spending=spending)
-        BankAccount(person, "Bank", balance=1_000_000, interest_rate=0)
+        BankAccount(person, company="Bank", balance=1_000_000, interest_pct=0)
 
         spending.add_expense(5000)  # added before the sim runs
-        model.step()  # year 1
+        model.step_year()  # year 1
         self.assertEqual(person.stat_money_spent, 15000)  # base + one-time, increase not yet applied
 
-        model.step()  # year 2
+        model.step_year()  # year 2
         self.assertEqual(person.stat_money_spent, 11000)  # base grew 10%, one-time cleared
 
 
@@ -117,17 +118,20 @@ class TestRetirementCrossing(unittest.TestCase):
     def test_non_integer_retirement_age_triggers(self):
         model = LifeModel(start_year=2020, end_year=2030)
         family = Family(model)
+        # Ages are exact. Born January 1956, Cy reaches 65.5 in July 2021.
         person = Person(family, "Cy", age=64, retirement_age=65.5, spending=Spending(model, 0))
-        BankAccount(person, "Bank", balance=100000, interest_rate=0)
-        job = Job(person, "Co", "Dev", Salary(model=model, base=50000))
+        BankAccount(person, company="Bank", balance=100000, interest_pct=0)
+        job = Job(person, company="Co", role="Dev", salary=Salary(model=model, base_annual=50000))
 
-        model.step()  # age 65 -> below 65.5, still working
-        self.assertEqual(person.age, 65)
+        model.step_year()  # age 64 -> below 65.5, still working
+        self.assertEqual(person.age_in(2020), 64)
         self.assertFalse(job.retired)
 
-        model.step()  # age 66 -> crosses 65.5, retires
-        self.assertEqual(person.age, 66)
+        model.step_year()  # age 65 -> crosses 65.5 in July, retires after July's paycheck
+        self.assertEqual(person.age_in(2021), 65)
         self.assertTrue(job.retired)
+        self.assertEqual(person.get_period_at_age(65.5), (2021, 7))
+        self.assertAlmostEqual(job.stat_gross_income, 50000 * 7 / 12, places=2)
 
 
 class TestMarriedHousing(unittest.TestCase):
@@ -139,7 +143,7 @@ class TestMarriedHousing(unittest.TestCase):
         a = Person(family, "Dana", age=40, retirement_age=70, spending=Spending(model, 0))
         b = Person(family, "Evan", age=40, retirement_age=70, spending=Spending(model, 0))
         a.get_married(b)
-        bank = BankAccount(a, "Bank", balance=1_000_000, interest_rate=0)
+        bank = BankAccount(a, company="Bank", balance=1_000_000, interest_pct=0)
         home = _make_home(a)
 
         # Capture the year's housing figures before the step (no income -> no taxes).
@@ -147,7 +151,7 @@ class TestMarriedHousing(unittest.TestCase):
         principal_before = home.mortgage.principal
         bank_before = bank.balance
 
-        model.step()
+        model.step_year()
 
         # The mortgage amortizes monthly: principal drops by the actual principal paid and cash
         # equal to (principal + interest) paid this year leaves the bank, plus home expenses.
@@ -174,7 +178,7 @@ class TestFamilyDebtPaidOnce(unittest.TestCase):
         a = Person(family, "Fay", age=40, retirement_age=70, spending=Spending(model, 0))
         b = Person(family, "Gil", age=40, retirement_age=70, spending=Spending(model, 0))
         a.get_married(b)
-        bank = BankAccount(a, "Bank", balance=100000, interest_rate=0)
+        bank = BankAccount(a, company="Bank", balance=100000, interest_pct=0)
         b.debt = 10000
         return model, a, b, bank
 
@@ -182,20 +186,21 @@ class TestFamilyDebtPaidOnce(unittest.TestCase):
         # Interest-free carry isolates the paid-once property (interest is covered below).
         model, a, b, bank = self._married_with_debt(debt_rate=0.0)
 
-        model.step()
+        model.step_year()
 
         self.assertEqual(bank.balance, 90000)  # withdrawn once, not twice
         self.assertEqual(a.debt, 0)
         self.assertEqual(b.debt, 0)
 
     def test_carried_debt_accrues_a_year_of_interest(self):
-        """Plan 04 item 14: unpaid bills are a real liability, repaid with a year of interest."""
+        """Unpaid bills are a real liability, repaid with interest. Bills
+        are paid monthly, so the carried debt is repaid in January with a month of interest."""
         model, _a, b, bank = self._married_with_debt(debt_rate=18.0)
 
-        model.step()
+        model.step_year()
 
-        self.assertAlmostEqual(bank.balance, 100000 - 10000 * 1.18, places=6)
-        self.assertAlmostEqual(b.stat_interest_paid, 1800, places=6)
+        self.assertAlmostEqual(bank.balance, 100000 - 10000 * (1 + 0.18 / 12), places=6)
+        self.assertAlmostEqual(b.stat_interest_paid, 10000 * 0.18 / 12, places=6)
         self.assertEqual(b.debt, 0)
 
 
@@ -210,16 +215,16 @@ class TestMixedFilingUnits(unittest.TestCase):
         c = Person(family, "Spouse C", age=40, retirement_age=70, spending=Spending(model, 0))
         b.get_married(c)
         for p in (a, b, c):
-            BankAccount(p, "Bank", balance=500000, interest_rate=0)
-        Job(a, "Co", "Dev", Salary(model=model, base=60000))
-        Job(b, "Co", "Dev", Salary(model=model, base=70000))
-        Job(c, "Co", "Dev", Salary(model=model, base=80000))
+            BankAccount(p, company="Bank", balance=500000, interest_pct=0)
+        Job(a, company="Co", role="Dev", salary=Salary(model=model, base_annual=60000))
+        Job(b, company="Co", role="Dev", salary=Salary(model=model, base_annual=70000))
+        Job(c, company="Co", role="Dev", salary=Salary(model=model, base_annual=80000))
 
         # Two tax units: {A} single, {B, C} married-filing-jointly.
         units = TaxUnit.build_units(family)
         self.assertEqual(len(units), 2)
 
-        model.step()
+        model.step_year()
 
         # The 2020 return uses that year's tax parameters (year table, projection rule).
         year_config = model.config_for_year(2020)
@@ -267,16 +272,16 @@ class TestMoneyConservation(unittest.TestCase):
     def test_bank_conservation_year_by_year(self):
         model = LifeModel(start_year=2020, end_year=2025)
         family = Family(model)
-        a = Person(family, "Jo", age=40, retirement_age=70, spending=Spending(model, base=20000))
-        b = Person(family, "Kai", age=40, retirement_age=70, spending=Spending(model, base=0))
+        a = Person(family, "Jo", age=40, retirement_age=70, spending=Spending(model, base_annual=20000))
+        b = Person(family, "Kai", age=40, retirement_age=70, spending=Spending(model, base_annual=0))
         a.get_married(b)
-        bank = BankAccount(a, "Bank", balance=1_000_000, interest_rate=0)
+        bank = BankAccount(a, company="Bank", balance=1_000_000, interest_pct=0)
         _make_home(a, appreciation=5.0)
-        Job(a, "Co", "Dev", Salary(model=model, base=120000))
+        Job(a, company="Co", role="Dev", salary=Salary(model=model, base_annual=120000))
 
         for _ in model.get_year_range():
             bank_before = bank.balance
-            model.step()
+            model.step_year()
             # Pull the year's flows from the collected frame (row for the year just simulated).
             row = model.datacollector.get_model_vars_dataframe().iloc[-1]
             delta_bank = bank.balance - bank_before
@@ -291,13 +296,13 @@ class TestConstructionOrderIndependence(unittest.TestCase):
     def _build_and_run(bank_first: bool):
         model = LifeModel(start_year=2020, end_year=2025, seed=42)
         family = Family(model)
-        person = Person(family, "Lee", age=40, retirement_age=70, spending=Spending(model, base=15000))
+        person = Person(family, "Lee", age=40, retirement_age=70, spending=Spending(model, base_annual=15000))
         if bank_first:
-            BankAccount(person, "Bank", balance=200000, interest_rate=0)
-            Job(person, "Co", "Dev", Salary(model=model, base=90000))
+            BankAccount(person, company="Bank", balance=200000, interest_pct=0)
+            Job(person, company="Co", role="Dev", salary=Salary(model=model, base_annual=90000))
         else:
-            Job(person, "Co", "Dev", Salary(model=model, base=90000))
-            BankAccount(person, "Bank", balance=200000, interest_rate=0)
+            Job(person, company="Co", role="Dev", salary=Salary(model=model, base_annual=90000))
+            BankAccount(person, company="Bank", balance=200000, interest_pct=0)
         model.run()
         return model.datacollector.get_model_vars_dataframe()
 

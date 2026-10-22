@@ -1,0 +1,198 @@
+# Synthetic household (not real data), modeled from the agent docs alone: two W-2 earners, one child and
+# a mortgaged home, with a joint checking and brokerage account, the child's birth month, a car loan
+# behind its own schedule, the term policy's issue month, the CD's pre-start interest and Sam's SSA
+# earnings record. See test_household_modeling.TestTwoEarnerHousehold.
+spec_version: 1
+meta:
+  name: Two-earner household
+  description: Synthetic two-earner household modeled from the agent docs, as of 2026-01.
+  as_of: 2026-01
+  start_year: 2026
+  end_year: 2079
+  default_state: WA
+people:
+- id: dana
+  name: Dana
+  age: 41
+  birth: '1984-04'
+  retirement_age: 62
+  state: WA
+  mortality: immortal
+  spending:
+    amount_annual: 62400        # the whole household budget ($5,200/month); Sam's spending is left out
+    growth_pct: economy
+  jobs:
+  - id: dana_job
+    company: Example Analytics
+    salary_annual: 142000
+    raise_pct: economy
+    bonus_pct: 10
+    payroll:
+      health_premium_monthly: 310
+      dental_vision_monthly: 42
+  accounts:
+  - kind: bank
+    id: joint_checking
+    company: Neighborhood Credit Union
+    type: Checking
+    balance: 18400
+    interest_pct: 0.10
+    compounding: annual
+    primary: true
+    joint: true                 # joint with Sam: both paychecks land here
+  - kind: bank
+    id: hysa
+    company: Community Bank
+    type: Savings
+    balance: 16000
+    interest_pct: 4.00
+    compounding: annual
+  - kind: bank
+    id: emergency_fund
+    company: Community Bank
+    type: Savings
+    balance: 25000
+    interest_pct: 4.00
+    compounding: annual
+    reserve: true
+  - kind: 401k
+    id: dana_401k
+    job: dana_job
+    pretax_balance: 212500
+    pretax_contrib_pct: 8
+    bonus_is_plan_pay: false
+    match_tiers:
+    - {match_pct: 100, up_to_pay_pct: 3}
+    - {match_pct: 50, up_to_pay_pct: 2}
+  - kind: 401k
+    id: dana_old_401k
+    pretax_balance: 38200
+  - kind: brokerage
+    id: joint_brokerage
+    company: Example Brokerage
+    joint: true
+    lots:
+    - {value: 58000, cost_basis: 31000, acquired_year: 2019, acquired_month: 3}
+    - {value: 22000, cost_basis: 17500, acquired_year: 2023, acquired_month: 11}
+    dividend_yield_pct: 1.4
+    expense_ratio_pct: 0.03
+  - kind: 529
+    id: kai_529
+    beneficiary: kai
+    balance: 19300
+    basis: 15000
+  contribution_plans:
+  - account: kai_529
+    amount_annual: 2400         # $200/month; stops by default the month before Kai's college months
+    source: bank
+  debts:
+  - kind: student
+    id: dana_student
+    balance: 11200              # loan_type left unknown (the statement does not say)
+    rate_pct: 4.5
+    remaining_months: 41
+  housing:
+  - kind: home
+    id: home
+    purchase_price: 540000
+    current_value: 615000
+    purchase_year: 2021
+    pmi: false
+    mortgage:
+      original_amount: 432000
+      rate_pct: 3.125
+      term_years: 30
+      origination: '2021-07'
+      payment_monthly: 2462.60
+      escrow_monthly: 612
+    expenses:
+      property_tax_annual: 5900
+      insurance_annual: 1444
+  insurance:
+  - kind: life
+    policy: term
+    death_benefit: 750000
+    premium_monthly: 46
+    term_years: 20
+    issue_year: 2018
+    issue_month: 5
+  social_security:
+    pia_override_monthly: 2780
+    claim_age: 67
+    fra_from_birth_year: true
+  children:
+  - id: kai
+    name: Kai
+    birth_year: 2017
+    birth_month: 6
+    cost_override_annual: 0       # Kai's day-to-day costs are inside the $5,200/month
+    care_expenses_annual: 5400    # after-school care $450/month until Kai turns 13 (June 2030)
+- id: sam
+  name: Sam
+  age: 39
+  birth: '1986-09'
+  retirement_age: 60
+  state: WA
+  mortality: immortal
+  jobs:
+  - id: sam_job
+    company: Bargain Ben
+    salary_annual: 96000
+    raise_pct: economy
+    payroll:
+      hsa_employee_annual: 2400
+      hsa_employer_annual: 1000
+  accounts:
+  - kind: fixed_income
+    id: sam_cd
+    instrument: cd
+    face: 10000
+    rate_pct: 4.25
+    maturity: '2026-05'
+    purchased: '2025-11'
+    accrued_interest: 70.83       # November-December 2025, not in the statement's face
+  - kind: 401k
+    id: sam_401k
+    job: sam_job
+    roth_balance: 64300
+    roth_basis: 52000
+    roth_contrib_pct: 5
+    match_tiers:
+    - {match_pct: 50, up_to_pay_pct: 6}
+  - kind: roth_ira
+    id: sam_roth_ira
+    balance: 27600
+    contribution_basis: 21000
+  - kind: hsa
+    id: sam_hsa
+    coverage: family
+    balance: 7900
+    basis: 7900
+  debts:
+  - kind: car
+    id: sam_car
+    original_amount: 28000
+    term_months: 60
+    rate_pct: 6.9
+    origination: '2024-02'
+    balance: 19450                # above the 22-payment schedule: the loan is behind
+    schedule: statement
+  social_security:
+    pia_override_monthly: 2050
+    claim_age: 67
+    fra_from_birth_year: true
+    earnings_history: {2008: 31000, 2009: 33000, 2010: 35000, 2011: 38000, 2012: 41000, 2013: 44000,
+      2014: 47000, 2015: 50000, 2016: 54000, 2017: 58000, 2018: 62000, 2019: 66000, 2020: 70000,
+      2021: 75000, 2022: 80000, 2023: 85000, 2024: 90000, 2025: 93600}
+relationships:
+  marriages:
+  - spouses: [dana, sam]
+    year: 2015
+    filing_status: joint
+events:
+- id: spending_drop
+  name: Spending falls once both are retired
+  at: {age: 60, person: sam}
+  person: dana
+  action: change_spending
+  change_pct: -20

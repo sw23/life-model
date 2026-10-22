@@ -9,6 +9,7 @@ from ..account.bank import BankAccount
 from ..model import LifeModel
 from ..people.family import Family
 from ..people.person import Person, Spending
+from .helpers import run_months
 
 check_interest_table = {
     1: 5228.971130614779,
@@ -45,5 +46,7 @@ class TestBank(unittest.TestCase):
 
         for i in range(1, 11):
             account.balance += 100
-            account.step()
-            self.assertEqual(account.balance, check_interest_table[i])
+            # A year of monthly interest (interest accrues monthly; APR/12 compounds to the
+            # same yearly figure up to floating-point rounding).
+            run_months(account.model, account.step)
+            self.assertAlmostEqual(account.balance, check_interest_table[i], places=8)

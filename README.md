@@ -27,6 +27,44 @@ Check out the example simulation notebook:
 python -m pip install life-model
 ```
 
+### Command line
+`life-model` runs a household spec from the shell (`python -m life_model` is the same program):
+```bash
+life-model examples --copy married_homeowners my-models/h.yaml   # a synthetic example to edit
+life-model validate my-models/h.yaml                             # findings, exit code 2 on errors
+life-model run my-models/h.yaml --out my-models/out              # yearly summary + out/result.json
+life-model explain my-models/h.yaml --year 2035                  # one year: income, bills, taxes
+life-model compare my-models/h.yaml --set 'people[john].retirement_age=58'
+life-model montecarlo my-models/h.yaml --scenario stochastic --n 1000
+```
+Every command takes `--json` for machine-readable output. The same operations are Python one-liners
+(`life_model.run`, `validate`, `explain`, `compare`), and `pip install 'life-model[mcp]'` adds an MCP
+server (`life-model mcp`) for Claude Code and other MCP clients. See [docs/cli.md](docs/cli.md) and,
+for the end-to-end workflow, [docs/modeling-a-household.md](docs/modeling-a-household.md). Coding
+agents: start with [AGENTS.md](AGENTS.md).
+
+### Describing a household
+A household can be written as a YAML or JSON **household spec** (people, jobs, accounts, debts,
+home, insurance, Social Security records and dated events) instead of Python:
+
+```python
+from life_model.spec import build_model, load, validate_spec
+
+spec = load("my-models/household.yaml")  # my-models/ is git-ignored: keep real data there
+for finding in validate_spec(spec):  # errors and warnings before anything runs
+    print(finding)
+model = build_model(spec)
+model.run()
+```
+
+The engine steps one calendar month at a time (`model.step()`; `model.step_year()` runs to the next
+year end); salaries, bills, growth and benefits flow monthly and taxes settle in December. See
+[docs/units-and-conventions.md](docs/units-and-conventions.md).
+
+Synthetic examples ship in `life_model/spec/examples/` (`life_model.spec.load_example("married_homeowners")`),
+every field is documented in [docs/household-spec.md](docs/household-spec.md), and
+`python -m life_model.spec schema` prints the JSON Schema.
+
 ### Interactive Dashboard
 For a web-based interface to run simulations:
 ```bash
@@ -88,11 +126,20 @@ This package supports a comprehensive range of financial modeling components:
 
 ### Tax System
 - [x] **Federal Taxes** - Complete income tax calculations with brackets
-- [x] **State Taxes** - Per-state tax packs (progressive brackets or flat rate, retirement/Social Security exemptions, SALT integration) with per-person residency
+- [x] **State Taxes** - Per-state, per-year tax packs for 19 states (brackets by filing status or flat rate, exemptions and credits, retirement exclusions, SALT integration), residency timelines with part-year returns; an unknown state is an error
 - [x] **FICA Taxes** - Social Security and Medicare taxes
 - [x] **Capital Gains** - Short-term and long-term capital gains
 - [x] **Required Minimum Distributions (RMDs)** - From 401ks and Traditional IRAs
 - [x] **Early-Withdrawal Penalties** - 10% before 59½ on pre-tax and non-qualified Roth IRA draws; 20% on non-medical HSA draws before 65
+- [x] **Deductions** - Standard deduction with the §63(f) amount for 65+, OBBBA senior deduction, itemized (SALT cap schedule, mortgage interest, medical with long-term care premiums, charity at 60% cash / 30% appreciated property with carryovers; 2026 floor, non-itemizer deduction and §68 limit), QBI (§199A), student loan interest and IRA deduction phase-outs
+- [x] **Credits** - Child tax credit and credit for other dependents (Schedule 8812 with the additional child tax credit), earned income credit, child and dependent care credit with dependent-care FSAs, American opportunity / lifetime learning credits (529 coordination), saver's credit, prior-year minimum tax credit; each on its own Form 1040 / Schedule 3 line
+- [x] **Alternative Minimum Tax** - Form 6251 with capital-gain rates, incentive stock option exercises, and the minimum tax credit carryforward
+- [x] **Self-Employment** - Schedule C profit, self-employment tax sharing the wage base with W-2 wages, SEP and solo 401(k) contributions, QBI deduction
+- [x] **Kiddie Tax** - A child's interest and dividends on the parents' return (Form 8814)
+- [x] **Charitable Distributions** - Qualified charitable distributions from IRAs counting toward the RMD; gifts of appreciated shares at fair market value
+- [x] **Withholding & Estimated Payments** - Pub. 15-T paycheck withholding (supplemental rates for bonuses and RSU vests, per-employer FICA, state), quarterly estimates (fixed or safe harbor), the balance due or refund settled in April, the Form 2210 penalty; opt-in (the default is a December lump)
+- [x] **ACA Premium Tax Credit** - Form 8962 for marketplace coverage, with advance payments and repayment limits by year
+- [x] **Filing Statuses** - Single, joint, separate, head of household (a child or a qualifying relative such as a parent), qualifying surviving spouse
 
 ### Housing & Lifestyle
 - [x] **Home Ownership** - Purchase, mortgage, appreciation, and selling
@@ -109,7 +156,7 @@ This package supports a comprehensive range of financial modeling components:
 ### Giving & Legacy
 - [x] **Charitable Giving** - Tax-deductible donations with itemized deduction support
 - [x] **Donor Advised Funds** - Charitable investment accounts with growth, fees, and distributions
-- [x] **Estate Planning** - Mortality-driven death, spousal/beneficiary estate transfer, per-account beneficiary designations, estate tax, revocable/irrevocable trusts, and the SECURE Act 10-year inherited-account rule (trust income is untaxed until distributed — no compressed trust brackets; annuity two-life survivor factor still backlog)
+- [x] **Estate Planning** - Mortality-driven death, spousal/beneficiary estate transfer, per-account beneficiary designations, estate tax, revocable/irrevocable trusts, and the SECURE Act 10-year inherited-account rule (trust income is untaxed until distributed — no compressed trust brackets; the annuity two-life survivor factor is not modeled)
 - [x] **End of Life Care** - Long-term care facilities and a final-year medical expense spike charged to the estate
 - [x] **Funeral and Final Expenses** - Funeral cost charged against the estate before transfer and estate tax
 
@@ -123,11 +170,15 @@ This package supports a comprehensive range of financial modeling components:
 ## Examples and Documentation
 
 ### Dashboard
-The interactive dashboard provides real-time visualization of financial simulations with parameter controls for:
-- Family member configuration (age, salary, retirement age)
-- Economic factors (inflation, salary growth)
-- Account balances and debt management
-- Tax and spending analysis
+The interactive dashboard simulates a two-person household (John and Jane) and charts income, bank
+and 401k balances, debt, spending, 401k contributions and match, and income vs. taxes, with a
+results table and CSV download. Its controls cover:
+- Each person: include/exclude, age, retirement age, salary, bonus, spending, starting bank balance,
+  401k (balance, contribution, employer match) and number of children
+- Household: start and end year, state of residence, annual salary and spending increase, bank
+  interest rate, an optional home (price, mortgage rate and term) and optional healthcare costs
+- Economy: a packaged economic scenario (there is no separate inflation control; pick
+  `high_inflation`, `deflation`, `stochastic`, ... to change inflation and returns)
 
 ### Reinforcement Learning
 The deep learning module includes:
@@ -138,11 +189,19 @@ The deep learning module includes:
 - The simulation-grounded language-model adviser in [`slm/`](slm/README.md), which uses the same environment as its data generator
 
 ### Configuration System
-YAML-based configuration files packaged with life-model (in `src/life_model/config/data/scenarios/`) allow modeling of different economic conditions:
-- `conservative.yaml` - Low growth, stable conditions
-- `aggressive.yaml` - High growth, volatile markets
-- `recession.yaml` - Economic downturn scenarios
-- `high_inflation.yaml` - Inflationary environment modeling
+YAML scenario files packaged with life-model (in `src/life_model/config/data/scenarios/`) overlay the
+default financial configuration; use one with `LifeModel(scenario="recession")`, `meta.scenario` in a
+household spec, or `life-model run SPEC --scenario recession`:
+- `conservative` - lower equity returns (5%)
+- `aggressive` - higher equity returns (10%)
+- `boom` - a multi-year run of elevated equity returns and cash yields (path economy)
+- `recession` - a multi-year equity downturn, then recovery (path economy)
+- `high_inflation` - 8% inflation, wages lagging, lower real returns
+- `deflation` - falling prices with depressed returns
+- `stochastic` - random, correlated equity/bond/inflation draws each year (for Monte Carlo)
+- `high_tax`, `low_tax`, `tax_reform` - alternative federal brackets, deductions, state and payroll rates
+
+See [docs/configuration.md](docs/configuration.md) for authoring your own.
 
 ## Contributing
 This project is open source and welcomes contributions. See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, the tox targets used by CI, and the `pre-commit install` step. The test suite in `src/life_model/tests/` shows examples of expected functionality.

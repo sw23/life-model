@@ -1,0 +1,87 @@
+{
+  "golden": "retiree_couple_2025",
+  "year": 2025,
+  "description": "retirees filing jointly (75 and 73): RMDs from two traditional IRAs, Social Security, savings interest, both 65+",
+  "method": "Worked by scripts/household_goldens.py from the year's Form 1040 and instructions (see worksheet.md); independent of the library.",
+  "actuals": {
+    "form_1040": {
+      "1a": 0.0,
+      "1z": 0.0,
+      "2a": 0.0,
+      "2b": 2000.0,
+      "3a": 0.0,
+      "3b": 0.0,
+      "4a": 78969.17,
+      "4b": 78969.17,
+      "5b": 0.0,
+      "7a": 0.0,
+      "8": 0.0,
+      "6a": 54766.8,
+      "10": 0.0,
+      "6b": 46551.78,
+      "9": 127520.95,
+      "11a": 127520.95,
+      "11b": 127520.95,
+      "12e": 34700.0,
+      "13a": 0.0,
+      "13b": 12000.0,
+      "14": 46700.0,
+      "15": 80820.95,
+      "16": 9222.0,
+      "17": 0.0,
+      "18": 9222.0,
+      "19": 0.0,
+      "20": 0.0,
+      "21": 0.0,
+      "22": 9222.0,
+      "23": 0.0,
+      "24": 9222.0,
+      "28": 0.0
+    },
+    "schedules": {
+      "1": {
+        "26": 0.0
+      },
+      "1-A": {
+        "37": 12000.0,
+        "38": 12000.0
+      },
+      "2": {
+        "21": 0.0
+      }
+    },
+    "form_1099": [
+      {
+        "form": "1099-R",
+        "person": "pat",
+        "account": "pat_ira",
+        "boxes": {
+          "1": 48780.49,
+          "2a": 48780.49
+        },
+        "code": "7"
+      },
+      {
+        "form": "1099-R",
+        "person": "lee",
+        "account": "lee_ira",
+        "boxes": {
+          "1": 30188.68,
+          "2a": 30188.68
+        },
+        "code": "7"
+      }
+    ]
+  },
+  "exact": {
+    "1040:16": 9221.51
+  },
+  "tolerance": {
+    "default": 0.01,
+    "1040:16": 3.5,
+    "1040:18": 3.5,
+    "1040:22": 3.5,
+    "1040:24": 3.5
+  },
+  "xfail": {}
+}

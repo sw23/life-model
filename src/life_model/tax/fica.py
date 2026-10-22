@@ -51,12 +51,9 @@ def get_medicare_additional_rate_threshold(
 # https://www.irs.gov/taxtopics/tc751
 # https://smartasset.com/taxes/all-about-the-fica-tax
 def social_security_tax(income: float, config: "FinancialConfig | None" = None) -> float:
-    """Calculates FICA taxes due
-    This includes Social Security and Medicare taxes."""
+    """Employee Social Security tax on W-2 wages ``income``, up to the wage base.
 
-    # TODO: This code does not account for self-employed individuals, who pay both the
-    # employee and employer portions of FICA taxes. See the following for more information:
-    # https://www.irs.gov/businesses/small-businesses-self-employed/self-employment-tax-social-security-and-medicare-taxes
+    Self-employment tax (both halves, Schedule SE) is :mod:`life_model.tax.self_employment`."""
 
     max_income = get_social_security_max_income(config)
     rate = get_social_security_rate(config)
@@ -71,12 +68,10 @@ def social_security_tax(income: float, config: "FinancialConfig | None" = None) 
 
 
 def medicare_tax(income: float, filing_status: FilingStatus, config: "FinancialConfig | None" = None) -> float:
-    """Calculates FICA taxes due
-    This includes Social Security and Medicare taxes."""
+    """Employee Medicare tax on W-2 wages ``income``, plus the Additional Medicare Tax over the
+    filing-status threshold.
 
-    # TODO: This code does not account for self-employed individuals, who pay both the
-    # employee and employer portions of FICA taxes. See the following for more information:
-    # https://www.irs.gov/businesses/small-businesses-self-employed/self-employment-tax-social-security-and-medicare-taxes
+    Self-employment tax (both halves, Schedule SE) is :mod:`life_model.tax.self_employment`."""
 
     # Calculate medicare tax
     tax_amount = income * get_medicare_rate(config) / 100

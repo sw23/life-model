@@ -42,12 +42,18 @@ BOOTSTRAP_RESAMPLES = 1000
 BOOTSTRAP_SEED = 0
 
 
-def make_scoring_env(household: dict, reward_preset: str) -> FinancialLifeEnv:
-    """Build a fixed-household env for scoring (the household is the env's point configuration)."""
+def make_scoring_env(household: dict, reward_preset: str, *, action_space: str = "flat") -> FinancialLifeEnv:
+    """Build a fixed-household env for scoring (the household is the env's point configuration).
+
+    ``action_space="factored"`` scores candidates as standing-policy vectors (see
+    ``candidates.plan_policy_vector``); the flat default is what the committed data was scored on.
+    """
     config = dict(household)
     config.setdefault("economy_mode", _DEFAULT_ECONOMY_MODE)
     config.setdefault("bequest_pretax_tax_rate", NAMED_ENV_BEQUEST_TAX_RATE)
     config["reward_preset"] = reward_preset
+    if action_space != "flat":
+        config["action_space"] = action_space
     return FinancialLifeEnv(config)
 
 
@@ -72,10 +78,12 @@ class _Scorer:
         seeds: list[int],
         reward_preset: str,
         outcomes: dict[str, list[EpisodeOutcome]] | None = None,
+        action_space: str = "flat",
     ):
         self.household = household
         self.seeds = seeds
         self.reward_preset = reward_preset
+        self.action_space = action_space
         self.outcomes: dict[str, list[EpisodeOutcome]] = {k: list(v) for k, v in (outcomes or {}).items()}
         self._envs: dict[str, FinancialLifeEnv] = {}
 
@@ -92,8 +100,10 @@ class _Scorer:
             if len(outs) >= n:
                 continue
             if name not in self._envs:
-                self._envs[name] = make_scoring_env(candidate_household(name, self.household), self.reward_preset)
-            policy = candidate_policy(name)
+                self._envs[name] = make_scoring_env(
+                    candidate_household(name, self.household), self.reward_preset, action_space=self.action_space
+                )
+            policy = candidate_policy(name, action_space=self.action_space)
             outs.extend(run_policy_episode(self._envs[name], policy, seed) for seed in self.seeds[len(outs) : n])
 
     def mean_return(self, name: str, n: int) -> float:
@@ -217,9 +227,12 @@ def _summarize(outcomes: dict[str, list[EpisodeOutcome]]) -> list[ScoredCandidat
     return scored
 
 
-def score_candidate(household: dict, name: str, seeds: list[int], reward_preset: str) -> ScoredCandidate:
-    """Score a single candidate on ``household`` over ``seeds`` (no paired comparison)."""
-    scorer = _Scorer(household, seeds, reward_preset)
+def score_candidate(
+    household: dict, name: str, seeds: list[int], reward_preset: str, *, action_space: str = "flat"
+) -> ScoredCandidate:
+    """Score a single candidate on ``household`` over ``seeds`` (no paired comparison); with
+    ``action_space="factored"``, as a standing-policy vector."""
+    scorer = _Scorer(household, seeds, reward_preset, action_space=action_space)
     scorer.ensure([name], len(seeds))
     return scorer.summarize([name], len(seeds))[0]
 

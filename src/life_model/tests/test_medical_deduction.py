@@ -17,7 +17,7 @@ from ..tax.income import IncomeType
 
 def _make_person(model, age, balance=5_000_000):
     family = Family(model)
-    person = Person(family=family, name="P", age=age, retirement_age=90, spending=Spending(model, base=0))
+    person = Person(family=family, name="P", age=age, retirement_age=90, spending=Spending(model, base_annual=0))
     BankAccount(owner=person, company="Bank", balance=balance)
     return person
 
@@ -92,7 +92,7 @@ class TestMedicalDeduction(unittest.TestCase):
             if with_medical:
                 MedicalCosts(person)
             person.income.add(IncomeType.ORDINARY, 100000)
-            model.step()
+            model.step_year()
             return person
 
         without = run(False)
@@ -121,7 +121,7 @@ class TestMedicalDeduction(unittest.TestCase):
         person = _make_person(model, age=70)
         MedicalCosts(person)
         person.income.add(IncomeType.ORDINARY, 100000)
-        model.step()
+        model.step_year()
         # The 32,500 medical deduction lowers taxable income, not AGI.
         self.assertAlmostEqual(person.agi_history[2026], 100000, places=2)
         self.assertGreater(person.stat_itemized_deductions, 32500)
@@ -157,10 +157,10 @@ class TestWithdrawalSizingWithMedicalDeduction(unittest.TestCase):
         from ..work.job import Job, Salary
 
         family = Family(model)
-        person = Person(family=family, name="R", age=70, retirement_age=65, spending=Spending(model, base=0))
+        person = Person(family=family, name="R", age=70, retirement_age=65, spending=Spending(model, base_annual=0))
         BankAccount(owner=person, company="Bank", balance=1000)
-        job = Job(owner=person, company="Co", role="Retiree", salary=Salary(model, base=0))
-        Job401kAccount(job=job, pretax_balance=pretax_balance, roth_balance=0, average_growth=0)  # isolate the draw
+        job = Job(owner=person, company="Co", role="Retiree", salary=Salary(model, base_annual=0))
+        Job401kAccount(job=job, pretax_balance=pretax_balance, roth_balance=0, growth_pct=0)  # isolate the draw
         return person
 
     def test_medical_costs_funded_from_401k_leave_no_phantom_debt(self):
@@ -168,7 +168,7 @@ class TestWithdrawalSizingWithMedicalDeduction(unittest.TestCase):
         model = LifeModel(start_year=2026, end_year=2026, config=self._high_medical_config(60000))
         person = self._make_retiree(model, pretax_balance=2_000_000)
         MedicalCosts(person)
-        model.step()
+        model.step_year()
         self.assertEqual(person.debt, 0)
         # The withdrawal actually happened (medical costs were funded from the 401k).
         self.assertLess(person.all_retirement_accounts[0].pretax_balance, 2_000_000)
@@ -180,7 +180,7 @@ class TestWithdrawalSizingWithMedicalDeduction(unittest.TestCase):
         ltc = LongTermCare(person)
         ltc.in_care = True
         ltc.care_years_remaining = 2
-        model.step()
+        model.step_year()
         self.assertEqual(person.debt, 0)
         self.assertLess(person.all_retirement_accounts[0].pretax_balance, 2_000_000)
 

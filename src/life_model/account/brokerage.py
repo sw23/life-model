@@ -3,9 +3,12 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 import html
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from ..base_classes import Investment
+from ..deprecated_names import deprecated_arguments
+from ..ledger import FlowKind
 from ..people.person import Person
 from ..tax.income import IncomeType
 
@@ -23,13 +26,47 @@ class TaxLot:
     value: float
     #: What was paid for the lot; the untaxed portion of a sale.
     cost_basis: float
-    #: Simulated year the lot was acquired, which fixes its holding period.
+    #: Year the lot was acquired, which (with ``acquired_month``) fixes its holding period.
     acquired_year: int
+    #: Month (1-12) the lot was acquired. A lot held 12 months or more is long-term.
+    acquired_month: int = 1
 
     @property
     def gain(self) -> float:
         """Unrealized gain (negative when the lot is underwater)."""
         return self.value - self.cost_basis
+
+    def months_held(self, year: int, month: int) -> int:
+        """Whole months the lot has been held at ``(year, month)``."""
+        return (year * 12 + month) - (self.acquired_year * 12 + self.acquired_month)
+
+
+@dataclass(frozen=True)
+class Lot:
+    """An opening tax lot from a brokerage statement: its market value, its cost basis and
+    when it was acquired (``"YYYY-MM"``, a year meaning January of it, or None for the first simulated
+    month). Pass a list of these as ``BrokerageAccount(lots=)``."""
+
+    value: float
+    cost_basis: float
+    acquired: "int | str | None" = None
+
+    def __post_init__(self):
+        if self.value < 0 or self.cost_basis < 0:
+            raise ValueError("Lot value and cost_basis must be non-negative")
+
+
+def _acquired(acquired: "int | str | None") -> "tuple[int | None, int | None]":
+    """``(year, month)`` of a lot's ``acquired`` (None for either part means "the default")."""
+    if acquired is None:
+        return None, None
+    if isinstance(acquired, str):
+        from ..model import parse_year_month
+
+        if acquired.isdigit():
+            return int(acquired), None
+        return parse_year_month(acquired)
+    return int(acquired), None
 
 
 class BrokerageAccount(Investment):
@@ -41,41 +78,103 @@ class BrokerageAccount(Investment):
     accrues to lots pro rata by value and is untaxed until a sale — the realization principle.
 
     Specific-identification lot selection is not modeled (it needs a per-sale optimizer), and
-    wash-sale disallowance (§1091) is structurally unrepresentable at year granularity: any
-    tax-loss-harvesting strategy evaluated on this model will overstate its benefit.
+    wash-sale disallowance (§1091) is not modeled: any tax-loss-harvesting strategy evaluated on
+    this model will overstate its benefit.
+
+    Growth is monthly. Dividends (``dividend_yield_pct``, carved out of the month's total return) are
+    paid quarterly by default (``accounts.brokerage.dividend_frequency``) and reinvested as new lots, or
+    paid to the owner's bank with ``reinvest_dividends=False``; a lot held 12 months or more sells at a
+    long-term gain.
     """
 
+    @deprecated_arguments(
+        {"person": "owner", "growth_rate": "growth_pct", "dividend_yield": "dividend_yield_pct"},
+        positional=("company", "balance", "growth_pct"),
+    )
     def __init__(
         self,
-        person: Person,
-        company: str,
-        balance: float = 0,
-        growth_rate: float | None = None,
+        owner: Person,
         *,
-        dividend_yield: float | None = None,
+        company: str = "Brokerage",
+        balance: float = 0,
+        lots: "Sequence[Lot | TaxLot] | None" = None,
+        growth_pct: float | None = None,
+        dividend_yield_pct: float | None = None,
+        reinvest_dividends: bool = True,
+        allocation: "dict[str, float] | None" = None,
+        expense_ratio_pct: float = 0.0,
+        joint_owner: Person | None = None,
     ):
         """Models a brokerage/investment account
 
         Args:
-            person: The person who owns this account
-            company: Brokerage company name
+            owner: The person who owns this account (deprecated alias ``person``).
+            company: Brokerage company name.
             balance: Current account balance. Seeded as a single lot with basis equal to the
-                balance and acquired in the model's start year, i.e. an account opened with no
-                embedded gain.
-            growth_rate: Expected annual growth rate percentage. Defers to the economy's equity
-                return when None.
-            dividend_yield: Percentage of the balance paid out as qualified dividends each year,
-                carved *out of* ``growth_rate`` rather than added on top. Defers to the config
-                default when None.
+                balance and acquired in the first simulated month, i.e. an account opened with no
+                embedded gain. Mutually exclusive with ``lots``.
+            lots: The statement's tax lots (:class:`Lot`: value, cost basis, acquired), so embedded
+                gains and holding periods are what the statement says.
+            growth_pct: Expected annual growth rate percentage (deprecated alias ``growth_rate``).
+                Defers to the economy's equity return (or the allocation's blend) when None.
+            dividend_yield_pct: Percentage of the balance paid out as qualified dividends each year,
+                carved *out of* the total return rather than added on top (deprecated alias
+                ``dividend_yield``). Defers to the config default when None.
+            reinvest_dividends: Reinvest dividends as new lots (default) or pay them to the owner's bank.
+            allocation: Target allocation in percent by asset class (``{"equity": 70, "bond": 30}``),
+                rebalanced yearly.
+            expense_ratio_pct: Fund expense ratio (percent a year), netted out of the return.
+            joint_owner: The spouse who owns the account jointly with ``owner``: dividends and realized gains
+                are split half and half between their returns, and at a death the account passes to the
+                survivor outside the estate with half the basis stepped up (IRC §1014(b)(9), §2040(b)). The
+                titled ``owner``'s waterfall sells it.
         """
-        super().__init__(person, balance, growth_rate)
+        if lots is not None and balance:
+            raise ValueError("pass either balance or lots, not both")
+        opening = [self._opening_lot(lot) for lot in lots] if lots is not None else []
+        super().__init__(
+            owner,
+            sum(lot[0] for lot in opening) if lots is not None else balance,
+            growth_pct,
+            allocation=allocation,
+            expense_ratio_pct=expense_ratio_pct,
+        )
         self.company = company
-        self._dividend_yield_override = dividend_yield
+        self._dividend_yield_override = dividend_yield_pct
+        self.reinvest_dividends = reinvest_dividends
         # Basis is tracked per lot; an opening balance is treated as freshly purchased at cost.
         self.lots: list[TaxLot] = []
-        if balance > 0:
-            self.lots.append(TaxLot(value=balance, cost_basis=balance, acquired_year=self.model.year))
-        self.model.registries.brokerage_accounts.register(person, self)
+        if lots is not None:
+            for value, basis, year, month in opening:
+                if value > 0:
+                    self.lots.append(self._lot(value, basis, year, month))
+        elif balance > 0:
+            self.lots.append(self._lot(balance, balance))
+        self.joint_owner = joint_owner
+        self.model.registries.brokerage_accounts.register(owner, self)
+
+    @staticmethod
+    def _opening_lot(lot) -> "tuple[float, float, int | None, int | None]":
+        if isinstance(lot, TaxLot):
+            return lot.value, lot.cost_basis, lot.acquired_year, lot.acquired_month
+        if isinstance(lot, dict):
+            lot = Lot(**lot)
+        elif isinstance(lot, tuple):
+            lot = Lot(*lot)
+        year, month = _acquired(lot.acquired)
+        return lot.value, lot.cost_basis, year, month
+
+    def _lot(self, value: float, cost_basis: float, acquired_year: int | None = None, acquired_month=None) -> TaxLot:
+        """A lot acquired now (or in ``acquired_year``: in ``acquired_month``, else January of an
+        earlier year / the current month of this year)."""
+        if acquired_year is None:
+            acquired_year = self.model.year
+        if acquired_month is None:
+            acquired_month = self.model.month if acquired_year == self.model.year else 1
+        return TaxLot(value=value, cost_basis=cost_basis, acquired_year=acquired_year, acquired_month=acquired_month)
+
+    def _is_long_term(self, lot: TaxLot) -> bool:
+        return lot.months_held(self.model.year, self.model.month) >= 12
 
     @property
     def dividend_yield(self) -> float:
@@ -98,27 +197,45 @@ class BrokerageAccount(Investment):
         """Gain that would be realized if the whole account were sold today."""
         return self.balance - self.cost_basis
 
+    @property
+    def is_dividend_month(self) -> bool:
+        """Whether dividends are paid this month (every month, or quarter ends)."""
+        if self.model.config.accounts.brokerage.dividend_frequency == "monthly":
+            return True
+        return self.model.month % 3 == 0
+
     def apply_growth(self):
-        """Grow the account, splitting the return into untaxed appreciation and taxable dividends.
+        """Grow the account by the month's return, splitting it into untaxed appreciation and taxable
+        dividends in dividend months.
 
         The dividend slice is carved out of the total return rather than added to it, so total
         return is unchanged by ``dividend_yield`` — only the tax character of that slice changes.
-        Price appreciation accrues to existing lots pro rata by value; the dividend is posted as
-        qualified-dividend income and reinvested as a new full-basis lot, the reinvestment default.
+        Price appreciation accrues to existing lots pro rata by value; the dividend (a quarter, or
+        a twelfth, of the yield on the balance) is posted as qualified-dividend income and
+        reinvested as a new full-basis lot, the reinvestment default.
         """
-        dividend_rate = self.dividend_yield if self.lots else 0.0
+        payments = 12 if self.model.config.accounts.brokerage.dividend_frequency == "monthly" else 4
+        dividend_rate = self.dividend_yield / payments if self.lots and self.is_dividend_month else 0.0
         dividend = self.balance * (dividend_rate / 100)
-        appreciation = self.balance * ((self.growth_rate - dividend_rate) / 100)
+        appreciation = self.balance * ((self.monthly_growth_rate - dividend_rate) / 100)
 
         self._accrue_to_lots(appreciation)
         self.balance += appreciation
+        self._post_growth(appreciation)
 
         if dividend > 0:
-            self.person.income.add(IncomeType.QUALIFIED_DIVIDEND, dividend)
-            self.deposit(dividend)
+            self.add_income(IncomeType.QUALIFIED_DIVIDEND, dividend, source="dividend")
+            if self.reinvest_dividends:
+                self.deposit(dividend)
+                self.model.ledger.post(
+                    dividend, FlowKind.DIVIDEND, to_account=self, source="dividends (reinvested)", agent=self.person
+                )
+            else:
+                self.person.receive_cash(dividend, source=f"{self.company} dividends", kind=FlowKind.DIVIDEND)
 
-        growth = appreciation + dividend
+        growth = appreciation + (dividend if self.reinvest_dividends else 0.0)
         self.stat_growth_history.append(growth)
+        self._drift_allocation()
         return growth
 
     def _accrue_to_lots(self, amount: float) -> None:
@@ -130,7 +247,7 @@ class BrokerageAccount(Investment):
             lot.value += amount * (lot.value / total)
 
     def deposit(self, amount: float) -> bool:
-        """Credit ``amount`` to the account as a new full-basis lot acquired this year.
+        """Credit ``amount`` to the account as a new full-basis lot acquired this month.
 
         Every credit path must go through here: a bare ``balance +=`` would silently drive basis
         below balance and manufacture phantom taxable gain on the next sale.
@@ -140,11 +257,18 @@ class BrokerageAccount(Investment):
         if amount == 0:
             return True
         self.balance += amount
-        self.lots.append(TaxLot(value=amount, cost_basis=amount, acquired_year=self.model.year))
+        self.lots.append(self._lot(amount, amount))
         return True
 
-    def deposit_with_basis(self, amount: float, cost_basis: float, acquired_year: int | None = None) -> None:
-        """Credit ``amount`` as a lot with an explicit basis and acquisition year.
+    def deposit_with_basis(
+        self,
+        amount: float,
+        cost_basis: float,
+        acquired_year: int | None = None,
+        acquired_month: int | None = None,
+    ) -> None:
+        """Credit ``amount`` as a lot with an explicit basis and acquisition date (default: now; a year
+        without a month is January of an earlier year, or this month of the current one).
 
         Used where the transferred property carries a basis or holding period that differs from a
         fresh purchase (e.g. a basis step-up at death).
@@ -152,29 +276,23 @@ class BrokerageAccount(Investment):
         if amount <= 0:
             return
         self.balance += amount
-        self.lots.append(
-            TaxLot(
-                value=amount,
-                cost_basis=cost_basis,
-                acquired_year=self.model.year if acquired_year is None else acquired_year,
-            )
-        )
+        self.lots.append(self._lot(amount, cost_basis, acquired_year, acquired_month))
 
     def withdraw(self, amount: float) -> float:
         """Sell ``amount`` of the account, consuming lots FIFO and posting the realized gain.
 
-        Each consumed lot's gain is classified long-term when it was acquired in an earlier
-        simulated year and short-term otherwise, then posted to the owner's income ledger so the
-        tax unit settles it at year end.
+        Each consumed lot's gain is classified long-term when the lot has been held 12 months or
+        more and short-term otherwise, then posted to the owner's income ledger so the tax unit
+        settles it at year end.
 
         Returns:
             float: Amount actually withdrawn.
         """
         withdrawn, long_term_gain, short_term_gain = self.sell(amount)
         if long_term_gain != 0:
-            self.person.income.add(IncomeType.LONG_TERM_CAPITAL_GAIN, long_term_gain)
+            self.add_income(IncomeType.LONG_TERM_CAPITAL_GAIN, long_term_gain, source="brokerage_sale")
         if short_term_gain != 0:
-            self.person.income.add(IncomeType.SHORT_TERM_CAPITAL_GAIN, short_term_gain)
+            self.add_income(IncomeType.SHORT_TERM_CAPITAL_GAIN, short_term_gain, source="brokerage_sale")
         return withdrawn
 
     def sell(self, amount: float) -> tuple[float, float, float]:
@@ -199,7 +317,7 @@ class BrokerageAccount(Investment):
             # realizes a proportional slice of its gain and leaves the rest embedded.
             basis_used = lot.cost_basis * (take / lot.value) if lot.value > 0 else lot.cost_basis
             gain = take - basis_used
-            if self.model.year - lot.acquired_year >= 1:
+            if self._is_long_term(lot):
                 long_term_gain += gain
             else:
                 short_term_gain += gain
@@ -210,6 +328,31 @@ class BrokerageAccount(Investment):
                 self.lots.pop(0)
 
         return actual_withdrawal, long_term_gain, short_term_gain
+
+    def transfer_long_term_in_kind(self, amount: float) -> float:
+        """Give up to ``amount`` of long-term lots away in kind (a charitable gift of appreciated shares):
+        the lots leave the account without a sale, so no gain is realized. The most appreciated lots (by
+        gain per dollar) go first. Returns the market value transferred; nothing is posted (the caller
+        posts the gift)."""
+        if amount <= 0:
+            return 0.0
+        year = self.model.year
+        candidates = sorted(
+            (lot for lot in self.lots if year - lot.acquired_year >= 1 and lot.value > 0),
+            key=lambda lot: -(lot.gain / lot.value),
+        )
+        remaining = amount
+        for lot in candidates:
+            if remaining <= 0:
+                break
+            take = min(remaining, lot.value)
+            lot.cost_basis -= lot.cost_basis * (take / lot.value)
+            lot.value -= take
+            remaining -= take
+        self.lots = [lot for lot in self.lots if lot.value > 1e-9]
+        given = amount - remaining
+        self.balance -= given
+        return given
 
     def preview_gain(self, amount: float) -> tuple[float, float]:
         """Preview the gains selling ``amount`` would realize, WITHOUT mutating any lots.
@@ -230,24 +373,31 @@ class BrokerageAccount(Investment):
             take = min(remaining, lot.value)
             basis_used = lot.cost_basis * (take / lot.value) if lot.value > 0 else lot.cost_basis
             gain = take - basis_used
-            if self.model.year - lot.acquired_year >= 1:
+            if self._is_long_term(lot):
                 long_term_gain += gain
             else:
                 short_term_gain += gain
             remaining -= take
         return long_term_gain, short_term_gain
 
-    def step_up_basis_at_death(self) -> None:
+    def step_up_basis_at_death(self, fraction: float = 1.0) -> None:
         """Reset basis to fair market value at the owner's death (IRC §1014).
 
         The lots collapse to a single lot with basis equal to the current balance, so gains that
         accrued during the decedent's lifetime are never taxed to the heir. Inherited property is
         long-term regardless of how long anyone actually held it, which the sentinel acquisition
-        year below guarantees.
+        date below (twelve months ago) guarantees.
+
+        ``fraction`` < 1 steps up only the decedent's share of a joint account (half for spouses,
+        §2040(b)): each lot's basis moves that fraction of the way to its value and keeps its date.
         """
+        if fraction < 1.0:
+            for lot in self.lots:
+                lot.cost_basis += (lot.value - lot.cost_basis) * fraction
+            return
         self.lots = []
         if self.balance > 0:
-            self.lots.append(TaxLot(value=self.balance, cost_basis=self.balance, acquired_year=self.model.year - 1))
+            self.lots.append(self._lot(self.balance, self.balance, self.model.year - 1, self.model.month))
 
     def _repr_html_(self):
         desc = "<ul>"

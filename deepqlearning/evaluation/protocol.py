@@ -5,9 +5,8 @@
 
 """Statistical evaluation protocol for RL policies.
 
-The old evaluation was a hand-rolled mean of a handful of greedy episodes with no statistics. This
-module replaces it with a defensible protocol that runs **every policy (the trained agent plus all
-baselines) on identical seed sets** and reports, per policy:
+The protocol runs **every policy (the trained agent plus all baselines) on identical seed sets**
+and reports, per policy:
 
 * mean return with a bootstrap confidence interval,
 * ruin rate (fraction of episodes ending in bankruptcy),
@@ -36,10 +35,11 @@ import numpy as np
 
 from ..envs.financial.environment import FinancialLifeEnv
 from ..envs.financial.rewards import DEFAULT_PRESET, get_reward_config
-from .baselines import BASELINES, PLANNER_BASELINES
+from .baselines import PLANNER_BASELINES, baselines_for
 
-# A policy maps the environment's current state to a legal flat action index.
-Policy = Callable[[FinancialLifeEnv], int]
+# A policy maps the environment's current state to a legal action: a flat action index, or a
+# standing-policy vector under the factored action space.
+Policy = Callable[[FinancialLifeEnv], "int | np.ndarray"]
 
 
 def spawn_seeds(master_seed: int | None, n: int) -> list[int]:
@@ -139,7 +139,7 @@ def run_policy_episode(env: FinancialLifeEnv, policy: Policy, seed: int) -> Epis
     # After-tax terminal wealth (tax-deferred balances valued net of the env's bequest tax rate);
     # ruin is decided on raw net worth, matching the env's bankruptcy termination.
     nominal_net_worth, raw_net_worth = env.terminal_wealth()
-    deflator = env.model.economy.cumulative_inflation(env.model.year)
+    deflator = env._deflator()
     real_net_worth = nominal_net_worth / max(deflator, 1e-9)
 
     ruined = raw_net_worth < env.BANKRUPTCY_THRESHOLD
@@ -263,21 +263,27 @@ class EvalProtocol:
         rng = np.random.default_rng(self.master_seed)
         return summarize(outcomes, self.bootstrap_resamples, self.ci, rng)
 
-    def run(self, policies: dict[str, Policy] | None = None, agent=None) -> dict:
+    def run(self, policies: dict[str, Policy] | None = None, agent=None, agent_policy: Policy | None = None) -> dict:
         """Run the protocol and return the JSON-serializable report.
 
         Args:
-            policies: Name -> policy map to evaluate. Defaults to all :data:`BASELINES`.
+            policies: Name -> policy map to evaluate. Defaults to every baseline in the env config's
+                action space (:func:`~deepqlearning.evaluation.baselines.baselines_for`).
             agent: Optional trained agent; if given, a greedy ``agent`` policy is added and the
                 "intelligent" verdict is computed against the planner heuristics.
+            agent_policy: How to act with ``agent`` (default :func:`greedy_agent_policy`); e.g. a
+                Q-agent trained through ``FlattenPolicies`` composes its factored action
+                (``FlattenPolicies.agent_policy``).
         """
-        policies = dict(policies) if policies is not None else dict(BASELINES)
+        policies = dict(policies) if policies is not None else baselines_for(self.env_config)
         if agent is not None:
-            policies = {"agent": greedy_agent_policy(agent), **policies}
+            policies = {"agent": agent_policy or greedy_agent_policy(agent), **policies}
 
         conditions = self._conditions()
         report: dict = {
             "reward_preset": self.reward_preset,
+            "action_space": self.env_config.get("action_space", "flat"),
+            "decision_interval": self.env_config.get("decision_interval", "year"),
             "reward_config": asdict(get_reward_config(self.reward_preset)),
             "master_seed": self.master_seed,
             "n_eval": self.n_eval,
@@ -342,9 +348,12 @@ class EvalProtocol:
 def format_comparison_table(report: dict) -> str:
     """Render the protocol report as a plain-text comparison table for the trainer to print."""
     lines: list[str] = []
+    space = report.get("action_space", "flat")
+    interval = report.get("decision_interval", "year")
+    timing = "" if (space, interval) == ("flat", "year") else f" action_space={space} decision_interval={interval}"
     lines.append(
         f"Evaluation protocol — preset={report['reward_preset']} n={report['n_eval']} "
-        f"master_seed={report['master_seed']}"
+        f"master_seed={report['master_seed']}{timing}"
     )
     header = f"{'policy':22s} {'mean':>9s} {'95% CI':>19s} {'ruin':>6s} {'succ':>6s} {'nw_p50':>12s}"
     for cond_name, cond in report["conditions"].items():

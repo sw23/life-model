@@ -1,0 +1,84 @@
+{
+  "golden": "eitc_head_of_household_2024",
+  "year": 2024,
+  "description": "head of household with two school-age children and $28,000 of wages: earned income credit, child tax credit limited by the tax and the additional child tax credit",
+  "method": "Worked by scripts/household_goldens.py from the year's Form 1040 and instructions (see worksheet.md); independent of the library.",
+  "actuals": {
+    "form_1040": {
+      "1a": 28000.0,
+      "1z": 28000.0,
+      "2a": 0.0,
+      "2b": 0.0,
+      "3a": 0.0,
+      "3b": 0.0,
+      "4a": 0.0,
+      "4b": 0.0,
+      "5b": 0.0,
+      "7": 0.0,
+      "8": 0.0,
+      "6a": 0.0,
+      "10": 0.0,
+      "6b": 0.0,
+      "9": 28000.0,
+      "11": 28000.0,
+      "12": 21900.0,
+      "13": 0.0,
+      "14": 21900.0,
+      "15": 6100.0,
+      "16": 613.0,
+      "17": 0.0,
+      "18": 613.0,
+      "19": 613.0,
+      "20": 0.0,
+      "21": 613.0,
+      "22": 0.0,
+      "23": 0.0,
+      "24": 0.0,
+      "27": 5843.0,
+      "28": 3387.0
+    },
+    "schedules": {
+      "1": {
+        "26": 0.0
+      },
+      "8812": {
+        "14": 613.0,
+        "27": 3387.0
+      },
+      "2": {
+        "21": 0.0
+      }
+    },
+    "w2": [
+      {
+        "person": "robin",
+        "employer": "Example County",
+        "boxes": {
+          "1": 28000.0,
+          "3": 28000.0,
+          "4": 1736.0,
+          "5": 28000.0,
+          "6": 406.0
+        },
+        "box12": {}
+      }
+    ]
+  },
+  "exact": {
+    "1040:16": 610.0
+  },
+  "tolerance": {
+    "default": 0.01,
+    "1040:16": 3.0,
+    "1040:18": 3.0,
+    "1040:22": 3.0,
+    "1040:24": 3.0,
+    "1040:19": 3.0,
+    "1040:20": 3.0,
+    "1040:21": 3.0,
+    "1040:28": 3.0,
+    "schedule 8812:14": 3.0,
+    "schedule 8812:27": 3.0
+  },
+  "xfail": {}
+}

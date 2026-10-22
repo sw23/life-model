@@ -38,8 +38,8 @@ tax:
         - [0, 17700, 10]
         - [17701, 67450, 12]
         - [67451, 105700, 22]
-        - [105701, 201775, 24]
-        - [201776, 256200, 32]
+        - [105701, 201750, 24]  # Rev. Proc. 2025-32 §4.01 Table 2 (single's row ends at 201,775)
+        - [201751, 256200, 32]
         - [256201, 640600, 35]
         - [640601, .inf, 37]
     # Preferential rates for long-term capital gains and qualified dividends. Same
@@ -59,6 +59,10 @@ tax:
         - [0, 66200, 0]
         - [66201, 579600, 15]
         - [579601, .inf, 20]
+      married_filing_separately:
+        - [0, 49450, 0]
+        - [49451, 306850, 15]
+        - [306851, .inf, 20]
     # Net investment income surtax. Thresholds are statutory and have never been indexed, so they
     # are deliberately excluded from the tax_years projection path below.
     # vintage: statutory, source: IRC §1411 (not inflation-indexed)
@@ -69,9 +73,31 @@ tax:
       head_of_household: 200000
     # vintage: statutory, source: IRC §1211(b) / IRS Topic 409 (not inflation-indexed since 1978)
     capital_loss_ordinary_offset: 3000
-    # vintage: 2026, source: IRC §163(h)(3) (TCJA acquisition-debt limit); §164(b)(6) SALT cap (OBBBA)
+    # vintage: 2026, source: IRC §163(h)(3) (TCJA acquisition-debt limit)
     mortgage_interest_debt_limit: 750000
-    salt_deduction_cap: 40000
+    # Debt incurred on or before 2017-12-15 keeps the $1,000,000 limit (and reduces the $750,000 limit of
+    # later debt); home-equity debt not used to buy, build or substantially improve the home is not
+    # deductible for years after 2017. The engine compares origination months, so a loan originated in
+    # December 2017 counts as grandfathered (the statute's day is the 15th).
+    # vintage: statutory, source: IRC §163(h)(3)(B)(ii), (F)(i)(I) and (IV) as amended by P.L. 115-97 and
+    # P.L. 119-21 (law.cornell.edu/uscode/text/26/163, fetched 2026-10-18)
+    mortgage_interest_grandfathered_debt_limit: 1000000
+    mortgage_interest_grandfather_date: "2017-12"
+    # SALT cap: static mirror of tax_years[2026].salt (simulated years read the year table; after it,
+    # salt_cap_statute's schedule applies). vintage: 2026, source: OBBBA (P.L. 119-21) §70120, IRC
+    # §164(b)(7): $40,400 cap, reduced by 30% of MAGI over $505,000, not below $10,000 (MFS: half).
+    salt_deduction_cap: 40400
+    salt_phaseout_threshold: 505000
+    salt_phaseout_rate: 30.0
+    salt_cap_floor: 10000
+    # vintage: statutory, source: OBBBA §70120 (IRC §164(b)(7)(A)): cap and threshold grow 1% a year
+    # through 2029, then the cap reverts to $10,000 with no phase-down. The statute states no rounding
+    # for the 1% steps — TODO(verify) against IRS guidance once 2027 is published.
+    salt_cap_statute:
+      annual_increase_percent: 1.0
+      increase_through_year: 2029
+      reversion_year: 2030
+      reversion_cap: 10000
     # vintage: statutory, source: OBBBA §70103 (IRC §151(d)(5)(C)), tax years 2025-2028
     senior_deduction:
       amount: 6000
@@ -86,6 +112,38 @@ tax:
     charitable:
       cash_agi_limit_percent: 60.0
       carryforward_years: 5
+      # vintage: statutory, source: IRC §170(b)(1)(C)(i) (30% of AGI for long-term capital gain property)
+      property_agi_limit_percent: 30.0
+      # vintage: statutory, source: OBBBA (P.L. 119-21) §70424, IRC §170(p) ($1,000 / $2,000 joint, from 2026)
+      non_itemizer_first_year: 2026
+      non_itemizer_limit_single: 1000
+      non_itemizer_limit_joint: 2000
+      # vintage: statutory, source: OBBBA §70425, IRC §170(b)(1)(I) (0.5% of the contribution base, from 2026)
+      floor_first_year: 2026
+      floor_percent: 0.5
+      # vintage: statutory, source: OBBBA §70111, IRC §68 (2/37 limitation on itemized deductions, from 2026)
+      itemized_limit_first_year: 2026
+    # Credit switches (statutory). The education credits (IRC §25A: AOTC 100% of $2,000 + 25% of $2,000, 40%
+    # refundable, four years; LLC 20% of $10,000; both phased out over $80,000-$90,000 / $160,000-$180,000 of
+    # MAGI, not indexed since P.L. 116-260 §104) take the statutory defaults of config/models.py.
+    # vintage: statutory, source: IRC §25A(b), (c), (d), (i); SECURE 2.0 §103 (saver's credit through 2026)
+    credits:
+      education: {}
+    # Estimated tax and the underpayment penalty. vintage: statutory, source: IRC §6654(d)(1)
+    # (required annual payment: 90% of this year's tax or 100% of last year's, 110% when last year's AGI was
+    # over $150,000 / $75,000 separate), §6654(e)(1) ($1,000), Instructions for Form 2210 (2024, 2025).
+    estimated_tax:
+      required_current_pct: 90
+      required_prior_pct: 100
+      required_prior_high_income_pct: 110
+      high_income_agi: 150000
+      minimum_balance_due: 1000
+      # vintage: 2026, source: IRS individual underpayment rates (IRC §6621(a)(2)): IR-2023-219, IR-2024-47,
+      # IR-2024-138, IR-2024-220 (2024: 8%); IR-2024-290, IR-2025-29, IR-2025-59, IR-2025-87 (2025: 7%);
+      # IR-2025-112, Rev. Rul. 2026-5, Rev. Rul. 2026-10, IR-2026-98 (2026). Later quarters reuse the latest
+      # rate. TODO(verify): the 2027Q1 rate (it reaches a 2026 penalty) is not announced yet.
+      underpayment_rates: {"2024Q1": 8, "2024Q2": 8, "2024Q3": 8, "2024Q4": 8, "2025Q1": 7, "2025Q2": 7,
+                           "2025Q3": 7, "2025Q4": 7, "2026Q1": 7, "2026Q2": 6, "2026Q3": 7, "2026Q4": 7}
     # vintage: 2026, source: IRC §2010 unified credit (post-OBBBA ~$15M); §2001(c) top estate-tax rate 40%
     estate_tax_exemption: 15000000
     estate_tax_rate: 40.0  # percentage
@@ -106,72 +164,75 @@ tax:
     # Local/city income taxes (e.g. NYC), state EITCs, and state-specific credits are out of
     # scope. Refresh these packs annually against each state DOR (see refresh-financial-data).
     packs:
-      # vintage: 2025, source: CA FTB 2025 Form 540 Tax Rate Schedules (X/Y) and 2025 standard
-      # deduction; top bracket folds in the 1% Mental Health Services Tax (R&TC §17043) on
-      # taxable income over $1M. — TODO(verify): FTB PDF unreachable; thresholds cross-checked
-      # against secondary sources only, and the §17043 $1M MHST threshold (not doubled for MFJ)
-      # should be confirmed against the FTB schedule.
+      # California (per tax year, with head of household and exemption credits). The 1% Mental Health Services Tax
+      # (R&TC §17043) on taxable income over $1,000,000 (not doubled for joint returns) is folded into the top rows.
+      # The exemption credits ($6 less for each $2,500 of AGI over the threshold, $1,250 separate) are modeled;
+      # blind credits are not. A separate return uses the single schedule.
       CA:
-        brackets:
-          single:
-            - [0, 10756, 1.0]
-            - [10757, 25499, 2.0]
-            - [25500, 40245, 4.0]
-            - [40246, 55866, 6.0]
-            - [55867, 70612, 8.0]
-            - [70613, 360659, 9.3]
-            - [360660, 432787, 10.3]
-            - [432788, 721314, 11.3]
-            - [721315, 1000000, 12.3]
-            - [1000001, .inf, 13.3]  # 12.3% + 1% MHST over $1M
-          married_filing_jointly:
-            - [0, 21512, 1.0]
-            - [21513, 50998, 2.0]
-            - [50999, 80490, 4.0]
-            - [80491, 111732, 6.0]
-            - [111733, 141224, 8.0]
-            - [141225, 721318, 9.3]
-            - [721319, 865574, 10.3]
-            - [865575, 1000000, 11.3]
-            - [1000001, 1442628, 12.3]   # 11.3% + 1% MHST over $1M
-            - [1442629, .inf, 13.3]      # 12.3% + 1% MHST
-        standard_deduction:
-          single: 5706
-          married_filing_jointly: 11412
-        # CA taxes retirement distributions in full and exempts Social Security.
-        retirement_income_taxable: true
-        ss_taxable: false
-      # vintage: 2025, source: NY DTF Form IT-201 instructions, 2025 tax rate schedules and
-      # standard deduction. — TODO(verify): thresholds cross-checked against secondary sources;
-      # NY's supplemental "tax benefit recapture" above $107,650 NYAGI and the $20k
-      # private-pension/IRA exclusion for 59.5+ are not modeled.
+        years:
+          # vintage: 2025, source: FTB 2025 California Tax Rate Schedules (X, Y, Z) and 2025 Form 540 Booklet (standard
+          # deduction chart; exemption credits lines 7-10; AGI limitation worksheet, line 32).
+          2025:
+            brackets:
+              single: [[0, 11079, 1.0], [11080, 26264, 2.0], [26265, 41452, 4.0], [41453, 57542, 6.0], [57543, 72724, 8.0], [72725, 371479, 9.3], [371480, 445771, 10.3], [445772, 742953, 11.3], [742954, 1000000, 12.3], [1000001, .inf, 13.3]]
+              married_filing_jointly: [[0, 22158, 1.0], [22159, 52528, 2.0], [52529, 82904, 4.0], [82905, 115084, 6.0], [115085, 145448, 8.0], [145449, 742958, 9.3], [742959, 891542, 10.3], [891543, 1000000, 11.3], [1000001, 1485906, 12.3], [1485907, .inf, 13.3]]
+              head_of_household: [[0, 22173, 1.0], [22174, 52530, 2.0], [52531, 67716, 4.0], [67717, 83805, 6.0], [83806, 98990, 8.0], [98991, 505208, 9.3], [505209, 606251, 10.3], [606252, 1000000, 11.3], [1000001, 1010417, 12.3], [1010418, .inf, 13.3]]
+            standard_deduction: {single: 5706, married_filing_jointly: 11412, head_of_household: 11412, married_filing_separately: 5706}
+            personal_credit: 153
+            senior_credit: 153
+            dependent_credit: 475
+            credit_phaseout:
+              start: {single: 252203, married_filing_jointly: 504411, head_of_household: 378310, married_filing_separately: 252203}
+              step: 2500
+              per_step: 6
+              step_separate: 1250
+            # CA taxes retirement distributions in full and exempts Social Security.
+            retirement_income_taxable: true
+            ss_taxable: false
+          # vintage: 2026, source: FTB Tax News, October 2026 ("2026 Indexing": rate schedules, standard deduction, exemption
+          # credits). TODO(verify): the 2026 credit phase-out thresholds (not published yet; the 2025 ones kept).
+          2026:
+            brackets:
+              single: [[0, 11456, 1.0], [11457, 27157, 2.0], [27158, 42861, 4.0], [42862, 59498, 6.0], [59499, 75197, 8.0], [75198, 384109, 9.3], [384110, 460927, 10.3], [460928, 768213, 11.3], [768214, 1000000, 12.3], [1000001, .inf, 13.3]]
+              married_filing_jointly: [[0, 22912, 1.0], [22913, 54314, 2.0], [54315, 85722, 4.0], [85723, 118996, 6.0], [118997, 150394, 8.0], [150395, 768218, 9.3], [768219, 921854, 10.3], [921855, 1000000, 11.3], [1000001, 1536426, 12.3], [1536427, .inf, 13.3]]
+              head_of_household: [[0, 22927, 1.0], [22928, 54316, 2.0], [54317, 70018, 4.0], [70019, 86654, 6.0], [86655, 102356, 8.0], [102357, 522385, 9.3], [522386, 626864, 10.3], [626865, 1000000, 11.3], [1000001, 1044771, 12.3], [1044772, .inf, 13.3]]
+            standard_deduction: {single: 5900, married_filing_jointly: 11800, head_of_household: 11800, married_filing_separately: 5900}
+            personal_credit: 158
+            senior_credit: 158
+            dependent_credit: 491
+            credit_phaseout:
+              start: {single: 252203, married_filing_jointly: 504411, head_of_household: 378310, married_filing_separately: 252203}
+              step: 2500
+              per_step: 6
+              step_separate: 1250
+            retirement_income_taxable: true
+            ss_taxable: false
+      # New York (per tax year, with head of household and the $1,000 dependent exemption). Not modeled: the
+      # supplemental "tax benefit recapture" over $107,650 of NY AGI and the $20,000 pension / IRA exclusion at 59.5.
+      # A separate return uses the single schedule.
       NY:
-        brackets:
-          single:
-            - [0, 8500, 4.0]
-            - [8501, 11700, 4.5]
-            - [11701, 13900, 5.25]
-            - [13901, 80650, 5.5]
-            - [80651, 215400, 6.0]
-            - [215401, 1077550, 6.85]
-            - [1077551, 5000000, 9.65]
-            - [5000001, 25000000, 10.3]
-            - [25000001, .inf, 10.9]
-          married_filing_jointly:
-            - [0, 17150, 4.0]
-            - [17151, 23600, 4.5]
-            - [23601, 27900, 5.25]
-            - [27901, 161550, 5.5]
-            - [161551, 323200, 6.0]
-            - [323201, 2155350, 6.85]
-            - [2155351, 5000000, 9.65]
-            - [5000001, 25000000, 10.3]
-            - [25000001, .inf, 10.9]
-        standard_deduction:
-          single: 8000
-          married_filing_jointly: 16050
-        retirement_income_taxable: true  # simplification: NY's $20k retirement exclusion not modeled
-        ss_taxable: false
+        years:
+          # vintage: 2025, source: NYS DTF IT-201-I (2025) p.33 (tax rate schedules), p.11 (standard deductions), line 36
+          # (dependent exemption)
+          2025:
+            brackets:
+              single: [[0, 8500, 4.0], [8501, 11700, 4.5], [11701, 13900, 5.25], [13901, 80650, 5.5], [80651, 215400, 6.0], [215401, 1077550, 6.85], [1077551, 5000000, 9.65], [5000001, 25000000, 10.3], [25000001, .inf, 10.9]]
+              married_filing_jointly: [[0, 17150, 4.0], [17151, 23600, 4.5], [23601, 27900, 5.25], [27901, 161550, 5.5], [161551, 323200, 6.0], [323201, 2155350, 6.85], [2155351, 5000000, 9.65], [5000001, 25000000, 10.3], [25000001, .inf, 10.9]]
+              head_of_household: [[0, 12800, 4.0], [12801, 17650, 4.5], [17651, 20900, 5.25], [20901, 107650, 5.5], [107651, 269300, 6.0], [269301, 1616450, 6.85], [1616451, 5000000, 9.65], [5000001, 25000000, 10.3], [25000001, .inf, 10.9]]
+            standard_deduction: {single: 8000, married_filing_jointly: 16050, head_of_household: 11200, married_filing_separately: 8000}
+            dependent_exemption: 1000
+            retirement_income_taxable: true
+            ss_taxable: false
+          # vintage: 2026, source: NYS DTF IT-2105-I (2026) p.10 (New York State tax rates, standard deductions)
+          2026:
+            brackets:
+              single: [[0, 8500, 3.9], [8501, 11700, 4.4], [11701, 13900, 5.15], [13901, 80650, 5.4], [80651, 215400, 5.9], [215401, 1077550, 6.85], [1077551, 5000000, 9.65], [5000001, 25000000, 10.3], [25000001, .inf, 10.9]]
+              married_filing_jointly: [[0, 17150, 3.9], [17151, 23600, 4.4], [23601, 27900, 5.15], [27901, 161550, 5.4], [161551, 323200, 5.9], [323201, 2155350, 6.85], [2155351, 5000000, 9.65], [5000001, 25000000, 10.3], [25000001, .inf, 10.9]]
+              head_of_household: [[0, 12800, 3.9], [12801, 17650, 4.4], [17651, 20900, 5.15], [20901, 107650, 5.4], [107651, 269300, 5.9], [269301, 1616450, 6.85], [1616451, 5000000, 9.65], [5000001, 25000000, 10.3], [25000001, .inf, 10.9]]
+            standard_deduction: {single: 8000, married_filing_jointly: 16050, head_of_household: 11200, married_filing_separately: 8000}
+            dependent_exemption: 1000
+            retirement_income_taxable: true
+            ss_taxable: false
       # vintage: 2025, source: TX — no state individual income tax (Tex. Const. art. VIII §24-a).
       TX:
         flat_rate: 0.0
@@ -214,6 +275,227 @@ tax:
           married_filing_jointly: 8800
         retirement_income_taxable: true
         ss_taxable: false
+      # ------------------------------------------------------------------------------------------
+      # The ten next-largest states after those above (Census Bureau Vintage 2025 state population
+      # estimates, NST-EST2025: OH, GA, NC, MI, NJ, VA, AZ, TN, IN, MO; MD is 11th, added as well), each per
+      # tax year from the state's revenue department. State amounts are not inflation-projected past the last
+      # year. Local / county income taxes (OH, MI, IN, MD) are not modeled.
+      # ------------------------------------------------------------------------------------------
+      OH:
+        # One schedule for every filing status, with a jump at $26,050 (and, in 2025, at $100,000), so each row
+        # carries the tax at its start. Exemptions by modified AGI band, per filer and dependent. Not modeled:
+        # the $20 exemption credit (MAGI less exemptions under $30,000), the joint filing credit, the retirement
+        # income and senior credits (at most $200 / $50 a return).
+        years:
+          # vintage: 2025, source: Ohio Department of Taxation 2025 IT 1040 Instructions pp.17-18; ORC 5747.02(A)(3)(b),
+          # 5747.025 (HB 96, effective 2025-09-30)
+          2025:
+            brackets:
+              single: [[0, 26050, 0.0], [26051, 100000, 2.75], [100001, .inf, 3.125]]
+            bracket_base_tax: [0.0, 342.0, 2394.32]
+            exemption_by_agi:
+              single: [[40000, 2400], [80000, 2150], [749999.99, 1900], [.inf, 0]]
+            ss_taxable: false
+          # vintage: 2026, source: ORC 5747.02(A)(3)(c) and 5747.025 (HB 96); Ohio LSC HB 96 Final Analysis (2025-11-25;
+          # exemption indexing suspended for 2025-2026). TODO(verify): the 2026 IT 1040 booklet is not published yet.
+          2026:
+            brackets:
+              single: [[0, 26050, 0.0], [26051, .inf, 2.75]]
+            bracket_base_tax: [0.0, 332.0]
+            exemption_by_agi:
+              single: [[40000, 2400], [80000, 2150], [499999.99, 1900], [.inf, 0]]
+            ss_taxable: false
+      GA:
+        # The retirement exclusion also covers interest, dividends, capital gains, rents and $5,000 of earned income;
+        # modeled on pre-tax distributions and pensions only.
+        years:
+          # vintage: 2025, source: Georgia DOR 2025 IT-511 Individual Income Tax Instruction Booklet pp.9, 16-17, 21-22, 48
+          2025:
+            flat_rate: 5.19
+            standard_deduction: {single: 12000, married_filing_jointly: 24000, head_of_household: 12000, married_filing_separately: 12000}
+            dependent_exemption: 4000
+            retirement_exclusion:
+              - {amount: 35000, min_age: 62, max_age: 64}
+              - {amount: 65000, min_age: 65}
+          # vintage: 2026, source: Georgia HB 463 (2026, signed 2026-05-11) amending O.C.G.A. 48-7-20, -26, -27; Georgia DOR
+          # Employer's Tax Guide 2026
+          2026:
+            flat_rate: 4.99
+            standard_deduction: {single: 15000, married_filing_jointly: 30000, head_of_household: 15000, married_filing_separately: 15000}
+            dependent_exemption: 5000
+            retirement_exclusion:
+              - {amount: 35000, min_age: 62, max_age: 64}
+              - {amount: 65000, min_age: 65}
+      NC:
+        # Retirement income is taxable (the Bailey-settlement and military exclusions are not modeled); the child
+        # deduction is per child under 17, by federal AGI.
+        years:
+          # vintage: 2025, source: NCDOR 2025 D-401 Individual Income Tax Instructions pp.7, 13-14, 18; G.S. 105-153.5(a)(1),
+          # 105-153.7(a)
+          2025:
+            flat_rate: 4.25
+            standard_deduction: {single: 12750, married_filing_jointly: 25500, head_of_household: 19125, married_filing_separately: 12750}
+            child_deduction: &nc_child
+              married_filing_jointly: [[0, 40000, 3000], [40000.01, 60000, 2500], [60000.01, 80000, 2000], [80000.01, 100000, 1500], [100000.01, 120000, 1000], [120000.01, 140000, 500], [140000.01, .inf, 0]]
+              head_of_household: [[0, 30000, 3000], [30000.01, 45000, 2500], [45000.01, 60000, 2000], [60000.01, 75000, 1500], [75000.01, 90000, 1000], [90000.01, 105000, 500], [105000.01, .inf, 0]]
+              single: [[0, 20000, 3000], [20000.01, 30000, 2500], [30000.01, 40000, 2000], [40000.01, 50000, 1500], [50000.01, 60000, 1000], [60000.01, 70000, 500], [70000.01, .inf, 0]]
+          # vintage: 2026, source: NCDOR Tax Rate Schedules page and 2026 NC-30 withholding tables; S.L. 2026-41 §44.1 (3.99%
+          # for 2026); G.S. 105-153.5. TODO(verify): the 2026 child deduction table (assumed unchanged).
+          2026:
+            flat_rate: 3.99
+            standard_deduction: {single: 12750, married_filing_jointly: 25500, head_of_household: 19125, married_filing_separately: 12750}
+            child_deduction: *nc_child
+      MI:
+        # The retirement subtraction is per return, by the older filer's birth year (2025: born 1946-1966 up to
+        # $49,423 / $98,846; born before 1946 $65,897 / $131,794 of private pensions, public pensions in full,
+        # modeled at the private limits); from 2026 no birth-year cutoff.
+        years:
+          # vintage: 2025, source: Michigan Department of Treasury 2025 MI-1040 Instructions pp.3, 10-11, 14, 17, 19-22
+          2025:
+            flat_rate: 4.25
+            personal_exemption: 5800
+            dependent_exemption: 5800
+            retirement_exclusion:
+              - {amount_by_status: {single: 65897, married_filing_jointly: 131794}, born_through: 1945, per_return: true}
+              - {amount_by_status: {single: 49423, married_filing_jointly: 98846}, born_from: 1946, born_through: 1966, per_return: true}
+          # vintage: 2026, source: Michigan Department of Treasury Form 446 (Rev. 02-26), 2026 Michigan Income Tax Withholding
+          # Guide; MCL 206.30(1)(f) (the phase-in is complete)
+          2026:
+            flat_rate: 4.25
+            personal_exemption: 5900
+            dependent_exemption: 5900
+            retirement_exclusion:
+              - {amount_by_status: {single: 67610, married_filing_jointly: 135220}, per_return: true}
+      NJ:
+        # Two schedules (single / separate; joint / head of household). The pension exclusion is per return for a
+        # filer 62 or older, capped by status while total income is at most $100,000; the 100-150k percentage tiers
+        # are not modeled (the full cap applies to $150,000, nothing above).
+        years:
+          # vintage: 2025, source: NJ Division of Taxation 2025 NJ-1040 instructions p.63 (rate schedules), pp.6-7
+          # (exemptions), p.20 (pension exclusion)
+          2025: &nj
+            brackets:
+              single: [[0, 20000, 1.4], [20001, 35000, 1.75], [35001, 40000, 3.5], [40001, 75000, 5.525], [75001, 500000, 6.37], [500001, 1000000, 8.97], [1000001, .inf, 10.75]]
+              married_filing_jointly: [[0, 20000, 1.4], [20001, 50000, 1.75], [50001, 70000, 2.45], [70001, 80000, 3.5], [80001, 150000, 5.525], [150001, 500000, 6.37], [500001, 1000000, 8.97], [1000001, .inf, 10.75]]
+              head_of_household: [[0, 20000, 1.4], [20001, 50000, 1.75], [50001, 70000, 2.45], [70001, 80000, 3.5], [80001, 150000, 5.525], [150001, 500000, 6.37], [500001, 1000000, 8.97], [1000001, .inf, 10.75]]
+            personal_exemption: 1000
+            dependent_exemption: 1500
+            additional_exemption_65: 1000
+            retirement_exclusion:
+              - {amount_by_status: {single: 75000, married_filing_jointly: 100000, head_of_household: 75000, married_filing_separately: 50000}, min_age: 62, per_return: true, income_limit: 150000}
+          # vintage: 2026, source: NJ Division of Taxation 2026 NJ-1040-ES instructions pp.2-3; GIT-1 & 2 (January 2026)
+          2026: *nj
+      VA:
+        # One schedule for every status. The age deduction ($12,000 per filer 65 or older, against any income) is
+        # reduced a dollar per dollar of AGI over $50,000 ($75,000 married; Social Security not subtracted here).
+        years:
+          # vintage: 2025, source: Virginia Tax 2025 Form 760 Instructions p.35 (rates), p.9 (exemptions), p.11 (standard and
+          # age deductions)
+          2025: &va
+            brackets:
+              single: [[0, 3000, 2.0], [3001, 5000, 3.0], [5001, 17000, 5.0], [17001, .inf, 5.75]]
+            standard_deduction: {single: 8750, married_filing_jointly: 17500, head_of_household: 8750, married_filing_separately: 8750}
+            personal_exemption: 930
+            dependent_exemption: 930
+            additional_exemption_65: 800
+            retirement_exclusion:
+              - {amount: 12000, min_age: 65, applies_to: any, phaseout_start: {single: 50000, married_filing_jointly: 75000, married_filing_separately: 75000}}
+          # vintage: 2026, source: Virginia Tax 2026 Form 760ES (Rev. 09/25); Va. Code 58.1-322.03 (standard deduction through
+          # 2026)
+          2026: *va
+      AZ:
+        # Dependent credits instead of exemptions ($100 a child under 17, $25 other dependents; the phase-out over
+        # $200,000 / $400,000 is not modeled). Only public pensions have an exclusion ($2,500, not modeled).
+        years:
+          # vintage: 2025, source: Arizona DOR 2025 Form 140 Instructions lines 38, 43, 46, 49; A.R.S. 43-1041, 43-1023
+          2025:
+            flat_rate: 2.5
+            standard_deduction: {single: 15750, married_filing_jointly: 31500, head_of_household: 23625, married_filing_separately: 15750}
+            additional_exemption_65: 2100
+            dependent_credit: 100
+            other_dependent_credit: 25
+          # vintage: 2026, source: Arizona DOR 2026 Form 140ES instructions (2.5%); Laws 2026 ch. 140 (HB 4168) §18 ($125
+          # child credit). TODO(verify): the 2026 standard deduction is A.R.S. 43-1041(H)'s federal amount, not yet published by ADOR.
+          2026:
+            flat_rate: 2.5
+            standard_deduction: {single: 16100, married_filing_jointly: 32200, head_of_household: 24150, married_filing_separately: 16100}
+            additional_exemption_65: 2100
+            dependent_credit: 125
+            other_dependent_credit: 25
+      TN:
+        # vintage: 2026, source: Tennessee Department of Revenue, Hall Income Tax (repealed for tax years from 2021) and
+        # GEN-34 (no income tax on earned income) (read from Internet Archive captures; tn.gov returns 403 to automated fetches)
+        flat_rate: 0.0
+        retirement_income_taxable: false
+        capital_gains_taxable: false
+      IN:
+        # County income taxes not modeled; $2,500 per dependent is the $1,000 exemption plus the $1,500 for a
+        # dependent child (applied to every dependent).
+        years:
+          # vintage: 2025, source: Indiana DOR 2025 IT-40 booklet (SP 265, rev 12/25), IT-40 line 8 and Schedule 3
+          2025:
+            flat_rate: 3.0
+            personal_exemption: 1000
+            dependent_exemption: 2500
+            additional_exemption_65: 1000
+          # vintage: 2026, source: Indiana DOR Departmental Notice #1 (effective 2026-01-01); in.gov/dor tax rates (2.95%)
+          2026:
+            flat_rate: 2.95
+            personal_exemption: 1000
+            dependent_exemption: 2500
+            additional_exemption_65: 1000
+      MO:
+        # Missouri's chart applies to each spouse's share of a joint return; the joint rows double the thresholds
+        # (exact when each share is past the top threshold). The head-of-household $1,400 exemption is in its
+        # standard deduction. Not modeled: the federal income tax deduction, the public-pension exemption and the
+        # private-pension exemption's income phase-out ($6,000 per person modeled).
+        years:
+          # vintage: 2025, source: Missouri DOR 2025 Form MO-1040 Instructions (tax chart p.21, lines 14-15, MO-A Parts 1 and 3);
+          # RSMo 143.121.3(14)(a) (capital gain subtraction)
+          2025:
+            brackets:
+              single: [[0, 1313, 0], [1314, 2626, 2.0], [2627, 3939, 2.5], [3940, 5252, 3.0], [5253, 6565, 3.5], [6566, 7878, 4.0], [7879, 9191, 4.5], [9192, .inf, 4.7]]
+              married_filing_jointly: [[0, 2626, 0], [2627, 5252, 2.0], [5253, 7878, 2.5], [7879, 10504, 3.0], [10505, 13130, 3.5], [13131, 15756, 4.0], [15757, 18382, 4.5], [18383, .inf, 4.7]]
+            standard_deduction: {single: 15750, married_filing_jointly: 31500, head_of_household: 25025, married_filing_separately: 15750}
+            retirement_exclusion: {amount: 6000}
+            capital_gains_taxable: false
+          # vintage: 2026, source: Missouri DOR Form MO-1040ES 2026 (rev 12-2025) rate chart and lines 5-6; RSMo 143.121, 143.124
+          2026:
+            brackets:
+              single: [[0, 1348, 0], [1349, 2696, 2.0], [2697, 4044, 2.5], [4045, 5392, 3.0], [5393, 6740, 3.5], [6741, 8088, 4.0], [8089, 9436, 4.5], [9437, .inf, 4.7]]
+              married_filing_jointly: [[0, 2696, 0], [2697, 5392, 2.0], [5393, 8088, 2.5], [8089, 10784, 3.0], [10785, 13480, 3.5], [13481, 16176, 4.0], [16177, 18872, 4.5], [18873, .inf, 4.7]]
+            standard_deduction: {single: 16100, married_filing_jointly: 32200, head_of_household: 25550, married_filing_separately: 16100}
+            retirement_exclusion: {amount: 6000}
+            capital_gains_taxable: false
+      MD:
+        # State rates only (county and Baltimore City income taxes not modeled; nor the 2% capital-gain surtax over
+        # $350,000 of AGI or the itemized phase-out). Exemptions phase down by federal AGI. The pension exclusion is
+        # for employer plans (not IRAs) and is reduced by Social Security received: modeled on all retirement income.
+        years:
+          # vintage: 2025, source: Comptroller of Maryland 2025 Resident Tax Booklet (Tax Rate Schedules I and II, Instruction
+          # 16, Exemption Chart 10A, Worksheet 13A)
+          2025:
+            brackets: &md_brackets
+              single: [[0, 1000, 2.0], [1001, 2000, 3.0], [2001, 3000, 4.0], [3001, 100000, 4.75], [100001, 125000, 5.0], [125001, 150000, 5.25], [150001, 250000, 5.5], [250001, 500000, 5.75], [500001, 1000000, 6.25], [1000001, .inf, 6.5]]
+              married_filing_jointly: [[0, 1000, 2.0], [1001, 2000, 3.0], [2001, 3000, 4.0], [3001, 150000, 4.75], [150001, 175000, 5.0], [175001, 225000, 5.25], [225001, 300000, 5.5], [300001, 600000, 5.75], [600001, 1200000, 6.25], [1200001, .inf, 6.5]]
+              head_of_household: [[0, 1000, 2.0], [1001, 2000, 3.0], [2001, 3000, 4.0], [3001, 150000, 4.75], [150001, 175000, 5.0], [175001, 225000, 5.25], [225001, 300000, 5.5], [300001, 600000, 5.75], [600001, 1200000, 6.25], [1200001, .inf, 6.5]]
+            standard_deduction: {single: 3350, married_filing_jointly: 6700, head_of_household: 6700, married_filing_separately: 3350}
+            exemption_by_agi: &md_exemptions
+              single: [[100000, 3200], [125000, 1600], [150000, 800], [.inf, 0]]
+              married_filing_jointly: [[150000, 3200], [175000, 1600], [200000, 800], [.inf, 0]]
+              head_of_household: [[150000, 3200], [175000, 1600], [200000, 800], [.inf, 0]]
+            additional_exemption_65: 1000
+            retirement_exclusion: {amount: 41200, min_age: 65}
+          # vintage: 2026, source: Comptroller of Maryland payroll memo "2026 Maryland State and Local Income Tax Withholding
+          # Information" (2026-02-04; same brackets); Employer Withholding Guide (Dec 2025: $3,400 standard deduction).
+          # TODO(verify): the joint / head of household standard deduction ($6,850 by TG §10-217(c)'s rule) and the 2026
+          # pension exclusion (the 2025 $41,200 kept) are not published yet.
+          2026:
+            brackets: *md_brackets
+            standard_deduction: {single: 3400, married_filing_jointly: 6850, head_of_household: 6850, married_filing_separately: 3400}
+            exemption_by_agi: *md_exemptions
+            additional_exemption_65: 1000
+            retirement_exclusion: {amount: 41200, min_age: 65}
   fica:
     # vintage: 2026, source: SSA Contribution & Benefit Base (ssa.gov/oact/cola/cbb.html)
     social_security_rate: 6.2  # percentage
@@ -238,7 +520,6 @@ retirement:
     annual_additions_limit: 72000
   ira:
     contribution_limit: 7500
-    default_growth_rate: 7.0  # percentage
   # vintage: post-2022, source: IRS Pub. 590-B Appendix B, Uniform Lifetime Table
   # (effective for distribution years beginning 2022). RMD start age is 73
   # (SECURE 2.0; 75 for those born 1960 or later) and is tracked per year in the
@@ -302,6 +583,66 @@ social_security:
   normal_retirement_age: 67
   max_delayed_retirement_credit_age: 70
   delayed_retirement_credit: 8.0  # percentage
+  # Full retirement age by birth year (SocialSecurity(fra_from_birth_year=True)): [first birth year, years,
+  # months]. vintage: statutory, source: SSA OACT Normal Retirement Age table (ssa.gov/oact/ProgData/nra.html,
+  # web.archive.org capture 2026-01; ssa.gov blocks automated fetches), 42 U.S.C. 416(l).
+  full_retirement_age_by_birth_year:
+    - [0, 65, 0]
+    - [1938, 65, 2]
+    - [1939, 65, 4]
+    - [1940, 65, 6]
+    - [1941, 65, 8]
+    - [1942, 65, 10]
+    - [1943, 66, 0]
+    - [1955, 66, 2]
+    - [1956, 66, 4]
+    - [1957, 66, 6]
+    - [1958, 66, 8]
+    - [1959, 66, 10]
+    - [1960, 67, 0]
+  # Spousal benefit: half of the worker's PIA, less the spouse's own PIA, reduced 25/36 of 1% a month for
+  # the first 36 months before FRA and 5/12 of 1% beyond; no delayed credits.
+  # vintage: statutory, source: 42 U.S.C. 402(b), 402(q); SSA OACT earlyretire.html (web.archive.org capture)
+  spousal_benefit_percent: 50.0
+  # Retirement earnings test before FRA: withhold $1 per $2 over the lower exempt amount ($1 per $3 over the
+  # higher one in the year FRA is reached, counting earnings before that month). Past the table: base monthly
+  # amount x AWI(year - 2) / AWI(base year), rounded to $10, never lower than the prior year, x 12.
+  # vintage: 2026, source: SSA OACT rtea.html and rtdet.html (web.archive.org captures 2026-01-01)
+  earnings_test:
+    exempt_amounts:
+      2000: [10080, 17000]
+      2001: [10680, 25000]
+      2002: [11280, 30000]
+      2003: [11520, 30720]
+      2004: [11640, 31080]
+      2005: [12000, 31800]
+      2006: [12480, 33240]
+      2007: [12960, 34440]
+      2008: [13560, 36120]
+      2009: [14160, 37680]
+      2010: [14160, 37680]
+      2011: [14160, 37680]
+      2012: [14640, 38880]
+      2013: [15120, 40080]
+      2014: [15480, 41400]
+      2015: [15720, 41880]
+      2016: [15720, 41880]
+      2017: [16920, 44880]
+      2018: [17040, 45360]
+      2019: [17640, 46920]
+      2020: [18240, 48600]
+      2021: [18960, 50520]
+      2022: [19560, 51960]
+      2023: [21240, 56520]
+      2024: [22320, 59520]
+      2025: [23400, 62160]
+      2026: [24480, 65160]
+    lower_base_monthly: 670.0  # 1994 monthly exempt amount
+    lower_base_awi_year: 1992
+    higher_base_monthly: 2500.0  # 2002 monthly exempt amount
+    higher_base_awi_year: 2000
+    lower_withholding_ratio: 2.0
+    higher_withholding_ratio: 3.0
 
   # QC amount calculation base values
   qc_credit_amount_1978: 250.0
@@ -515,11 +856,9 @@ social_security:
 
 accounts:
   bank:
-    default_interest_rate: 0.0
     compound_rate: 12  # monthly compounding
   brokerage:
-    default_growth_rate: 7.0  # percentage
-    # Slice of default_growth_rate paid out as qualified dividends instead of accruing as untaxed
+    # Slice of the total return paid out as qualified dividends instead of accruing as untaxed
     # price appreciation. 0 keeps accounts pure-appreciation; total return is unaffected either way.
     dividend_yield: 0.0  # percentage
   hsa:
@@ -537,7 +876,6 @@ accounts:
   plan_529:
     annual_contribution_limit: 19000  # per beneficiary (2025/2026 gift tax exclusion)
     lifetime_contribution_limit: 500000  # typical state limit
-    default_growth_rate: 7.0  # percentage
     qualified_expense_penalty: 10.0  # percentage penalty on earnings for non-qualified withdrawals
 
 insurance:
@@ -565,6 +903,16 @@ insurance:
   general:
     default_premium_increase_rate: 3.0  # percentage
     default_max_claims_per_year: 3
+  pension:
+    # The Simplified Method's number of anticipated monthly payments (an employee's after-tax basis is
+    # recovered tax-free over them): [maximum age, payments] for one life, [maximum combined age, payments]
+    # with a survivor annuitant. vintage: statutory, source: IRS Pub. 575 (2025) Simplified Method
+    # Worksheet Tables 1 and 2 (irs.gov/publications/p575, fetched 2026-10-18), IRC §72(d)(1)(B)
+    simplified_method_single: [[55, 360], [60, 310], [65, 260], [70, 210], [200, 160]]
+    simplified_method_joint: [[110, 410], [120, 360], [130, 310], [140, 260], [400, 210]]
+    # Interest rate for a lump sum's present value and the actuarial survivor reduction when the plan does
+    # not state them: a modeling assumption (not the IRC §417(e) segment rates), so no vintage.
+    lump_sum_interest_rate: 5.0
 
 debt:
   credit_card:
@@ -572,7 +920,7 @@ debt:
     default_minimum_payment_percent: 2.0  # percentage
     default_minimum_payment_floor: 25.0  # dollars, typical card minimum-payment floor
   student_loan:
-    # vintage: 2025, source: IRC §221 above-the-line interest deduction (MAGI phase-out ignored)
+    # vintage: statutory, source: IRC §221(b)(1) above-the-line interest deduction cap (MAGI phase-out: tax_years)
     interest_deduction_limit: 2500  # dollars per year
     # vintage: 2026, source: One Big Beautiful Bill Act Repayment Assistance Plan; studentaid.gov.
     # Income-driven plan for federal loans made from July 2026 (opt in per loan).
@@ -591,9 +939,15 @@ debt:
   unpaid_balance_interest_rate: null
 
 housing:
-  # PMI charged yearly while loan-to-value exceeds the threshold, then auto-dropped.
+  # PMI charged (a twelfth a month) while loan-to-value exceeds the threshold, then dropped.
   pmi_rate: 0.5  # percent of loan balance per year
-  pmi_ltv_threshold: 80.0  # percent LTV
+  # Homeowners Protection Act: cancellation at the borrower's request once the balance reaches 80% of
+  # the original value (by actual payments: the engine assumes the request), automatic termination
+  # when the original schedule reaches 78%, final termination at the midpoint of the term.
+  # vintage: statutory, source: 12 U.S.C. 4901(2), (12), (18) and 4902(a)-(c) (law.cornell.edu, fetched
+  # 2026-10-18)
+  pmi_ltv_threshold: 80.0  # percent LTV (cancellation date)
+  pmi_termination_ltv: 78.0  # percent LTV (termination date)
   closing_cost_percent: 2.0  # percent of purchase price paid at purchase
   selling_cost_percent: 6.0  # percent of sale price paid at sale (agent commission, etc.)
   # vintage: statutory, source: IRC §121 primary-residence capital-gains exclusion (unindexed)
@@ -619,7 +973,9 @@ dependents:
   # vintage: 2026, source: IRC §24(h)(2)/(5) (OBBBA), Rev. Proc. 2025-32.
   ctc_per_child: 2200
   ctc_refundable_max: 1700
-  ctc_qualifying_age_max: 17
+  # Oldest qualifying age, inclusive: a qualifying child "has not attained age 17" by year end.
+  # vintage: statutory, source: IRC §24(c)(1) (a 17-year-old does not qualify)
+  ctc_qualifying_age_max: 16
   # Phase-out thresholds are statutory and not inflation-indexed.
   # vintage: statutory, source: IRC §24(h)(3).
   ctc_phaseout_start:
@@ -627,6 +983,12 @@ dependents:
     married_filing_jointly: 400000
     head_of_household: 200000
   ctc_phaseout_rate: 5.0          # percent of modified AGI over threshold ($50 per $1,000)
+  # vintage: statutory, source: IRC §24(h)(4) credit for other dependents (permanent under OBBBA §70104)
+  odc_per_dependent: 500
+  # vintage: statutory, source: IRC §24(d)(1)(B)(i), §24(h)(6): the additional child tax credit is 15% of
+  # earned income over $2,500 (Schedule 8812 Part II-A), up to the refundable maximum per child
+  actc_earned_income_threshold: 2500
+  actc_rate: 15.0
 
 # Stock compensation defaults. These are modeling conventions rather than published figures, so
 # they carry no vintage stamp. A stock plan that names no schedule uses default_schedule; the
@@ -634,6 +996,11 @@ dependents:
 equity_comp:
   default_schedule: four_year   # four_year | three_year | front_loaded | back_loaded | even
   default_vesting_years: 4
+
+# Payroll timing (jobs pay monthly; a yearly bonus is paid in bonus_month). A modeling convention, not a
+# published figure.
+payroll:
+  bonus_month: 3  # month (1-12) a yearly bonus is paid in
 
 # Estate settlement. inherited_pretax_mode controls how a non-spouse beneficiary receives an
 # inherited pre-tax retirement balance: "ten_year" applies the SECURE Act 10-year rule (the
@@ -645,8 +1012,8 @@ estate:
 
 # Economy-wide rates driving account returns, wage growth, and inflation. A single
 # EconomyModel per simulation reads this section and answers per-year rate queries.
-# The defaults reproduce the pre-economy per-account constants, so `mode: fixed` leaves
-# simulation output unchanged. See docs/configuration.md for path/stochastic modes.
+# The defaults are long-run assumptions; in `mode: fixed` every account without its own rate grows
+# at them every year. See docs/configuration.md for path/stochastic modes.
 economy:
   mode: fixed  # fixed | path | stochastic
   inflation: 3.0          # percent CPI (drives spending/rent increases when opted in)
@@ -720,12 +1087,20 @@ healthcare:
   medical_deduction_agi_floor: 7.5    # percent; IRC §213(a) unreimbursed-medical AGI floor
 
 # Year-indexed tax parameters (published values, 2022-2026). Accessed via
-# config.tax_year(year). Years outside the table are projected: earliest entry
-# for prior years, frozen at the latest entry for future years, most-recent
-# published year at-or-before for gaps. Verify against IRS/SSA before extending.
+# config.tax_year(year). Every year carries the brackets, standard deduction, contribution limits,
+# wage base, capital-gains brackets, Child Tax Credit amounts, SALT cap, senior deduction, NIIT
+# thresholds and §63(f) amounts; 2024-2026 also carry the credit, phase-out, AMT, QBI, kiddie-tax,
+# QCD, LTC-premium, withholding and premium-tax-credit parameters. 2022-2026 verified 2026-10-18
+# against Rev. Procs. 2021-45, 2022-38, 2023-34, 2024-40 and 2025-32, OBBBA (P.L. 119-21, govinfo),
+# and IRS Notices 2022-55/2023-75/2024-80/2025-67. Years outside the table are projected: earliest
+# entry for prior years, the latest entry (indexed by inflation when the model projects) for future
+# years, most-recent published year at-or-before for gaps. Verify against IRS/SSA before extending.
 #   sources: IRS Rev. Proc. 2021-45 (2022), 2022-38 (2023), 2023-34 (2024),
 #            2024-40 (2025), 2025-32 (2026); IRS Notices 2021-61/2022-55/2023-75/
-#            2024-80/2025-67 (401k & IRA limits); IRS Rev. Proc. HSA notices
+#            2024-80/2025-67 (401k & IRA limits; limit_415c is the §415(c)(1)(A) defined-
+#            contribution limit from the same notices — 2022 verified in Notice 2021-61 text,
+#            2023-2026 on irs.gov "COLA increases for dollar limitations", fetched 2026-10-18);
+#            IRS Rev. Proc. HSA notices
 #            (2021-25/2022-24/2023-23/2024-25/2025-19); SSA cbb.html (SS wage base).
 tax_years:
   2022:
@@ -761,12 +1136,32 @@ tax_years:
     ss_wage_base: 147000
     limit_401k_base: 20500
     limit_401k_catch_up: 6500
+    limit_415c: 61000
     limit_ira: 6000
     limit_ira_catch_up: 1000
     limit_hsa_self: 3650
     limit_hsa_family: 7300
     gift_exclusion: 16000
     rmd_start_age: 73
+    # vintage: 2022, source: IRS Rev. Proc. 2021-45 §3.03 (MFS set explicitly: its 15% bound is not always half the
+    # joint one)
+    capital_gains:
+      single: [[0, 41675, 0], [41676, 459750, 15], [459751, .inf, 20]]
+      married_filing_jointly: [[0, 83350, 0], [83351, 517200, 15], [517201, .inf, 20]]
+      head_of_household: [[0, 55800, 0], [55801, 488500, 15], [488501, .inf, 20]]
+      married_filing_separately: [[0, 41675, 0], [41676, 258600, 15], [258601, .inf, 20]]
+    # vintage: 2022, source: IRC §24(h)(2) (pre-OBBBA); refundable: Rev. Proc. 2021-45 §3.05
+    ctc_per_child: 2000
+    ctc_refundable_max: 1500
+    # vintage: 2022, source: IRC §164(b)(6) (TCJA)
+    salt: {cap: 10000, phaseout_threshold: null}
+    # vintage: statutory, source: OBBBA §70103 (IRC §151(d)(5)(C)), tax years 2025-2028 only
+    senior_deduction_amount: 0
+    # vintage: statutory, source: IRC §1411(b) (never indexed)
+    niit: {rate: 3.8, single: 200000, married_filing_jointly: 250000, head_of_household: 200000,
+           married_filing_separately: 125000}
+    # vintage: 2022, source: IRS Rev. Proc. 2021-45 §3.15(3) (§63(f), per person 65+)
+    additional_standard_deduction: {married: 1400, unmarried: 1750}
   2023:
     standard_deduction:
       single: 13850
@@ -800,12 +1195,32 @@ tax_years:
     ss_wage_base: 160200
     limit_401k_base: 22500
     limit_401k_catch_up: 7500
+    limit_415c: 66000
     limit_ira: 6500
     limit_ira_catch_up: 1000
     limit_hsa_self: 3850
     limit_hsa_family: 7750
     gift_exclusion: 17000
     rmd_start_age: 73
+    # vintage: 2023, source: IRS Rev. Proc. 2022-38 §3.03 (MFS set explicitly: its 15% bound is not always half the
+    # joint one)
+    capital_gains:
+      single: [[0, 44625, 0], [44626, 492300, 15], [492301, .inf, 20]]
+      married_filing_jointly: [[0, 89250, 0], [89251, 553850, 15], [553851, .inf, 20]]
+      head_of_household: [[0, 59750, 0], [59751, 523050, 15], [523051, .inf, 20]]
+      married_filing_separately: [[0, 44625, 0], [44626, 276900, 15], [276901, .inf, 20]]
+    # vintage: 2023, source: IRC §24(h)(2) (pre-OBBBA); refundable: Rev. Proc. 2022-38 §3.05
+    ctc_per_child: 2000
+    ctc_refundable_max: 1600
+    # vintage: 2023, source: IRC §164(b)(6) (TCJA)
+    salt: {cap: 10000, phaseout_threshold: null}
+    # vintage: statutory, source: OBBBA §70103 (IRC §151(d)(5)(C)), tax years 2025-2028 only
+    senior_deduction_amount: 0
+    # vintage: statutory, source: IRC §1411(b) (never indexed)
+    niit: {rate: 3.8, single: 200000, married_filing_jointly: 250000, head_of_household: 200000,
+           married_filing_separately: 125000}
+    # vintage: 2023, source: IRS Rev. Proc. 2022-38 §3.15(3) (§63(f), per person 65+)
+    additional_standard_deduction: {married: 1500, unmarried: 1850}
   2024:
     standard_deduction:
       single: 14600
@@ -839,12 +1254,100 @@ tax_years:
     ss_wage_base: 168600
     limit_401k_base: 23000
     limit_401k_catch_up: 7500
+    limit_415c: 69000
     limit_ira: 7000
     limit_ira_catch_up: 1000
     limit_hsa_self: 4150
     limit_hsa_family: 8300
+    # vintage: 2024, source: IRS Rev. Proc. 2023-34 §3.16 (§125(i) health FSA limit), §3.17 (§132(f) monthly transit/parking)
+    limit_health_fsa: 3200
+    limit_commuter_monthly: 315
     gift_exclusion: 18000
     rmd_start_age: 73
+    # vintage: 2024, source: IRS Rev. Proc. 2023-34 §3.03 (MFS set explicitly: its 15% bound is not always half the
+    # joint one)
+    capital_gains:
+      single: [[0, 47025, 0], [47026, 518900, 15], [518901, .inf, 20]]
+      married_filing_jointly: [[0, 94050, 0], [94051, 583750, 15], [583751, .inf, 20]]
+      head_of_household: [[0, 63000, 0], [63001, 551350, 15], [551351, .inf, 20]]
+      married_filing_separately: [[0, 47025, 0], [47026, 291850, 15], [291851, .inf, 20]]
+    # vintage: 2024, source: IRC §24(h)(2) (pre-OBBBA); refundable: Rev. Proc. 2023-34 §3.05
+    ctc_per_child: 2000
+    ctc_refundable_max: 1700
+    # vintage: 2024, source: IRC §164(b)(6) (TCJA)
+    salt: {cap: 10000, phaseout_threshold: null}
+    # vintage: statutory, source: OBBBA §70103 (IRC §151(d)(5)(C)), tax years 2025-2028 only
+    senior_deduction_amount: 0
+    # vintage: statutory, source: IRC §1411(b) (never indexed)
+    niit: {rate: 3.8, single: 200000, married_filing_jointly: 250000, head_of_household: 200000,
+           married_filing_separately: 125000}
+    # vintage: 2024, source: IRS Rev. Proc. 2023-34 §3.15(3) (§63(f), per person 65+)
+    additional_standard_deduction: {married: 1550, unmarried: 1950}
+    # vintage: 2024, source: IRS Rev. Proc. 2023-34 §3.06 (earned income credit table, §32(i) limit)
+    eitc:
+      earned_income_amount: [8260, 12390, 17400, 17400]
+      max_credit: [632, 4213, 6960, 7830]
+      phaseout_start: [10330, 22720, 22720, 22720]
+      phaseout_start_joint: [17250, 29640, 29640, 29640]
+      investment_income_limit: 11600
+    # vintage: statutory, source: IRC §21(a)(2) before OBBBA (35% less 1 point per $2,000 over $15,000, not
+    # below 20%); §129(a)(2)(A) $5,000 exclusion (not indexed)
+    dependent_care: {exclusion_limit: 5000, max_rate: 35, first_floor: 20}
+    # vintage: 2024, source: IRS Notice 2023-75 (§25B(b)(1) AGI limits of the 50% / 20% / 10% tiers)
+    savers_credit: {joint: [46000, 50000, 76500], head_of_household: [34500, 37500, 57375],
+                    other: [23000, 25000, 38250]}
+    # vintage: 2024, source: IRS Notice 2023-75 (§219(g) deduction and §408A(c)(3) Roth phase-outs)
+    ira_phaseouts:
+      traditional_single: {start: 77000, end: 87000}
+      traditional_joint: {start: 123000, end: 143000}
+      traditional_spouse_covered: {start: 230000, end: 240000}
+      roth_single: {start: 146000, end: 161000}
+      roth_joint: {start: 230000, end: 240000}
+    # vintage: 2024, source: IRS Rev. Proc. 2023-34 §3.30 (§221 phase-out)
+    student_loan_phaseout: {single: {start: 80000, end: 95000}, joint: {start: 165000, end: 195000}}
+    # vintage: 2024, source: IRS Rev. Proc. 2023-34 §3.11 (§55 exemptions, phase-out, 26%/28% breakpoint)
+    amt: {exemption_single: 85700, exemption_joint: 133300, exemption_separate: 66650,
+          phaseout_start_single: 609350, phaseout_start_joint: 1218700, phaseout_start_separate: 609350,
+          phaseout_rate: 25, breakpoint: 232600, breakpoint_separate: 116300}
+    # vintage: 2024, source: IRS Rev. Proc. 2023-34 §3.27 (§199A threshold; phase-in $50,000 / $100,000)
+    qbi: {threshold_single: 191950, threshold_joint: 383900, threshold_separate: 191950,
+          phase_in_single: 50000, phase_in_joint: 100000}
+    # vintage: 2024, source: IRS Rev. Proc. 2023-34 §3.02 (§1(g) kiddie tax amount)
+    kiddie_tax: {base_amount: 1300}
+    # vintage: 2024, source: IRS Notice 2023-75 (§408(d)(8) qualified charitable distribution limit)
+    qcd_limit: 105000
+    # vintage: 2024, source: IRS Rev. Proc. 2023-34 §3.28 (§213(d)(10) eligible LTC premiums by age)
+    ltc_premium_limits: [{max_age: 40, limit: 470}, {max_age: 50, limit: 880}, {max_age: 60, limit: 1760},
+                         {max_age: 70, limit: 4710}, {max_age: 200, limit: 5880}]
+    # vintage: 2024, source: IRS Notice 2023-75 (§401(a)(17) compensation limit)
+    compensation_limit: 345000
+    # vintage: 2024, source: IRS Pub. 15-T (2024) Worksheet 1A (Step 1g) and the annual percentage method tables
+    # (standard and Form W-4 Step 2 checkbox; rows [column A, column C, column D]); Pub. 15 (2024) section 7
+    # (supplemental wages 22%, 37% over $1,000,000); Additional Medicare Tax withheld over $200,000 per employer.
+    withholding:
+      step1g_joint: 12900
+      step1g_other: 8600
+      standard:
+        married_filing_jointly: [[0, 0, 0], [16300, 0, 10], [39500, 2320, 12], [110600, 10852, 22], [217350, 34337, 24], [400200, 78221, 32], [503750, 111357, 35], [747500, 196669.5, 37]]
+        single: [[0, 0, 0], [6000, 0, 10], [17600, 1160, 12], [53150, 5426, 22], [106525, 17168.5, 24], [197950, 39110.5, 32], [249725, 55678.5, 35], [615350, 183647.25, 37]]
+        head_of_household: [[0, 0, 0], [13300, 0, 10], [29850, 1655, 12], [76400, 7241, 22], [113800, 15469, 24], [205250, 37417, 32], [257000, 53977, 35], [622650, 181954.5, 37]]
+      checkbox:
+        married_filing_jointly: [[0, 0, 0], [14600, 0, 10], [26200, 1160, 12], [61750, 5426, 22], [115125, 17168.5, 24], [206550, 39110.5, 32], [258325, 55678.5, 35], [380200, 98334.75, 37]]
+        single: [[0, 0, 0], [7300, 0, 10], [13100, 580, 12], [30875, 2713, 22], [57563, 8584.25, 24], [103275, 19555.25, 32], [129163, 27839.25, 35], [311975, 91823.63, 37]]
+        head_of_household: [[0, 0, 0], [10950, 0, 10], [19225, 827.5, 12], [42500, 3620.5, 22], [61200, 7734.5, 24], [106925, 18708.5, 32], [132800, 26988.5, 35], [315625, 90977.25, 37]]
+      supplemental_rate: 22
+      supplemental_over_1m_rate: 37
+    # vintage: 2024, source: Rev. Proc. 2023-34 §3.24 (IRC §152(d)(1)(B) exemption amount; gross income must be less)
+    qualifying_relative_income_limit: 5050
+    # vintage: 2024, source: Instructions for Form 8962 (2024) Table 2 (applicable figure: linear interpolation
+    # rounded to 0.01%, 26 CFR 1.36B-3(g)), Table 1-1 (the 2023 HHS poverty guidelines), Table 5 = Rev. Proc. 2023-34 §3.07
+    # (repayment limits; 'single' = filing status single only); no 400% cap 2021-2025 (IRC §36B(c)(1)(E)).
+    premium_tax_credit:
+      applicable_percentage: [[0, 150, 0, 0], [150, 200, 0, 2], [200, 250, 2, 4], [250, 300, 4, 6], [300, 400, 6, 8.5], [400, .inf, 8.5, 8.5]]
+      max_fpl_pct: .inf
+      min_fpl_pct: 100
+      poverty_line: {base: 14580, per_person: 5140}
+      repayment_limit: [[0, 200, 375, 750], [200, 300, 950, 1900], [300, 400, 1575, 3150], [400, .inf, null, null]]
   2025:
     standard_deduction:
       single: 15750
@@ -878,12 +1381,102 @@ tax_years:
     ss_wage_base: 176100
     limit_401k_base: 23500
     limit_401k_catch_up: 7500
+    limit_415c: 70000
     limit_ira: 7000
     limit_ira_catch_up: 1000
     limit_hsa_self: 4300
     limit_hsa_family: 8550
+    # vintage: 2025, source: IRS Notice 2024-80 (IRC §414(v)(2)(E), SECURE 2.0 §109: catch-up at ages 60-63)
+    limit_401k_catch_up_60_63: 11250
+    # vintage: 2025, source: IRS Rev. Proc. 2024-40: §125(i) health FSA limit, §132(f) monthly transit/parking
+    limit_health_fsa: 3300
+    limit_commuter_monthly: 325
     gift_exclusion: 19000
     rmd_start_age: 73
+    # vintage: 2025, source: IRS Rev. Proc. 2024-40 §2.03 (MFS set explicitly: its 15% bound is not always half the
+    # joint one)
+    capital_gains:
+      single: [[0, 48350, 0], [48351, 533400, 15], [533401, .inf, 20]]
+      married_filing_jointly: [[0, 96700, 0], [96701, 600050, 15], [600051, .inf, 20]]
+      head_of_household: [[0, 64750, 0], [64751, 566700, 15], [566701, .inf, 20]]
+      married_filing_separately: [[0, 48350, 0], [48351, 300000, 15], [300001, .inf, 20]]
+    # vintage: 2025, source: OBBBA §70104(a)(2), Rev. Proc. 2025-32 §2.03; refundable: Rev. Proc. 2024-40 §2.05
+    ctc_per_child: 2200
+    ctc_refundable_max: 1700
+    # vintage: 2025, source: OBBBA (P.L. 119-21) §70120, IRC §164(b)(7)
+    salt: {cap: 40000, phaseout_threshold: 500000}
+    # vintage: statutory, source: OBBBA §70103 (IRC §151(d)(5)(C)), tax years 2025-2028 only
+    senior_deduction_amount: 6000
+    # vintage: statutory, source: IRC §1411(b) (never indexed)
+    niit: {rate: 3.8, single: 200000, married_filing_jointly: 250000, head_of_household: 200000,
+           married_filing_separately: 125000}
+    # vintage: 2025, source: IRS Rev. Proc. 2024-40 §2.15(3) (§63(f), per person 65+)
+    additional_standard_deduction: {married: 1600, unmarried: 2000}
+    # vintage: 2025, source: IRS Rev. Proc. 2024-40 §2.06 (earned income credit table, §32(i) limit)
+    eitc:
+      earned_income_amount: [8490, 12730, 17880, 17880]
+      max_credit: [649, 4328, 7152, 8046]
+      phaseout_start: [10620, 23350, 23350, 23350]
+      phaseout_start_joint: [17730, 30470, 30470, 30470]
+      investment_income_limit: 11950
+    # vintage: statutory, source: IRC §21(a)(2) before OBBBA (35% less 1 point per $2,000 over $15,000, not
+    # below 20%); §129(a)(2)(A) $5,000 exclusion (not indexed)
+    dependent_care: {exclusion_limit: 5000, max_rate: 35, first_floor: 20}
+    # vintage: 2025, source: IRS Notice 2024-80 (§25B(b)(1) AGI limits of the 50% / 20% / 10% tiers)
+    savers_credit: {joint: [47500, 51000, 79000], head_of_household: [35625, 38250, 59250],
+                    other: [23750, 25500, 39500]}
+    # vintage: 2025, source: IRS Notice 2024-80 (§219(g) deduction and §408A(c)(3) Roth phase-outs)
+    ira_phaseouts:
+      traditional_single: {start: 79000, end: 89000}
+      traditional_joint: {start: 126000, end: 146000}
+      traditional_spouse_covered: {start: 236000, end: 246000}
+      roth_single: {start: 150000, end: 165000}
+      roth_joint: {start: 236000, end: 246000}
+    # vintage: 2025, source: IRS Rev. Proc. 2024-40 §2.30 (§221 phase-out)
+    student_loan_phaseout: {single: {start: 85000, end: 100000}, joint: {start: 170000, end: 200000}}
+    # vintage: 2025, source: IRS Rev. Proc. 2024-40 §2.11 (§55 exemptions, phase-out, 26%/28% breakpoint)
+    amt: {exemption_single: 88100, exemption_joint: 137000, exemption_separate: 68500,
+          phaseout_start_single: 626350, phaseout_start_joint: 1252700, phaseout_start_separate: 626350,
+          phaseout_rate: 25, breakpoint: 239100, breakpoint_separate: 119550}
+    # vintage: 2025, source: IRS Rev. Proc. 2024-40 §2.27 (§199A threshold; phase-in $50,000 / $100,000)
+    qbi: {threshold_single: 197300, threshold_joint: 394600, threshold_separate: 197300,
+          phase_in_single: 50000, phase_in_joint: 100000}
+    # vintage: 2025, source: IRS Rev. Proc. 2024-40 §2.02 (§1(g) kiddie tax amount)
+    kiddie_tax: {base_amount: 1350}
+    # vintage: 2025, source: IRS Notice 2024-80 (§408(d)(8) qualified charitable distribution limit)
+    qcd_limit: 108000
+    # vintage: 2025, source: IRS Rev. Proc. 2024-40 §2.28 (§213(d)(10) eligible LTC premiums by age)
+    ltc_premium_limits: [{max_age: 40, limit: 480}, {max_age: 50, limit: 900}, {max_age: 60, limit: 1800},
+                         {max_age: 70, limit: 4810}, {max_age: 200, limit: 6020}]
+    # vintage: 2025, source: IRS Notice 2024-80 (§401(a)(17) compensation limit)
+    compensation_limit: 350000
+    # vintage: 2025, source: IRS Pub. 15-T (2025) Worksheet 1A (Step 1g) and the annual percentage method tables
+    # (standard and Form W-4 Step 2 checkbox; rows [column A, column C, column D]); Pub. 15 (2025) section 7
+    # (supplemental wages 22%, 37% over $1,000,000); Additional Medicare Tax withheld over $200,000 per employer.
+    withholding:
+      step1g_joint: 12900
+      step1g_other: 8600
+      standard:
+        married_filing_jointly: [[0, 0, 0], [17100, 0, 10], [40950, 2385, 12], [114050, 11157, 22], [223800, 35302, 24], [411700, 80398, 32], [518150, 114462, 35], [768700, 202154.5, 37]]
+        single: [[0, 0, 0], [6400, 0, 10], [18325, 1192.5, 12], [54875, 5578.5, 22], [109750, 17651, 24], [203700, 40199, 32], [256925, 57231, 35], [632750, 188769.75, 37]]
+        head_of_household: [[0, 0, 0], [13900, 0, 10], [30900, 1700, 12], [78750, 7442, 22], [117250, 15912, 24], [211200, 38460, 32], [264400, 55484, 35], [640250, 187031.5, 37]]
+      checkbox:
+        married_filing_jointly: [[0, 0, 0], [15000, 0, 10], [26925, 1192.5, 12], [63475, 5578.5, 22], [118350, 17651, 24], [212300, 40199, 32], [265525, 57231, 35], [390800, 101077.25, 37]]
+        single: [[0, 0, 0], [7500, 0, 10], [13463, 596.25, 12], [31738, 2789.25, 22], [59175, 8825.5, 24], [106150, 20099.5, 32], [132763, 28615.5, 35], [320675, 94384.88, 37]]
+        head_of_household: [[0, 0, 0], [11250, 0, 10], [19750, 850, 12], [43675, 3721, 22], [62925, 7956, 24], [109900, 19230, 32], [136500, 27742, 35], [324425, 93515.75, 37]]
+      supplemental_rate: 22
+      supplemental_over_1m_rate: 37
+    # vintage: 2025, source: Rev. Proc. 2024-40 §3.24 (IRC §152(d)(1)(B) exemption amount; gross income must be less)
+    qualifying_relative_income_limit: 5200
+    # vintage: 2025, source: Instructions for Form 8962 (2025) Table 2 (applicable figure: linear interpolation
+    # rounded to 0.01%, 26 CFR 1.36B-3(g)), Table 1-1 (the 2024 HHS poverty guidelines), Table 5 = Rev. Proc. 2024-40 §3.07
+    # (repayment limits; 'single' = filing status single only); no 400% cap 2021-2025 (IRC §36B(c)(1)(E)).
+    premium_tax_credit:
+      applicable_percentage: [[0, 150, 0, 0], [150, 200, 0, 2], [200, 250, 2, 4], [250, 300, 4, 6], [300, 400, 6, 8.5], [400, .inf, 8.5, 8.5]]
+      max_fpl_pct: .inf
+      min_fpl_pct: 100
+      poverty_line: {base: 15060, per_person: 5380}
+      repayment_limit: [[0, 200, 375, 750], [200, 300, 975, 1950], [300, 400, 1625, 3250], [400, .inf, null, null]]
   2026:
     standard_deduction:
       single: 16100
@@ -910,16 +1503,111 @@ tax_years:
         - [0, 17700, 10]
         - [17701, 67450, 12]
         - [67451, 105700, 22]
-        - [105701, 201775, 24]
-        - [201776, 256200, 32]
+        - [105701, 201750, 24]  # Rev. Proc. 2025-32 §4.01 Table 2 (single's row ends at 201,775)
+        - [201751, 256200, 32]
         - [256201, 640600, 35]
         - [640601, .inf, 37]
     ss_wage_base: 184500
     limit_401k_base: 24500
     limit_401k_catch_up: 8000
+    limit_415c: 72000
     limit_ira: 7500
     limit_ira_catch_up: 1100
     limit_hsa_self: 4400
     limit_hsa_family: 8750
+    # vintage: 2026, source: IRS Notice 2025-67 (IRC §414(v)(2)(E), SECURE 2.0 §109: catch-up at ages 60-63)
+    limit_401k_catch_up_60_63: 11250
+    # vintage: 2026, source: IRS Rev. Proc. 2025-32 (IRB 2025-45): §125(i) health FSA limit, §132(f) monthly transit/parking
+    limit_health_fsa: 3400
+    limit_commuter_monthly: 340
     gift_exclusion: 19000
     rmd_start_age: 73
+    # vintage: 2026, source: IRS Rev. Proc. 2025-32 §4.03 (MFS set explicitly: its 15% bound is not always half the
+    # joint one)
+    capital_gains:
+      single: [[0, 49450, 0], [49451, 545500, 15], [545501, .inf, 20]]
+      married_filing_jointly: [[0, 98900, 0], [98901, 613700, 15], [613701, .inf, 20]]
+      head_of_household: [[0, 66200, 0], [66201, 579600, 15], [579601, .inf, 20]]
+      married_filing_separately: [[0, 49450, 0], [49451, 306850, 15], [306851, .inf, 20]]
+    # vintage: 2026, source: Rev. Proc. 2025-32 §4.05(1)-(2)
+    ctc_per_child: 2200
+    ctc_refundable_max: 1700
+    # vintage: 2026, source: OBBBA (P.L. 119-21) §70120, IRC §164(b)(7) (101% of 2025)
+    salt: {cap: 40400, phaseout_threshold: 505000}
+    # vintage: statutory, source: OBBBA §70103 (IRC §151(d)(5)(C)), tax years 2025-2028 only
+    senior_deduction_amount: 6000
+    # vintage: statutory, source: IRC §1411(b) (never indexed)
+    niit: {rate: 3.8, single: 200000, married_filing_jointly: 250000, head_of_household: 200000,
+           married_filing_separately: 125000}
+    # vintage: 2026, source: IRS Rev. Proc. 2025-32 §4.14(3) (§63(f), per person 65+)
+    additional_standard_deduction: {married: 1650, unmarried: 2050}
+    # vintage: 2026, source: IRS Rev. Proc. 2025-32 §4.06 (earned income credit table, §32(i) limit)
+    eitc:
+      earned_income_amount: [8680, 13020, 18290, 18290]
+      max_credit: [664, 4427, 7316, 8231]
+      phaseout_start: [10860, 23890, 23890, 23890]
+      phaseout_start_joint: [18140, 31160, 31160, 31160]
+      investment_income_limit: 12200
+    # vintage: statutory, source: OBBBA (P.L. 119-21) §70405, IRC §21(a)(2) (50% less 1 point per $2,000 over
+    # $15,000, not below 35%; then 1 point per $2,000 ($4,000 joint) over $75,000 ($150,000), not below 20%);
+    # §70404, IRC §129(a)(2)(A) $7,500 exclusion (not indexed)
+    dependent_care: {exclusion_limit: 7500, max_rate: 50, first_floor: 35, second_start: 75000,
+                     second_start_joint: 150000, second_step: 2000, second_step_joint: 4000, second_floor: 20}
+    # vintage: 2026, source: IRS Notice 2025-67 (§25B(b)(1) AGI limits of the 50% / 20% / 10% tiers)
+    savers_credit: {joint: [48500, 52500, 80500], head_of_household: [36375, 39375, 60375],
+                    other: [24250, 26250, 40250]}
+    # vintage: 2026, source: IRS Notice 2025-67 (§219(g) deduction and §408A(c)(3) Roth phase-outs)
+    ira_phaseouts:
+      traditional_single: {start: 81000, end: 91000}
+      traditional_joint: {start: 129000, end: 149000}
+      traditional_spouse_covered: {start: 242000, end: 252000}
+      roth_single: {start: 153000, end: 168000}
+      roth_joint: {start: 242000, end: 252000}
+    # vintage: 2026, source: IRS Rev. Proc. 2025-32 §4.29 (§221 phase-out)
+    student_loan_phaseout: {single: {start: 85000, end: 100000}, joint: {start: 175000, end: 205000}}
+    # vintage: 2026, source: IRS Rev. Proc. 2025-32 §4.10 (§55 exemptions, phase-out, breakpoint); phase-out
+    # rate 50% from OBBBA §70107 (IRC §55(d)(4)(A)(ii)(IV)), which also reset the thresholds to $500,000 / $1,000,000
+    amt: {exemption_single: 90100, exemption_joint: 140200, exemption_separate: 70100,
+          phaseout_start_single: 500000, phaseout_start_joint: 1000000, phaseout_start_separate: 500000,
+          phaseout_rate: 50, breakpoint: 244500, breakpoint_separate: 122250}
+    # vintage: 2026, source: IRS Rev. Proc. 2025-32 §4.26 (§199A thresholds; phase-in $75,000 / $150,000 and the
+    # $400 minimum deduction for $1,000 of active QBI from OBBBA §70105, Rev. Proc. 2025-32 §2.12)
+    qbi: {threshold_single: 201750, threshold_joint: 403500, threshold_separate: 201775,
+          phase_in_single: 75000, phase_in_joint: 150000, minimum_deduction: 400, minimum_qbi: 1000}
+    # vintage: 2026, source: IRS Rev. Proc. 2025-32 §4.02 (§1(g) kiddie tax amount)
+    kiddie_tax: {base_amount: 1350}
+    # vintage: 2026, source: IRS Notice 2025-67 (§408(d)(8) qualified charitable distribution limit)
+    qcd_limit: 111000
+    # vintage: 2026, source: IRS Rev. Proc. 2025-32 §4.27 (§213(d)(10) eligible LTC premiums by age)
+    ltc_premium_limits: [{max_age: 40, limit: 500}, {max_age: 50, limit: 930}, {max_age: 60, limit: 1860},
+                         {max_age: 70, limit: 4960}, {max_age: 200, limit: 6200}]
+    # vintage: 2026, source: IRS Notice 2025-67 (§401(a)(17) compensation limit)
+    compensation_limit: 360000
+    # vintage: 2026, source: IRS Pub. 15-T (2026) Worksheet 1A (Step 1g) and the annual percentage method tables
+    # (standard and Form W-4 Step 2 checkbox; rows [column A, column C, column D]); Pub. 15 (2026) section 7
+    # (supplemental wages 22%, 37% over $1,000,000); Additional Medicare Tax withheld over $200,000 per employer.
+    withholding:
+      step1g_joint: 12900
+      step1g_other: 8600
+      standard:
+        married_filing_jointly: [[0, 0, 0], [19300, 0, 10], [44100, 2480, 12], [120100, 11600, 22], [230700, 35932, 24], [422850, 82048, 32], [531750, 116896, 35], [788000, 206583.5, 37]]
+        single: [[0, 0, 0], [7500, 0, 10], [19900, 1240, 12], [57900, 5800, 22], [113200, 17966, 24], [209275, 41024, 32], [263725, 58448, 35], [648100, 192979.25, 37]]
+        head_of_household: [[0, 0, 0], [15550, 0, 10], [33250, 1770, 12], [83000, 7740, 22], [121250, 16155, 24], [217300, 39207, 32], [271750, 56631, 35], [656150, 191171, 37]]
+      checkbox:
+        married_filing_jointly: [[0, 0, 0], [16100, 0, 10], [28500, 1240, 12], [66500, 5800, 22], [121800, 17966, 24], [217875, 41024, 32], [272325, 58448, 35], [400450, 103291.75, 37]]
+        single: [[0, 0, 0], [8050, 0, 10], [14250, 620, 12], [33250, 2900, 22], [60900, 8983, 24], [108938, 20512, 32], [136163, 29224, 35], [328350, 96489.63, 37]]
+        head_of_household: [[0, 0, 0], [12075, 0, 10], [20925, 885, 12], [45800, 3870, 22], [64925, 8077.5, 24], [112950, 19603.5, 32], [140175, 28315.5, 35], [332375, 95585.5, 37]]
+      supplemental_rate: 22
+      supplemental_over_1m_rate: 37
+    # vintage: 2026, source: Rev. Proc. 2025-32 §3.23 (IRC §152(d)(1)(B) exemption amount; gross income must be less)
+    qualifying_relative_income_limit: 5300
+    # vintage: 2026, source: Rev. Proc. 2025-25 §3.01 (the enhanced credits expired after 2025: no extension
+    # enacted through P.L. 119-124, 2026-10-15); the 400% cap returns (IRC §36B(c)(1)(A); 2026 draft Form 8962
+    # line 6); OBBBA (P.L. 119-21) §71305 ended the repayment limit; poverty line: the 2025 HHS guidelines
+    # (90 FR 5917) per §36B(d)(3)(B). TODO(verify): the 2026 Form 8962 instructions are not published yet.
+    premium_tax_credit:
+      applicable_percentage: [[0, 133, 2.1, 2.1], [133, 150, 3.14, 4.19], [150, 200, 4.19, 6.6], [200, 250, 6.6, 8.44], [250, 300, 8.44, 9.96], [300, 400, 9.96, 9.96]]
+      max_fpl_pct: 400
+      min_fpl_pct: 100
+      poverty_line: {base: 15650, per_person: 5500}
+      repayment_limit: [[0, .inf, null, null]]

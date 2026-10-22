@@ -22,6 +22,17 @@ class FilingStatus(Enum):
     # A married person filing their own return (both spouses must opt in by setting this status).
     # Brackets and the standard deduction are half the joint amounts unless configured explicitly.
     MARRIED_FILING_SEPARATELY = 4
+    # Qualifying surviving spouse (IRC §2(a)): the two years after the year a spouse died, while keeping a
+    # home for a dependent child. Joint brackets, standard deduction, capital-gains
+    # breakpoints, NIIT threshold and AMT exemption; the "other" (single) amounts wherever the statute
+    # names joint returns only (Additional Medicare Tax, child tax credit and senior deduction phase-outs,
+    # the SALT cap, the Social Security base amount).
+    QUALIFYING_SURVIVING_SPOUSE = 5
+
+    @property
+    def joint_rates(self) -> bool:
+        """Whether the status uses the joint rate schedule and standard deduction (MFJ or QSS)."""
+        return self in (FilingStatus.MARRIED_FILING_JOINTLY, FilingStatus.QUALIFYING_SURVIVING_SPOUSE)
 
 
 def get_federal_standard_deduction(filing_status: FilingStatus, config: "FinancialConfig | None" = None) -> float:
@@ -39,8 +50,8 @@ def federal_income_tax(income: float, filing_status: FilingStatus, config: "Fina
 
     Brackets are treated as half-open marginal segments ``[prev_upper, upper)`` where ``upper``
     is each row's second column (the last row uses ``inf``). Using the upper bound as the segment
-    boundary — rather than the row's own ``start`` (which is ``prev_upper + 1``) — closes the $1
-    gaps the old ``[start, end]`` rows left between brackets. The result is not rounded; callers
+    boundary — rather than the row's own ``start`` (which is ``prev_upper + 1``) — leaves no $1
+    gap between one row's ``end`` and the next row's ``start``. The result is not rounded; callers
     round the final total tax bill once.
 
     Args:

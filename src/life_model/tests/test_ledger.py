@@ -1,0 +1,373 @@
+# Copyright 2026 Spencer Williams
+#
+# Use of this source code is governed by an MIT license:
+# https://github.com/sw23/life-model/blob/main/LICENSE
+
+"""The cash-flow ledger and the money-conservation check.
+
+The conservation check compares each year's change in household net worth, measured from the
+balances, with the year's net external flow on the ledger. The whole-household tests run decades
+of every major code path; the edge-case tests below each pin one place (deaths, estates, closed
+policies, underwater sales) where money must not appear or vanish without a ledger flow.
+"""
+
+import unittest
+
+from ..account.bank import BankAccount
+from ..account.brokerage import BrokerageAccount
+from ..checks import (
+    ConservationError,
+    account_residuals,
+    assert_conservation,
+    check_conservation,
+    conservation_records,
+)
+from ..housing.home import Home, HomeExpenses, Mortgage
+from ..insurance.social_security import SocialSecurity
+from ..ledger import FlowKind, LedgerEntry, household_balance_sheet
+from ..lifeevents import LifeEvent, LifeEvents
+from ..model import LifeModel
+from ..people.family import Family
+from ..people.person import MortalityMode, Person, Spending
+from ..work.job import Job, Salary
+from .scenarios import (
+    EARNINGS_HISTORY,
+    everything_stochastic,
+    married_homeowners,
+    mortality_and_estate,
+    renter_buys_home,
+    stochastic_retiree,
+)
+
+
+def _person(model, name="Pat", age=40, **kwargs) -> Person:
+    return Person(Family(model), name, age, 65, Spending(model, base_annual=kwargs.pop("spending", 0)), **kwargs)
+
+
+class TestLedgerEntries(unittest.TestCase):
+    def test_entry_classification(self):
+        inflow = LedgerEntry(0, 2026, None, "step", "wage", 10.0, None, "Bank:1", "Acme", None, None, 1)
+        outflow = LedgerEntry(1, 2026, None, "step", "tax", 4.0, "Bank:1", None, None, "IRS", None, 1)
+        transfer = LedgerEntry(2, 2026, None, "step", "sale", 7.0, "Brokerage:2", "Bank:1", None, None, None, 1)
+        self.assertEqual((inflow.is_inflow, inflow.net_worth_effect), (True, 10.0))
+        self.assertEqual((outflow.is_outflow, outflow.net_worth_effect), (True, -4.0))
+        self.assertEqual((transfer.is_transfer, transfer.net_worth_effect), (True, 0.0))
+
+    def test_post_requires_a_household_side_and_skips_zero(self):
+        model = LifeModel(start_year=2026, end_year=2026)
+        with self.assertRaises(ValueError):
+            model.ledger.post(5, FlowKind.OTHER, source="a", sink="b")
+        self.assertIsNone(model.ledger.post(0, FlowKind.OTHER, to_account="Cash:1"))
+        self.assertEqual(len(model.ledger), 0)
+
+    def test_paycheck_tax_and_spending_are_posted(self):
+        model = LifeModel(start_year=2026, end_year=2026)
+        person = _person(model, spending=30000)
+        bank = BankAccount(person, company="Bank", balance=10000)
+        Job(person, company="Acme", role="Dev", salary=Salary(model, base_annual=100000, bonus_pct=10))
+        model.run()
+        frame = model.ledger.to_frame()
+        wage = frame[frame.kind == "wage"]
+        self.assertEqual(wage.amount.sum(), 100000)
+        self.assertEqual(wage.source.iloc[0], "Acme")
+        self.assertEqual(wage.to_account.iloc[0], f"BankAccount:{bank.unique_id}")
+        self.assertEqual(frame[frame.kind == "bonus"].amount.sum(), 10000)
+        self.assertAlmostEqual(frame[frame.kind == "spending"].amount.sum(), 30000)
+        taxes = frame[frame.kind.isin(["tax", "penalty"])].amount.sum()
+        self.assertAlmostEqual(taxes, person.tax_returns[2026].total_tax, places=6)
+        self.assertEqual(frame.year.unique().tolist(), [2026])
+        # Every entry carries the month it was posted in (the engine is monthly).
+        self.assertTrue(frame.month.between(1, 12).all())
+        self.assertEqual(model.ledger.names[f"BankAccount:{bank.unique_id}"], "Pat's BankAccount (Bank)")
+        # The DataCollector table exposes the same rows.
+        table = model.datacollector.get_table_dataframe("Ledger")
+        self.assertEqual(len(table), len(frame))
+        assert_conservation(model)
+
+    def test_settlement_draws_carry_their_cause(self):
+        model = LifeModel(start_year=2026, end_year=2026)
+        person = _person(model, spending=60000)
+        BankAccount(person, company="Bank", balance=1000)
+        BrokerageAccount(person, company="Broker", balance=200000)
+        model.run()
+        sales = [e for e in model.ledger if e.kind == "sale"]
+        # Each month's bills sell what the bank can't cover; December also funds the taxes.
+        bill_sales = [e for e in sales if e.cause != "fund 2026 taxes"]
+        self.assertEqual([e.month for e in bill_sales], list(range(1, 13)))
+        for sale in bill_sales:
+            self.assertEqual(sale.cause, f"pay 2026-{sale.month:02d} bills")
+        self.assertTrue(all(sale.is_transfer for sale in sales))
+        assert_conservation(model)
+
+
+class TestTaxOutflowMatchesTheReturn(unittest.TestCase):
+    def test_married_homeowners_2030(self):
+        model = married_homeowners()
+        model.run()
+        (tax_return,) = [r for (year, _), r in model.tax_returns.items() if year == 2030]
+        entries = [e for e in model.ledger.for_year(2030) if e.kind in ("tax", "penalty")]
+        federal = sum(
+            e.amount
+            for e in entries
+            if e.sink and e.sink.startswith("IRS:") and "social security" not in e.sink and "medicare" not in e.sink
+        )
+        self.assertAlmostEqual(federal, tax_return.federal_tax, places=2)
+        self.assertAlmostEqual(sum(e.amount for e in entries), tax_return.total_tax, places=2)
+
+
+class TestConservationOnWholeHouseholds(unittest.TestCase):
+    """Δ(assets − liabilities) equals the ledger's net flow, every year, to within $1."""
+
+    def _assert_conserved(self, model: LifeModel, years: int):
+        model.run()
+        self.assertEqual(len(model.balance_sheets), years)
+        assert_conservation(model)
+        assert_conservation(model, monthly=True)
+        self.assertFalse(check_conservation(model))
+
+    def test_married_homeowners_45_years(self):
+        self._assert_conserved(married_homeowners(years=45), 45)
+
+    def test_stochastic_retiree_many_seeds(self):
+        for seed in (1, 2, 3, 11, 42):
+            with self.subTest(seed=seed):
+                self._assert_conserved(stochastic_retiree(seed=seed, years=40), 40)
+
+    def test_mortality_estate_and_inheritance_50_years(self):
+        self._assert_conserved(mortality_and_estate(years=50), 50)
+
+    def test_home_purchase_by_event_debts_rsus_45_years(self):
+        self._assert_conserved(renter_buys_home(years=45), 45)
+
+    def test_everything_stochastic_many_seeds(self):
+        # Stochastic economy and mortality over many products, a dissolved estate, lump-sum heirs.
+        for seed in (0, 4, 8, 12, 27):
+            with self.subTest(seed=seed):
+                self._assert_conserved(everything_stochastic(seed=seed, years=50), 50)
+
+    def test_records_describe_the_year(self):
+        model = married_homeowners(years=10)
+        model.run()
+        records = conservation_records(model)
+        self.assertEqual([r.year for r in records], list(range(2026, 2036)))
+        for record in records:
+            self.assertAlmostEqual(record.change, record.net_flow, delta=1.0)
+        sheet = household_balance_sheet(model)
+        self.assertAlmostEqual(sheet.net_worth, records[-1].closing_net_worth, places=6)
+        self.assertGreater(sheet.assets, sheet.liabilities)
+
+    def test_unposted_money_is_caught(self):
+        model = LifeModel(start_year=2026, end_year=2027)
+        person = _person(model)
+        account = BankAccount(person, company="Bank", balance=100)
+
+        def windfall():
+            account.balance += 500  # moved without posting
+
+        LifeEvents(model, [LifeEvent(2027, "Unrecorded windfall", windfall)])
+        model.run()
+        failures = check_conservation(model)
+        self.assertEqual([r.year for r in failures], [2027])
+        self.assertAlmostEqual(failures[0].residual, 500)
+        self.assertEqual(account_residuals(model, 2027), {f"BankAccount:{account.unique_id}": 500})
+        with self.assertRaises(ConservationError) as raised:
+            assert_conservation(model)
+        self.assertIn("Pat's BankAccount (Bank)", str(raised.exception))
+
+    def test_accounts_opened_mid_run_post_their_opening_balance(self):
+        model = LifeModel(start_year=2026, end_year=2027)
+        person = _person(model)
+        BankAccount(person, company="Bank", balance=100)
+        LifeEvents(model, [LifeEvent(2027, "Open a brokerage account", BrokerageAccount, person, "Broker", 5000)])
+        model.run()
+        assert_conservation(model)
+        (opening,) = [e for e in model.ledger if e.kind == "opening_balance"]
+        self.assertEqual(opening.amount, 5000)
+
+
+class TestMoneyConservationEdgeCases(unittest.TestCase):
+    """Each test pins an edge case where money must not be created or destroyed without a flow."""
+
+    def test_social_security_stops_at_death(self):
+        # Benefits stop at death: nothing is paid to a dead person or into a cash pocket nobody owns.
+        model = LifeModel(start_year=2026, end_year=2030)
+        person = _person(model, age=70, mortality_mode=MortalityMode.FIXED_AGE, death_age=72)
+        heir = Person(person.family, "Heir", 40, 65, Spending(model, base_annual=0))
+        BankAccount(person, company="Bank", balance=10000)
+        BankAccount(heir, company="Bank", balance=10000)
+        SocialSecurity(person, claim_age=67, earnings_history=EARNINGS_HISTORY)
+        model.run()
+        benefits = [e for e in model.ledger if e.kind == "benefit" and e.source == "Social Security"]
+        # The death (January 2028, at 72) comes after that month's benefit, then nothing.
+        self.assertEqual(max((e.year, e.month) for e in benefits), (2028, 1))
+        self.assertEqual(sorted({e.year for e in benefits}), [2026, 2027, 2028])
+        self.assertEqual(person.cash, 0)
+        assert_conservation(model)
+
+    def test_unpaid_bills_debt_passes_to_the_heir(self):
+        # A decedent's carried unpaid-bills debt is an estate liability; it does not vanish at death.
+        model = LifeModel(start_year=2026, end_year=2027)
+        person = _person(model, age=80, mortality_mode=MortalityMode.FIXED_AGE, death_age=81, spending=50000)
+        heir = Person(person.family, "Heir", 50, 65, Spending(model, base_annual=0))
+        BankAccount(person, company="Bank", balance=1000)
+        BankAccount(heir, company="Bank", balance=200000)
+        model.step_year()
+        carried = person.debt
+        self.assertGreater(carried, 40000)
+        model.step_year()
+        self.assertTrue(person.is_deceased)
+        self.assertEqual(person.debt, 0)
+        # The heir's settlement repaid the inherited debt (with a month of interest).
+        repaid = [e for e in model.ledger.for_year(2027) if e.cause == "repay unpaid bills"]
+        self.assertGreater(sum(e.amount for e in repaid), carried)
+        assert_conservation(model)
+
+    def test_cash_held_outside_banks_passes_to_the_heir(self):
+        # Cash a decedent held without a bank account passes to the heir.
+        model = LifeModel(start_year=2026, end_year=2027)
+        person = _person(model, age=80, mortality_mode=MortalityMode.FIXED_AGE, death_age=81)
+        heir = Person(person.family, "Heir", 50, 65, Spending(model, base_annual=0))
+        BankAccount(heir, company="Bank", balance=1000)
+        LifeEvents(model, [LifeEvent(2026, "Gift", person.receive_cash, 25000, "a relative")])
+        model.run()
+        self.assertEqual(person.cash, 0)
+        self.assertAlmostEqual(heir.bank_account_balance, 1000 + 25000, places=2)
+        assert_conservation(model)
+
+    def test_agents_removed_at_a_death_do_not_run_the_rest_of_that_stage(self):
+        # die() removes the decedent's pensions so nothing of theirs steps again. A stage iterates a snapshot
+        # of the agent list, but an agent removed at a death does not run the rest of that stage, so a
+        # survivor pension stops paying (into a cash pocket nobody owns) once the survivor dies.
+        from ..account.pension import Pension
+
+        model = LifeModel(start_year=2026, end_year=2031)
+        family = Family(model)
+        bob = Person(
+            family, "Bob", 75, 65, Spending(model, base_annual=0), mortality_mode=MortalityMode.FIXED_AGE, death_age=76
+        )
+        sue = Person(
+            family, "Sue", 70, 65, Spending(model, base_annual=0), mortality_mode=MortalityMode.FIXED_AGE, death_age=73
+        )
+        kid = Person(family, "Kid", 40, 65, Spending(model, base_annual=0))
+        bob.get_married(sue)
+        for person in (bob, sue, kid):
+            BankAccount(person, company="Bank", balance=10000)
+        Pension(bob, company="Utility", vesting_years=1, benefit_annual=20000, survivor_pct=50)
+        model.run()
+        self.assertTrue(sue.is_deceased)
+        paid = {(e.year, e.month) for e in model.ledger if e.kind == "benefit"}
+        # Sue died in January 2029, after that month's survivor benefit (deaths are monthly).
+        self.assertEqual(max(paid), (2029, 1))
+        self.assertEqual(sue.cash, 0)
+        assert_conservation(model)
+
+    def test_death_with_a_529_plan_passes_it_on(self):
+        # A 529 plan's ``beneficiary`` is the student, a Child, not a designated Person: the estate code
+        # must not treat it as one (``beneficiary.is_deceased``).
+        from ..dependents.plan529 import Plan529
+
+        model = LifeModel(start_year=2026, end_year=2027)
+        family = Family(model)
+        parent = Person(
+            family,
+            "Parent",
+            70,
+            65,
+            Spending(model, base_annual=0),
+            mortality_mode=MortalityMode.FIXED_AGE,
+            death_age=71,
+        )
+        spouse = Person(family, "Spouse", 68, 65, Spending(model, base_annual=0))
+        parent.get_married(spouse)
+        BankAccount(spouse, company="Bank", balance=10000)
+        plan = Plan529(parent, beneficiary=parent.add_child("Kid", birth_year=2015), balance=30000)
+        model.run()
+        self.assertTrue(parent.is_deceased)
+        self.assertIs(plan.person, spouse)
+        assert_conservation(model)
+
+    def test_a_dissolved_estate_stops_donating(self):
+        # With no heir, the decedent's bank account is dissolved to zero and their Donation agent stops:
+        # nothing keeps spending (or reporting in the Charity column) from a removed account.
+        from ..charity.donation import Donation
+
+        model = LifeModel(start_year=2026, end_year=2030)
+        loner = _person(model, age=80, mortality_mode=MortalityMode.FIXED_AGE, death_age=81)
+        account = BankAccount(loner, company="Bank", balance=50000)
+        Donation(loner, "Shelter", annual_amount=3000)
+        model.run()
+        frame = model.datacollector.get_model_vars_dataframe().set_index("Year")
+        self.assertEqual(frame.loc[2026, "Charity"], 3000)
+        self.assertEqual(frame.loc[2028:, "Charity"].sum(), 0)
+        self.assertEqual(account.balance, 0)
+        dissolved = [e for e in model.ledger if e.sink == "dissolved estate"]
+        self.assertEqual(len(dissolved), 1)
+        assert_conservation(model)
+
+    def test_a_closed_whole_life_policy_holds_no_money(self):
+        # A policy that ended (death, lapse) holds no cash value or loan balance: the death benefit (or the
+        # lapse) already settled both, so surrendering it pays nothing and there is no loan to repay.
+        from ..insurance.life_insurance import LifeInsurance, LifeInsuranceType
+
+        model = LifeModel(start_year=2026, end_year=2029)
+        family = Family(model)
+        insured = Person(
+            family,
+            "Insured",
+            70,
+            65,
+            Spending(model, base_annual=0),
+            mortality_mode=MortalityMode.FIXED_AGE,
+            death_age=71,
+        )
+        spouse = Person(family, "Spouse", 68, 65, Spending(model, base_annual=0))
+        insured.get_married(spouse)
+        BankAccount(insured, company="Bank", balance=50000)
+        BankAccount(spouse, company="Bank", balance=50000)
+        policy = LifeInsurance(insured, LifeInsuranceType.WHOLE, death_benefit=100000, premium_monthly=300)
+        LifeEvents(
+            model,
+            [
+                LifeEvent(2026, "Loan", policy.take_loan, 1000),
+                LifeEvent(2028, "Repay the loan", policy.repay_loan, 1000),
+                LifeEvent(2028, "Surrender", policy.drop_policy),
+            ],
+        )
+        model.run()
+        self.assertFalse(policy.is_active)
+        self.assertEqual((policy.cash_value, policy.outstanding_loan_balance), (0, 0))
+        self.assertFalse(
+            [
+                e
+                for e in model.ledger.for_year(2028)
+                if e.from_account == f"LifeInsurance:{policy.unique_id}"
+                or e.to_account == f"LifeInsurance:{policy.unique_id}"
+            ]
+        )
+        assert_conservation(model)
+
+    def test_underwater_home_sale_is_paid_by_the_owner(self):
+        # Selling a home for less than the mortgage payoff (plus selling costs): the owner pays the
+        # difference; the shortfall is not written off.
+        model = LifeModel(start_year=2026, end_year=2026)
+        person = _person(model)
+        BankAccount(person, company="Bank", balance=100000)
+        home = Home(
+            person,
+            "Condo",
+            purchase_price=300000,
+            value_growth_pct=0,
+            down_payment=0,
+            mortgage=Mortgage(original_amount=320000, start_year=2026, term_years=30, rate_pct=6),
+            expenses=HomeExpenses(model, 0, 0, 0, 0, 0, 0, 0, 0),
+        )
+        LifeEvents(model, [LifeEvent(2026, "Sell", home.sell)])
+        model.run()
+        selling_costs = 300000 * model.config.housing.selling_cost_percent / 100
+        shortfall = 320000 + selling_costs - 300000
+        self.assertAlmostEqual(person.bank_account_balance, 100000 - shortfall, places=2)
+        assert_conservation(model)
+
+
+if __name__ == "__main__":
+    unittest.main()

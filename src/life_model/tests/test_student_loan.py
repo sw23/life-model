@@ -19,17 +19,24 @@ class TestStudentLoan(unittest.TestCase):
 
         # Create a student loan for testing
         self.student_loan = StudentLoan(
-            person=self.mock_person,
+            owner=self.mock_person,
             loan_type=StudentLoanType.FEDERAL_SUBSIDIZED,
-            loan_amount=25000.0,
-            yearly_interest_rate=4.5,
-            length_years=10,
+            original_amount=25000.0,
+            rate_pct=4.5,
+            term_years=10,
             school_name="State University",
         )
 
     def test_init_default_values(self):
         """Test StudentLoan initialization with default values."""
-        loan = StudentLoan(self.mock_person, StudentLoanType.PRIVATE, 15000.0, 6.0, 8, "Private College")
+        loan = StudentLoan(
+            self.mock_person,
+            loan_type=StudentLoanType.PRIVATE,
+            original_amount=15000.0,
+            rate_pct=6.0,
+            term_years=8,
+            school_name="Private College",
+        )
 
         self.assertEqual(loan.person, self.mock_person)
         self.assertEqual(loan.loan_type, StudentLoanType.PRIVATE)
@@ -47,13 +54,13 @@ class TestStudentLoan(unittest.TestCase):
 
         loan = StudentLoan(
             self.mock_person,
-            StudentLoanType.FEDERAL_UNSUBSIDIZED,
-            25000.0,
-            5.0,
-            12,
-            "Custom University",
-            principal=custom_principal,
-            monthly_payment=custom_payment,
+            loan_type=StudentLoanType.FEDERAL_UNSUBSIDIZED,
+            original_amount=25000.0,
+            rate_pct=5.0,
+            term_years=12,
+            school_name="Custom University",
+            current_balance=custom_principal,
+            payment_monthly=custom_payment,
         )
 
         self.assertEqual(loan.principal, custom_principal)
@@ -74,7 +81,12 @@ class TestStudentLoan(unittest.TestCase):
         rate = 5.0
 
         loan = StudentLoan(
-            self.mock_person, StudentLoanType.FEDERAL_SUBSIDIZED, loan_amount, rate, years, "Test University"
+            self.mock_person,
+            loan_type=StudentLoanType.FEDERAL_SUBSIDIZED,
+            original_amount=loan_amount,
+            rate_pct=rate,
+            term_years=years,
+            school_name="Test University",
         )
 
         # Calculate expected payment manually using loan formula
@@ -90,7 +102,12 @@ class TestStudentLoan(unittest.TestCase):
     def test_get_monthly_payment_zero_interest(self):
         """Test monthly payment calculation with zero interest rate."""
         loan = StudentLoan(
-            self.mock_person, StudentLoanType.FEDERAL_SUBSIDIZED, 24000.0, 0.0, 10, "Zero Interest School"
+            self.mock_person,
+            loan_type=StudentLoanType.FEDERAL_SUBSIDIZED,
+            original_amount=24000.0,
+            rate_pct=0.0,
+            term_years=10,
+            school_name="Zero Interest School",
         )
 
         # With 0% interest, payment should be loan_amount / num_payments
@@ -194,11 +211,11 @@ class TestStudentLoan(unittest.TestCase):
         """Test HTML representation with special characters."""
         loan = StudentLoan(
             self.mock_person,
-            StudentLoanType.PRIVATE,
-            10000.0,
-            5.0,
-            10,
-            'Evil University & Co <script>alert("XSS")</script>',
+            loan_type=StudentLoanType.PRIVATE,
+            original_amount=10000.0,
+            rate_pct=5.0,
+            term_years=10,
+            school_name='Evil University & Co <script>alert("XSS")</script>',
         )
         html = loan._repr_html_()
 
@@ -247,11 +264,11 @@ class TestStudentLoan(unittest.TestCase):
         """Test with extremely high interest rate."""
         high_rate_loan = StudentLoan(
             self.mock_person,
-            StudentLoanType.PRIVATE,
-            10000.0,
-            25.0,  # 25% APR
-            5,
-            "Expensive School",
+            loan_type=StudentLoanType.PRIVATE,
+            original_amount=10000.0,
+            rate_pct=25.0,  # 25% APR
+            term_years=5,
+            school_name="Expensive School",
         )
 
         monthly_interest = (25.0 / 100) * 10000.0 / 12
@@ -262,11 +279,11 @@ class TestStudentLoan(unittest.TestCase):
         """Test with very short loan term."""
         short_loan = StudentLoan(
             self.mock_person,
-            StudentLoanType.FEDERAL_SUBSIDIZED,
-            5000.0,
-            3.0,
-            1,  # 1 year
-            "Quick Degree",
+            loan_type=StudentLoanType.FEDERAL_SUBSIDIZED,
+            original_amount=5000.0,
+            rate_pct=3.0,
+            term_years=1,  # 1 year
+            school_name="Quick Degree",
         )
 
         # Payment should be higher for shorter term
@@ -277,31 +294,31 @@ class TestStudentLoan(unittest.TestCase):
         # Federal Subsidized (typically lower rates, same amount for fair comparison)
         fed_sub = StudentLoan(
             self.mock_person,
-            StudentLoanType.FEDERAL_SUBSIDIZED,
-            15000.0,  # Same amount for comparison
-            3.73,  # 2023-2024 rate
-            10,
-            "Public University",
+            loan_type=StudentLoanType.FEDERAL_SUBSIDIZED,
+            original_amount=15000.0,  # Same amount for comparison
+            rate_pct=3.73,  # 2023-2024 rate
+            term_years=10,
+            school_name="Public University",
         )
 
         # Federal Unsubsidized (slightly higher rates, same amount)
         fed_unsub = StudentLoan(
             self.mock_person,
-            StudentLoanType.FEDERAL_UNSUBSIDIZED,
-            15000.0,  # Same amount for comparison
-            5.28,  # 2023-2024 rate
-            10,
-            "Public University",
+            loan_type=StudentLoanType.FEDERAL_UNSUBSIDIZED,
+            original_amount=15000.0,  # Same amount for comparison
+            rate_pct=5.28,  # 2023-2024 rate
+            term_years=10,
+            school_name="Public University",
         )
 
         # Private loan (typically highest rates, same amount)
         private = StudentLoan(
             self.mock_person,
-            StudentLoanType.PRIVATE,
-            15000.0,  # Same amount for comparison
-            8.5,  # Higher private rate
-            10,
-            "Private University",
+            loan_type=StudentLoanType.PRIVATE,
+            original_amount=15000.0,  # Same amount for comparison
+            rate_pct=8.5,  # Higher private rate
+            term_years=10,
+            school_name="Private University",
         )
 
         # Verify payment amounts make sense relative to rates

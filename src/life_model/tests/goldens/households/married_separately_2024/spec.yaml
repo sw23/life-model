@@ -1,0 +1,85 @@
+# Household golden (synthetic, not real data). See ../README.md.
+spec_version: 1
+meta:
+  name: Married filing separately
+  description: 'Household golden (synthetic): spouses filing separate returns; the student loan interest
+    deduction is not allowed on a separate return.'
+  as_of: 2024-01
+  start_year: 2024
+  end_year: 2024
+  seed: 1
+  default_state: TX
+people:
+- id: morgan
+  name: Morgan
+  age: 45
+  retirement_age: 65
+  spending:
+    amount_annual: 40000
+    growth_pct: 0
+  jobs:
+  - id: morgan_job
+    company: Example Consulting LLC
+    salary_annual: 120000
+  accounts:
+  - kind: bank
+    id: morgan_checking
+    company: Community Bank
+    type: Checking
+    balance: 30000
+    interest_pct: 0.0
+    compounding: annual
+    primary: true
+  - kind: 401k
+    id: morgan_401k
+    job: morgan_job
+    pretax_contrib_pct: 8
+    growth_pct: 0
+  housing:
+  - kind: rental
+    id: morgan_rental
+    rent_monthly: 2000
+    rent_growth_pct: 0
+- id: casey
+  name: Casey
+  age: 44
+  retirement_age: 65
+  spending:
+    amount_annual: 20000
+    growth_pct: 0
+  jobs:
+  - id: casey_job
+    company: Example Analytics
+    salary_annual: 48000
+  accounts:
+  - kind: bank
+    id: casey_checking
+    company: Credit Union
+    type: Checking
+    balance: 15000
+    interest_pct: 0.0
+    compounding: annual
+    primary: true
+  - kind: bank
+    id: casey_savings
+    company: Neighborhood Credit Union
+    type: Savings
+    balance: 7500
+    interest_pct: 4.0
+    compounding: annual
+  debts:
+  - kind: student
+    id: casey_loan
+    loan_type: federal_unsubsidized
+    school: State University
+    original_amount: 30000
+    balance: 25000
+    rate_pct: 7.0
+    term_years: 10
+    repayment_plan: standard
+relationships:
+  marriages:
+  - spouses:
+    - morgan
+    - casey
+    filing_status: separate

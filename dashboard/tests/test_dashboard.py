@@ -180,7 +180,7 @@ def test_model_stops_at_end_year():
     assert not model.running
     # Stepping past the end is a no-op.
     years_before = list(model.simulated_years)
-    model.step()
+    model.step_year()
     assert model.simulated_years == years_before
 
 
@@ -206,10 +206,11 @@ def test_scenario_default_label_uses_packaged_defaults():
 
 
 def test_state_dropdown_maps_to_person_state():
-    """The state dropdown sets Person.state; DEFAULT maps to None (config default pack)."""
+    """The state dropdown sets Person.state; DEFAULT (the flat-rate pack) is passed explicitly as a deliberate
+    choice, with the same numbers as the config's default state."""
     assert app.model_params["state"]["value"] == "DEFAULT"
     assert "CA" in app.model_params["state"]["values"]
-    assert app._state_value("DEFAULT") is None
+    assert app._state_value("DEFAULT") == "DEFAULT"
     assert app._state_value("CA") == "CA"
 
     from life_model.people.person import Person
@@ -220,7 +221,7 @@ def test_state_dropdown_maps_to_person_state():
 
     default_model = DashboardLifeModel(start_year=2023, end_year=2024, jane_enabled=False)
     (default_person,) = [a for a in default_model.agents if isinstance(a, Person)]
-    assert default_person.state is None
+    assert default_person.state == "DEFAULT"
 
 
 def test_state_selection_changes_state_tax():
@@ -279,3 +280,179 @@ def test_healthcare_toggle_default_off_and_opt_in():
     model_on.run()
     df = model_on.datacollector.get_model_vars_dataframe()
     assert (df["Medical Costs"] > 0).all()
+
+
+def test_dashboard_models_conserve_money():
+    """Every dollar the dashboard's household gains or loses is on the ledger."""
+    from life_model.checks import assert_conservation
+
+    for kwargs in ({}, {"home_enabled": True, "healthcare_enabled": True, "scenario": "recession"}):
+        model = DashboardLifeModel(**kwargs)
+        result = model.run()
+        assert_conservation(model)
+        assert result.model_frame["Net Worth"].notna().all()
+
+
+# --- the dashboard builds through life_model.spec ---------------------------------------------
+
+
+def _direct_single_person_model(prefix, **kwargs):
+    """The same one-person household built with direct core constructor calls, for parity checks against the
+    spec builder."""
+    from life_model.account.bank import BankAccount
+    from life_model.account.job401k import Job401kAccount
+    from life_model.healthcare import LongTermCare, MedicalCosts, Medicare
+    from life_model.housing.home import Home, HomeExpenses, Mortgage
+    from life_model.model import LifeModel
+    from life_model.people.family import Family
+    from life_model.people.person import Person, Spending
+    from life_model.work.job import Job, Salary
+
+    d = {**PERSON_DEFAULTS[prefix], **{k.removeprefix(f"{prefix}_"): v for k, v in kwargs.items()}}
+    shared = {**app.SHARED_DEFAULTS, **kwargs}
+    model = LifeModel(end_year=shared["end_year"], start_year=shared["start_year"], scenario=shared.get("scenario"))
+    family = Family(model)
+    person = Person(
+        family=family,
+        name=prefix.capitalize(),
+        age=d["age"],
+        retirement_age=d["retirement_age"],
+        spending=Spending(model=model, base_annual=d["spending"], growth_pct=shared["spending_increase"]),
+        state=shared.get("state"),
+    )
+    BankAccount(
+        owner=person,
+        company=d["bank_company"],
+        type="Checking",
+        balance=d["bank_balance"],
+        interest_pct=shared["bank_interest_rate"],
+    )
+    job = Job(
+        owner=person,
+        company=d["company"],
+        role=d["role"],
+        salary=Salary(model, base_annual=d["salary"], raise_pct=shared["salary_increase"], bonus_pct=d["bonus"]),
+    )
+    if d["retirement_enabled"]:
+        Job401kAccount(
+            job=job,
+            pretax_balance=d["retirement_balance"],
+            pretax_contrib_pct=d["retirement_contrib"],
+            # The company-match slider is a dollar-for-dollar match up to its percent of pay.
+            match_tiers=[(100, d["company_match"])] if d["company_match"] > 0 else None,
+            growth_pct=d["retirement_growth"],
+        )
+    for i in range(int(d["children"])):
+        person.add_child(f"{prefix.capitalize()}'s Child {i + 1}", birth_year=model.start_year)
+    if shared["home_enabled"]:
+        price = shared["home_price"]
+        Home(
+            owner=person,
+            name="Home",
+            purchase_price=price,
+            value_growth_pct=None,
+            down_payment=price * 0.20,
+            mortgage=Mortgage(
+                original_amount=price * 0.8,
+                start_year=model.start_year,
+                term_years=int(shared["mortgage_term"]),
+                rate_pct=shared["mortgage_rate"],
+            ),
+            expenses=HomeExpenses(
+                model=model,
+                property_tax_pct=1.0,
+                insurance_pct=0.5,
+                maintenance_annual=3000,
+                maintenance_growth_pct=2.0,
+                improvement_annual=0,
+                improvement_growth_pct=0.0,
+                hoa_annual=0,
+                hoa_growth_pct=0.0,
+            ),
+            purchase=False,
+        )
+    if shared["healthcare_enabled"]:
+        MedicalCosts(person)
+        Medicare(person)
+        LongTermCare(person)
+    return model
+
+
+@pytest.mark.parametrize(
+    "prefix, params",
+    [
+        ("john", {}),
+        (
+            "jane",
+            {
+                "jane_children": 2,
+                "jane_bonus": 10,
+                "home_enabled": True,
+                "state": "CA",
+                "scenario": "recession",
+                "start_year": 2026,
+                "end_year": 2070,
+            },
+        ),
+        ("john", {"john_retirement_enabled": False, "healthcare_enabled": True, "start_year": 2026, "end_year": 2066}),
+    ],
+)
+def test_single_person_dashboard_matches_direct_construction(prefix, params):
+    """One person (no marriage involved) builds exactly as the direct constructor calls do."""
+    other = "jane" if prefix == "john" else "john"
+    model = DashboardLifeModel(**{**params, f"{other}_enabled": False})
+    direct = _direct_single_person_model(prefix, **params)
+    for m in (model, direct):
+        m.random.seed(11)  # long-term care draws from the model RNG
+        m.run()
+    spec_df = model.datacollector.get_model_vars_dataframe()
+    direct_df = direct.datacollector.get_model_vars_dataframe()
+    assert spec_df.equals(direct_df)
+
+
+def test_couple_is_married_and_files_jointly(couple_model):
+    """The dashboard's two adults are a married couple filing one joint return."""
+    from life_model.people.tax_unit import TaxUnit
+    from life_model.tax.federal import FilingStatus
+
+    john, jane = couple_model.household.people["john"], couple_model.household.people["jane"]
+    assert john.spouse is jane and jane.spouse is john
+    assert john.filing_status == jane.filing_status == FilingStatus.MARRIED_FILING_JOINTLY
+    (unit,) = TaxUnit.build_units(john.family)
+    assert unit.filing_status == FilingStatus.MARRIED_FILING_JOINTLY
+    assert [m.name for m in john.family.members] == ["John", "Jane"]
+
+
+def test_household_spec_is_exposed_and_valid():
+    from life_model.spec import validate_spec
+
+    model = DashboardLifeModel(home_enabled=True, john_children=1)
+    spec = model.household_spec
+    assert [p.id for p in spec.people] == ["john", "jane"]
+    assert spec.relationships.marriages[0].spouses == ("john", "jane")
+    assert spec.people[0].housing[0].kind == "home"
+    # The only finding on the defaults: every investment (the 401ks) is on fixed growth.
+    assert [f.code for f in validate_spec(spec)] == ["fixed_growth"]
+
+
+def test_nobody_enabled_builds_an_empty_family():
+    model = DashboardLifeModel(john_enabled=False, jane_enabled=False)
+    assert model.household_spec is None
+    model.run()
+
+
+def test_one_step_is_a_year_and_months_feed_the_liquidity_chart():
+    """The engine is monthly; a dashboard Step simulates a year and collects its months."""
+    import solara
+
+    model = DashboardLifeModel(start_year=2023, end_year=2025, jane_enabled=False)
+    model.step()  # SolaraViz's Step / one Play tick
+    assert model.simulated_years == [2023]
+    assert (model.year, model.month) == (2024, 1)
+    rows = model.monthly_frame()
+    assert rows["Month"].tolist() == list(range(1, 13))
+    december = rows[rows["Month"] == 12]["Bank Balance"].tolist()
+    assert december == model.datacollector.get_model_vars_dataframe()["Bank Balance"].tolist()
+    # The component renders from the monthly rows without error.
+    box, _rc = solara.render(app.LiquidityChart(model), handle_error=False)
+    assert box is not None

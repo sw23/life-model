@@ -8,7 +8,9 @@ from enum import Enum
 from typing import ClassVar
 
 from ..base_classes import Investment
-from ..model import Event, LifeModelAgent
+from ..economy import annual_to_monthly
+from ..ledger import FlowKind
+from ..model import Event, EventKind, LifeModelAgent
 from ..people.person import Person
 
 
@@ -24,7 +26,7 @@ class Trust(LifeModelAgent):
     of the given asset class). The grantor moves cash in with :meth:`fund` and money reaches
     beneficiaries through :meth:`distribute`.
 
-    Tax treatment (v1, deliberately minimal):
+    Tax treatment (deliberately minimal):
 
     * **Revocable** trusts are transparent: the balance counts in the grantor's gross estate
       (``Person._gross_estate_value``) and, at the grantor's death, pays out directly to the
@@ -45,7 +47,9 @@ class Trust(LifeModelAgent):
     * The annual gift exclusion is applied per trust per year, not per donee.
     """
 
-    # Apply growth before tax-unit settlement, matching Investment's step ordering.
+    STATS_OWNED = frozenset({"stat_trust_balance"})
+
+    # Apply growth before the month's bills, matching Investment's step ordering.
     STEP_PRIORITY: ClassVar[dict[str, int]] = {"step": -10}
 
     def __init__(
@@ -87,8 +91,9 @@ class Trust(LifeModelAgent):
         # Gifts into the trust this calendar year (for the annual gift-exclusion accounting).
         self.contributions_this_year = 0.0
         self.stat_balance_history: list[float] = []
-
         self.model.registries.trusts.register(grantor, self)
+        if self.trust_type == TrustType.REVOCABLE:
+            self.model.ledger.post_opening(self, balance)
 
     @property
     def growth_rate(self) -> float:
@@ -114,7 +119,11 @@ class Trust(LifeModelAgent):
         """
         if amount <= 0:
             return 0.0
-        transferred = amount - self.grantor.deduct_from_bank_accounts(amount)
+        if self.trust_type == TrustType.IRREVOCABLE:
+            post = {"kind": FlowKind.GIFT, "sink": f"{self.name} (irrevocable trust)", "cause": "trust funding"}
+        else:
+            post = {"kind": FlowKind.TRANSFER, "to_account": self, "cause": "revocable trust funding"}
+        transferred = amount - self.grantor.deduct_from_bank_accounts(amount, **post)
         if transferred <= 0:
             return 0.0
         self.balance += transferred
@@ -131,7 +140,7 @@ class Trust(LifeModelAgent):
         return transferred
 
     def distribute(self, amount: float, beneficiary: Person) -> float:
-        """Distribute cash from the trust to a beneficiary (tax-free basis, v1 simplification).
+        """Distribute cash from the trust to a beneficiary (tax-free basis, a simplification).
 
         Args:
             amount: Amount to distribute (limited by the trust balance).
@@ -144,7 +153,18 @@ class Trust(LifeModelAgent):
             return 0.0
         distributed = min(amount, self.balance)
         self.balance -= distributed
-        beneficiary.receive_cash(distributed, source=f"distribution from {self.name}")
+        if self.trust_type == TrustType.IRREVOCABLE:
+            beneficiary.receive_cash(
+                distributed, source=f"{self.name} (irrevocable trust)", kind=FlowKind.GIFT, cause="trust distribution"
+            )
+        else:
+            beneficiary.receive_cash(
+                distributed,
+                source=f"distribution from {self.name}",
+                kind=FlowKind.TRANSFER,
+                from_account=self,
+                cause="trust distribution",
+            )
         return distributed
 
     def pay_out_at_grantor_death(self, residual_inheritor: Person | None = None):
@@ -160,14 +180,33 @@ class Trust(LifeModelAgent):
         if survivors and self.balance > 0:
             share = self.balance / len(survivors)
             for beneficiary in survivors:
-                beneficiary.receive_cash(share, source=f"payout of {self.name}")
+                beneficiary.receive_cash(
+                    share,
+                    source=f"payout of {self.name}",
+                    kind=FlowKind.INHERITANCE,
+                    from_account=self,
+                    cause=f"{self.name} paid out at {self.grantor.name}'s death",
+                )
                 self.model.event_log.add(
-                    Event(f"{self.name} paid ${share:,.0f} to {beneficiary.name} at {self.grantor.name}'s death")
+                    Event(
+                        EventKind.INHERITANCE,
+                        person=beneficiary,
+                        amount=share,
+                        account=self,
+                        cause=f"{self.grantor.name}'s death",
+                        message=f"{self.name} paid ${share:,.0f} to {beneficiary.name} at {self.grantor.name}'s death",
+                    )
                 )
             self.balance = 0.0
         elif self.balance > 0:
             if residual_inheritor is not None and not residual_inheritor.is_deceased:
-                residual_inheritor.receive_cash(self.balance, source=f"escheat of {self.name}")
+                residual_inheritor.receive_cash(
+                    self.balance,
+                    source=f"escheat of {self.name}",
+                    kind=FlowKind.INHERITANCE,
+                    from_account=self,
+                    cause=f"{self.name} escheated to the residual estate",
+                )
                 self.model.event_log.add(
                     Event(
                         f"{self.name} had no surviving beneficiaries; "
@@ -176,17 +215,40 @@ class Trust(LifeModelAgent):
                 )
                 self.balance = 0.0
             else:
+                self.model.ledger.post(
+                    self.balance,
+                    FlowKind.FORFEIT,
+                    from_account=self,
+                    sink="dissolved (no heir)",
+                    cause=f"{self.name} dissolved",
+                    agent=self.grantor,
+                )
+                self.balance = 0.0
                 self.model.event_log.add(Event(f"{self.name} had no surviving beneficiaries; assets dissolved"))
         self.model.registries.trusts.unregister(self.grantor, self)
         self.remove()
 
-    def step(self):
-        """Apply the year's growth and track the balance."""
-        self.balance += self.balance * (self.growth_rate / 100)
-        self.stat_balance_history.append(self.balance)
+    @property
+    def monthly_growth_rate(self) -> float:
+        """This month's growth rate (percent): the explicit override's monthly equivalent, else the
+        economy's monthly return for the asset class."""
+        if self._growth_rate_override is not None:
+            return annual_to_monthly(self._growth_rate_override)
+        return self.model.economy.monthly_rate(Investment._ASSET_CLASS_RATES[self.asset_class])
 
-    def post_step(self):
+    def step(self):
+        """Apply the month's growth."""
+        growth = self.balance * (self.monthly_growth_rate / 100)
+        self.balance += growth
+        if self.trust_type == TrustType.REVOCABLE:
+            self.model.ledger.post(growth, FlowKind.GROWTH, to_account=self, source="market", agent=self.grantor)
+
+    def on_year_end(self):
+        self.stat_balance_history.append(self.balance)
         self.contributions_this_year = 0.0
+
+    def collect_stats(self):
+        self.stat_trust_balance = self.balance
 
     def _repr_html_(self):
         desc = "<ul>"

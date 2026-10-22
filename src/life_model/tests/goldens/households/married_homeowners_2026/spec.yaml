@@ -1,0 +1,107 @@
+# Household golden (synthetic, not real data). See ../README.md.
+spec_version: 1
+meta:
+  name: Married homeowners who itemize
+  description: 'Household golden (synthetic): two earners filing jointly with two children, a mortgage,
+    property tax over the 2024 cap and cash gifts to charity.'
+  as_of: 2026-01
+  start_year: 2026
+  end_year: 2026
+  seed: 1
+  default_state: TX
+people:
+- id: john
+  name: John
+  age: 41
+  retirement_age: 65
+  spending:
+    amount_annual: 60000
+    growth_pct: 0
+  jobs:
+  - id: john_job
+    company: Example Consulting LLC
+    salary_annual: 185000
+  accounts:
+  - kind: bank
+    id: john_checking
+    company: Community Bank
+    type: Checking
+    balance: 60000
+    interest_pct: 0.0
+    compounding: annual
+    primary: true
+  - kind: bank
+    id: john_savings
+    company: Credit Union
+    type: Savings
+    balance: 20000
+    interest_pct: 2.0
+    compounding: annual
+  - kind: 401k
+    id: john_401k
+    job: john_job
+    pretax_balance: 150000
+    pretax_contrib_pct: 10
+    growth_pct: 0
+  housing:
+  - kind: home
+    id: home
+    name: House
+    purchase_price: 650000
+    value_growth_pct: 0
+    purchase: false
+    mortgage:
+      original_amount: 520000
+      balance: 480000
+      rate_pct: 6.5
+      term_years: 30
+      start_year: 2022
+      payment_monthly: 3286.75
+    expenses:
+      property_tax_pct: 2.0
+      insurance_pct: 0.5
+      hoa_monthly: 0
+  giving:
+  - kind: donation
+    id: gift
+    charity: Food Bank
+    amount_annual: 6000
+  children:
+  - id: junior
+    name: Junior
+    birth_year: 2014
+  - id: kit
+    name: Kit
+    birth_year: 2018
+- id: jane
+  name: Jane
+  age: 39
+  retirement_age: 65
+  spending:
+    amount_annual: 0
+    growth_pct: 0
+  jobs:
+  - id: jane_job
+    company: Example Analytics
+    salary_annual: 95000
+  accounts:
+  - kind: bank
+    id: jane_checking
+    company: Credit Union
+    type: Checking
+    balance: 10000
+    interest_pct: 0.0
+    compounding: annual
+    primary: true
+  - kind: 401k
+    id: jane_401k
+    job: jane_job
+    pretax_balance: 60000
+    pretax_contrib_pct: 5
+    growth_pct: 0
+relationships:
+  marriages:
+  - spouses:
+    - john
+    - jane
+    filing_status: joint

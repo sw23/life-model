@@ -1,0 +1,65 @@
+# Household golden (synthetic, not real data). See ../README.md.
+spec_version: 1
+meta:
+  name: Early retirees on marketplace coverage
+  description: 'Household golden (synthetic): a pre-65 couple filing jointly on a pension, insured on the ACA marketplace:
+    the premium tax credit (Form 8962) with advance payments in some years.'
+  as_of: 2024-01
+  start_year: 2024
+  end_year: 2024
+  seed: 1
+  default_state: FL
+people:
+- id: ann
+  name: Ann
+  age: 60
+  retirement_age: 55
+  spending:
+    amount_annual: 40000
+    growth_pct: 0
+  accounts:
+  - kind: bank
+    id: ann_checking
+    company: Community Bank
+    type: Checking
+    balance: 150000
+    interest_pct: 0.0
+    compounding: annual
+    primary: true
+  - kind: pension
+    id: ann_pension
+    company: Example County
+    vesting_years: 0
+    benefit_annual: 48000
+    start_age: 55
+    cola_pct: 0
+  insurance:
+  - kind: health
+    id: ann_health
+    company: Example Mutual
+    premium_annual: 22000
+    coverage_amount: 1000000
+    premium_increase_pct: 0
+    marketplace:
+      slcsp_monthly: 1700
+- id: lee
+  name: Lee
+  age: 59
+  retirement_age: 55
+  spending:
+    amount_annual: 0
+    growth_pct: 0
+  accounts:
+  - kind: bank
+    id: lee_checking
+    company: Community Bank
+    type: Checking
+    balance: 0
+    interest_pct: 0.0
+    compounding: annual
+    primary: true
+relationships:
+  marriages:
+  - spouses:
+    - ann
+    - lee

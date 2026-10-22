@@ -17,6 +17,15 @@ Every policy is a pure function of the environment's current state and returns a
 action index (or ``NO_ACTION``, which is always legal), so a policy never desyncs from the action
 mask. Being a deterministic function of the seeded state, each policy is reproducible per seed.
 
+**Factored space.** :data:`FACTORED_BASELINES` expresses the same heuristics, under the
+same names, as standing-policy vectors (``envs/financial/policies.py``), so an agent trained on the
+factored space is compared with like: e.g. ``always_max_401k`` sets the pre-tax deferral to the
+highest rate the household's take-home pay can carry, ``four_percent_drawdown`` draws taxable, then
+pre-tax, then Roth (``withdrawal_order=brokerage_first``) once retired. Every factored baseline claims
+Social Security at the household's configured claiming age (what the flat env does on its own), so
+the two spaces differ only in how savings and drawdown are expressed. :func:`baselines_for` picks
+the right set for an environment.
+
 The planner policies are also usable as curriculum teachers: :func:`collect_teacher_experiences`
 runs them to produce transitions that can warm-start the replay buffer, kept
 behind an off-by-default trainer flag.
@@ -28,6 +37,8 @@ import numpy as np
 
 from ..envs.financial.actions import ActionType, encode_flat_action
 from ..envs.financial.environment import FinancialLifeEnv
+from ..envs.financial.policies import SLOT_BY_NAME, SLOTS, encode_policy_action
+from ..envs.financial.scenarios import ss_claim_age
 
 # A baseline policy maps the environment's current state to a flat discrete action index
 # (the index carries both the action type and the amount bucket).
@@ -120,7 +131,7 @@ def age_glide_policy(env: FinancialLifeEnv) -> int:
     retired."""
     if env.person.is_retired:
         return _NO_ACTION
-    age = env.person.age
+    age = env.decision_age
     bucket = next(frac for threshold, frac in _GLIDE_STEPS if age < threshold)
     return _first_legal(env, [encode_flat_action(ActionType.TRANSFER_BANK_TO_401K_PRETAX, bucket)])
 
@@ -186,6 +197,169 @@ PLANNER_BASELINES = (
 )
 
 
+# ---------------------------------------------------------------------------
+# The same heuristics in the factored (standing-policy) action space.
+# ---------------------------------------------------------------------------
+
+#: A factored baseline maps the env's state to a MultiDiscrete action vector.
+FactoredPolicy = Callable[[FinancialLifeEnv], np.ndarray]
+
+# Pre-tax 401(k) rates of the factored space, lowest first ("max" is the 402(g) limit).
+_RATE_STEPS = (0.0, 3.0, 6.0, 10.0, 15.0)
+_AGE_GLIDE_RATES = ((35, "6"), (45, "10"), (55, "15"), (200, "max"))
+
+
+def _legal_vector(env: FinancialLifeEnv, changes: dict[str, str]) -> np.ndarray:
+    """The action setting ``changes`` (slot -> value), dropping any value illegal now (that slot then
+    keeps its standing value), and claiming Social Security at the household's claiming age."""
+    masks = env.legal_slot_masks()
+    standing = env.policy_vector()
+    wanted = dict(changes)
+    if _claim_due(env):
+        wanted["claim_social_security"] = "now"
+    legal: dict[str, str] = {}
+    for i, slot in enumerate(SLOTS):
+        value = wanted.get(slot.name)
+        if value is None or (value == standing.get(slot.name) and slot.name != "spending_adjust"):
+            continue
+        if masks[i][slot.index(value)]:
+            legal[slot.name] = value
+    return encode_policy_action(legal)
+
+
+def _claim_due(env: FinancialLifeEnv) -> bool:
+    """Whether the household's configured claiming age (the flat env's automatic claim) has come."""
+    ss = env.person.social_security
+    if ss is None or ss.is_claiming or env.person.is_deceased:
+        return False
+    return env.person.age_years_fractional >= ss_claim_age(env.episode_household, env.model.config)
+
+
+def _take_home_surplus(env: FinancialLifeEnv) -> float:
+    """Pay left after spending and an estimate of the year's income and payroll taxes (0 when
+    retired): what payroll deferrals can absorb without the waterfall tapping savings."""
+    person = env.person
+    pay = sum(job.salary.base for job in person.jobs if not job.retired)
+    if pay <= 0:
+        return 0.0
+    params = env.model.tax_params_for_year(env.model.year)
+    taxable = max(0.0, pay - params.standard_deduction.single)
+    tax = 0.0
+    for lower, upper, rate in params.tax_brackets.single:
+        if taxable <= lower:
+            break
+        tax += (min(taxable, upper) - lower) * rate / 100.0
+    fica = 0.0765 * pay
+    return pay - person.spending.get_yearly_spending() - tax - fica
+
+
+def affordable_401k_rate(env: FinancialLifeEnv) -> str:
+    """The highest pre-tax 401(k) rate value (``"0"`` ... ``"15"``, ``"max"``) whose yearly deferral the
+    household's take-home surplus covers (conservatively: the deferral's own tax saving is ignored)."""
+    person = env.person
+    pay = sum(job.salary.base for job in person.jobs if not job.retired)
+    if pay <= 0:
+        return "0"
+    spare = _take_home_surplus(env)
+    limit = env.model.year_config.get_job_401k_contrib_limit(person.age_in(env.model.year))
+    if spare >= limit:
+        return "max"
+    best = "0"
+    for rate in _RATE_STEPS:
+        if pay * rate / 100.0 <= spare:
+            best = f"{rate:g}"
+    return best
+
+
+def _working(env: FinancialLifeEnv) -> bool:
+    return not env.person.is_retired and not env.person.is_deceased
+
+
+def factored_do_nothing_policy(env: FinancialLifeEnv) -> np.ndarray:
+    """Keep every standing policy (claims Social Security at the household's age, as the flat env does)."""
+    return _legal_vector(env, {})
+
+
+def factored_always_max_401k_policy(env: FinancialLifeEnv) -> np.ndarray:
+    """Defer the most the take-home pay carries to the pre-tax 401(k) (the 402(g) limit when it can)."""
+    if not _working(env):
+        return _legal_vector(env, {})
+    return _legal_vector(env, {"pretax_401k_rate": affordable_401k_rate(env)})
+
+
+def factored_save_25_percent_policy(env: FinancialLifeEnv) -> np.ndarray:
+    """Sweep surplus cash (above six months of spending) to the brokerage every year."""
+    return _legal_vector(env, {"sweep_policy": "sweep_to_brokerage"})
+
+
+def factored_contribution_waterfall_policy(env: FinancialLifeEnv) -> np.ndarray:
+    """HSA and IRA to their limits, the pre-tax 401(k) at the affordable rate, the rest swept to the
+    brokerage; contributions stop at retirement (the env drops them)."""
+    if not _working(env):
+        return _legal_vector(env, {"sweep_policy": "sweep_to_brokerage"})
+    return _legal_vector(
+        env,
+        {
+            "hsa_contribution": "max",
+            "ira_contribution": "traditional_max",
+            "pretax_401k_rate": affordable_401k_rate(env),
+            "sweep_policy": "sweep_to_brokerage",
+        },
+    )
+
+
+def factored_age_glide_policy(env: FinancialLifeEnv) -> np.ndarray:
+    """Pre-tax 401(k) rate stepping up with age (6% under 35, 10% to 45, 15% to 55, then the limit),
+    capped at what take-home pay carries."""
+    if not _working(env):
+        return _legal_vector(env, {})
+    age = env.decision_age
+    target = next(rate for threshold, rate in _AGE_GLIDE_RATES if age < threshold)
+    affordable = affordable_401k_rate(env)
+    order = SLOT_BY_NAME["pretax_401k_rate"].values
+    rate = target if order.index(target) <= order.index(affordable) else affordable
+    return _legal_vector(env, {"pretax_401k_rate": rate})
+
+
+def factored_four_percent_drawdown_policy(env: FinancialLifeEnv) -> np.ndarray:
+    """Accumulate in the pre-tax 401(k) while working; once retired draw taxable, then pre-tax, then
+    Roth savings (``brokerage_first``: Roth last)."""
+    if not _working(env):
+        return _legal_vector(env, {"withdrawal_order": "brokerage_first"})
+    return _legal_vector(env, {"pretax_401k_rate": affordable_401k_rate(env)})
+
+
+def factored_emergency_fund_first_policy(env: FinancialLifeEnv) -> np.ndarray:
+    """Below six months of cash, no bank-funded saving (IRA off, cash held; payroll 401(k) at 3%);
+    above it, the contribution waterfall."""
+    if not _working(env):
+        return _legal_vector(env, {"sweep_policy": "sweep_to_brokerage"})
+    if _months_of_cash(env) < _EMERGENCY_FUND_MONTHS:
+        return _legal_vector(env, {"ira_contribution": "none", "sweep_policy": "hold_cash", "pretax_401k_rate": "3"})
+    return factored_contribution_waterfall_policy(env)
+
+
+FACTORED_BASELINES: dict[str, FactoredPolicy] = {
+    "do_nothing": factored_do_nothing_policy,
+    "always_max_401k": factored_always_max_401k_policy,
+    "save_25_percent": factored_save_25_percent_policy,
+    "contribution_waterfall": factored_contribution_waterfall_policy,
+    "age_glide": factored_age_glide_policy,
+    "four_percent_drawdown": factored_four_percent_drawdown_policy,
+    "emergency_fund_first": factored_emergency_fund_first_policy,
+}
+
+
+def baselines_for(env_or_config) -> dict[str, Callable]:
+    """The baseline set matching an env (or an env config): :data:`FACTORED_BASELINES` for
+    ``action_space="factored"``, else :data:`BASELINES`."""
+    if isinstance(env_or_config, dict):
+        factored = env_or_config.get("action_space", "flat") == "factored"
+    else:
+        factored = bool(getattr(getattr(env_or_config, "unwrapped", env_or_config), "factored", False))
+    return dict(FACTORED_BASELINES if factored else BASELINES)
+
+
 def run_baseline_episode(env: FinancialLifeEnv, policy: BaselinePolicy, seed: int) -> float:
     """Run one episode under ``policy`` and return the total reward."""
     env.reset(seed=seed)
@@ -205,8 +379,8 @@ def evaluate_baseline(env: FinancialLifeEnv, policy: BaselinePolicy, seeds: list
 
 
 def evaluate_all_baselines(env: FinancialLifeEnv, seeds: list[int]) -> dict[str, float]:
-    """Average reward for every named baseline over the given seeds."""
-    return {name: evaluate_baseline(env, policy, seeds) for name, policy in BASELINES.items()}
+    """Average reward for every named baseline (in the env's action space) over the given seeds."""
+    return {name: evaluate_baseline(env, policy, seeds) for name, policy in baselines_for(env).items()}
 
 
 def collect_teacher_experiences(

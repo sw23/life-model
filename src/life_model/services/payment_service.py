@@ -18,7 +18,7 @@ class PaymentService:
     growth-favored money for last:
 
         1. Bank accounts (most liquid, no tax).
-        2. Taxable brokerage accounts (sales realize capital gains, taxed at year-end settlement).
+        2. Taxable brokerage accounts (sales realize capital gains, taxed with the year's return).
         3. Roth 401k balances.
         4. Roth IRAs (contribution basis is drawn before earnings).
 
@@ -53,9 +53,29 @@ class PaymentService:
             remaining_balance = getattr(self, source)(remaining_balance)
         return remaining_balance
 
+    def _post_paid(self, accounts, before: list[float]) -> None:
+        """Post what left ``accounts`` (their balances fell from ``before``) as bills paid."""
+        for account, previous in zip(accounts, before, strict=True):
+            paid = previous - account.balance
+            if paid > 0:
+                self.person.model.ledger.post(
+                    paid,
+                    "spending",
+                    from_account=account,
+                    sink="bills",
+                    cause="bills paid by Person.pay_bills",
+                    agent=self.person,
+                )
+
+    def _pay_from(self, accounts, pay, amount: float) -> float:
+        before = [account.balance for account in accounts]
+        remaining = pay(amount)
+        self._post_paid(accounts, before)
+        return remaining
+
     def _pay_from_bank_accounts(self, amount: float) -> float:
         """Pay from bank accounts first (most liquid). Returns the unpaid remainder."""
-        return self.person.deduct_from_bank_accounts(amount)
+        return self._pay_from(self.person.usable_bank_accounts, self.person.deduct_from_bank_accounts, amount)
 
     def _pay_from_brokerage_accounts(self, amount: float) -> float:
         """Sell brokerage holdings into the bank, then pay from the bank. Returns the unpaid remainder.
@@ -66,12 +86,12 @@ class PaymentService:
         would create money.
         """
         self.person.withdraw_from_brokerage_accounts(amount)
-        return self.person.deduct_from_bank_accounts(amount)
+        return self._pay_from(self.person.usable_bank_accounts, self.person.deduct_from_bank_accounts, amount)
 
     def _pay_from_roth_401ks(self, amount: float) -> float:
         """Pay from Roth 401k balances. Returns the unpaid remainder."""
-        return self.person.deduct_from_roth_401ks(amount)
+        return self._pay_from(self.person.all_retirement_accounts, self.person.deduct_from_roth_401ks, amount)
 
     def _pay_from_roth_iras(self, amount: float) -> float:
         """Pay from Roth IRAs, contribution basis before earnings. Returns the unpaid remainder."""
-        return self.person.deduct_from_roth_iras(amount)
+        return self._pay_from(self.person.roth_iras, self.person.deduct_from_roth_iras, amount)

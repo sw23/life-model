@@ -11,6 +11,7 @@ from ..insurance.social_security import Income, SocialSecurity
 from ..model import LifeModel
 from ..people.family import Family
 from ..people.person import Person, Spending
+from .helpers import run_months
 
 # TODO - Add unit test for the scenario below:
 # For example a person who had maximum-taxable earnings in each year since
@@ -121,7 +122,7 @@ class TestSocialSecurity(unittest.TestCase):
             income_history.append(Income(year, income))
             chk_scaled_income.append(scaled_income)
 
-        ss = SocialSecurity(person=person, withdrawal_start_age=67, income_history=income_history)
+        ss = SocialSecurity(owner=person, claim_age=67, earnings_history=income_history)
 
         # Make sure the scaled income matches the example data
         indexed_income_history = ss.get_indexed_income_history()
@@ -151,7 +152,7 @@ class TestSocialSecurity(unittest.TestCase):
             income_history.append(Income(year, income))
             chk_scaled_income.append(scaled_income)
 
-        ss = SocialSecurity(person=person, withdrawal_start_age=67, income_history=income_history)
+        ss = SocialSecurity(owner=person, claim_age=67, earnings_history=income_history)
 
         # Make sure the scaled income matches the example data
         indexed_income_history = ss.get_indexed_income_history()
@@ -171,7 +172,7 @@ class TestSocialSecurity(unittest.TestCase):
     def test_get_early_delayed_pia(self):
         model = LifeModel(start_year=1983)
         person = Person(family=Family(model), name="Test C", age=26, retirement_age=62, spending=Spending(model, 10000))
-        ss = SocialSecurity(person=person)
+        ss = SocialSecurity(owner=person)
 
         # https://www.ssa.gov/oact/ProgData/ar_drc.html
         test_values = (
@@ -230,7 +231,7 @@ class TestSocialSecurityBenefitsAndWageBase(unittest.TestCase):
     def test_wage_base_capping_uses_each_years_base(self):
         """AIME income is capped at each year's own wage base, not a single frozen value."""
         _, person = self._person()
-        ss = SocialSecurity(person=person, withdrawal_start_age=67)
+        ss = SocialSecurity(owner=person, claim_age=67)
         ss.add_income_for_year(200000, 2024)
         ss.add_income_for_year(200000, 2025)
         by_year = {inc.year: inc.amount for inc in ss.income_history}
@@ -242,28 +243,28 @@ class TestSocialSecurityBenefitsAndWageBase(unittest.TestCase):
         """Benefits deposit as cash and record an SS_BENEFIT ledger entry."""
         from ..tax.income import IncomeType
 
-        _model, person = self._person(start_year=2030, age=67)
+        model, person = self._person(start_year=2030, age=67)
         income_history = [(y, 60000) for y in range(1985, 2025)]
-        ss = SocialSecurity(person=person, withdrawal_start_age=67, income_history=income_history)
+        ss = SocialSecurity(owner=person, claim_age=67, earnings_history=income_history)
         bank_before = person.bank_account_balance
-        ss.pre_step()
+        run_months(model, ss.pre_step)  # twelve monthly benefits
         yearly_pia = ss.get_pia() * 12
         self.assertGreater(yearly_pia, 0)
         self.assertAlmostEqual(person.bank_account_balance - bank_before, yearly_pia, places=2)
         self.assertTrue(any(e.income_type == IncomeType.SS_BENEFIT for e in person.income.entries))
-        self.assertEqual(person.stat_ss_income, yearly_pia)
+        self.assertAlmostEqual(person.stat_ss_income, yearly_pia, places=6)
 
     def test_benefit_taxable_portion_zero_when_no_other_income(self):
         """A modest benefit with no other income falls below the provisional threshold."""
         _, person = self._person()
-        ss = SocialSecurity(person=person, withdrawal_start_age=67)
+        ss = SocialSecurity(owner=person, claim_age=67)
         # $20k benefit, provisional = 0.5*20000 = 10000 < 25000 single threshold -> not taxable.
         self.assertEqual(ss._taxable_benefit_portion(20000), 0.0)
 
     def test_benefit_taxable_portion_capped_at_85_percent(self):
         """With high other income, up to 85% of the benefit is taxable."""
         _, person = self._person()
-        ss = SocialSecurity(person=person, withdrawal_start_age=67)
+        ss = SocialSecurity(owner=person, claim_age=67)
         person.income.add_wages(100000, 100000)
         # Provisional income well above the upper threshold -> capped at 85% of the benefit.
         self.assertAlmostEqual(ss._taxable_benefit_portion(20000), 0.85 * 20000, places=2)
@@ -272,7 +273,7 @@ class TestSocialSecurityBenefitsAndWageBase(unittest.TestCase):
         """Fewer than 40 credits yields no AIME/benefit (eligibility gating)."""
         _, person = self._person()
         # Only two years of income -> well under 40 credits.
-        ss = SocialSecurity(person=person, withdrawal_start_age=67, income_history=[(2020, 50000), (2021, 50000)])
+        ss = SocialSecurity(owner=person, claim_age=67, earnings_history=[(2020, 50000), (2021, 50000)])
         self.assertEqual(ss.get_aime(), 0)
 
     def test_cost_of_living_adj_uses_long_run_beyond_table(self):
@@ -293,7 +294,7 @@ class TestSocialSecurityPerModelConfig(unittest.TestCase):
         model = LifeModel(start_year=2020, end_year=2030, config=config)
         person = Person(family=Family(model), name="SS", age=67, retirement_age=62, spending=Spending(model, 10000))
         BankAccount(owner=person, company="Bank", balance=0)
-        ss = SocialSecurity(person=person, withdrawal_start_age=67, income_history=list(self.EARNINGS))
+        ss = SocialSecurity(owner=person, claim_age=67, earnings_history=list(self.EARNINGS))
         return ss.get_pia()
 
     def test_models_with_different_ss_config_compute_different_benefits(self):
@@ -325,7 +326,7 @@ class TestSocialSecurityPerModelConfig(unittest.TestCase):
 
 
 class TestSocialSecurityFollowsTheEconomy(unittest.TestCase):
-    """Projections past the published SSA tables use the economy's realized rates (Plan 10 D3)."""
+    """Projections past the published SSA tables use the economy's realized rates."""
 
     def setUp(self):
         config = FinancialConfig()

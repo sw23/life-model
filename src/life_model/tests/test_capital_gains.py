@@ -22,6 +22,7 @@ from ..people.tax_unit import TaxUnit
 from ..tax.federal import FilingStatus, capital_gains_tax, net_investment_income_tax
 from ..tax.income import IncomeType
 from ..tax.tax import compute_taxes
+from .helpers import run_months
 
 TEST_CONFIG = str(Path(__file__).parent / "fixtures" / "test_config.yaml")
 
@@ -33,9 +34,16 @@ def _fixture_config() -> FinancialConfig:
 
 def _person(model: LifeModel, bank_balance: float = 0.0, spending: float = 0.0) -> Person:
     family = Family(model)
-    person = Person(family, "P", age=40, retirement_age=70, spending=Spending(model, base=spending))
-    BankAccount(person, "Bank", balance=bank_balance, interest_rate=0)
+    person = Person(family, "P", age=40, retirement_age=70, spending=Spending(model, base_annual=spending))
+    BankAccount(person, company="Bank", balance=bank_balance, interest_pct=0)
     return person
+
+
+def _quarterly_dividends(balance: float, annual_return: float = 7.0, dividend_yield: float = 2.0) -> float:
+    """A year's quarterly dividends on ``balance`` growing at ``annual_return`` (total return): a quarter
+    of the yield on the balance at the start of March, June, September and December."""
+    monthly = (1 + annual_return / 100) ** (1 / 12)
+    return sum(balance * monthly ** (month - 1) * dividend_yield / 400 for month in (3, 6, 9, 12))
 
 
 class TestTaxLots(unittest.TestCase):
@@ -46,13 +54,13 @@ class TestTaxLots(unittest.TestCase):
         self.person = _person(self.model)
 
     def test_opening_balance_seeds_a_full_basis_lot(self):
-        account = BrokerageAccount(self.person, "B", balance=10000, growth_rate=0)
+        account = BrokerageAccount(self.person, company="B", balance=10000, growth_pct=0)
         self.assertEqual(account.cost_basis, 10000)
         self.assertEqual(account.unrealized_gain, 0)
 
     def test_growth_is_untaxed_until_sale(self):
-        account = BrokerageAccount(self.person, "B", balance=10000, growth_rate=10)
-        account.apply_growth()
+        account = BrokerageAccount(self.person, company="B", balance=10000, growth_pct=10)
+        run_months(self.model, account.apply_growth)  # a year of monthly growth
         self.assertEqual(account.balance, 11000)
         self.assertEqual(account.cost_basis, 10000)
         self.assertEqual(account.unrealized_gain, 1000)
@@ -61,14 +69,14 @@ class TestTaxLots(unittest.TestCase):
         self.assertEqual(self.person.income.preferential_income, 0)
 
     def test_growth_accrues_to_lots_pro_rata(self):
-        account = BrokerageAccount(self.person, "B", balance=1000, growth_rate=10)
+        account = BrokerageAccount(self.person, company="B", balance=1000, growth_pct=10)
         account.deposit(3000)  # 25% / 75% split of a $4,000 balance
-        account.apply_growth()
+        run_months(self.model, account.apply_growth)
         self.assertAlmostEqual(account.lots[0].value, 1100.0, places=6)
         self.assertAlmostEqual(account.lots[1].value, 3300.0, places=6)
 
     def test_fifo_consumes_oldest_lot_first(self):
-        account = BrokerageAccount(self.person, "B", balance=0, growth_rate=0)
+        account = BrokerageAccount(self.person, company="B", balance=0, growth_pct=0)
         account.lots.append(TaxLot(value=1000, cost_basis=400, acquired_year=2015))
         account.lots.append(TaxLot(value=1000, cost_basis=900, acquired_year=2019))
         account.balance = 2000
@@ -81,7 +89,7 @@ class TestTaxLots(unittest.TestCase):
         self.assertEqual(account.lots[0].cost_basis, 900)
 
     def test_partial_lot_sale_consumes_basis_proportionally(self):
-        account = BrokerageAccount(self.person, "B", balance=0, growth_rate=0)
+        account = BrokerageAccount(self.person, company="B", balance=0, growth_pct=0)
         account.lots.append(TaxLot(value=1000, cost_basis=400, acquired_year=2015))
         account.balance = 1000
 
@@ -91,7 +99,7 @@ class TestTaxLots(unittest.TestCase):
         self.assertEqual(account.lots[0].value, 750)
 
     def test_holding_period_classification(self):
-        account = BrokerageAccount(self.person, "B", balance=0, growth_rate=0)
+        account = BrokerageAccount(self.person, company="B", balance=0, growth_pct=0)
         account.lots.append(TaxLot(value=1000, cost_basis=500, acquired_year=self.model.year))
         account.balance = 1000
         _, long_term, short_term = account.sell(1000)
@@ -105,7 +113,7 @@ class TestTaxLots(unittest.TestCase):
         self.assertEqual(short_term, 0)
 
     def test_basis_never_exceeds_balance_across_deposits_and_sales(self):
-        account = BrokerageAccount(self.person, "B", balance=5000, growth_rate=8)
+        account = BrokerageAccount(self.person, company="B", balance=5000, growth_pct=8)
         for _ in range(5):
             account.apply_growth()
             account.deposit(1000)
@@ -113,7 +121,7 @@ class TestTaxLots(unittest.TestCase):
             self.assertLessEqual(round(account.cost_basis, 6), round(account.balance, 6))
 
     def test_withdraw_posts_gains_to_the_ledger(self):
-        account = BrokerageAccount(self.person, "B", balance=0, growth_rate=0)
+        account = BrokerageAccount(self.person, company="B", balance=0, growth_pct=0)
         account.lots.append(TaxLot(value=1000, cost_basis=400, acquired_year=2015))
         account.balance = 1000
         account.withdraw(1000)
@@ -124,7 +132,7 @@ class TestTaxLots(unittest.TestCase):
         self.assertEqual(self.person.income.ordinary_taxable, 0)
 
     def test_person_withdrawal_realizes_gains_and_credits_the_bank(self):
-        account = BrokerageAccount(self.person, "B", balance=0, growth_rate=0)
+        account = BrokerageAccount(self.person, company="B", balance=0, growth_pct=0)
         account.lots.append(TaxLot(value=1000, cost_basis=400, acquired_year=2015))
         account.balance = 1000
         withdrawn = self.person.withdraw_from_brokerage_accounts(1000)
@@ -133,7 +141,7 @@ class TestTaxLots(unittest.TestCase):
         self.assertEqual(self.person.income.preferential_income, 600)
 
     def test_selling_at_a_loss_produces_a_negative_gain(self):
-        account = BrokerageAccount(self.person, "B", balance=0, growth_rate=0)
+        account = BrokerageAccount(self.person, company="B", balance=0, growth_pct=0)
         account.lots.append(TaxLot(value=600, cost_basis=1000, acquired_year=2015))
         account.balance = 600
         _, long_term, _ = account.sell(600)
@@ -148,28 +156,30 @@ class TestDividends(unittest.TestCase):
         self.person = _person(self.model)
 
     def test_default_yield_leaves_growth_untouched(self):
-        account = BrokerageAccount(self.person, "B", balance=10000, growth_rate=7)
-        account.apply_growth()
+        account = BrokerageAccount(self.person, company="B", balance=10000, growth_pct=7)
+        run_months(self.model, account.apply_growth)
         self.assertAlmostEqual(account.balance, 10700.0, places=6)
         self.assertEqual(self.person.income.preferential_income, 0)
         self.assertEqual(len(account.lots), 1)
 
     def test_dividend_splits_total_return_without_changing_it(self):
-        account = BrokerageAccount(self.person, "B", balance=10000, growth_rate=7, dividend_yield=2)
-        account.apply_growth()
-        # Total return is still 7%: 5% appreciation plus a 2% dividend that is reinvested.
+        account = BrokerageAccount(self.person, company="B", balance=10000, growth_pct=7, dividend_yield_pct=2)
+        run_months(self.model, account.apply_growth)
+        # Total return is still 7%: appreciation plus a 2% dividend that is reinvested. The
+        # dividend is paid quarterly (0.5% of the balance at the start of March, June, ...).
         self.assertAlmostEqual(account.balance, 10700.0, places=6)
-        self.assertAlmostEqual(self.person.income.preferential_income, 200.0, places=6)
+        self.assertAlmostEqual(self.person.income.preferential_income, _quarterly_dividends(10000), places=6)
         totals = self.person.income.totals_by_type()
-        self.assertAlmostEqual(totals[IncomeType.QUALIFIED_DIVIDEND], 200.0, places=6)
+        self.assertAlmostEqual(totals[IncomeType.QUALIFIED_DIVIDEND], _quarterly_dividends(10000), places=6)
 
     def test_reinvested_dividend_gets_full_basis(self):
-        account = BrokerageAccount(self.person, "B", balance=10000, growth_rate=7, dividend_yield=2)
-        account.apply_growth()
-        # $10,000 original basis plus the $200 dividend that was reinvested at cost.
-        self.assertAlmostEqual(account.cost_basis, 10200.0, places=6)
-        self.assertAlmostEqual(account.unrealized_gain, 500.0, places=6)
-        self.assertEqual(len(account.lots), 2)
+        account = BrokerageAccount(self.person, company="B", balance=10000, growth_pct=7, dividend_yield_pct=2)
+        run_months(self.model, account.apply_growth)
+        # $10,000 original basis plus the dividends (four quarterly ones) reinvested at cost.
+        dividends = _quarterly_dividends(10000)
+        self.assertAlmostEqual(account.cost_basis, 10000 + dividends, places=6)
+        self.assertAlmostEqual(account.unrealized_gain, 700.0 - dividends, places=6)
+        self.assertEqual(len(account.lots), 5)
 
 
 class TestPreferentialStacking(unittest.TestCase):
@@ -359,12 +369,12 @@ class TestBasisStepUpAtDeath(unittest.TestCase):
         self.family = Family(self.model)
         self.owner = Person(self.family, "Owner", age=80, retirement_age=70, spending=Spending(self.model, 0))
         self.heir = Person(self.family, "Heir", age=50, retirement_age=70, spending=Spending(self.model, 0))
-        BankAccount(self.owner, "Bank", balance=0, interest_rate=0)
-        BankAccount(self.heir, "Bank", balance=0, interest_rate=0)
+        BankAccount(self.owner, company="Bank", balance=0, interest_pct=0)
+        BankAccount(self.heir, company="Bank", balance=0, interest_pct=0)
         self.owner.estate_beneficiary = self.heir
 
     def test_immediate_post_inheritance_sale_realizes_nothing(self):
-        account = BrokerageAccount(self.owner, "B", balance=0, growth_rate=0)
+        account = BrokerageAccount(self.owner, company="B", balance=0, growth_pct=0)
         account.lots.append(TaxLot(value=100000, cost_basis=20000, acquired_year=2000))
         account.balance = 100000
 
@@ -376,7 +386,7 @@ class TestBasisStepUpAtDeath(unittest.TestCase):
         self.assertEqual(short_term, 0)
 
     def test_post_death_appreciation_is_taxed_as_long_term(self):
-        account = BrokerageAccount(self.owner, "B", balance=0, growth_rate=0)
+        account = BrokerageAccount(self.owner, company="B", balance=0, growth_pct=0)
         account.lots.append(TaxLot(value=100000, cost_basis=20000, acquired_year=2000))
         account.balance = 100000
 
@@ -399,11 +409,11 @@ class TestWithdrawalSolverWithGains(unittest.TestCase):
 
         model = LifeModel(start_year=2020, end_year=2020, config=_fixture_config())
         person = _person(model, bank_balance=0.0, spending=60000)
-        job = Job(person, "Old Co", "Retiree", Salary(model=model, base=0))
-        Job401kAccount(job=job, pretax_balance=1000000, average_growth=0)
+        job = Job(person, company="Old Co", role="Retiree", salary=Salary(model=model, base_annual=0))
+        Job401kAccount(job=job, pretax_balance=1000000, growth_pct=0)
         job.retired = True
 
-        account = BrokerageAccount(person, "B", balance=0, growth_rate=0)
+        account = BrokerageAccount(person, company="B", balance=0, growth_pct=0)
         account.lots.append(TaxLot(value=200000, cost_basis=50000, acquired_year=2000))
         account.balance = 200000
         person.withdraw_from_brokerage_accounts(100000)  # realizes $75k of long-term gain
@@ -417,6 +427,13 @@ class TestWithdrawalSolverWithGains(unittest.TestCase):
         self.assertGreater(sum(a.pretax_balance for a in person.all_retirement_accounts), 0)
 
 
+def _settle_a_year(person) -> None:
+    """The month's bills are paid monthly and the year's taxes in December."""
+    unit = TaxUnit([person])
+    run_months(person.model, unit.settle_month)
+    unit.settle_year()
+
+
 class TestBrokerageFundsSpending(unittest.TestCase):
     """Brokerage accounts are tapped for spending after the bank but before retirement accounts,
     realizing capital-gains tax on the way (settlement approach B: preview-sized draw)."""
@@ -427,10 +444,10 @@ class TestBrokerageFundsSpending(unittest.TestCase):
 
         model = LifeModel(start_year=2020, end_year=2020, config=_fixture_config())
         person = _person(model, bank_balance=bank, spending=spending)
-        job = Job(person, "Old Co", "Retiree", Salary(model=model, base=0))
-        acct401k = Job401kAccount(job=job, pretax_balance=pretax, average_growth=0)
+        job = Job(person, company="Old Co", role="Retiree", salary=Salary(model=model, base_annual=0))
+        acct401k = Job401kAccount(job=job, pretax_balance=pretax, growth_pct=0)
         job.retired = True
-        account = BrokerageAccount(person, "B", balance=0, growth_rate=0)
+        account = BrokerageAccount(person, company="B", balance=0, growth_pct=0)
         account.lots.append(TaxLot(value=broker_value, cost_basis=broker_basis, acquired_year=2000))
         account.balance = broker_value
         return model, person, account, acct401k
@@ -441,7 +458,7 @@ class TestBrokerageFundsSpending(unittest.TestCase):
         _, person, account, acct401k = self._retiree_with_brokerage(
             bank=0.0, spending=60000, broker_value=200000, broker_basis=50000, pretax=1000000
         )
-        TaxUnit([person]).settle_year()
+        _settle_a_year(person)
 
         self.assertEqual(person.debt, 0)
         self.assertEqual(acct401k.pretax_balance, 1000000)  # 401k never touched
@@ -453,7 +470,7 @@ class TestBrokerageFundsSpending(unittest.TestCase):
         _, person, _account, _ = self._retiree_with_brokerage(
             bank=0.0, spending=60000, broker_value=200000, broker_basis=50000
         )
-        TaxUnit([person]).settle_year()
+        _settle_a_year(person)
 
         self.assertGreater(person.income.preferential_income, 0)
         self.assertGreater(person.stat_taxes_paid, 0)
@@ -465,7 +482,7 @@ class TestBrokerageFundsSpending(unittest.TestCase):
         _, person, account, _ = self._retiree_with_brokerage(
             bank=100000, spending=60000, broker_value=200000, broker_basis=50000
         )
-        TaxUnit([person]).settle_year()
+        _settle_a_year(person)
 
         self.assertEqual(account.balance, 200000)
         self.assertEqual(person.income.preferential_income, 0)
@@ -475,7 +492,7 @@ class TestBrokerageFundsSpending(unittest.TestCase):
         _, person, account, acct401k = self._retiree_with_brokerage(
             bank=0.0, spending=120000, broker_value=50000, broker_basis=50000, pretax=1000000
         )
-        TaxUnit([person]).settle_year()
+        _settle_a_year(person)
 
         self.assertEqual(person.debt, 0)
         self.assertEqual(account.balance, 0)  # brokerage exhausted first
@@ -487,7 +504,7 @@ if __name__ == "__main__":
 
 
 class TestRothVersusBrokerageOverThirtyYears(unittest.TestCase):
-    """Plan 22 acceptance: identical saving into a Roth IRA vs a taxable brokerage diverges as the
+    """Identical saving into a Roth IRA vs a taxable brokerage diverges as the
     tax code says it should over a 30-year horizon."""
 
     def _run(self, use_roth: bool):
@@ -495,20 +512,20 @@ class TestRothVersusBrokerageOverThirtyYears(unittest.TestCase):
         from ..work.job import Job, Salary
 
         model = LifeModel(start_year=2020, end_year=2050, config=_fixture_config())
-        person = Person(Family(model), "Saver", age=35, retirement_age=65, spending=Spending(model, base=60000))
-        BankAccount(person, "Bank", balance=50000, interest_rate=0)
-        Job(person, "Co", "Dev", Salary(model, base=120000, yearly_increase=0, yearly_bonus=0))
+        person = Person(Family(model), "Saver", age=35, retirement_age=65, spending=Spending(model, base_annual=60000))
+        BankAccount(person, company="Bank", balance=50000, interest_pct=0)
+        Job(person, company="Co", role="Dev", salary=Salary(model, base_annual=120000, raise_pct=0, bonus_pct=0))
         if use_roth:
-            account = RothIRA(person, growth_rate=7.0)
+            account = RothIRA(person, growth_pct=7.0)
         else:
-            account = BrokerageAccount(person, "Broker", growth_rate=7.0, dividend_yield=2.0)
+            account = BrokerageAccount(person, company="Broker", growth_pct=7.0, dividend_yield_pct=2.0)
         for _year in range(30):
             person.deduct_from_bank_accounts(6000)
             if use_roth:
                 account.contribute(6000)  # the fixture IRA limit
             else:
                 account.deposit(6000)
-            model.step()
+            model.step_year()
         taxes = sum(model.datacollector.get_model_vars_dataframe()["Taxes"])
         return model, person, account, taxes
 
@@ -528,4 +545,7 @@ class TestRothVersusBrokerageOverThirtyYears(unittest.TestCase):
         gain = brokerage.unrealized_gain
         self.assertGreater(gain, 0)
         brk_person.withdraw_from_brokerage_accounts(brokerage.balance)
-        self.assertAlmostEqual(brk_person.preferential_income, gain, places=2)
+        # Dividend lots reinvested in the last 12 months (quarterly) sell at a short-term gain.
+        short_term = brk_person.income.totals_by_type()[IncomeType.SHORT_TERM_CAPITAL_GAIN]
+        self.assertAlmostEqual(brk_person.preferential_income + short_term, gain, places=2)
+        self.assertLess(short_term, 0.01 * gain)

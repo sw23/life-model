@@ -26,7 +26,7 @@ def _flat_model(start_year=2026, end_year=2040):
 
 def _make_person(model, age, balance=5_000_000):
     family = Family(model)
-    person = Person(family=family, name="P", age=age, retirement_age=90, spending=Spending(model, base=0))
+    person = Person(family=family, name="P", age=age, retirement_age=90, spending=Spending(model, base_annual=0))
     BankAccount(owner=person, company="Bank", balance=balance)
     return person
 
@@ -37,7 +37,7 @@ class TestAGIHistory(unittest.TestCase):
         model = LifeModel(start_year=2026, end_year=2027)
         person = _make_person(model, age=40)
         person.income.add(IncomeType.ORDINARY, 100000)
-        model.step()
+        model.step_year()
         self.assertIn(2026, person.agi_history)
         self.assertAlmostEqual(person.agi_history[2026], 100000, places=2)
 
@@ -45,20 +45,20 @@ class TestAGIHistory(unittest.TestCase):
         """AGI never goes negative when deductions exceed income."""
         model = LifeModel(start_year=2026, end_year=2027)
         person = _make_person(model, age=40)
-        model.step()
+        model.step_year()
         self.assertEqual(person.agi_history[2026], 0.0)
 
     def test_married_couple_both_record_unit_agi(self):
         """Both spouses record the joint return's AGI (not a split)."""
         model = LifeModel(start_year=2026, end_year=2027)
         family = Family(model)
-        a = Person(family=family, name="A", age=40, retirement_age=90, spending=Spending(model, base=0))
-        b = Person(family=family, name="B", age=40, retirement_age=90, spending=Spending(model, base=0))
+        a = Person(family=family, name="A", age=40, retirement_age=90, spending=Spending(model, base_annual=0))
+        b = Person(family=family, name="B", age=40, retirement_age=90, spending=Spending(model, base_annual=0))
         BankAccount(owner=a, company="Bank", balance=1_000_000)
         a.get_married(b)
         a.income.add(IncomeType.ORDINARY, 150000)
         b.income.add(IncomeType.ORDINARY, 50000)
-        model.step()
+        model.step_year()
         self.assertEqual(a.agi_history[2026], b.agi_history[2026])
         self.assertGreater(a.agi_history[2026], 0)
 
@@ -69,7 +69,7 @@ class TestMedicare(unittest.TestCase):
         model = _flat_model()
         person = _make_person(model, age=50)
         medicare = Medicare(person)
-        model.step()
+        model.step_year()
         self.assertEqual(medicare.stat_medical_costs, 0.0)
         self.assertEqual(person.stat_money_spent, 0.0)
 
@@ -108,8 +108,8 @@ class TestMedicare(unittest.TestCase):
         """A married person is assessed against the MFJ threshold column."""
         model = _flat_model()
         family = Family(model)
-        a = Person(family=family, name="A", age=70, retirement_age=65, spending=Spending(model, base=0))
-        b = Person(family=family, name="B", age=70, retirement_age=65, spending=Spending(model, base=0))
+        a = Person(family=family, name="A", age=70, retirement_age=65, spending=Spending(model, base_annual=0))
+        b = Person(family=family, name="B", age=70, retirement_age=65, spending=Spending(model, base_annual=0))
         BankAccount(owner=a, company="Bank", balance=1_000_000)
         a.get_married(b)
         cfg = model.config.healthcare.medicare
@@ -136,7 +136,7 @@ class TestMedicare(unittest.TestCase):
         for _ in model.get_year_range():
             if model.year == 2028:
                 person.income.add(IncomeType.ORDINARY, 130000)
-            model.step()
+            model.step_year()
             premiums_by_year[model.year - 1] = medicare.stat_medical_costs
 
         self.assertGreater(person.agi_history[2028], tier1.magi_min_single)
@@ -161,7 +161,7 @@ class TestMedicare(unittest.TestCase):
         model = _flat_model()
         person = _make_person(model, age=70)
         Medicare(person)
-        model.step()
+        model.step_year()
         cfg = model.config.healthcare.medicare
         expected = (cfg.irmaa_tiers[0].part_b_monthly + cfg.part_d_base_monthly_premium) * 12
         self.assertAlmostEqual(person.stat_money_spent, expected, places=2)

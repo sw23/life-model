@@ -1,0 +1,196 @@
+# Synthetic example household (not real data): a retired couple living on Social Security, a
+# pension and their savings, who sell the house and move to a rental in 2032.
+spec_version: 1
+meta:
+  name: Retiree couple
+  description: Synthetic example. Retired couple (68 and 66) with IRAs, a brokerage account with embedded
+    gains, a pension, Medicare and a long-term-care policy, who downsize in 2032.
+  as_of: 2026-01
+  start_year: 2026
+  end_year: 2056
+  seed: 11
+  default_state: FL
+economy:
+  mode: stochastic
+people:
+- id: pat
+  name: Pat
+  age: 68
+  birth: '1957-10'
+  gender: female
+  retirement_age: 65
+  mortality: stochastic
+  spending:
+    amount_annual: 42000
+    growth_pct: economy
+  accounts:
+  - kind: bank
+    company: Community Bank
+    balance: 45000
+    interest_pct: 1.5
+  - kind: brokerage
+    company: Example Brokerage
+    lots:
+    - value: 180000
+      cost_basis: 95000
+      acquired_year: 2009
+    - value: 60000
+      cost_basis: 52000
+      acquired_year: 2021
+  - kind: traditional_ira
+    balance: 410000
+  - kind: roth_ira
+    balance: 65000
+  housing:
+  - kind: home
+    id: house
+    name: Family house
+    purchase_price: 380000
+    expenses:
+      property_tax_pct: 0.6
+      insurance_pct: 0.4
+      maintenance_annual: 4000
+      maintenance_growth_pct: 3
+  insurance:
+  - kind: ltc
+    company: Example Life
+    premium_annual: 3200
+    coverage_amount: 150000
+  social_security:
+    claim_age: 67
+    fra_from_birth_year: true
+    earnings_history:
+      1985: 18000
+      1986: 19500
+      1987: 21000
+      1988: 22500
+      1989: 24000
+      1990: 25500
+      1991: 27000
+      1992: 28500
+      1993: 30000
+      1994: 31500
+      1995: 33000
+      1996: 34500
+      1997: 36000
+      1998: 37500
+      1999: 39000
+      2000: 40500
+      2001: 42000
+      2002: 43500
+      2003: 45000
+      2004: 46500
+      2005: 48000
+      2006: 49500
+      2007: 51000
+      2008: 52500
+      2009: 54000
+      2010: 55500
+      2011: 57000
+      2012: 58500
+      2013: 60000
+      2014: 61500
+      2015: 63000
+      2016: 64500
+      2017: 66000
+      2018: 67500
+      2019: 69000
+      2020: 70500
+  healthcare:
+    medical_costs: true
+    medicare: true
+  giving:
+  - kind: donation
+    charity: Food Bank
+    amount_annual: 2000
+- id: lee
+  name: Lee
+  age: 66
+  birth: '1959-04'
+  gender: male
+  retirement_age: 64
+  mortality: stochastic
+  spending:
+    amount_annual: 30000
+    growth_pct: economy
+  accounts:
+  - kind: bank
+    company: Community Bank
+    balance: 15000
+    interest_pct: 1.5
+  - kind: traditional_ira
+    balance: 290000
+  - kind: pension
+    company: Example County
+    vesting_years: 5
+    years_of_service: 24
+    benefit_multiplier_pct: 1.5
+    final_salary_annual: 72000
+    cola_pct: 1
+    survivor_pct: 50
+  social_security:
+    claim_age: 67
+    fra_from_birth_year: true
+    earnings_history:
+      1988: 21000
+      1989: 22000
+      1990: 23000
+      1991: 24000
+      1992: 25000
+      1993: 26000
+      1994: 27000
+      1995: 28000
+      1996: 29000
+      1997: 30000
+      1998: 31000
+      1999: 32000
+      2000: 33000
+      2001: 34000
+      2002: 35000
+      2003: 36000
+      2004: 37000
+      2005: 38000
+      2006: 39000
+      2007: 40000
+      2008: 41000
+      2009: 42000
+      2010: 43000
+      2011: 44000
+      2012: 45000
+      2013: 46000
+      2014: 47000
+      2015: 48000
+      2016: 49000
+      2017: 50000
+      2018: 51000
+      2019: 52000
+      2020: 53000
+      2021: 54000
+  healthcare:
+    medical_costs: true
+    medicare: true
+relationships:
+  marriages:
+  - spouses:
+    - pat
+    - lee
+events:
+- id: lee_delays_claim
+  at:
+    age: 70
+  person: lee
+  name: Lee delays Social Security to 70
+  action: claim_social_security
+- id: downsize
+  at:
+    year: 2032
+  person: pat
+  name: Sell the house and rent
+  action: move
+  sell_home: house
+  new_rental:
+    kind: rental
+    id: rental
+    name: Two-bedroom rental
+    rent_monthly: 2400
+    rent_growth_pct: economy

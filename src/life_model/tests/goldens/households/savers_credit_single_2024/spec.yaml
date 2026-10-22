@@ -1,0 +1,41 @@
+# Household golden (synthetic, not real data). See ../README.md.
+spec_version: 1
+meta:
+  name: Young saver
+  description: 'Household golden (synthetic): a young single worker saving in a 401(k), with a small cash gift.'
+  as_of: 2024-01
+  start_year: 2024
+  end_year: 2024
+  seed: 1
+  default_state: TX
+people:
+- id: alex
+  name: Alex
+  age: 24
+  retirement_age: 67
+  spending:
+    amount_annual: 22000
+    growth_pct: 0
+  jobs:
+  - id: alex_job
+    company: Example Analytics
+    salary_annual: 30000
+  accounts:
+  - kind: bank
+    id: alex_checking
+    company: Community Bank
+    type: Checking
+    balance: 10000
+    interest_pct: 0.0
+    compounding: annual
+    primary: true
+  - kind: 401k
+    id: alex_401k
+    job: alex_job
+    pretax_balance: 5000
+    pretax_contrib_pct: 10
+    growth_pct: 0
+  giving:
+  - kind: donation
+    charity: Food Bank
+    amount_annual: 500

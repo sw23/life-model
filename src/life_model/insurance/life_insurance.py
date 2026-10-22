@@ -3,9 +3,11 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 from enum import Enum
-from typing import cast
+from typing import ClassVar, cast
 
-from ..model import Event, LifeModel, LifeModelAgent, compound_interest
+from ..deprecated_names import deprecated_arguments
+from ..ledger import FlowKind
+from ..model import Event, EventKind, LifeModel, LifeModelAgent, compound_interest
 from ..people.person import Person
 from ..tax.income import IncomeType
 
@@ -18,46 +20,93 @@ class LifeInsuranceType(Enum):
 
 
 class PremiumIncreaseType(Enum):
-    """Enum for premium increase calculation types"""
+    """How a policy's premium changes over time."""
 
-    AGE_BASED = "age_based"
+    #: The premium never changes (the default: a level-premium term policy; whole life).
+    LEVEL = "level"
+    #: Re-priced every year from age-band multipliers on the base premium (annually renewable term).
+    AGE_BANDED = "age_banded"
+    #: Deprecated name for :attr:`AGE_BANDED` (an alias of the same member).
+    AGE_BASED = "age_banded"  # noqa: PIE796 - deliberate alias of AGE_BANDED
+    #: Grows by a fixed percentage each year.
     YEARLY = "yearly"
 
 
 class LifeInsurance(LifeModelAgent):
+    """A life insurance policy: the year's premium is charged once a year, in the first month of the
+    year; at year end the premium is re-priced, whole-life cash value and policy loans accrue a year
+    of growth and interest, and an over-borrowed policy lapses."""
+
     STATS_OWNED = frozenset({"stat_premium_payments", "stat_cash_value", "stat_death_benefit_paid"})
 
+    # The premium's affordability check reads the household's balances, so it runs after the
+    # month's income and benefits have been deposited (pre_step 0), whatever the construction order.
+    # The year-end update runs before the tax settlement (0): a lapse's taxable gain is this year's.
+    STEP_PRIORITY: ClassVar[dict[str, int]] = {"pre_step": 10, "on_year_end": -5}
+
+    @deprecated_arguments(
+        {
+            "person": "owner",
+            "monthly_premium": "premium_monthly",
+            "cash_value_growth_rate": "cash_value_growth_pct",
+            "loan_interest_rate": "loan_interest_pct",
+        }
+    )
     def __init__(
         self,
-        person: Person,
+        owner: Person,
         policy_type: LifeInsuranceType,
         death_benefit: float,
-        monthly_premium: float,
+        premium_monthly: float,
         term_years: int | None = None,
-        premium_increase_rate: float | dict | None = None,
-        cash_value_growth_rate: float | None = None,
-        loan_interest_rate: float | None = None,
+        premium_increase_rate: "float | dict | PremiumIncreaseType | None" = None,
+        cash_value_growth_pct: float | None = None,
+        loan_interest_pct: float | None = None,
         max_missed_payments: int | None = None,
         *,
         beneficiary: Person | None = None,
+        issue_year: int | None = None,
+        issue_month: int | None = None,
+        cash_value: float = 0.0,
+        loan_balance: float = 0.0,
+        premiums_paid: float | None = None,
     ):
         """Models life insurance policy for a person
 
         Args:
-            person: The person to which this policy belongs
+            owner: The person to which this policy belongs (``person=`` is deprecated)
             policy_type: The type of life insurance policy
             death_benefit: Amount paid out on death
-            monthly_premium: Monthly premium cost
+            premium_monthly: Monthly premium cost (``monthly_premium=`` is deprecated)
             term_years: Number of years for term life (None for whole life)
-            premium_increase_rate: Either a yearly percentage increase (float) or
-                                 age-based multipliers dict (dict), or None for default age-based
-            cash_value_growth_rate: Yearly growth rate for whole life cash value. Uses configured default if None.
-            loan_interest_rate: Interest rate for loans against cash value. Uses configured default if None.
+            premium_increase_rate: How the premium changes: ``None`` / ``0`` /
+                ``PremiumIncreaseType.LEVEL`` keep it level (the default: a level-premium term policy,
+                and an inflation-free whole-life premium); a positive number grows it that many
+                percent a year; ``PremiumIncreaseType.AGE_BANDED`` re-prices a term policy every year
+                from the configured age-band multipliers (``insurance.life.term_age_multipliers``);
+                a dict ``{age: multiplier}`` does the same with custom bands.
+            cash_value_growth_pct: Yearly growth rate (percent) for whole life cash value. Uses configured
+                default if None (``cash_value_growth_rate=`` is deprecated).
+            loan_interest_pct: Interest rate (percent) for loans against cash value. Uses configured default
+                if None (``loan_interest_rate=`` is deprecated).
             max_missed_payments: Maximum consecutive missed payments before lapse. Uses configured default if None.
             beneficiary: Optional designated beneficiary for the death benefit. When set (and
                 surviving), the benefit is paid to this person; otherwise it defaults to the
                 surviving spouse, then the first family member with a bank account.
+            issue_year: Year the policy was issued (keyword-only). Defaults to the current
+                year. A term policy expires ``term_years`` after it; whole-life cash value is credited
+                at the later-year rate after the first year.
+            issue_month: The month (1-12) the policy was issued (keyword-only). With it the policy year runs
+                from that month: the year's premium is charged on each anniversary (that month) instead of in
+                January, and a term policy's coverage ends at the start of its last anniversary
+                (``issue_year + term_years``, ``issue_month``) instead of at the end of that year.
+            cash_value: An existing whole-life policy's cash value (from its statement).
+            loan_balance: An existing policy loan against the cash value.
+            premiums_paid: Premiums paid so far (the policy's cost basis for a surrender or a lapse
+                with a loan). Defaults to ``cash_value`` (no gain) for an existing policy.
         """
+        person, monthly_premium = owner, premium_monthly
+        cash_value_growth_rate, loan_interest_rate = cash_value_growth_pct, loan_interest_pct
         super().__init__(cast(LifeModel, person.model))
         self.model: LifeModel = cast("LifeModel", self.model)  # Type override for better intellisense
         life_config = self.model.config.insurance.life
@@ -84,33 +133,52 @@ class LifeInsurance(LifeModelAgent):
         self.loan_interest_rate = loan_interest_rate
         self.max_missed_payments = max_missed_payments
 
-        # Handle premium_increase_rate parameter - can be float, dict, or None
+        # premium_increase_rate: a dict of age bands, an explicit type, a yearly percent, or None.
+        self.yearly_increase_rate = 0.0
+        self.age_multipliers: dict = {}
         if isinstance(premium_increase_rate, dict):
-            # Age-based multipliers provided
-            self.premium_increase_type = PremiumIncreaseType.AGE_BASED
-            self.yearly_increase_rate = 0.0
+            # Custom age-band multipliers
+            self.premium_increase_type = PremiumIncreaseType.AGE_BANDED
             self.age_multipliers = premium_increase_rate
-        elif isinstance(premium_increase_rate, (int, float)) and premium_increase_rate > 0:
-            # Yearly percentage increase provided
-            self.premium_increase_type = PremiumIncreaseType.YEARLY
-            self.yearly_increase_rate = float(premium_increase_rate)
-            self.age_multipliers = {}
-        else:
-            # Default age-based multipliers for term life
-            self.premium_increase_type = PremiumIncreaseType.AGE_BASED
-            self.yearly_increase_rate = 0.0
+        elif premium_increase_rate is PremiumIncreaseType.AGE_BANDED:
+            # Configured age-band multipliers (annually renewable term pricing)
+            self.premium_increase_type = PremiumIncreaseType.AGE_BANDED
             self.age_multipliers = dict(self.model.config.insurance.life.term_age_multipliers)
+        elif premium_increase_rate is PremiumIncreaseType.YEARLY:
+            raise ValueError("PremiumIncreaseType.YEARLY needs a rate: pass the yearly percentage instead")
+        elif premium_increase_rate is None or premium_increase_rate is PremiumIncreaseType.LEVEL:
+            self.premium_increase_type = PremiumIncreaseType.LEVEL
+        elif isinstance(premium_increase_rate, (int, float)):
+            if premium_increase_rate < 0:
+                raise ValueError("premium_increase_rate must be >= 0")
+            if premium_increase_rate > 0:
+                self.premium_increase_type = PremiumIncreaseType.YEARLY
+                self.yearly_increase_rate = float(premium_increase_rate)
+            else:
+                self.premium_increase_type = PremiumIncreaseType.LEVEL
+        else:
+            raise TypeError(f"Unsupported premium_increase_rate {premium_increase_rate!r}")
 
         # Policy state
         self.is_active = True
         self.is_lapsed = False
-        self.policy_start_year = self.model.year
+        self.policy_start_year = self.model.year if issue_year is None else int(issue_year)
+        if issue_month is not None and not 1 <= int(issue_month) <= 12:
+            raise ValueError(f"issue_month must be 1-12, got {issue_month}")
+        #: The anniversary month (None: the policy year is the calendar year).
+        self.issue_month = None if issue_month is None else int(issue_month)
+        if self.policy_start_year > self.model.year:
+            raise ValueError(f"issue_year {issue_year} is after the current year {self.model.year}")
         self.consecutive_missed_payments = 0
-        self.total_premiums_paid = 0.0
+        if cash_value < 0 or loan_balance < 0:
+            raise ValueError("cash_value and loan_balance must not be negative")
+        if (cash_value or loan_balance) and policy_type != LifeInsuranceType.WHOLE:
+            raise ValueError("only a whole life policy has a cash value or a policy loan")
+        self.total_premiums_paid = float(cash_value if premiums_paid is None else premiums_paid)
 
         # Whole life specific
-        self.cash_value = 0.0
-        self.outstanding_loan_balance = 0.0
+        self.cash_value = float(cash_value)
+        self.outstanding_loan_balance = float(loan_balance)
 
         # Statistics tracking
         self.stat_premium_payments = 0.0
@@ -121,6 +189,40 @@ class LifeInsurance(LifeModelAgent):
 
         # Register with the model registry
         self.model.registries.life_insurance_policies.register(person, self)
+        # An existing policy's cash value net of its loan is a household asset (or a liability when the
+        # loan is larger), posted when the policy enters a running model.
+        self.model.ledger.post_opening(self, self.cash_value - self.outstanding_loan_balance)
+
+    @property
+    def ledger_value(self) -> float:
+        """The policy's value on the household balance sheet: cash value net of policy loans, while
+        the policy is in force."""
+        return self.cash_value - self.outstanding_loan_balance if self.is_active else 0.0
+
+    def close(self, cause: str) -> None:
+        """Take the policy out of force; any cash value net of loans not paid out goes to the insurer
+        (a negative value, a loan larger than the cash value, is extinguished). The policy then holds
+        no money: its cash value and loan are settled."""
+        value = self.ledger_value
+        was_active = self.is_active
+        self.is_active = False
+        if not was_active:
+            return
+        if value > 0:
+            self.model.ledger.post(
+                value, FlowKind.FORFEIT, from_account=self, sink="insurer", cause=cause, agent=self.person
+            )
+        elif value < 0:
+            self.model.ledger.post(
+                -value,
+                FlowKind.BENEFIT,
+                to_account=self,
+                source="insurer: policy loan extinguished",
+                cause=cause,
+                agent=self.person,
+            )
+        self.cash_value = 0.0
+        self.outstanding_loan_balance = 0.0
 
     @property
     def yearly_premium(self) -> float:
@@ -144,8 +246,13 @@ class LifeInsurance(LifeModelAgent):
 
     @property
     def is_term_expired(self) -> bool:
-        """Check if term life policy has expired"""
+        """Check if term life policy has expired (at its last anniversary month, with ``issue_month``)."""
         if self.policy_type == LifeInsuranceType.TERM and self.term_years:
+            if self.issue_month is not None:
+                return (self.model.year, self.model.month) >= (
+                    self.policy_start_year + self.term_years,
+                    self.issue_month,
+                )
             return self.policy_years_active >= self.term_years
         return False
 
@@ -153,8 +260,8 @@ class LifeInsurance(LifeModelAgent):
         """Charge the yearly premium. Returns True if the policy stays paid up.
 
         An affordable premium goes through the tax unit's bill path (``spending.add_expense``), so it
-        is paid at year-end settlement like every other bill and can be funded by a sized
-        retirement withdrawal rather than lapsing a cash-poor retiree's policy. "Affordable" means
+        is paid with that month's bills like every other bill and can be funded by a retirement
+        withdrawal rather than lapsing a cash-poor retiree's policy. "Affordable" means
         the household's settlement-drawable resources cover it. Otherwise a whole-life policy pays
         from cash value; failing that the premium is missed (nothing is partially paid) and the
         policy lapses after ``max_missed_payments`` misses.
@@ -168,7 +275,7 @@ class LifeInsurance(LifeModelAgent):
             household.append(self.person.spouse)
         amount_paid = 0.0
         if sum(member.spendable_resources for member in household) >= yearly_cost:
-            self.person.spending.add_expense(yearly_cost)
+            self.person.spending.add_expense(yearly_cost, category="life_insurance_premium")
             amount_paid = yearly_cost
 
         if amount_paid >= yearly_cost:
@@ -186,6 +293,13 @@ class LifeInsurance(LifeModelAgent):
                 )
                 cash_value_contribution = yearly_cost * fraction
                 self.cash_value += cash_value_contribution
+                self.model.ledger.post(
+                    cash_value_contribution,
+                    FlowKind.PREMIUM,
+                    to_account=self,
+                    source="insurer: cash value credited from the premium",
+                    agent=self.person,
+                )
 
             return True
         else:
@@ -194,6 +308,13 @@ class LifeInsurance(LifeModelAgent):
                 remaining_premium = yearly_cost - amount_paid
                 cash_value_used = min(remaining_premium, self.available_cash_value)
                 self.cash_value -= cash_value_used
+                self.model.ledger.post(
+                    cash_value_used,
+                    FlowKind.PREMIUM,
+                    from_account=self,
+                    sink="insurer: premium paid from cash value",
+                    agent=self.person,
+                )
                 amount_paid += cash_value_used
 
                 # If we used any cash value, consider the payment successful
@@ -216,12 +337,21 @@ class LifeInsurance(LifeModelAgent):
     def lapse_policy(self):
         """Lapse the policy due to non-payment"""
         self.is_lapsed = True
-        self.is_active = False
-        self.model.event_log.add(Event(f"{self.person.name}'s life insurance policy lapsed due to non-payment"))
+        self.close("life insurance policy lapsed")
+        self.model.event_log.add(
+            Event(
+                EventKind.POLICY_LAPSED,
+                person=self.person,
+                account=self,
+                cause="non-payment",
+                message=f"{self.person.name}'s life insurance policy lapsed due to non-payment",
+            )
+        )
 
     def drop_policy(self):
         """Voluntarily drop the policy (e.g., when no longer needed)"""
-        self.is_active = False
+        if not self.is_active:
+            return  # already ended (death, lapse, expiry): nothing left to surrender
 
         # For whole life policies, person gets the cash surrender value
         if self.policy_type == LifeInsuranceType.WHOLE and self.cash_value > 0:
@@ -232,16 +362,19 @@ class LifeInsurance(LifeModelAgent):
             surrender_value = self.available_cash_value * surrender_percentage
 
             if surrender_value > 0:
-                self.person.deposit_into_bank_account(surrender_value)
+                self.person.deposit_into_bank_account(
+                    surrender_value, kind=FlowKind.WITHDRAWAL, from_account=self, cause="life insurance surrender"
+                )
                 # Gains over the premiums paid (basis) are taxable ordinary income.
                 taxable_gain = max(0.0, surrender_value - self.total_premiums_paid)
                 if taxable_gain > 0:
-                    self.person.income.add(IncomeType.ORDINARY, taxable_gain)
+                    self.person.income.add(IncomeType.ORDINARY, taxable_gain, source="life_insurance")
                 self.model.event_log.add(
                     Event(f"{self.person.name} surrendered life insurance policy for ${surrender_value:,.0f}")
                 )
-                self.cash_value = 0.0
-
+                self.cash_value -= surrender_value
+        self.close("life insurance policy dropped (surrender charge)")
+        self.cash_value = 0.0
         self.model.event_log.add(Event(f"{self.person.name} voluntarily dropped their life insurance policy"))
 
     def take_loan(self, loan_amount: float) -> float:
@@ -257,18 +390,22 @@ class LifeInsurance(LifeModelAgent):
 
         if actual_loan > 0:
             self.outstanding_loan_balance += actual_loan
-            self.person.deposit_into_bank_account(actual_loan)
+            self.person.deposit_into_bank_account(
+                actual_loan, kind=FlowKind.BORROW, from_account=self, cause="loan against life insurance cash value"
+            )
             self.model.event_log.add(Event(f"{self.person.name} took ${actual_loan:,.0f} loan against life insurance"))
 
         return actual_loan
 
     def repay_loan(self, repayment_amount: float) -> float:
         """Repay loan against the policy"""
-        if self.outstanding_loan_balance <= 0:
+        if not self.is_active or self.outstanding_loan_balance <= 0:
             return 0.0
 
         actual_repayment = min(repayment_amount, self.outstanding_loan_balance)
-        remaining_balance = self.person.deduct_from_bank_accounts(actual_repayment)
+        remaining_balance = self.person.deduct_from_bank_accounts(
+            actual_repayment, kind=FlowKind.DEBT_SERVICE, to_account=self, cause="life insurance loan repayment"
+        )
         amount_paid = actual_repayment - remaining_balance
 
         self.outstanding_loan_balance -= amount_paid
@@ -283,17 +420,22 @@ class LifeInsurance(LifeModelAgent):
         if benefit_amount > 0:
             # A designated (surviving) beneficiary takes precedence; otherwise pay the surviving
             # spouse, then the first family member with a bank account.
+            paid = {
+                "source": "life insurer: death benefit",
+                "kind": FlowKind.BENEFIT,
+                "cause": f"death benefit on {self.person.name}",
+            }
             if self.beneficiary is not None and not self.beneficiary.is_deceased:
-                self.beneficiary.deposit_into_bank_account(benefit_amount)
+                self.beneficiary.deposit_into_bank_account(benefit_amount, **paid)
                 recipient = self.beneficiary.name
             elif self.person.spouse and hasattr(self.person.spouse, "deposit_into_bank_account"):
-                self.person.spouse.deposit_into_bank_account(benefit_amount)
+                self.person.spouse.deposit_into_bank_account(benefit_amount, **paid)
                 recipient = self.person.spouse.name
             else:
                 # Add to family's primary account (first family member with bank account)
                 for member in self.person.family.members:
                     if member != self.person and hasattr(member, "bank_accounts") and member.bank_accounts:
-                        member.deposit_into_bank_account(benefit_amount)
+                        member.deposit_into_bank_account(benefit_amount, **paid)
                         recipient = member.name
                         break
                 else:
@@ -307,56 +449,81 @@ class LifeInsurance(LifeModelAgent):
         return benefit_amount
 
     def pre_step(self):
-        """Pre-step phase: Pay premiums before other expenses"""
-        # Only pay premiums in pre_step to ensure they happen before other expenses
-        if self.is_active and not self.is_term_expired:
+        """Pay the year's premium in the first month of the year (January, or the start month), or on the
+        policy anniversary with ``issue_month``; a term policy with an issue month ends at its last
+        anniversary."""
+        if self.issue_month is None:
+            if self.model.is_year_start and self.is_active and not self.is_term_expired:
+                self.make_premium_payment()
+            return
+        if not self.is_active:
+            return
+        if self.is_term_expired:
+            self._expire()
+        elif self.model.month == self.issue_month:
             self.make_premium_payment()
 
-    def step(self):
-        """Yearly step function"""
+    def _expire(self) -> None:
+        self.close("term life policy expired")
+        self.model.event_log.add(Event(f"{self.person.name}'s term life insurance policy expired"))
+        self.stat_policy_active = 0
+
+    def on_year_end(self):
+        """Year end: term expiry, premium re-pricing, cash value growth, policy-loan interest, lapse."""
         if not self.is_active:
             self.stat_policy_active = 0
             return
 
         # Check if term policy has expired
         if self.is_term_expired:
-            self.is_active = False
-            self.model.event_log.add(Event(f"{self.person.name}'s term life insurance policy expired"))
-            self.stat_policy_active = 0
+            self._expire()
             return
 
-        # Update premiums based on the premium increase type
-        if self.policy_type == LifeInsuranceType.TERM:
-            if self.premium_increase_type == PremiumIncreaseType.YEARLY and self.yearly_increase_rate > 0:
-                # Use yearly percentage increase
-                self.monthly_premium += self.monthly_premium * (self.yearly_increase_rate / 100)
-            else:
-                # Use age-based increases (default or custom multipliers)
-                self.update_term_life_premiums()
-        elif self.premium_increase_type == PremiumIncreaseType.YEARLY and self.yearly_increase_rate > 0:
-            # Whole life policies with yearly percentage increases
+        # Update premiums based on the premium increase type (LEVEL: unchanged)
+        if self.premium_increase_type == PremiumIncreaseType.YEARLY and self.yearly_increase_rate > 0:
+            # Yearly percentage increase (term or whole life)
             self.monthly_premium += self.monthly_premium * (self.yearly_increase_rate / 100)
+        elif (
+            self.policy_type == LifeInsuranceType.TERM and self.premium_increase_type == PremiumIncreaseType.AGE_BANDED
+        ):
+            # Age-band re-pricing (configured or custom multipliers)
+            self.update_term_life_premiums()
 
         # Grow cash value for whole life policies
         if self.policy_type == LifeInsuranceType.WHOLE and self.cash_value > 0:
             growth = compound_interest(self.cash_value, self.cash_value_growth_rate)
             self.cash_value += growth
+            self.model.ledger.post(
+                growth, FlowKind.GROWTH, to_account=self, source="insurer: cash value growth", agent=self.person
+            )
 
         # Compound interest on outstanding loans
         if self.outstanding_loan_balance > 0:
             loan_interest = self.outstanding_loan_balance * (self.loan_interest_rate / 100)
             self.outstanding_loan_balance += loan_interest
+            self.model.ledger.post(
+                loan_interest,
+                FlowKind.DEBT_SERVICE,
+                from_account=self,
+                sink="insurer: policy loan interest",
+                agent=self.person,
+            )
 
             # A policy lapses once the loan balance exceeds the cash value securing it. The loan
             # amount over the premiums paid (basis) becomes taxable ordinary income.
             if self.outstanding_loan_balance > self.cash_value:
                 taxable_gain = max(0.0, self.outstanding_loan_balance - self.total_premiums_paid)
                 if taxable_gain > 0:
-                    self.person.income.add(IncomeType.ORDINARY, taxable_gain)
+                    self.person.income.add(IncomeType.ORDINARY, taxable_gain, source="life_insurance")
                 self.model.event_log.add(
                     Event(
-                        f"{self.person.name}'s life insurance lapsed: loan balance "
-                        f"${self.outstanding_loan_balance:,.0f} exceeded cash value ${self.cash_value:,.0f}"
+                        EventKind.POLICY_LAPSED,
+                        person=self.person,
+                        amount=self.outstanding_loan_balance,
+                        account=self,
+                        cause="policy loan exceeded the cash value",
+                        message=f"{self.person.name}'s life insurance lapsed: loan balance "
+                        f"${self.outstanding_loan_balance:,.0f} exceeded cash value ${self.cash_value:,.0f}",
                     )
                 )
                 self.lapse_policy()

@@ -28,7 +28,14 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
 ]
 
+[project.scripts]
+life-model = "life_model.cli:main"
+
 [project.optional-dependencies]
+# RunResult.to_parquet / MonteCarloResult.to_parquet (JSON and CSV exports need nothing extra).
+parquet = ["pyarrow"]
+# The stdio MCP server (`life-model mcp`, life_model.mcp) for Claude Code / Desktop and other MCP clients.
+mcp = ["mcp>=1.2"]
 docs = [
     "sphinx>=7",
     "furo",
@@ -49,6 +56,7 @@ exclude = ["life_model.tests*"]
 
 [tool.setuptools.package-data]
 "life_model.config" = ["data/*.yaml", "data/scenarios/*.yaml"]
+"life_model.spec" = ["examples/*.yaml"]
 
 [tool.setuptools_scm]
 version_file = "src/life_model/_version.py"
@@ -74,7 +82,7 @@ extend-select = ["I"]
 
 [tool.mypy]
 ignore_missing_imports = true
-# Lenient during Phase 0/1; strict flags will be enabled as later plans land.
+# Lenient: no strict flags yet, so mypy reports without enforcing full typing.
 warn_unused_configs = true
 
 [tool.pytest.ini_options]
@@ -94,7 +102,7 @@ omit = [
 ]
 
 [tool.coverage.report]
-# Ratcheted to lock in current coverage (Plan 13 target was 85).
+# Ratcheted to the current coverage: raise it as coverage grows, never lower it.
 fail_under = 88
 exclude_lines = [
     "pragma: no cover",

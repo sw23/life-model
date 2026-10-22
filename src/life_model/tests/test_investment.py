@@ -15,6 +15,7 @@ from ..model import LifeModel
 from ..people.family import Family
 from ..people.person import Person, Spending
 from ..work.job import Job, Salary
+from .helpers import run_months
 
 
 class _ConcreteInvestment(Investment):
@@ -65,45 +66,49 @@ class TestInvestment(unittest.TestCase):
 
     def test_apply_growth_updates_balance_and_history(self):
         inv = _ConcreteInvestment(self.person, balance=1000, growth_rate=10.0)
-        growth = inv.apply_growth()
+        run_months(self.model, inv.apply_growth)  # growth is monthly
+        growth = sum(inv.stat_growth_history)
         self.assertAlmostEqual(growth, 100.0, places=6)
         self.assertAlmostEqual(inv.balance, 1100.0, places=6)
-        self.assertEqual(inv.stat_growth_history, [growth])
+        self.assertEqual(len(inv.stat_growth_history), 12)
 
     def test_step_applies_growth_and_records_balance(self):
         inv = _ConcreteInvestment(self.person, balance=1000, growth_rate=10.0)
-        inv.step()
+        run_months(self.model, inv.step)  # a month of growth per step
+        inv.on_year_end()  # the year-end balance is recorded
         self.assertAlmostEqual(inv.balance, 1100.0, places=6)
         self.assertEqual(inv.stat_balance_history, [1100.0])
 
 
-def _plan06_person(age: int = 40, year: int = 2020) -> Person:
+def _person_at(age: int = 40, year: int = 2020) -> Person:
     model = LifeModel(end_year=year, start_year=year)
     return Person(Family(model), "P", age, 65, Spending(model))
 
 
 class TestInvestmentGrowthParity(unittest.TestCase):
-    """Plan 06 acceptance: every Investment subclass grows identically for the same APY (item 13)."""
+    """Every Investment subclass grows identically for the same APY."""
 
     def test_all_investments_grow_identically(self):
-        person = _plan06_person()
+        person = _person_at()
         rate = 10.0
-        brokerage = BrokerageAccount(person, "B", balance=1000, growth_rate=rate)
-        roth = RothIRA(person, balance=1000, growth_rate=rate)
-        trad = TraditionalIRA(person, balance=1000, growth_rate=rate)
-        hsa = HealthSavingsAccount(person, HSAType.INDIVIDUAL, balance=1000, growth_rate=rate, employer_contribution=0)
-        job = Job(person, "Co", "Dev", Salary(person.model, base=0))
-        k401 = Job401kAccount(job, pretax_balance=1000, average_growth=rate)
+        brokerage = BrokerageAccount(person, company="B", balance=1000, growth_pct=rate)
+        roth = RothIRA(person, balance=1000, growth_pct=rate)
+        trad = TraditionalIRA(person, balance=1000, growth_pct=rate)
+        hsa = HealthSavingsAccount(
+            person, hsa_type=HSAType.INDIVIDUAL, balance=1000, growth_pct=rate, employer_contribution_annual=0
+        )
+        job = Job(person, company="Co", role="Dev", salary=Salary(person.model, base_annual=0))
+        k401 = Job401kAccount(job, pretax_balance=1000, growth_pct=rate)
 
         for account in (brokerage, roth, trad, hsa, k401):
-            account.apply_growth()
+            run_months(person.model, account.apply_growth)  # a year of monthly growth
 
         for account in (brokerage, roth, trad, hsa, k401):
             self.assertAlmostEqual(account.balance, 1100.0, places=6)
 
     def test_stored_balance_is_settable(self):
-        """Plan 06 item 8: assignment works for stored balances (and raises for the derived 401k)."""
-        brokerage = BrokerageAccount(_plan06_person(), "B", balance=1000)
+        """Assignment works for stored balances (and raises for the derived 401k)."""
+        brokerage = BrokerageAccount(_person_at(), company="B", balance=1000)
         brokerage.balance = 2500
         self.assertEqual(brokerage.balance, 2500)
 

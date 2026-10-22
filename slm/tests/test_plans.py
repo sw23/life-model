@@ -8,7 +8,7 @@
 import pytest
 
 from deepqlearning.envs.financial.environment import FinancialLifeEnv
-from slm.candidates import candidate_household, candidate_policy, claim_age_for
+from slm.candidates import candidate_household, candidate_policy, claim_age_for, plan_policy_vector
 from slm.generate_data import _sample_households, _trial_seeds
 from slm.prompts import parse_decision
 from slm.scoring import _Scorer, search_plans
@@ -108,3 +108,66 @@ def test_search_scores_default_variants_and_a_combination():
     assert len(names) in (1 + variants, 2 + variants)
     assert len(set(names)) == len(names)
     assert all(Plan.parse(n) is not None for n in names)
+
+
+# --- the plan in the RL env's standing-policy vocabulary ---
+
+
+def _factored_env(**config) -> FinancialLifeEnv:
+    base = {
+        "action_space": "factored",
+        "economy_mode": "fixed",
+        "person_start_age": 40,
+        "person_retirement_age": 65,
+        "initial_salary": 150000,
+        "initial_bank_balance": 60000,
+        "initial_spending": 60000,
+    }
+    base.update(config)
+    env = FinancialLifeEnv(base)
+    env.reset(seed=0)
+    return env
+
+
+def test_default_candidate_policy_is_the_flat_plan_policy():
+    name = Plan(routing="roth").name
+    assert candidate_policy(name).__name__ == f"plan_{name}"
+    assert candidate_policy(name, action_space="factored").__name__ == f"plan_{name}_factored"
+    with pytest.raises(ValueError):
+        candidate_policy(name, action_space="continuous")
+
+
+@pytest.mark.parametrize(
+    ("routing", "pretax", "roth"),
+    [("pretax", "max", "0"), ("roth", "0", "max"), ("split", "max", "0")],
+)
+def test_plan_policy_vector_routing(routing, pretax, roth):
+    env = _factored_env()
+    vector = plan_policy_vector(Plan(routing=routing), env)
+    assert (vector["pretax_401k_rate"], vector["roth_401k_rate"]) == (pretax, roth)
+    assert vector["sweep_policy"] == "sweep_to_brokerage"
+    assert vector["roth_conversion"] == "none"
+
+
+def test_split_vector_is_mostly_roth_below_the_bracket():
+    env = _factored_env(initial_salary=60000, initial_spending=30000)
+    vector = plan_policy_vector(Plan(routing="split"), env)
+    assert vector["pretax_401k_rate"] in ("0", "3")
+    assert vector["roth_401k_rate"] != "0"
+
+
+def test_bracketfill_vector_converts_in_retirement():
+    env = _factored_env(person_start_age=66, person_retirement_age=65, initial_401k_pretax=500000)
+    assert plan_policy_vector(Plan(drawdown="bracketfill"), env)["roth_conversion"] == "to_bracket_12"
+    assert plan_policy_vector(Plan(drawdown="conventional"), env)["roth_conversion"] == "none"
+    action = candidate_policy(Plan(drawdown="bracketfill").name, action_space="factored")(env)
+    env.step(action)
+    assert env.policy_vector()["roth_conversion"] == "to_bracket_12"
+    assert env.job401k.roth_balance > 0
+
+
+def test_reference_policies_have_factored_versions():
+    env = _factored_env()
+    for name in ("contribution_waterfall", "age_glide", "emergency_fund_first", "four_percent_drawdown"):
+        action = candidate_policy(name, action_space="factored")(env)
+        assert action.shape == (10,)

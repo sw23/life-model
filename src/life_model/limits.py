@@ -91,3 +91,15 @@ def rmd_start_age(birth_year: int, config: "FinancialConfig | None" = None, year
     if year is not None:
         return fin.tax_year(year).rmd_start_age
     return 73
+
+
+def required_rmd_for_year(person, balance: float) -> float:
+    """The year's required minimum distribution from ``balance`` (the account's balance at the start
+    of the year, i.e. the prior December 31 balance) for ``person``: zero before the year in which
+    they reach their RMD start age (by birth year), else ``balance`` over the Uniform Lifetime
+    divisor for the age they reach this year."""
+    model = person.model
+    config = model.config
+    age = person.age_in(model.year)
+    start_age = rmd_start_age(person.birth_year, config=config, year=model.year)
+    return required_min_distrib(age, balance, config=config, start_age=start_age)

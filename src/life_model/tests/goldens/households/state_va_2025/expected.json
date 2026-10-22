@@ -1,0 +1,81 @@
+{
+  "golden": "state_va_2025",
+  "year": 2025,
+  "description": "single W-2 earner ($65,000) in VA: the federal return and the VA state return",
+  "method": "Worked by scripts/household_goldens.py from the year's Form 1040 and instructions (see worksheet.md); independent of the library.",
+  "actuals": {
+    "form_1040": {
+      "1a": 65000.0,
+      "1z": 65000.0,
+      "2a": 0.0,
+      "2b": 0.0,
+      "3a": 0.0,
+      "3b": 0.0,
+      "4a": 0.0,
+      "4b": 0.0,
+      "5b": 0.0,
+      "7a": 0.0,
+      "8": 0.0,
+      "6a": 0.0,
+      "10": 0.0,
+      "6b": 0.0,
+      "9": 65000.0,
+      "11a": 65000.0,
+      "11b": 65000.0,
+      "12e": 15750.0,
+      "13a": 0.0,
+      "13b": 0.0,
+      "14": 15750.0,
+      "15": 49250.0,
+      "16": 5755.0,
+      "17": 0.0,
+      "18": 5755.0,
+      "19": 0.0,
+      "20": 0.0,
+      "21": 0.0,
+      "22": 5755.0,
+      "23": 0.0,
+      "24": 5755.0,
+      "28": 0.0
+    },
+    "schedules": {
+      "1": {
+        "26": 0.0
+      },
+      "2": {
+        "21": 0.0
+      }
+    },
+    "state_return": {
+      "state": "VA",
+      "agi": 65000.0,
+      "taxable_income": 55320.0,
+      "tax": 2923.4
+    },
+    "w2": [
+      {
+        "person": "casey",
+        "employer": "Example Analytics",
+        "boxes": {
+          "1": 65000.0,
+          "3": 65000.0,
+          "4": 4030.0,
+          "5": 65000.0,
+          "6": 942.5
+        },
+        "box12": {}
+      }
+    ]
+  },
+  "exact": {
+    "1040:16": 5749.0
+  },
+  "tolerance": {
+    "default": 0.01,
+    "1040:16": 6.0,
+    "1040:18": 6.0,
+    "1040:22": 6.0,
+    "1040:24": 6.0
+  },
+  "xfail": {}
+}

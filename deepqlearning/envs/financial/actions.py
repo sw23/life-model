@@ -21,6 +21,7 @@ from life_model.account.job401k import Job401kAccount
 from life_model.account.roth_IRA import RothIRA
 from life_model.account.traditional_IRA import TraditionalIRA
 from life_model.base_classes import FinancialAccount, TaxAdvantagedAccount
+from life_model.ledger import FlowKind
 from life_model.limits import job_401k_annual_additions_limit
 from life_model.model import LifeModel
 from life_model.people.person import Person
@@ -80,7 +81,7 @@ _WITHDRAW_SOURCES = {
 # Person-level withdrawal helper for each withdrawal action. Every withdrawal goes
 # through the model's real money path: the helper deposits into the bank and records the correct
 # income-ledger entry (pre-tax 401k / traditional IRA distributions are ordinary income), so the
-# tax unit actually taxes the withdrawal when it settles the year inside ``model.step()``.
+# tax unit actually taxes the withdrawal when it settles the year inside ``model.step_year()``.
 _WITHDRAW_HELPERS = {
     ActionType.WITHDRAW_401K_PRETAX: Person.withdraw_from_pretax_401ks,
     ActionType.WITHDRAW_401K_ROTH: Person.withdraw_from_roth_401ks,
@@ -92,8 +93,10 @@ _WITHDRAW_HELPERS = {
 
 # Early-withdrawal penalties for pre-tax 401k, Traditional IRA, Roth IRA earnings and non-medical HSA
 # withdrawals are charged by the core model on the income ledger and settled as federal tax at year
-# end. Roth 401k basis is not tracked in the core, so its penalty stays at the action level: 10% of
-# the whole withdrawal before age 59.5 (a conservative stand-in for the pro-rata earnings rule).
+# end. The core taxes a Roth 401k's early earnings only when the account tracks ``roth_basis``; the RL
+# households do not set it, so the action charges a conservative 10% of the whole withdrawal before
+# age 59.5 instead (a stand-in for the pro-rata earnings rule). A household that sets ``roth_basis``
+# would be charged by both the core and this action.
 _PENALIZED_WITHDRAWALS = frozenset({ActionType.WITHDRAW_401K_ROTH})
 
 TRANSFER_ACTIONS = frozenset(_TRANSFER_TARGETS)
@@ -323,13 +326,21 @@ class TransferAction(FinancialAction):
             return ActionResult(success=False, message="Transfer cannot be executed")
 
         target = self._target()
-        self.person.deduct_from_bank_accounts(amount)
+        # Every dollar moved is posted to the ledger (a transfer from the bank into the target), so
+        # the model's conservation and between-year continuity checks hold under RL actions.
+        if isinstance(target, TaxAdvantagedAccount):
+            source_bank = self.person.bank_accounts[0] if self.person.bank_accounts else None
+            self.person.deduct_from_bank_accounts(amount)  # contribute() below posts the transfer
+        else:
+            self.person.deduct_from_bank_accounts(
+                amount, kind=FlowKind.CONTRIBUTION, to_account=target, cause=f"RL action: {self.action_type.value}"
+            )
         # Employer match earned by this deferral (computed before the deferral is recorded).
         employer_match = self.match.match_for(self.person, amount) if self.action_type in _401K_DEFERRALS else 0.0
 
         if self.action_type == ActionType.TRANSFER_BANK_TO_401K_PRETAX:
             # A pre-tax deferral comes out of this year's taxable wages (like Job.pre_step), so it
-            # is recorded as an above-the-line deduction; without it the money was taxed going in
+            # is recorded as an above-the-line deduction; without it the money would be taxed going in
             # (as salary) and again coming out (as a distribution).
             target.pretax_balance += amount
             self.person.income.add_deduction(amount)
@@ -340,12 +351,21 @@ class TransferAction(FinancialAction):
         elif isinstance(target, TaxAdvantagedAccount):
             # A contribution (counts against the annual limit and carries its tax treatment),
             # not a plain deposit.
-            target.contribute(amount)
+            target.contribute(amount, from_account=source_bank)
         else:
             target.deposit(amount)
 
         if employer_match > 0:
             target.pretax_balance += employer_match
+            employer = target.job.company if getattr(target, "job", None) is not None else "employer"
+            self.person.model.ledger.post(
+                employer_match,
+                FlowKind.MATCH,
+                to_account=target,
+                source=employer,
+                cause="employer match (RL deferral)",
+                agent=self.person,
+            )
         return ActionResult(success=True, amount_transferred=amount, employer_match=employer_match)
 
 
@@ -354,7 +374,7 @@ class WithdrawalAction(FinancialAction):
 
     Execution goes through the person-level helpers (``_WITHDRAW_HELPERS``), so taxable
     withdrawals create income-ledger entries and are taxed at year-end settlement inside
-    ``model.step()`` — not instantly. Early-withdrawal penalties are likewise recorded by the core
+    ``model.step_year()`` — not instantly. Early-withdrawal penalties are likewise recorded by the core
     model and settled at year end, except for Roth 401k withdrawals (see ``_PENALIZED_WITHDRAWALS``),
     whose penalty is still deducted from the bank here.
     """
@@ -375,11 +395,19 @@ class WithdrawalAction(FinancialAction):
         # income on the person's ledger for year-end settlement.
         withdrawn = _WITHDRAW_HELPERS[self.action_type](self.person, amount)
 
-        penalized = self.action_type in _PENALIZED_WITHDRAWALS and self.person.age < EARLY_WITHDRAWAL_AGE
+        # The withdrawal happens now (the first month of the upcoming year): the exact age decides.
+        penalized = (
+            self.action_type in _PENALIZED_WITHDRAWALS and self.person.age_years_fractional < EARLY_WITHDRAWAL_AGE
+        )
         penalty = withdrawn * EARLY_WITHDRAWAL_PENALTY if penalized else 0.0
         if penalty > 0:
             # The helper deposited the gross amount; pull the penalty back out of the bank.
-            self.person.deduct_from_bank_accounts(penalty)
+            self.person.deduct_from_bank_accounts(
+                penalty,
+                kind=FlowKind.PENALTY,
+                sink="IRS: additional tax: Roth 401k early withdrawal",
+                cause="RL action: early Roth 401k withdrawal",
+            )
 
         return ActionResult(success=True, amount_transferred=withdrawn, fees_paid=penalty)
 

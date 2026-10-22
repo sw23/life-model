@@ -17,6 +17,7 @@ from deepqlearning.envs.financial.scenarios import (
     savings_benchmark_multiple,
 )
 from life_model.insurance.social_security import get_avg_wage_index
+from life_model.people.types import MortalityMode
 
 _NO_ACTION = encode_flat_action(ActionType.NO_ACTION)
 _MAX_PRETAX = encode_flat_action(ActionType.TRANSFER_BANK_TO_401K_PRETAX, 1.00)
@@ -63,6 +64,9 @@ class TestSocialSecurity(unittest.TestCase):
             initial_bank_balance=0,
             initial_spending=20000,
         )
+        # Unseeded stochastic mortality killed the retiree (estate settled, bank emptied) in about one
+        # run in ten; the test is about the benefit covering the spending, so keep them alive.
+        env.person.mortality_mode = MortalityMode.IMMORTAL
         benefit = env._ss_annual_benefit()
         self.assertGreater(benefit, 20000)
         self.assertLess(benefit, 40000)

@@ -91,3 +91,53 @@ def test_household_reconstructed_from_text():
     recon = _household_from_text(text)
     assert recon["initial_salary"] == round(household["initial_salary"])
     assert recon["person_start_age"] == household["person_start_age"]
+
+
+def test_household_json_line_is_preferred_and_lossless():
+    from slm.serializer import household_json_line
+
+    scenario, household, _ = _sample_households(["high_earner"], 1, 3)[0]
+    profile = _to_profile(scenario, household)
+    text = render_household(profile)
+    recon = _household_from_text(text + "\n" + household_json_line(profile))
+    assert recon["initial_salary"] == profile.initial_salary  # exact, not rounded
+    assert recon["initial_bank_balance"] == profile.initial_bank_balance
+    assert recon == profile.to_household()
+
+
+class _RecordingStub(StubAdviserModel):
+    """A stub that records every conversation it is shown."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.seen = []
+
+    def generate(self, messages):
+        self.seen.append([dict(m) for m in messages])
+        return super().generate(messages)
+
+
+def test_simulator_context_is_opt_in():
+    messages = build_messages(_household_text())
+    plain = _RecordingStub(fixed_decision="save5_pretax_claimret_conventional")
+    ToolLoopAdviser(plain, ToolLoopConfig(n_trials=4, max_iters=0)).generate(messages)
+    assert not any("Baseline projection" in m["content"] for convo in plain.seen for m in convo)
+
+    grounded = _RecordingStub(fixed_decision="save5_pretax_claimret_conventional")
+    loop = ToolLoopAdviser(grounded, ToolLoopConfig(n_trials=4, max_iters=0, simulator_context=True))
+    answer = loop.generate(messages)
+    context = [m["content"] for m in grounded.seen[0] if "Baseline projection" in m["content"]]
+    assert len(context) == 1
+    assert "final net worth $" in context[0]
+    assert parse_decision(answer) is not None
+
+
+def test_baseline_context_uses_the_one_call_functions():
+    from slm.advise import baseline_context_message, household_profile_from_text
+
+    text = _household_text()
+    profile = household_profile_from_text(text)
+    assert profile.person_start_age == _household_from_text(text)["person_start_age"]
+    message = baseline_context_message(text)
+    assert message["role"] == "user"
+    assert message == baseline_context_message(text)  # seeded from the text: deterministic

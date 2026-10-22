@@ -35,7 +35,7 @@ class TestChild(unittest.TestCase):
     def test_age_advances_with_simulation(self):
         child = Child(self.person, "Kid", birth_year=2020)
         self.assertEqual(child.age, 0)
-        self.model.step()
+        self.model.step_year()
         self.assertEqual(child.age, 1)
 
     def test_child_born_in_future_has_negative_age(self):
@@ -91,25 +91,25 @@ class TestChildCosts(unittest.TestCase):
 
     def test_childcare_band_cost_charged_in_year_one(self):
         model = self._model()
-        parent = Person(Family(model), "Parent", age=30, retirement_age=70, spending=Spending(model, base=0))
+        parent = Person(Family(model), "Parent", age=30, retirement_age=70, spending=Spending(model, base_annual=0))
         child = Child(parent, "Kid", birth_year=2026)  # age 0 -> childcare band
-        model.step()  # year 2026
+        model.step_year()  # year 2026
         # Childcare band cost (10000) charged to the parent's spending as a one-time expense.
         self.assertEqual(child.stat_dependent_costs, 10000)
         self.assertEqual(parent.stat_money_spent, 10000)
 
     def test_school_band_cost(self):
         model = self._model()
-        parent = Person(Family(model), "Parent", age=40, retirement_age=70, spending=Spending(model, base=0))
+        parent = Person(Family(model), "Parent", age=40, retirement_age=70, spending=Spending(model, base_annual=0))
         child = Child(parent, "Kid", birth_year=2016)  # age 10 -> school band
-        model.step()
+        model.step_year()
         self.assertEqual(child.stat_dependent_costs, 5000)
 
     def test_adult_child_incurs_no_cost(self):
         model = self._model()
-        parent = Person(Family(model), "Parent", age=50, retirement_age=70, spending=Spending(model, base=0))
+        parent = Person(Family(model), "Parent", age=50, retirement_age=70, spending=Spending(model, base_annual=0))
         child = Child(parent, "Adult", birth_year=2000)  # age 26 -> past college band
-        model.step()
+        model.step_year()
         self.assertEqual(child.stat_dependent_costs, 0)
 
     def test_costs_inflate_over_time(self):
@@ -117,11 +117,11 @@ class TestChildCosts(unittest.TestCase):
         cfg = _fixture_config()
         cfg.apply_scenario("_infl", {"economy": {"mode": "fixed", "inflation": 3.0}})
         model = LifeModel(start_year=2026, end_year=2030, config=cfg)
-        parent = Person(Family(model), "Parent", age=40, retirement_age=70, spending=Spending(model, base=0))
+        parent = Person(Family(model), "Parent", age=40, retirement_age=70, spending=Spending(model, base_annual=0))
         child = Child(parent, "Kid", birth_year=2016)  # school band throughout
-        model.step()  # 2026: cumulative inflation factor 1.0
+        model.step_year()  # 2026: cumulative inflation factor 1.0
         first = child.stat_dependent_costs
-        model.step()  # 2027: factor 1.03
+        model.step_year()  # 2027: factor 1.03
         second = child.stat_dependent_costs
         self.assertEqual(first, 5000)
         self.assertAlmostEqual(second, 5000 * 1.03, places=2)
@@ -134,15 +134,15 @@ class TestChildCollege529(unittest.TestCase):
 
     def _college_child_model(self, plan_balance):
         model = LifeModel(start_year=2026, end_year=2026, config=_fixture_config())
-        parent = Person(Family(model), "Parent", age=50, retirement_age=70, spending=Spending(model, base=0))
-        BankAccount(parent, "Bank", balance=100000, interest_rate=0)
+        parent = Person(Family(model), "Parent", age=50, retirement_age=70, spending=Spending(model, base_annual=0))
+        BankAccount(parent, company="Bank", balance=100000, interest_pct=0)
         child = Child(parent, "Kid", birth_year=2008)  # age 18 -> college band
-        plan = Plan529(owner=parent, beneficiary=child, balance=plan_balance, growth_rate=0)
+        plan = Plan529(owner=parent, beneficiary=child, balance=plan_balance, growth_pct=0)
         return model, parent, child, plan
 
     def test_funded_529_covers_tuition_tax_free(self):
         model, parent, child, plan = self._college_child_model(plan_balance=50000)
-        model.step()
+        model.step_year()
         # The 529 drew the full 20000 tuition tax-free; balance drops by exactly the tuition.
         self.assertEqual(plan.balance, 30000)
         self.assertEqual(child.stat_dependent_costs, 20000)
@@ -153,7 +153,7 @@ class TestChildCollege529(unittest.TestCase):
 
     def test_underfunded_529_shortfall_paid_from_cash(self):
         model, parent, child, plan = self._college_child_model(plan_balance=5000)
-        model.step()
+        model.step_year()
         self.assertEqual(plan.balance, 0)  # 529 fully drained
         self.assertEqual(child.stat_dependent_costs, 20000)
         # Bank: +5000 from the 529, -20000 tuition = out-of-pocket shortfall of 15000.
@@ -164,7 +164,7 @@ class TestChildCollege529(unittest.TestCase):
         # A 529 whose beneficiary is a different child must not fund this child's college.
         other = Child(parent, "Sibling", birth_year=2020)  # age 6 -> school band (5000)
         plan.change_beneficiary(other)
-        model.step()
+        model.step_year()
         self.assertEqual(plan.balance, 50000)  # untouched (beneficiary is the sibling, not in college)
         # Full college tuition (20000) plus the sibling's school cost (5000) fall to cash, offset
         # by the sibling's refundable Child Tax Credit (fixture: 1500 with zero federal liability).
@@ -178,17 +178,17 @@ class TestChildSurvivesParentDeath(unittest.TestCase):
         parent = Person(
             family,
             "Parent",
-            age=40,
+            age=41,
             retirement_age=65,
             spending=Spending(model, 0),
             mortality_mode=MortalityMode.FIXED_AGE,
             death_age=41,
         )
-        guardian = Person(family, "Guardian", age=38, retirement_age=65, spending=Spending(model, 0))
+        guardian = Person(family, "Guardian", age=39, retirement_age=65, spending=Spending(model, 0))
         child = Child(parent, "Kid", birth_year=2020)
         self.assertIn(child, parent.children)
 
-        model.step()  # parent turns 41 and dies
+        model.step_year()  # parent turns 41 and dies
 
         self.assertTrue(parent.is_deceased)
         # The child is reassigned to the surviving family member and keeps stepping.

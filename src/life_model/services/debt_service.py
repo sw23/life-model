@@ -10,12 +10,12 @@ if TYPE_CHECKING:
 
 
 class DebtService:
-    """Services a person's personal debts (car loans, credit cards, student loans) each year.
+    """Services a person's personal debts (car loans, credit cards, student loans).
 
-    The simulation steps annually, but debts accrue interest and are paid monthly, so each debt
-    amortizes twelve internal monthly periods per simulated year (see ``service_year`` on the
-    debt classes). The cash paid is returned so the caller can fold it into the tax unit's bills;
-    the accrued interest is returned so it can be attributed to the interest-paid statistic.
+    The tax unit services every debt once a month with the month's bills (:meth:`service_month_detail`;
+    see ``service_month`` on the debt classes). The cash paid is returned so the caller can fold it
+    into the bills; the interest charged so it can be attributed to the interest-paid statistic.
+    ``service_year`` runs twelve payments at once for direct callers.
     """
 
     def __init__(self, person: "Person"):
@@ -27,9 +27,37 @@ class DebtService:
         Returns:
             Tuple[float, float]: ``(total_paid, total_interest)`` across all of the person's debts.
         """
-        total_paid = 0.0
-        total_interest = 0.0
+        lines = self.service_year_detail()
+        return sum(line[1] for line in lines), sum(line[2] for line in lines)
+
+    def service_year_detail(self) -> list[tuple[object, float, float, float, float]]:
+        """Service every personal debt for one simulated year, per debt.
+
+        Returns:
+            One ``(debt, paid, interest, principal_before, principal_after)`` per debt: the cash the
+            borrower paid, the interest charged within it, and the balance before and after the
+            year. ``principal_after - (principal_before - (paid - interest))`` is any change the
+            payments don't explain (interest capitalized, an income-driven plan's principal match,
+            forgiveness).
+        """
+        lines = []
         for debt in self.person.all_debts:
-            total_paid += debt.service_year()
-            total_interest += debt.interest_paid_this_year
-        return total_paid, total_interest
+            before = debt.principal
+            paid = debt.service_year()
+            lines.append((debt, paid, debt.interest_paid_this_year, before, debt.principal))
+        return lines
+
+    def service_month_detail(self) -> list[tuple[object, float, float, float, float]]:
+        """Service every personal debt for one month, per debt.
+
+        Returns:
+            One ``(debt, paid, interest, principal_before, principal_after)`` per debt (see
+            :meth:`service_year_detail`), for this month's payment.
+        """
+        lines = []
+        for debt in self.person.all_debts:
+            before = debt.principal
+            interest_before = debt.interest_paid_this_year
+            paid = debt.service_month()
+            lines.append((debt, paid, debt.interest_paid_this_year - interest_before, before, debt.principal))
+        return lines

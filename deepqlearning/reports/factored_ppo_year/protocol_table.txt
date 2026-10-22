@@ -1,0 +1,37 @@
+Evaluation protocol — preset=retirement_security n=200 master_seed=12345 action_space=factored decision_interval=year
+
+[train]
+policy                      mean              95% CI   ruin   succ       nw_p50
+agent                      35.31       [34.01,36.57]   0.00   0.99    1,120,607
+contribution_waterfall     35.31       [34.01,36.57]   0.00   1.00    1,097,450
+emergency_fund_first       35.29       [34.00,36.55]   0.00   1.00    1,034,726
+always_max_401k            35.22       [33.93,36.48]   0.00   1.00      761,894
+four_percent_drawdown      35.22       [33.93,36.48]   0.00   1.00      761,894
+age_glide                  35.16       [33.86,36.41]   0.00   1.00      611,005
+save_25_percent            35.01       [33.57,36.31]   0.01   0.99      969,860
+do_nothing                 33.71       [32.11,35.24]   0.02   0.97      211,477
+
+[held_out_seeds]
+policy                      mean              95% CI   ruin   succ       nw_p50
+agent                      35.69       [34.54,36.82]   0.00   1.00    1,131,957
+contribution_waterfall     35.68       [34.53,36.81]   0.00   1.00    1,112,835
+emergency_fund_first       35.66       [34.51,36.79]   0.00   1.00    1,026,969
+save_25_percent            35.64       [34.49,36.76]   0.00   1.00      935,246
+always_max_401k            35.59       [34.44,36.71]   0.00   1.00      777,571
+four_percent_drawdown      35.59       [34.44,36.71]   0.00   1.00      777,571
+age_glide                  35.52       [34.37,36.64]   0.00   1.00      610,602
+do_nothing                 34.06       [32.58,35.44]   0.02   0.98      194,612
+
+[held_out_scenario]
+policy                      mean              95% CI   ruin   succ       nw_p50
+agent                      35.71       [34.56,36.84]   0.00   1.00    1,265,373
+contribution_waterfall     35.70       [34.55,36.83]   0.00   1.00    1,212,272
+emergency_fund_first       35.69       [34.53,36.82]   0.00   1.00    1,147,269
+save_25_percent            35.67       [34.52,36.80]   0.00   1.00    1,086,676
+always_max_401k            35.60       [34.45,36.72]   0.00   1.00      797,530
+four_percent_drawdown      35.60       [34.45,36.72]   0.00   1.00      797,530
+age_glide                  35.54       [34.39,36.66]   0.00   1.00      616,379
+do_nothing                 34.63       [33.27,35.87]   0.01   0.98      208,776
+
+Intelligent verdict (train, retirement_security): agent=35.31 vs best heuristic contribution_waterfall=35.31 | beats_all=True paired gap +0.00 [-0.00, +0.01] (unpaired CIs disjoint=False) => INTELLIGENT=False
+Held-out-seeds gap vs best heuristic: +0.01

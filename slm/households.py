@@ -16,24 +16,23 @@ the ways the decision data needs:
   drawn: the eval harness holds it out as its out-of-distribution condition.
 * **Retirement-income context.** Every household carries Social Security (claimed at its
   retirement age, clipped to 62-70), an employer match offer, and age-calibrated starting 401k /
-  brokerage balances (drawn by the RL ``EpisodeSampler``). Without them a 57-year-old retired on a
-  decade of bank savings and no benefit, and almost every older household was insolvent under
+  brokerage balances (drawn by the RL ``EpisodeSampler``). Without them a 57-year-old would retire on
+  a decade of bank savings and no benefit, and almost every older household would be insolvent under
   every lever.
 * **Budgeted children and healthcare.** Children are part of the household's spending, not a cost stacked on top
   of a childless budget. The sampled spending is the household's *total* outlay; the starting
   child costs are carved out of it (the rest is base spending), and the draw keeps at most as many
-  children as fit in half the budget. Stacking them made over a third of households insolvent under
-  every strategy, which leaves the label with nothing to learn.
+  children as fit in half the budget. Stacking them on top would make over a third of households
+  insolvent under every strategy, which leaves the label with nothing to learn.
 """
 
 from dataclasses import replace
 
 import numpy as np
 
-from deepqlearning.envs.financial.scenarios import HOUSEHOLD_SCENARIOS, EpisodeSampler, HouseholdScenario
+from deepqlearning.envs.financial.scenarios import HOUSEHOLD_SCENARIOS, EpisodeSampler, HouseholdScenario, ss_claim_age
 from life_model.config.financial_config import default_financial_config
 from life_model.dependents.child import Child
-from life_model.insurance.social_security import get_max_delayed_retirement_credit_age, get_min_early_retirement_age
 from life_model.people.person import GenderAtBirth
 
 # Named economies drawn per household; None is the stochastic baseline. "recession" is held out
@@ -55,7 +54,7 @@ TRAIN_ECONOMIES: tuple[str | None, ...] = (
 MAX_CHILD_SHARE_OF_SPENDING = 0.5
 
 # The RL low_earner point spends 83% of gross pay; with taxes and the medical cost budgeted inside
-# spending that leaves nothing to save, and three quarters of its households were insolvent under
+# spending that leaves nothing to save, and three quarters of its households are insolvent under
 # every lever (labels with nothing to learn). The adviser's low earner spends 75% of gross instead.
 _LOW_EARNER_SPENDING = 22500
 
@@ -158,11 +157,7 @@ def _add_children_and_healthcare(rng: np.random.Generator, household: dict) -> d
 def resolved_ss_claim_age(household: dict) -> int:
     """The Social Security claiming age the env uses for ``household`` (its retirement age clipped
     to the claiming window, unless the household sets ``ss_claim_age``)."""
-    cfg = default_financial_config()
-    claim = household.get("ss_claim_age")
-    if claim is None:
-        claim = household["person_retirement_age"]
-    return int(min(max(int(claim), get_min_early_retirement_age(cfg)), get_max_delayed_retirement_credit_age(cfg)))
+    return ss_claim_age(household)
 
 
 def sample_households(scenarios: list[str], n_per_scenario: int, generation_seed: int) -> list[tuple[str, dict, int]]:

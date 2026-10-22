@@ -6,9 +6,9 @@
 """Calibration gate for the adviser's household distribution (slow: Monte Carlo scoring).
 
 Labels only carry signal if households are neither trivially solvent under every lever nor
-hopeless under all of them. Before the retirement-income fixes (Social Security, employer match,
-starting balances, retirement spending, scenario overlays) 98% of ``pre_retiree`` households had a
-best lever solvent in at most half the trials.
+hopeless under all of them. Without the retirement-income context (Social Security, employer match,
+starting balances, retirement spending, scenario overlays) 98% of ``pre_retiree`` households would have
+a best lever solvent in at most half the trials.
 
 ``low_earner`` is held to a looser bar: its households are genuinely marginal in this simulator,
 chiefly because out-of-pocket medical costs compound at CPI + 2 points for the whole horizon

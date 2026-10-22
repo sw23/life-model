@@ -18,7 +18,7 @@ class TestGeneralInsurance(unittest.TestCase):
         self.model = LifeModel(start_year=2023, end_year=2030)
         self.family = Family(self.model)
         self.john = Person(
-            family=self.family, name="John", age=35, retirement_age=65, spending=Spending(self.model, base=50000)
+            family=self.family, name="John", age=35, retirement_age=65, spending=Spending(self.model, base_annual=50000)
         )
         # Set up bank account
         BankAccount(owner=self.john, company="Bank", balance=50000)
@@ -26,10 +26,10 @@ class TestGeneralInsurance(unittest.TestCase):
     def test_auto_insurance_creation(self):
         """Test creating auto insurance policy"""
         insurance = Insurance(
-            person=self.john,
+            owner=self.john,
             insurance_type=InsuranceType.AUTO,
             company="State Farm",
-            annual_premium=1200,
+            premium_annual=1200,
             coverage_amount=300000,
             deductible=500,
         )
@@ -46,13 +46,13 @@ class TestGeneralInsurance(unittest.TestCase):
     def test_home_insurance_creation(self):
         """Test creating home insurance policy"""
         insurance = Insurance(
-            person=self.john,
+            owner=self.john,
             insurance_type=InsuranceType.HOME,
             company="Allstate",
-            annual_premium=2000,
+            premium_annual=2000,
             coverage_amount=500000,
             deductible=1000,
-            premium_increase_rate=4.0,
+            premium_increase_pct=4.0,
         )
 
         self.assertEqual(insurance.insurance_type, InsuranceType.HOME)
@@ -62,10 +62,10 @@ class TestGeneralInsurance(unittest.TestCase):
     def test_premium_payment_success(self):
         """Premium is charged into the bill path, not debited from the bank directly."""
         insurance = Insurance(
-            person=self.john,
+            owner=self.john,
             insurance_type=InsuranceType.AUTO,
             company="GEICO",
-            annual_premium=1500,
+            premium_annual=1500,
             coverage_amount=250000,
             deductible=250,
         )
@@ -84,10 +84,10 @@ class TestGeneralInsurance(unittest.TestCase):
     def test_premium_payment_insufficient_funds(self):
         """A single missed payment does not lapse the policy; the shortfall settles as debt."""
         insurance = Insurance(
-            person=self.john,
+            owner=self.john,
             insurance_type=InsuranceType.AUTO,
             company="Progressive",
-            annual_premium=60000,  # More than available balance
+            premium_annual=60000,  # More than available balance
             coverage_amount=250000,
             deductible=500,
         )
@@ -105,10 +105,10 @@ class TestGeneralInsurance(unittest.TestCase):
     def test_file_claim_success(self):
         """Test filing a successful insurance claim"""
         insurance = Insurance(
-            person=self.john,
+            owner=self.john,
             insurance_type=InsuranceType.AUTO,
             company="State Farm",
-            annual_premium=1200,
+            premium_annual=1200,
             coverage_amount=100000,
             deductible=1000,
         )
@@ -133,10 +133,10 @@ class TestGeneralInsurance(unittest.TestCase):
     def test_file_claim_exceeds_coverage(self):
         """Test filing claim that exceeds coverage limit"""
         insurance = Insurance(
-            person=self.john,
+            owner=self.john,
             insurance_type=InsuranceType.AUTO,
             company="GEICO",
-            annual_premium=1000,
+            premium_annual=1000,
             coverage_amount=50000,
             deductible=500,
         )
@@ -152,10 +152,10 @@ class TestGeneralInsurance(unittest.TestCase):
     def test_file_claim_below_deductible(self):
         """Test filing claim below deductible amount"""
         insurance = Insurance(
-            person=self.john,
+            owner=self.john,
             insurance_type=InsuranceType.AUTO,
             company="Progressive",
-            annual_premium=1200,
+            premium_annual=1200,
             coverage_amount=100000,
             deductible=2000,
         )
@@ -170,10 +170,10 @@ class TestGeneralInsurance(unittest.TestCase):
     def test_max_claims_per_year(self):
         """Test maximum claims per year limit"""
         insurance = Insurance(
-            person=self.john,
+            owner=self.john,
             insurance_type=InsuranceType.AUTO,
             company="State Farm",
-            annual_premium=1200,
+            premium_annual=1200,
             coverage_amount=100000,
             deductible=500,
             max_claims_per_year=2,
@@ -197,10 +197,10 @@ class TestGeneralInsurance(unittest.TestCase):
     def test_coverage_age_limits(self):
         """Test insurance coverage with age limits"""
         insurance = Insurance(
-            person=self.john,
+            owner=self.john,
             insurance_type=InsuranceType.DISABILITY,
             company="MetLife",
-            annual_premium=1800,
+            premium_annual=1800,
             coverage_amount=75000,
             deductible=0,
             coverage_start_age=25,
@@ -221,10 +221,10 @@ class TestGeneralInsurance(unittest.TestCase):
     def test_update_coverage(self):
         """Test updating coverage amount and deductible"""
         insurance = Insurance(
-            person=self.john,
+            owner=self.john,
             insurance_type=InsuranceType.HOME,
             company="Allstate",
-            annual_premium=2000,
+            premium_annual=2000,
             coverage_amount=400000,
             deductible=1000,
         )
@@ -241,10 +241,10 @@ class TestGeneralInsurance(unittest.TestCase):
     def test_cancel_policy(self):
         """Test cancelling insurance policy"""
         insurance = Insurance(
-            person=self.john,
+            owner=self.john,
             insurance_type=InsuranceType.AUTO,
             company="GEICO",
-            annual_premium=1200,
+            premium_annual=1200,
             coverage_amount=250000,
             deductible=500,
         )
@@ -256,10 +256,10 @@ class TestGeneralInsurance(unittest.TestCase):
     def test_claim_history(self):
         """Test claim history tracking"""
         insurance = Insurance(
-            person=self.john,
+            owner=self.john,
             insurance_type=InsuranceType.HOME,
             company="State Farm",
-            annual_premium=2000,
+            premium_annual=2000,
             coverage_amount=500000,
             deductible=2000,
         )
@@ -287,20 +287,20 @@ class TestGeneralInsurance(unittest.TestCase):
     def test_premium_increase_over_time(self):
         """Test premium increases over time"""
         insurance = Insurance(
-            person=self.john,
+            owner=self.john,
             insurance_type=InsuranceType.AUTO,
             company="Progressive",
-            annual_premium=1000,
+            premium_annual=1000,
             coverage_amount=200000,
             deductible=500,
-            premium_increase_rate=5.0,
+            premium_increase_pct=5.0,
         )
 
         original_premium = insurance.annual_premium
 
         # Simulate one year passing - premium increase only applies after first year
         insurance.policy_start_year = self.model.year - 1  # Make it appear the policy is one year old
-        insurance.step()
+        insurance.on_year_end()  # the yearly update runs at year end
 
         # Premium should increase by 5%
         expected_premium = original_premium * 1.05
@@ -309,10 +309,10 @@ class TestGeneralInsurance(unittest.TestCase):
     def test_pre_step_premium_payment(self):
         """pre_step queues the premium as spending for settlement."""
         insurance = Insurance(
-            person=self.john,
+            owner=self.john,
             insurance_type=InsuranceType.AUTO,
             company="State Farm",
-            annual_premium=1200,
+            premium_annual=1200,
             coverage_amount=250000,
             deductible=500,
         )
@@ -329,10 +329,10 @@ class TestGeneralInsurance(unittest.TestCase):
     def test_health_insurance(self):
         """Test health insurance specific features"""
         insurance = Insurance(
-            person=self.john,
+            owner=self.john,
             insurance_type=InsuranceType.HEALTH,
             company="Blue Cross",
-            annual_premium=6000,
+            premium_annual=6000,
             coverage_amount=1000000,
             deductible=3000,
         )
@@ -348,10 +348,10 @@ class TestGeneralInsurance(unittest.TestCase):
     def test_umbrella_insurance(self):
         """Test umbrella insurance"""
         insurance = Insurance(
-            person=self.john,
+            owner=self.john,
             insurance_type=InsuranceType.UMBRELLA,
             company="State Farm",
-            annual_premium=300,
+            premium_annual=300,
             coverage_amount=2000000,
             deductible=0,
         )
@@ -363,10 +363,10 @@ class TestGeneralInsurance(unittest.TestCase):
     def test_repr_html(self):
         """Test HTML representation"""
         insurance = Insurance(
-            person=self.john,
+            owner=self.john,
             insurance_type=InsuranceType.AUTO,
             company="GEICO",
-            annual_premium=1200,
+            premium_annual=1200,
             coverage_amount=300000,
             deductible=500,
         )
@@ -392,17 +392,17 @@ class TestGeneralInsuranceClaims(unittest.TestCase):
         self.model = LifeModel(start_year=2023, end_year=2040)
         self.family = Family(self.model)
         self.john = Person(
-            family=self.family, name="John", age=35, retirement_age=65, spending=Spending(self.model, base=50000)
+            family=self.family, name="John", age=35, retirement_age=65, spending=Spending(self.model, base_annual=50000)
         )
         BankAccount(owner=self.john, company="Bank", balance=50000)
 
     def test_claim_net_cash_is_single_deductible(self):
         """A $10k claim with a $1k deductible changes net cash by exactly -$1k."""
         insurance = Insurance(
-            person=self.john,
+            owner=self.john,
             insurance_type=InsuranceType.AUTO,
             company="Acme",
-            annual_premium=1200,
+            premium_annual=1200,
             coverage_amount=100000,
             deductible=1000,
         )
@@ -413,18 +413,18 @@ class TestGeneralInsuranceClaims(unittest.TestCase):
     def test_update_coverage_preserves_accumulated_increases(self):
         """update_coverage scales the current (compounded) premium, not the base."""
         insurance = Insurance(
-            person=self.john,
+            owner=self.john,
             insurance_type=InsuranceType.HOME,
             company="Acme",
-            annual_premium=2000,
+            premium_annual=2000,
             coverage_amount=400000,
             deductible=1000,
-            premium_increase_rate=10.0,
+            premium_increase_pct=10.0,
         )
         # Let the premium compound for two years.
         insurance.policy_start_year = self.model.year - 1
-        insurance.step()  # 2000 -> 2200
-        insurance.step()  # 2200 -> 2420
+        insurance.on_year_end()  # 2000 -> 2200 (the yearly update runs at year end)
+        insurance.on_year_end()  # 2200 -> 2420
         self.assertAlmostEqual(insurance.annual_premium, 2420, places=2)
         insurance.update_coverage(600000)  # 1.5x coverage
         # Current premium scales, preserving the accumulated increases: 2420 * 1.5 = 3630.
@@ -440,13 +440,13 @@ class TestGeneralInsuranceClaims(unittest.TestCase):
         cfg.apply_scenario("custom", {"insurance": {"general": {"default_premium_increase_rate": 7.5}}})
         model = LifeModel(start_year=2023, end_year=2030, config=cfg)
         family = Family(model)
-        person = Person(family=family, name="P", age=35, retirement_age=65, spending=Spending(model, base=1000))
+        person = Person(family=family, name="P", age=35, retirement_age=65, spending=Spending(model, base_annual=1000))
         BankAccount(owner=person, company="Bank", balance=1000)
         insurance = Insurance(
-            person=person,
+            owner=person,
             insurance_type=InsuranceType.AUTO,
             company="Acme",
-            annual_premium=1000,
+            premium_annual=1000,
             coverage_amount=100000,
         )
         self.assertEqual(insurance.premium_increase_rate, 7.5)
@@ -459,17 +459,19 @@ class TestPremiumSettlementRouting(unittest.TestCase):
         """After a simulated year, the premium is part of stat_money_spent (not a silent bank debit)."""
         model = LifeModel(start_year=2023, end_year=2023)
         family = Family(model)
-        john = Person(family=family, name="John", age=40, retirement_age=65, spending=Spending(model, base=10000))
+        john = Person(
+            family=family, name="John", age=40, retirement_age=65, spending=Spending(model, base_annual=10000)
+        )
         BankAccount(owner=john, company="Bank", balance=100000)
         Insurance(
-            person=john,
+            owner=john,
             insurance_type=InsuranceType.AUTO,
             company="Acme",
-            annual_premium=1500,
+            premium_annual=1500,
             coverage_amount=100000,
             deductible=500,
         )
-        model.step()
+        model.step_year()
         # base spending 10000 + 1500 premium settle as this year's money spent.
         self.assertEqual(john.stat_money_spent, 11500)
 
@@ -480,19 +482,19 @@ class TestPremiumSettlementRouting(unittest.TestCase):
 
         model = LifeModel(start_year=2023, end_year=2023)
         family = Family(model)
-        john = Person(family=family, name="John", age=70, retirement_age=65, spending=Spending(model, base=0))
+        john = Person(family=family, name="John", age=70, retirement_age=65, spending=Spending(model, base_annual=0))
         BankAccount(owner=john, company="Bank", balance=0)
-        job = Job(owner=john, company="MegaCorp", role="Retiree", salary=Salary(model, base=0))
-        Job401kAccount(job=job, pretax_balance=200000, roth_balance=0, average_growth=0)  # isolate the draw
+        job = Job(owner=john, company="MegaCorp", role="Retiree", salary=Salary(model, base_annual=0))
+        Job401kAccount(job=job, pretax_balance=200000, roth_balance=0, growth_pct=0)  # isolate the draw
         Insurance(
-            person=john,
+            owner=john,
             insurance_type=InsuranceType.AUTO,
             company="Acme",
-            annual_premium=1500,
+            premium_annual=1500,
             coverage_amount=100000,
             deductible=500,
         )
-        model.step()
+        model.step_year()
         # The premium (and its tax) was funded by a pre-tax 401k withdrawal, not left as debt.
         self.assertLess(john.all_retirement_accounts[0].pretax_balance, 200000)
         self.assertEqual(john.debt, 0)

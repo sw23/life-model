@@ -3,26 +3,31 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar, Optional
 
 from ..account.job401k import Job401kAccount
+from ..deprecated_names import deprecated_arguments
+from ..ledger import FlowKind, cash_label, debt_label
 from ..limits import federal_retirement_age
-from ..model import Event, LifeModel, LifeModelAgent
+from ..model import Event, EventKind, LifeModel, LifeModelAgent
 from ..services.debt_service import DebtService
 from ..services.payment_service import PaymentService
 from ..services.tax_calculation_service import TaxCalculationService
-from ..tax.deductions import deductible_charity, senior_deduction
+from ..tax.deductions import deductible_charity, salt_cap, senior_deduction
 from ..tax.federal import FilingStatus, get_federal_standard_deduction
 from ..tax.income import IncomeLedger, IncomeType
-from ..tax.state import state_income_tax_for_unit
-from ..tax.tax import TaxesDue, compute_taxes
+from ..tax.tax import TaxesDue
 from .family import Family
-from .mortality import get_blended_chance_of_mortality, get_chance_of_mortality
+from .mortality import get_blended_chance_of_mortality, get_chance_of_mortality, monthly_hazard
 from .types import GenderAtBirth, MortalityMode
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from ..dependents.child import Child
     from ..insurance.social_security import SocialSecurity
+    from ..tax.payments import EstimatedPayments
 
 
 class Person(LifeModelAgent):
@@ -42,17 +47,28 @@ class Person(LifeModelAgent):
             "stat_ss_income",
             "stat_capital_gains",
             "stat_itemized_deductions",
+            "stat_tax_credits",
+            "stat_tax_penalties",
+            "stat_net_worth",
+            "stat_agi",
+            "stat_taxable_income",
+            "stat_marginal_rate",
+            "stat_standard_deduction_taken",
+            "stat_forced_sales",
+            "stat_pretax_withdrawals",
         }
     )
 
-    # Age first in pre_step so income/RMD calculations see the current-year age.
-    STEP_PRIORITY: ClassVar[dict[str, int]] = {"pre_step": -20}
+    # Mortality is drawn in pre_step after the month's income and benefits arrived (0), so a death in
+    # month m stops wages and benefits from month m+1; before stock vests (5) and premiums (10). The
+    # year-end resets run after the tax settlement (0) and the escalators (10).
+    STEP_PRIORITY: ClassVar[dict[str, int]] = {"pre_step": 1, "on_year_end": 20}
 
     def __init__(
         self,
         family: Family,
         name: str,
-        age: int,
+        age: int | None,
         retirement_age: float,
         spending: "Spending",
         *,
@@ -60,52 +76,122 @@ class Person(LifeModelAgent):
         mortality_mode: MortalityMode = MortalityMode.IMMORTAL,
         death_age: int | None = None,
         state: str | None = None,
+        birth: str | None = None,
+        residency: "Sequence[tuple[str, str]] | None" = None,
+        widowed_year: int | None = None,
+        estimated_payments: "EstimatedPayments | None" = None,
     ):
         """Person
+
+        Ages are exact: the person has a birth month (``birth``, or January of the year that makes
+        them ``age`` now), :attr:`age` is their completed years in the current month and
+        :attr:`age_years_fractional` drives thresholds such as 59.5.
 
         Args:
             family (Family): Family of which the person is a part.
             name (str): Person's name.
-            age (int): Person's age.
+            age (int): Person's age (completed years) in the month the person is created — for a
+                person built before the run, the first simulated month. Without ``birth`` the birth
+                month is assumed to be January, so the person is ``age`` for the rest of that year and
+                turns ``age + 1`` the following January. May be None when ``birth`` is given.
             retirement_age (float): Person's retirement age.
             spending (Spending): Person's spending habits.
             gender (GenderAtBirth, optional): Gender at birth, used for the mortality table. Defaults
                 to ``OTHER``, which draws against a male/female blended rate.
             mortality_mode (MortalityMode, optional): How death is determined each year. Defaults to
-                ``IMMORTAL`` (the person never dies) so existing simulations stay deterministic.
+                ``IMMORTAL`` (the person never dies), which keeps runs deterministic.
             death_age (int, optional): Age of death when ``mortality_mode`` is ``FIXED_AGE``.
-            state (str, optional): Two-letter state of residence for state income tax. Defaults to
-                ``None``, which falls back to ``config.tax.state.default_state``. A
-                single state applies to the whole tax unit (no part-year/multi-state).
+            state (str, optional): Two-letter state of residence for state income tax (a state with a
+                tax pack, or ``"DEFAULT"`` for the flat default rate). Defaults to ``None``, which falls
+                back to ``config.tax.state.default_state``. A code without a pack raises
+                :class:`~life_model.config.models.UnknownStateError`.
+            birth (str, optional): Birth month ``"YYYY-MM"`` (keyword-only). When given with
+                ``age``, the two must agree.
+            residency (optional): The residency timeline ``[("YYYY-MM", state), ...]`` (keyword-only):
+                the state from each month on. Before its first entry the person lives in
+                ``state``. A unit files in its head's state each month: a year with moves files part-year
+                returns (wages by the months worked in each state, other income by residence at receipt).
+            widowed_year (int, optional): The year a spouse died before the run (keyword-only): the person
+                files as a qualifying surviving spouse for the two following years while a dependent child
+                lives with them (IRC §2(a)).
+            estimated_payments (optional): Quarterly federal estimated tax payments
+                (:class:`~life_model.tax.payments.EstimatedPayments`; keyword-only).
         """
+        # A state without a tax pack is refused before the person joins the model.
+        for code in [state, *(entry[1] for entry in residency or ())]:
+            if code is not None:
+                family.model.config.tax.state.resolve_state_code(code)
         super().__init__(family.model)
         self.family = family
         self.name = name
-        self.age = age
+        self._death_month_index = None
+        if birth is not None:
+            from ..model import parse_year_month
+
+            #: Birth year and month (exact ages; see :attr:`age`).
+            self.birth_year, self.birth_month = parse_year_month(birth)
+            if age is not None and self.age != age:
+                raise ValueError(
+                    f"{name}: birth {birth} makes them {self.age} in {self.model.year}-{self.model.month:02d}, "
+                    f"not {age}"
+                )
+        elif age is None:
+            raise ValueError(f"{name}: give an age or a birth month")
+        else:
+            self.birth_year, self.birth_month = self.model.year - age, 1
+            #: Whether the birth month was assumed (January) because only an age was given.
+            self.birth_month_assumed = True
+        if birth is not None:
+            self.birth_month_assumed = False
         self.retirement_age = retirement_age
         self.spending = spending
-        self.state = state
+        if getattr(spending, "person", None) is None:
+            spending.person = self  # whose spending it is (reporting: the agent frame's Owner column)
+            spending._start_schedule()
+        #: The residency timeline: ``(month index, state)`` from that month on.
+        self._residency: list[tuple[int, str | None]] = []
+        self._set_residency(state, residency)
+        #: The year this person's spouse died (qualifying surviving spouse for two years after, IRC §2(a)).
+        self.spouse_death_year: int | None = widowed_year
+        #: Federal estimated tax payments policy.
+        self.estimated_payments = estimated_payments
+        #: Tax payments by tax year (withholding, estimated payments).
+        self.tax_payments: dict = {}
+        #: The balance due on a filed return, payable in April (a liability, ``TaxDue:<id>``), and a refund
+        #: receivable in April (an asset, ``TaxRefund:<id>``).
+        self.taxes_owed = 0.0
+        self.tax_refund_due = 0.0
         self.gender = gender
         self.mortality_mode = mortality_mode
         self.death_age = death_age
         self.is_deceased = False
+        # The absolute month (``LifeModel.month_index``) of death; ages stop advancing then.
+        self._death_month_index: int | None = None
         # Optional explicit estate beneficiary (a Person). When unset, the estate passes to the
         # surviving spouse, then to the first surviving family member.
         self.estate_beneficiary: Person | None = None
         # Unified estate-tax exemption consumed during life by taxable gifts (e.g. irrevocable
         # trust funding above the annual gift exclusion). Reduces the exemption at death.
         self.estate_exemption_used = 0.0
+        # End-of-life costs the decedent's bank could not cover; the estate (via the inheritor)
+        # pays them in the death year. See _charge_end_of_life_costs.
+        self._unpaid_final_expenses = 0.0
         # Year this person was widowed (used to switch filing status to SINGLE the following year).
         self._widowed_year: int | None = None
+        # A spouse who died this year: their income so far this year is on this person's joint return.
+        self.deceased_spouse_this_year: Person | None = None
         self.debt = 0
         # Per-person income ledger: separates FICA wages from ordinary taxable income so that
         # payroll tax and income tax each see the correct base (see tax/income.py).
-        self.income = IncomeLedger()
+        self.income = IncomeLedger(clock=self._income_month)
         self.spouse = None
         # Per-year record of this member's share of the tax unit's AGI, stamped during
         # ``TaxUnit.settle_year``. Medicare/IRMAA reads this with a two-year lookback.
         self.agi_history: dict[int, float] = {}
-        # Medical costs reimbursed tax-free from HSAs this year (reset in post_step).
+        #: The return this person was on each year (a :class:`~life_model.tax.return_record.TaxReturn`,
+        #: shared by both spouses of a joint return), stamped during ``TaxUnit.settle_year``.
+        self.tax_returns: dict = {}
+        # Medical costs reimbursed tax-free from HSAs this year (reset at year end).
         self.hsa_medical_reimbursed = 0.0
         # Charitable gifts above the AGI limit, carried forward as (year given, amount).
         self.charitable_carryforwards: list[tuple[int, float]] = []
@@ -124,6 +210,12 @@ class Person(LifeModelAgent):
         # across all of the person's jobs so two jobs can't each use the full 402(g) limit. Reset in
         # post_step.
         self._elective_deferrals_ytd = 0.0
+        # Standing savings policies (see life_model.policies).
+        self._contribution_plans: list = []
+        self._savings_policy = None
+        self._roth_conversion_policy = None
+        #: Roth conversions made this year (reset at year end).
+        self.roth_conversions_ytd = 0.0
 
         self.stat_money_spent = 0.0
         self.stat_taxes_paid = 0.0
@@ -138,6 +230,79 @@ class Person(LifeModelAgent):
         self.debt_service = DebtService(self)
 
         self.family.members.append(self)
+
+    # --- standing savings policies ---
+
+    @property
+    def contribution_plans(self) -> tuple:
+        """This person's recurring contributions (:class:`~life_model.policies.ContributionPlan`)."""
+        return tuple(self._contribution_plans)
+
+    def add_contribution_plan(self, plan):
+        """Start (or replace) a recurring contribution: a plan for the same account (and 401(k) bucket)
+        replaces the existing one. Takes effect from the next contribution (a 401(k) percent from the
+        next paycheck). Returns ``plan``."""
+        from ..policies import PolicyRunner
+
+        if plan.account.person is not self:
+            raise ValueError(f"{self.name} does not own the plan's account")
+        self.remove_contribution_plan(plan.account, bucket=plan.bucket)
+        plan.person = self
+        self._contribution_plans.append(plan)
+        plan.apply_401k_election()
+        PolicyRunner.for_model(self.model).watch(self)
+        return plan
+
+    def remove_contribution_plan(self, plan_or_account, *, bucket: str | None = None) -> None:
+        """Stop a recurring contribution (the plan, or every plan into that account / 401(k) bucket). A
+        401(k) plan's percent drops to 0."""
+        keep = []
+        for plan in self._contribution_plans:
+            match = plan is plan_or_account or (
+                plan.account is plan_or_account and (bucket is None or plan.bucket == bucket)
+            )
+            if match:
+                if plan.is_401k:
+                    setattr(plan.account, f"{plan.bucket}_contrib_percent", 0.0)
+            else:
+                keep.append(plan)
+        self._contribution_plans = keep
+
+    def payroll_contribution_plans(self, job) -> tuple:
+        """Payroll HSA plans paid through ``job`` (the person's first W-2 job paying this month)."""
+        plans = [p for p in self._contribution_plans if p.source == "payroll" and not p.is_401k]
+        if not plans:
+            return ()
+        payer = next((j for j in self.jobs if j.kind == "w2" and not j.retired and j.pays_this_month), None)
+        return tuple(plans) if payer is job else ()
+
+    @property
+    def savings_policy(self):
+        """The surplus sweep (:class:`~life_model.policies.SavingsPolicy`), or None (cash is held)."""
+        return self._savings_policy
+
+    @savings_policy.setter
+    def savings_policy(self, policy) -> None:
+        from ..policies import PolicyRunner
+
+        if policy is not None and policy.sweep_to is not None and policy.sweep_to.person is not self:
+            raise ValueError(f"{self.name} does not own the sweep account")
+        self._savings_policy = policy
+        if policy is not None:
+            PolicyRunner.for_model(self.model).watch(self)
+
+    @property
+    def roth_conversion_policy(self):
+        """The standing Roth conversion (:class:`~life_model.policies.RothConversionPolicy`), or None."""
+        return self._roth_conversion_policy
+
+    @roth_conversion_policy.setter
+    def roth_conversion_policy(self, policy) -> None:
+        from ..policies import PolicyRunner
+
+        self._roth_conversion_policy = policy
+        if policy is not None:
+            PolicyRunner.for_model(self.model).watch(self)
 
     @property
     def jobs(self):
@@ -173,6 +338,82 @@ class Person(LifeModelAgent):
     def children(self):
         """Get all child dependents for this person from the registry"""
         return self.model.registries.children.get_items(self)
+
+    # --- residency ---
+
+    def _set_residency(self, state: str | None, residency) -> None:
+        from ..model import month_index, parse_year_month
+
+        start = month_index(self.model.year, self.model.month)
+        timeline: list[tuple[int, str | None]] = [(start, state)]
+        for when, code in residency or ():
+            year, month = parse_year_month(when) if isinstance(when, str) else when
+            timeline.append((month_index(year, month), code))
+        timeline.sort(key=lambda item: item[0])
+        for _, code in timeline:
+            self._check_state(code)
+        # A later entry for the same month replaces an earlier one (the timeline's own first month wins
+        # over ``state``).
+        merged: dict[int, str | None] = {}
+        for index, code in timeline:
+            merged[index] = code
+        self._residency = sorted(merged.items())
+
+    def _check_state(self, code: str | None) -> None:
+        """Raise :class:`~life_model.config.models.UnknownStateError` for a state with no tax pack."""
+        if code is not None:
+            self.model.config.tax.state.resolve_state_code(code)
+
+    @property
+    def state(self) -> str | None:
+        """The state of residence this month (from the residency timeline)."""
+        return self.state_at(self.model.year, self.model.month)
+
+    @state.setter
+    def state(self, value: str | None) -> None:
+        """Move to ``value`` from the current month on (later entries of the timeline are kept)."""
+        from ..model import month_index
+
+        self._check_state(value)
+        now = month_index(self.model.year, self.model.month)
+        merged = dict(getattr(self, "_residency", []))
+        merged[now] = value
+        self._residency = sorted(merged.items())
+
+    @property
+    def residency(self) -> "list[tuple[str, str | None]]":
+        """The residency timeline as ``[("YYYY-MM", state), ...]``."""
+        return [(f"{index // 12}-{index % 12 + 1:02d}", code) for index, code in self._residency]
+
+    def state_at(self, year: int, month: int = 12) -> str | None:
+        """The state of residence in ``year``-``month``."""
+        from ..model import month_index
+
+        target = month_index(year, month)
+        current = self._residency[0][1] if self._residency else None
+        for index, code in self._residency:
+            if index > target:
+                break
+            current = code
+        return current
+
+    def states_in_year(self, year: int) -> "list[str | None]":
+        """The states lived in during ``year``, in order (one entry for a full-year resident)."""
+        states: list[str | None] = []
+        for month in range(1, 13):
+            code = self.state_at(year, month)
+            if not states or states[-1] != code:
+                states.append(code)
+        return states
+
+    def _income_month(self) -> int:
+        """The month income booked now belongs to (stamped on income entries for part-year returns)."""
+        return self.model.month
+
+    @property
+    def qualifying_relatives(self):
+        """Dependents other than children (a supported parent: :class:`~life_model.dependents.dependent.Dependent`)."""
+        return self.model.registries.qualifying_relatives.get_items(self)
 
     @property
     def donations(self):
@@ -210,6 +451,11 @@ class Person(LifeModelAgent):
         return self.model.registries.student_loans.get_items(self)
 
     @property
+    def home_equity_lines(self):
+        """Get all home equity lines of credit for this person from the registry."""
+        return self.model.registries.home_equity_lines.get_items(self)
+
+    @property
     def medical_costs(self):
         """Get the MedicalCosts agent(s) for this person from the registry."""
         return self.model.registries.medical_costs.get_items(self)
@@ -226,11 +472,12 @@ class Person(LifeModelAgent):
 
     @property
     def all_debts(self):
-        """All personal debts serviced by the simulation (car loans, credit cards, student loans).
+        """All personal debts serviced by the simulation (car loans, credit cards, student loans, home
+        equity lines).
 
         Mortgages are serviced through the owning ``Home`` and are not included here.
         """
-        return [*self.car_loans, *self.credit_cards, *self.student_loans]
+        return [*self.car_loans, *self.credit_cards, *self.student_loans, *self.home_equity_lines]
 
     @property
     def outstanding_debt_balance(self) -> float:
@@ -266,12 +513,15 @@ class Person(LifeModelAgent):
 
         Sums the ``stat_medical_costs`` stamped in ``pre_step`` by the person's opt-in healthcare
         agents: age-curve costs (MedicalCosts), Medicare premiums (deductible per IRS Pub. 502),
-        and net-of-insurance long-term-care costs. LTC insurance *premiums* are not included in v1
-        (their age-capped deductibility is a documented simplification/backlog).
+        and net-of-insurance long-term-care costs, plus long-term care insurance premiums up to the
+        §213(d)(10) age limit.
         """
+        from ..tax.deductions import deductible_insurance_premiums
+
         agents = [*self.medical_costs, *self.medicare, *self.long_term_care]
         # Costs reimbursed tax-free from an HSA can't also be deducted (IRC §213 / §223(f)(1)).
-        return max(0.0, sum(agent.stat_medical_costs for agent in agents) - self.hsa_medical_reimbursed)
+        costs = sum(agent.stat_medical_costs for agent in agents) + deductible_insurance_premiums(self)
+        return max(0.0, costs - self.hsa_medical_reimbursed)
 
     def reimburse_medical_from_hsas(self, amount: float) -> float:
         """Reimburse up to ``amount`` of this year's medical costs tax-free from HSAs into the bank.
@@ -281,9 +531,13 @@ class Person(LifeModelAgent):
         amount = min(amount, self.unreimbursed_medical_expenses)
         if amount <= 0:
             return 0.0
-        withdrawn = amount - self._withdraw_sequence((hsa.withdraw_medical for hsa in self.hsas), amount)
+        withdrawn = self._draw_to_bank(
+            [(hsa, hsa.withdraw_medical) for hsa in self.hsas],
+            amount,
+            FlowKind.WITHDRAWAL,
+            "qualified medical reimbursement (tax-free)",
+        )
         self.hsa_medical_reimbursed += withdrawn
-        self.receive_cash(withdrawn, source="HSA medical reimbursement")
         return withdrawn
 
     def medical_expense_deduction_with(self, additional_income: float = 0.0) -> float:
@@ -312,8 +566,18 @@ class Person(LifeModelAgent):
         """Itemizable unreimbursed medical with no prospective income (see the ``_with`` method)."""
         return self.medical_expense_deduction_with(0.0)
 
+    def salt_paid(self, state_income_tax_paid: float = 0.0) -> float:
+        """State and local taxes paid this year before the cap: property tax on the person's homes plus
+        ``state_income_tax_paid``."""
+        return state_income_tax_paid + sum(home.property_tax_for_year for home in self.homes)
+
     def itemized_deductions(
-        self, state_income_tax_paid: float = 0.0, additional_income: float = 0.0, *, include_charitable: bool = True
+        self,
+        state_income_tax_paid: float = 0.0,
+        additional_income: float = 0.0,
+        *,
+        include_charitable: bool = True,
+        include_salt: bool = True,
     ) -> float:
         """Calculate total itemized deductions.
 
@@ -322,39 +586,53 @@ class Person(LifeModelAgent):
         - Charitable contributions
         - Mortgage interest (capped to the first $750k of acquisition debt, TCJA)
         - State and local taxes: property tax plus ``state_income_tax_paid``, capped at the SALT
-          limit. ``state_income_tax_paid`` defaults to 0 so the property-only result
-          is unchanged for every caller that does not thread state income tax.
+          limit. ``state_income_tax_paid`` defaults to 0 (property tax only) for callers that do
+          not thread state income tax.
         - Unreimbursed medical expenses above the 7.5%-of-income floor;
           ``additional_income`` (a prospective 401k withdrawal being sized) raises that floor so
           sized taxes equal settled taxes.
 
         ``include_charitable=False`` leaves charity out so a return can add it back capped at its AGI
-        limit (see :mod:`life_model.tax.deductions`).
+        limit (see :mod:`life_model.tax.deductions`); ``include_salt=False`` leaves SALT out so a joint
+        return can cap the members' combined SALT once (the cap is per return, not per person).
         """
         itemized = self.charitable_deductions if include_charitable else 0.0
         itemized += self.medical_expense_deduction_with(additional_income)
 
-        federal = self.model.config.tax.federal
-        # A separate return gets half of the joint mortgage-debt and SALT limits.
-        limit_share = 0.5 if self.filing_status == FilingStatus.MARRIED_FILING_SEPARATELY else 1.0
+        # Mortgage (and home-improvement HELOC) interest actually paid this year, within the
+        # acquisition-debt limits (IRC §163(h)(3); a separate return gets half of the limits).
+        from ..housing.home import qualified_residence_interest
+
+        itemized += qualified_residence_interest(self)
         salt_paid = state_income_tax_paid
         for home in self.homes:
-            mortgage = getattr(home, "mortgage", None)
-            if mortgage:
-                # Deduct the interest actually paid this year (pre-payment principal), limited to
-                # the share attributable to the first $750k of acquisition debt.
-                interest = mortgage.interest_paid_this_year
-                acquisition_debt = mortgage.loan_amount
-                debt_limit = federal.mortgage_interest_debt_limit * limit_share
-                if acquisition_debt > debt_limit:
-                    interest *= debt_limit / acquisition_debt
-                itemized += interest
             salt_paid += home.property_tax_for_year
 
-        # SALT deduction (property tax + state income tax) is capped.
-        itemized += min(salt_paid, federal.salt_deduction_cap * limit_share)
+        if include_salt:
+            # SALT deduction (property tax + state income tax) is capped (the year's cap and phase-down).
+            cap = salt_cap(self.filing_status, self.agi(additional_income), self.model.year_config)
+            itemized += min(salt_paid, cap)
 
         return itemized
+
+    def itemized_deduction_components(
+        self, state_income_tax_paid: float = 0.0, additional_income: float = 0.0
+    ) -> dict[str, float]:
+        """The non-charity parts of :meth:`itemized_deductions` by line, for the tax return record:
+        ``mortgage_interest`` (limited to the acquisition-debt cap), ``salt`` (after the cap) and
+        ``medical`` (above the floor). Charity is added per return (it is capped at the return's AGI)."""
+        from ..housing.home import qualified_residence_interest
+
+        mortgage_interest = qualified_residence_interest(self)
+        salt_paid = state_income_tax_paid
+        for home in self.homes:
+            salt_paid += home.property_tax_for_year
+        cap = salt_cap(self.filing_status, self.agi(additional_income), self.model.year_config)
+        return {
+            "mortgage_interest": mortgage_interest,
+            "salt": min(salt_paid, cap),
+            "medical": self.medical_expense_deduction_with(additional_income),
+        }
 
     def total_itemized_deductions_with(self, additional_income: float = 0.0) -> float:
         """Total itemized deductions with ``additional_income`` raising the medical floor.
@@ -423,7 +701,8 @@ class Person(LifeModelAgent):
         """Remaining 402(g) elective-deferral room this year, aggregated across all jobs."""
         from ..limits import job_401k_contrib_limit
 
-        limit = job_401k_contrib_limit(self.age, self.model.year_config)
+        # Catch-up eligibility is by the age reached by the end of the year (IRC §414(v)).
+        limit = job_401k_contrib_limit(self.age_in(self.model.year), self.model.year_config)
         return max(0.0, limit - self._elective_deferrals_ytd)
 
     @property
@@ -445,8 +724,8 @@ class Person(LifeModelAgent):
 
     @property
     def is_retired(self) -> bool:
-        """Check if person is retired"""
-        return self.age >= self.retirement_age
+        """Whether the person has reached their retirement age (exact age)."""
+        return self.age_years_fractional >= self.retirement_age
 
     def _repr_html_(self):
         desc = self.name
@@ -462,7 +741,26 @@ class Person(LifeModelAgent):
         return desc
 
     @property
+    def joint_bank_accounts(self) -> list:
+        """Bank accounts titled to the spouse that this person owns jointly (``joint_owner``)."""
+        spouse = self.spouse
+        if spouse is None:
+            return []
+        return [a for a in spouse.bank_accounts if getattr(a, "joint_owner", None) is self]
+
+    @property
+    def usable_bank_accounts(self) -> list:
+        """The bank accounts this person can pay from: their own, then the joint ones titled to the spouse."""
+        return [*self.bank_accounts, *self.joint_bank_accounts]
+
+    @property
+    def usable_bank_balance(self) -> float:
+        """Spendable (non-reserve) cash in :attr:`usable_bank_accounts`."""
+        return sum(a.balance for a in self.usable_bank_accounts if not getattr(a, "reserve", False))
+
+    @property
     def bank_account_balance(self) -> float:
+        """Balances of this person's own bank accounts (joint ones titled to the spouse are the spouse's)."""
         return sum(x.balance for x in self.bank_accounts)
 
     @property
@@ -496,8 +794,20 @@ class Person(LifeModelAgent):
             remaining -= withdraw(remaining)
         return remaining
 
-    def deduct_from_bank_accounts(self, amount: float) -> float:
+    def deduct_from_bank_accounts(
+        self,
+        amount: float,
+        *,
+        kind: "FlowKind | str | None" = None,
+        sink: str | None = None,
+        to_account=None,
+        cause: str | None = None,
+    ) -> float:
         """Deducts money from bank accounts.
+
+        A bare call is a primitive: it moves money without posting it, for callers that post the
+        flow themselves. Pass ``kind`` (keyword-only) to post what was paid to the ledger: to
+        ``to_account`` (a household account: a transfer) or out to ``sink`` (an outflow).
 
         Args:
             amount (float): Amount to deduct.
@@ -505,7 +815,105 @@ class Person(LifeModelAgent):
         Returns:
             float: Amount that could not be deducted.
         """
-        return self._withdraw_sequence((account.withdraw for account in self.bank_accounts), amount)
+        remaining = amount
+        # Emergency-reserve accounts last; joint accounts titled to the spouse after this person's own.
+        for account in sorted(self.usable_bank_accounts, key=lambda a: bool(getattr(a, "reserve", False))):
+            if remaining <= 0:
+                break
+            taken = account.withdraw(remaining)
+            remaining -= taken
+            if kind is not None and taken > 0:
+                self.model.ledger.post(
+                    taken,
+                    kind,
+                    from_account=account,
+                    to_account=to_account,
+                    sink=None if to_account is not None else (sink or cause),
+                    cause=cause,
+                    agent=self,
+                )
+        return remaining
+
+    @property
+    def primary_bank_account(self):
+        """The bank account income is paid into: a joint account titled to the spouse marked
+        ``joint_primary``, else the first own account that is not an emergency reserve, else the first
+        joint one, else the first own account; None without a bank account."""
+        joint = [a for a in self.joint_bank_accounts if not getattr(a, "reserve", False)]
+        for account in joint:
+            if getattr(account, "joint_primary", False):
+                return account
+        accounts = self.bank_accounts
+        for account in accounts:
+            if not getattr(account, "reserve", False):
+                return account
+        if joint:
+            return joint[0]
+        return accounts[0] if accounts else None
+
+    @property
+    def spendable_bank_balance(self) -> float:
+        """Bank balances the waterfall's ``bank`` step spends (reserve accounts excluded)."""
+        return sum(a.balance for a in self.bank_accounts if not getattr(a, "reserve", False))
+
+    @property
+    def cash_destination(self):
+        """Where :meth:`receive_cash` puts money: the primary bank account, else the cash pocket."""
+        primary = self.primary_bank_account
+        if primary is not None:
+            return primary
+        label = cash_label(self)
+        self.model.ledger.name_label(label, f"{self.name}'s cash")
+        return label
+
+    def add_debt(
+        self,
+        amount: float,
+        *,
+        cause: str | None = None,
+        kind: "FlowKind | str" = FlowKind.BORROW,
+        to_account=None,
+        sink: str | None = None,
+    ) -> None:
+        """Carry ``amount`` of unpaid bills as debt (``self.debt``), posting it: money borrowed into
+        ``to_account`` (a transfer) or an outflow to ``sink`` financed by the debt."""
+        if amount <= 0:
+            return
+        self.debt += amount
+        self.model.event_log.add(
+            Event(EventKind.SHORTFALL_DEBT, person=self, amount=amount, cause=cause or "unpaid bills")
+        )
+        label = debt_label(self)
+        self.model.ledger.name_label(label, f"{self.name}'s unpaid-bills debt")
+        self.model.ledger.post(
+            amount,
+            kind,
+            from_account=label,
+            to_account=to_account,
+            sink=None if to_account is not None else (sink or cause or "unpaid bills"),
+            cause=cause,
+            agent=self,
+        )
+
+    def _draw_to_bank(self, draws, amount: float, kind: "FlowKind | str", cause: str | None = None) -> float:
+        """Take up to ``amount`` from ``draws`` (``(account, withdraw_callable)`` pairs, in order) into
+        this person's bank, posting one transfer per account. Returns the amount drawn."""
+        destination = self.cash_destination
+        # The caller's reason (e.g. "fund 2031 bills and taxes") wins over the generic one.
+        cause = self.model.ledger.current_cause or cause
+        remaining = amount
+        for account, withdraw in draws:
+            if remaining <= 0:
+                break
+            taken = withdraw(remaining)
+            remaining -= taken
+            if taken > 0:
+                self.model.ledger.post(
+                    taken, kind, from_account=account, to_account=destination, cause=cause, agent=self
+                )
+        drawn = amount - remaining
+        self.receive_cash(drawn, post=False)
+        return drawn
 
     def deduct_from_pretax_401ks(self, amount: float) -> float:
         """Deducts money from pre-tax 401ks.
@@ -548,6 +956,15 @@ class Person(LifeModelAgent):
         )
         return self._withdraw_sequence(withdrawers, amount)
 
+    def withdraw_tax_free_from_roth_iras(self, amount: float) -> float:
+        """Withdraw up to ``amount`` of tax-free Roth IRA money (basis before 59.5, everything from
+        59.5) into the bank. Returns the amount withdrawn."""
+        draws = [
+            (account, lambda remaining, a=account: a.withdraw(min(remaining, a.tax_free_withdrawable())))
+            for account in self.roth_iras
+        ]
+        return self._draw_to_bank(draws, amount, FlowKind.WITHDRAWAL, "tax-free Roth IRA withdrawal")
+
     def withdraw_from_pretax_401ks(self, amount: float) -> float:
         """Withdraws money from pre-tax 401ks into the bank account.
 
@@ -559,16 +976,20 @@ class Person(LifeModelAgent):
         Returns:
             float: Amount actually withdrawn (may be less than requested if funds are short).
         """
-        withdrawn = amount - self.deduct_from_pretax_401ks(amount)
+        withdrawn = self._draw_to_bank(
+            [(account, account.deduct_pretax) for account in self.all_retirement_accounts],
+            amount,
+            FlowKind.WITHDRAWAL,
+            "pre-tax 401k withdrawal",
+        )
         # Pre-tax 401k distributions are ordinary income but are NOT FICA wages.
-        self.income.add(IncomeType.PRETAX_DISTRIBUTION, withdrawn)
+        self.income.add(IncomeType.PRETAX_DISTRIBUTION, withdrawn, source="401k")
         self._charge_early_withdrawal_penalty(withdrawn)
-        self.receive_cash(withdrawn)
         return withdrawn
 
     @property
     def spendable_resources(self) -> float:
-        """Everything year-end settlement can draw to pay this person's bills: bank, brokerage,
+        """Everything the payment waterfall can draw to pay this person's bills: bank, brokerage,
         pre-tax 401k/IRA/HSA, Roth 401k and Roth IRA balances."""
         roth_401k = sum(a.roth_balance for a in self.all_retirement_accounts)
         roth_ira = sum(a.balance for a in self.roth_iras)
@@ -577,28 +998,65 @@ class Person(LifeModelAgent):
     @property
     def pretax_account_balance(self) -> float:
         """Combined balance of the taxable-on-withdrawal sources settlement draws: 401k pre-tax
-        sub-balances, Traditional IRAs, and HSAs (non-medical use)."""
-        return sum(balance for balance, _penalty in self._pretax_sources())
+        sub-balances (and after-tax buckets), Traditional IRAs, and HSAs (non-medical use)."""
+        return sum(balance for balance, _fraction, _penalty in self._pretax_draw_sources())
+
+    @property
+    def pretax_taxable_capacity(self) -> float:
+        """The taxable income draining every pre-tax source would produce (balances less basis)."""
+        return sum(balance * fraction for balance, fraction, _penalty in self._pretax_draw_sources())
+
+    def prospective_taxable(self, amount: float) -> float:
+        """The taxable income a pre-tax draw of ``amount`` would produce, walking the sources in the
+        order :meth:`withdraw_from_pretax_accounts` drains them (side-effect free). Equal to ``amount``
+        unless a source holds basis (after-tax 401(k) money, nondeductible IRA contributions)."""
+        taxable = 0.0
+        remaining = amount
+        for balance, fraction, _penalty in self._pretax_draw_sources():
+            if remaining <= 0:
+                break
+            take = min(remaining, balance)
+            taxable += take * fraction
+            remaining -= take
+        return taxable + max(0.0, remaining)
 
     def _pretax_sources(self) -> list[tuple[float, float]]:
-        """``(balance, penalty_rate)`` for each taxable source, in draw order: pre-tax 401ks, then
-        Traditional IRAs (10% before 59.5), then HSAs as non-medical distributions (20% before 65).
-        Every one is fully taxable as ordinary income."""
+        """``(taxable capacity, penalty_rate)`` for each taxable source, in draw order (see
+        :meth:`_pretax_draw_sources`)."""
+        return [(balance * fraction, penalty) for balance, fraction, penalty in self._pretax_draw_sources()]
+
+    def _pretax_draw_sources(self) -> list[tuple[float, float, float]]:
+        """``(balance, taxable_fraction, penalty_rate)`` for each pre-tax source, in draw order: pre-tax
+        401ks, after-tax 401k buckets (the earnings share is taxable), Traditional IRAs (pro rata to
+        basis; 10% before 59.5), then HSAs as non-medical distributions (20% before 65)."""
+        from ..account.traditional_IRA import ira_basis_ratio
+
         config = self.model.config
         retirement_penalty = (
-            config.retirement.early_withdrawal_penalty_rate if self.age < federal_retirement_age(config) else 0.0
+            config.retirement.early_withdrawal_penalty_rate
+            if self.age_years_fractional < federal_retirement_age(config)
+            else 0.0
         )
         hsa_config = config.accounts.hsa
-        hsa_penalty = hsa_config.non_medical_penalty_rate if self.age < hsa_config.non_medical_penalty_age else 0.0
+        hsa_penalty = (
+            hsa_config.non_medical_penalty_rate
+            if self.age_years_fractional < hsa_config.non_medical_penalty_age
+            else 0.0
+        )
+        accounts = self.all_retirement_accounts
+        after_tax = sum(a.after_tax_balance for a in accounts)
+        after_tax_earnings = sum(a.after_tax_balance * a.after_tax_earnings_fraction for a in accounts)
         return [
-            (sum(a.pretax_balance for a in self.all_retirement_accounts), retirement_penalty),
-            (sum(a.balance for a in self.traditional_iras), retirement_penalty),
-            (sum(a.balance for a in self.hsas), hsa_penalty),
+            (sum(a.pretax_balance for a in accounts), 1.0, retirement_penalty),
+            (after_tax, after_tax_earnings / after_tax if after_tax > 0 else 0.0, retirement_penalty),
+            (sum(a.balance for a in self.traditional_iras), 1.0 - ira_basis_ratio(self), retirement_penalty),
+            (sum(a.balance for a in self.hsas), 1.0, hsa_penalty),
         ]
 
     def prospective_penalty(self, amount: float) -> float:
-        """Additional tax a settlement draw of ``amount`` would incur, walking the sources in the
-        order :meth:`withdraw_from_pretax_accounts` drains them (side-effect free)."""
+        """Additional tax a settlement draw producing ``amount`` of taxable income would incur, walking
+        the sources' taxable capacity in the order :meth:`withdraw_from_pretax_accounts` drains them
+        (side-effect free)."""
         penalty = 0.0
         remaining = amount
         for balance, rate in self._pretax_sources():
@@ -619,6 +1077,8 @@ class Person(LifeModelAgent):
         """
         withdrawn = self.withdraw_from_pretax_401ks(amount)
         if amount - withdrawn > 0:
+            withdrawn += self.withdraw_from_after_tax_401ks(amount - withdrawn)
+        if amount - withdrawn > 0:
             withdrawn += self.withdraw_from_traditional_iras(amount - withdrawn)
         if amount - withdrawn > 0:
             withdrawn += self.withdraw_from_hsas(amount - withdrawn)
@@ -631,7 +1091,7 @@ class Person(LifeModelAgent):
         additional tax. Exceptions (age-55 separation, SEPP, disability, ...) are not modeled.
         """
         config = self.model.config
-        if amount <= 0 or self.age >= federal_retirement_age(config):
+        if amount <= 0 or self.age_years_fractional >= federal_retirement_age(config):
             return 0.0
         return amount * config.retirement.early_withdrawal_penalty_rate / 100
 
@@ -644,7 +1104,7 @@ class Person(LifeModelAgent):
     #
     # Each helper mirrors withdraw_from_pretax_401ks: it moves money from the account type into
     # the bank and records the correct income-ledger entry, so the withdrawal is taxed when the
-    # tax unit settles the year inside model.step(). Taxes therefore bite at year-end settlement,
+    # tax unit settles the year in December. Taxes therefore bite at the year's settlement,
     # not at the moment of withdrawal — that is the simulator's actual semantics.
     #
     # Early-withdrawal penalties are recorded on the ledger as additional federal tax: 10% on
@@ -673,18 +1133,58 @@ class Person(LifeModelAgent):
         """Get all brokerage accounts for this person from the registry."""
         return self.model.registries.brokerage_accounts.get_items(self)
 
+    @property
+    def fixed_income_holdings(self):
+        """CDs, Treasuries, I bonds and bond funds owned by this person."""
+        return self.model.registries.fixed_income.get_items(self)
+
+    def fixed_income_balance(self, *, reserve: bool) -> float:
+        """What the waterfall can redeem now from this person's reserve (or non-reserve) holdings."""
+        return sum(h.redeemable for h in self.fixed_income_holdings if h.reserve == reserve)
+
+    def reserve_bank_balance(self) -> float:
+        """Balances of this person's emergency-reserve bank accounts."""
+        return sum(a.balance for a in self.bank_accounts if getattr(a, "reserve", False))
+
+    def redeem_fixed_income(self, amount: float, *, reserve: bool) -> float:
+        """Redeem up to ``amount`` of cash from this person's reserve (or non-reserve) holdings into the
+        bank (shortest maturity first). Returns the cash raised."""
+        holdings = sorted(
+            (h for h in self.fixed_income_holdings if h.reserve == reserve and h.redeemable > 0),
+            key=lambda h: (h.maturity or (9999, 12), h.name, h.unique_id),
+        )
+        return self._draw_to_bank(
+            [(h, h.redeem) for h in holdings], amount, FlowKind.WITHDRAWAL, "fixed-income redemption"
+        )
+
+    def draw_reserves(self, amount: float) -> float:
+        """Move up to ``amount`` from emergency reserves into the primary bank: reserve bank accounts
+        first, then reserve fixed-income holdings. Returns the cash raised."""
+        primary = self.primary_bank_account
+        reserves = [
+            a for a in self.bank_accounts if getattr(a, "reserve", False) and a.balance > 0 and a is not primary
+        ]
+        raised = self._draw_to_bank([(a, a.withdraw) for a in reserves], amount, FlowKind.TRANSFER, "reserve draw")
+        if amount - raised > 0:
+            raised += self.redeem_fixed_income(amount - raised, reserve=True)
+        return raised
+
     def withdraw_from_roth_401ks(self, amount: float) -> float:
         """Withdraws money from Roth 401ks into the bank account.
 
-        Qualified Roth distributions are tax-free, so no income-ledger entry is created
-        (taxation of non-qualified Roth *earnings* is a documented simplification).
+        Qualified distributions (age 59.5 and over) are tax-free. Before 59.5, an account that tracks
+        its contribution basis (``roth_basis``) posts the earnings share as ordinary income plus the
+        10% additional tax; an account without a tracked basis is treated as all basis (tax-free).
 
         Returns:
             float: Amount actually withdrawn.
         """
-        withdrawn = amount - self.deduct_from_roth_401ks(amount)
-        self.receive_cash(withdrawn)
-        return withdrawn
+        return self._draw_to_bank(
+            [(account, account.distribute_roth) for account in self.all_retirement_accounts],
+            amount,
+            FlowKind.WITHDRAWAL,
+            "Roth 401k withdrawal",
+        )
 
     def withdraw_from_traditional_iras(self, amount: float) -> float:
         """Withdraws money from Traditional IRAs into the bank account.
@@ -695,11 +1195,24 @@ class Person(LifeModelAgent):
         Returns:
             float: Amount actually withdrawn.
         """
-        withdrawn = amount - self._withdraw_sequence((acct.withdraw for acct in self.traditional_iras), amount)
-        self.income.add(IncomeType.PRETAX_DISTRIBUTION, withdrawn)
-        self._charge_early_withdrawal_penalty(withdrawn)
-        self.receive_cash(withdrawn)
-        return withdrawn
+        # Each account posts the taxable share (pro rata to Form 8606 basis) and the penalty itself.
+        return self._draw_to_bank(
+            [(acct, acct.distribute) for acct in self.traditional_iras],
+            amount,
+            FlowKind.WITHDRAWAL,
+            "Traditional IRA withdrawal",
+        )
+
+    def withdraw_from_after_tax_401ks(self, amount: float) -> float:
+        """Withdraw from 401(k) after-tax buckets into the bank: the contributions come back tax-free,
+        the earnings share is ordinary income (plus the 10% additional tax before 59.5). Returns the
+        amount withdrawn."""
+        return self._draw_to_bank(
+            [(acct, acct.distribute_after_tax) for acct in self.all_retirement_accounts if acct.after_tax_balance > 0],
+            amount,
+            FlowKind.WITHDRAWAL,
+            "after-tax 401k withdrawal",
+        )
 
     def withdraw_from_roth_iras(self, amount: float) -> float:
         """Withdraws money from Roth IRAs into the bank account.
@@ -710,9 +1223,9 @@ class Person(LifeModelAgent):
         Returns:
             float: Amount actually withdrawn.
         """
-        withdrawn = amount - self._withdraw_sequence((acct.withdraw for acct in self.roth_iras), amount)
-        self.receive_cash(withdrawn)
-        return withdrawn
+        return self._draw_to_bank(
+            [(acct, acct.withdraw) for acct in self.roth_iras], amount, FlowKind.WITHDRAWAL, "Roth IRA withdrawal"
+        )
 
     def withdraw_from_hsas(self, amount: float) -> float:
         """Withdraws money from HSAs into the bank account as a non-medical distribution.
@@ -723,9 +1236,12 @@ class Person(LifeModelAgent):
         Returns:
             float: Amount actually withdrawn.
         """
-        withdrawn = amount - self._withdraw_sequence((acct.withdraw_non_medical for acct in self.hsas), amount)
-        self.receive_cash(withdrawn)
-        return withdrawn
+        return self._draw_to_bank(
+            [(acct, acct.withdraw_non_medical) for acct in self.hsas],
+            amount,
+            FlowKind.WITHDRAWAL,
+            "non-medical HSA withdrawal",
+        )
 
     def withdraw_from_brokerage_accounts(self, amount: float) -> float:
         """Withdraws money from brokerage accounts into the bank account.
@@ -737,14 +1253,12 @@ class Person(LifeModelAgent):
         Returns:
             float: Amount actually withdrawn.
         """
-        remaining = amount
-        for account in self.brokerage_accounts:
-            if remaining <= 0:
-                break
-            remaining -= account.withdraw(remaining)
-        withdrawn = amount - remaining
-        self.receive_cash(withdrawn)
-        return withdrawn
+        return self._draw_to_bank(
+            [(account, account.withdraw) for account in self.brokerage_accounts],
+            amount,
+            FlowKind.SALE,
+            "brokerage sale",
+        )
 
     @property
     def brokerage_balance(self) -> float:
@@ -771,20 +1285,45 @@ class Person(LifeModelAgent):
             remaining -= take
         return long_term, short_term
 
-    def receive_cash(self, amount: float, source: str = "income"):
+    def receive_cash(
+        self,
+        amount: float,
+        source: str = "income",
+        *,
+        kind: "FlowKind | str | None" = None,
+        from_account=None,
+        cause: str | None = None,
+        post: bool = True,
+    ):
         """Receive cash into the person's primary bank account.
 
         If the person has no bank account, the cash is held in an untracked ``cash`` bucket and a
         warning event is logged once, rather than raising mid-simulation.
 
+        The receipt is posted to the ledger (keyword-only options): a transfer from ``from_account``
+        when the money came from another household account, else an inflow from ``source`` of
+        ``kind`` (default ``other``). ``post=False`` is for callers that posted it themselves.
+
         Args:
             amount (float): Amount of cash received.
-            source (str, optional): Description of where the cash came from (for the warning event).
+            source (str, optional): Description of where the cash came from (the inflow's
+                counterparty, and the warning event).
         """
         if amount <= 0:
             return
-        if self.bank_accounts:
-            self.bank_accounts[0].balance += amount
+        if post:
+            self.model.ledger.post(
+                amount,
+                kind or (FlowKind.TRANSFER if from_account is not None else FlowKind.OTHER),
+                from_account=from_account,
+                to_account=self.cash_destination,
+                source=source,
+                cause=cause,
+                agent=self,
+            )
+        primary = self.primary_bank_account
+        if primary is not None:
+            primary.balance += amount
         else:
             self.cash += amount
             if not self._warned_no_bank_account:
@@ -793,16 +1332,21 @@ class Person(LifeModelAgent):
                 )
                 self._warned_no_bank_account = True
 
-    def deposit_into_bank_account(self, amount: float):
-        """Deposits money into the primary bank account (see receive_cash).
+    def deposit_into_bank_account(self, amount: float, source: str = "income", **kwargs):
+        """Deposits money into the primary bank account (see :meth:`receive_cash`, which takes the
+        same keyword-only ledger options).
 
         Args:
             amount (float): Amount to deposit.
         """
-        self.receive_cash(amount)
+        self.receive_cash(amount, source, **kwargs)
 
     def pay_bills(self, spending_balance: float) -> float:
-        """Pays bills using payment service for optimal prioritization.
+        """Pays bills from this person's own accounts using the payment service.
+
+        Person-level only (bank, brokerage, Roth 401k, tax-free Roth IRA). The engine pays through
+        the household waterfall instead (:meth:`TaxUnit.pay_bills`, via ``TaxUnit.for_member``),
+        which uses a spouse's bank before anyone's brokerage and can draw pre-tax money.
 
         Args:
             spending_balance (float): Amount of money spent.
@@ -813,10 +1357,14 @@ class Person(LifeModelAgent):
         return self.payment_service.pay_bills_with_prioritization(spending_balance)
 
     def get_income_taxes_due(self, additional_income: float = 0) -> TaxesDue:
-        """Gets income taxes due for the year for this person as a single filer.
+        """Income taxes due this year on this person's own return, at their filing status.
 
-        FICA is computed on the person's own wages only; ``additional_income`` (e.g. a prospective
-        pre-tax 401k withdrawal) is ordinary income but not FICA wages.
+        A thin view over the one tax path: it is ``TaxUnit([self]).get_income_taxes_due`` (state
+        pack, SALT, Child Tax Credit, Social Security provisional income, early-withdrawal
+        penalties), so it can never disagree with settlement for a one-person unit. FICA is on the
+        person's own wages; ``additional_income`` (e.g. a prospective pre-tax 401k withdrawal) is
+        ordinary income but not FICA wages. A married person's joint liability comes from their
+        actual unit, ``TaxUnit.for_member(person)``.
 
         Args:
             additional_income (float, optional): Additional ordinary income not present in the ledger.
@@ -824,43 +1372,24 @@ class Person(LifeModelAgent):
         Returns:
             TaxesDue: Taxes due, split by type.
         """
-        ordinary_income = self.taxable_income + additional_income
-        # State income tax from the state pack. Computed against the property-only AGI base so it
-        # does not depend on itself being in SALT; then folded into SALT for the federal base.
-        # ``additional_income`` raises the medical-expense floor in both the DEFAULT AGI
-        # base and the federal deductions so sizing and settlement stay consistent.
-        totals = self.income.totals_by_type()
-        totals[IncomeType.PRETAX_DISTRIBUTION] = totals.get(IncomeType.PRETAX_DISTRIBUTION, 0.0) + additional_income
-        total_income = ordinary_income + self.preferential_income
-        legacy_agi = max(total_income - self.federal_deductions_with_state_tax(0.0, additional_income), 0)
-        state_tax = state_income_tax_for_unit(
-            totals, self.filing_status, self.state, legacy_agi, self.model.year_config
-        )
-        deductions = self.federal_deductions_with_state_tax(state_tax, additional_income)
-        taxes = compute_taxes(
-            ordinary_income,
-            deductions,
-            self.filing_status,
-            [self.fica_wages],
-            self.model.year_config,
-            state_tax=state_tax,
-            preferential_income=self.preferential_income,
-            net_investment_income=self.income.net_investment_income,
-        )
-        # Early-withdrawal penalties are additional federal tax: those already on the ledger plus
-        # the one a prospective pre-tax withdrawal of ``additional_income`` would trigger.
-        taxes.federal += self.income.penalties + self.prospective_penalty(additional_income)
-        return taxes
+        from .tax_unit import TaxUnit
 
-    def get_married(self, spouse: "Person", link_spouse: bool = True):
+        return TaxUnit([self]).get_income_taxes_due(additional_income)
+
+    def get_married(self, spouse: "Person", link_spouse: bool = True, *, log_event: bool = True):
         """Get married.
 
         Args:
             spouse (Person): Spouse to get married to.
             link_spouse (bool, optional): Whether to call get_married on the spouse object as well. Defaults to True.
+            log_event (bool, optional): Log a ``married`` event (keyword-only). False for a marriage that is
+                part of the starting state (it happened before the first simulated year), so the event list
+                does not report it as something that happened in the run.
         """
         self.spouse = spouse
         self.filing_status = FilingStatus.MARRIED_FILING_JOINTLY
+        # Remarrying ends qualifying-surviving-spouse status (IRC §2(a)(2)(A)).
+        self.spouse_death_year = None
         if link_spouse:
             # Merge the spouse's family into this person's family so the couple settles as a
             # single joint tax unit (otherwise each spouse could sit in a separate family and
@@ -873,8 +1402,9 @@ class Person(LifeModelAgent):
                         self.family.members.append(member)
                 vacated_family.members = []
             spouse.get_married(self, False)
-            event_str = f"{self.name} and {spouse.name} got married at age {self.age} and {spouse.age}"
-            self.model.event_log.add(Event(event_str))
+            if log_event:
+                event_str = f"{self.name} and {spouse.name} got married at age {self.age} and {spouse.age}"
+                self.model.event_log.add(Event(EventKind.MARRIED, person=self, message=event_str, spouse=spouse.name))
 
     def add_child(self, name: str, birth_year: int | None = None) -> "Child":
         """Add a child dependent to this person.
@@ -894,8 +1424,37 @@ class Person(LifeModelAgent):
             birth_year = self.model.year
         return Child(self, name, birth_year)
 
+    @property
+    def months_old(self) -> int:
+        """Completed months of life at the start of the current model month (frozen at the month of
+        death)."""
+        from ..model import month_index
+
+        now = self._death_month_index if self._death_month_index is not None else self.model.month_index
+        return now - month_index(self.birth_year, self.birth_month)
+
+    @property
+    def age(self) -> int:
+        """Completed years of age in the current model month (the person turns a year older in their
+        birth month)."""
+        return self.months_old // 12
+
+    @age.setter
+    def age(self, value: int) -> None:
+        # Re-date the birth (keeping the birth month) so the person is ``value`` this month.
+        self.birth_year += self.age - int(value)
+
+    @property
+    def age_years_fractional(self) -> float:
+        """Exact age in years this month (``59.5`` six months after the 59th birthday): what
+        age thresholds such as the 59.5 early-withdrawal age compare against."""
+        return self.months_old / 12
+
     def get_year_at_age(self, age: int) -> int:
-        """Gets the year at a given age.
+        """Gets the year in which the person turns ``age`` (the whole year for a January birth).
+
+        ``get_year_at_age(a) == start_year + (a - constructor_age)`` for a person built before the
+        run without a ``birth``, and the answer does not change as the simulation advances.
 
         Args:
             age (int): Age of the person.
@@ -903,21 +1462,43 @@ class Person(LifeModelAgent):
         Returns:
             int: Year at the given age.
         """
-        return self.model.year + (age - self.age)
+        return self.birth_year + int(age)
+
+    def get_period_at_age(self, age: float) -> tuple[int, int]:
+        """``(year, month)`` of the first month in which :attr:`age_years_fractional` reaches ``age``."""
+        import math
+
+        from ..model import month_index
+
+        index = month_index(self.birth_year, self.birth_month) + math.ceil(round(age * 12, 9))
+        return index // 12, index % 12 + 1
+
+    def age_in(self, year: int) -> int:
+        """The age the person reaches during ``year`` (their age at its end; the inverse of
+        :meth:`get_year_at_age`)."""
+        return year - self.birth_year
+
+    def on_year_start(self):
+        # A surviving spouse files jointly for the year of the death, then single the following year; the
+        # tax unit files as a qualifying surviving spouse for two years while a dependent child lives with
+        # them (TaxUnit.build_units).
+        if self._widowed_year is not None and self.model.year > self._widowed_year:
+            self.filing_status = FilingStatus.SINGLE
+            self._widowed_year = None
+        self.deceased_spouse_this_year = None
 
     def pre_step(self):
         if self.is_deceased:
             return
-        self.age += 1
-        # A surviving spouse files jointly for the year of the death, then switches to single the
-        # following year (qualifying-widow treatment is a documented simplification, not modeled).
-        if self._widowed_year is not None and self.model.year > self._widowed_year:
-            self.filing_status = FilingStatus.SINGLE
-            self._widowed_year = None
         self._check_mortality()
 
     def _check_mortality(self):
-        """Determine whether the person dies this year and, if so, orchestrate the death."""
+        """Determine whether the person dies this month and, if so, orchestrate the death.
+
+        ``FIXED_AGE`` dies in the birth month of ``death_age``. ``STOCHASTIC`` converts the annual
+        probability ``q`` at the person's age into a monthly hazard ``1 - (1 - q)^(1/12)`` and draws
+        every month.
+        """
         if self.mortality_mode == MortalityMode.IMMORTAL:
             return
         if self.mortality_mode == MortalityMode.FIXED_AGE:
@@ -929,23 +1510,32 @@ class Person(LifeModelAgent):
             else:
                 chance = get_chance_of_mortality(self.age, self.gender)
             # Draw against the model RNG so seeded runs are reproducible.
-            if self.model.random.random() <= chance:
+            if self.model.random.random() <= monthly_hazard(chance):
                 self.die()
 
     def step(self):
-        # Year-end settlement (taxes, spending, housing, one-time expenses, debt) is performed
-        # at the tax-unit level in Family.step. Here the person only handles retirement.
+        # Bills and taxes are settled at the tax-unit level in Family. Here the person only handles
+        # retirement.
         #
-        # Retirement uses crossing detection (>=, fired once) so that a non-integer retirement
-        # age still triggers and a person can't draw a full salary while "retired".
-        if not self.retirement_triggered and self.age >= self.retirement_age:
+        # Retirement uses crossing detection (>=, fired once) on the exact age, so a person retires in
+        # the month they reach ``retirement_age`` (after that month's paycheck) and a non-integer
+        # retirement age (65.5) takes effect six months after the birthday.
+        if self.is_deceased:
+            return
+        if not self.retirement_triggered and self.age_years_fractional >= self.retirement_age:
             for job in self.jobs:
                 job.retire()
             self.retirement_triggered = True
 
         retirement_age = federal_retirement_age(self.model.config)
-        if not self._retirement_age_event_logged and self.age >= int(retirement_age):
-            self.model.event_log.add(Event(f"{self.name} reached retirement age (age {retirement_age})"))
+        if not self._retirement_age_event_logged and self.age_years_fractional >= retirement_age:
+            self.model.event_log.add(
+                Event(
+                    EventKind.RETIREMENT_AGE,
+                    person=self,
+                    message=f"{self.name} reached retirement age (age {retirement_age})",
+                )
+            )
             self._retirement_age_event_logged = True
 
     def die(self):
@@ -956,18 +1546,20 @@ class Person(LifeModelAgent):
         survivor adjustments, and remove the deceased (and their emptied accounts) from the
         simulation so nothing of theirs steps again.
 
-        Simplifications (documented, backlog for later refinement):
+        Simplifications:
           * Non-spouse inherited pre-tax accounts follow ``estate.inherited_pretax_mode``: the
             SECURE Act 10-year even spread (default) or the death-year lump sum.
-          * A widowed spouse files jointly in the death year and single thereafter (no
-            qualifying-widow years).
+          * A widowed spouse files jointly in the death year, then as a qualifying surviving
+            spouse for two years while a dependent child lives with them, else single or head of
+            household.
           * Pensions with a survivor election continue a reduced stream to a surviving spouse;
             single-life pensions and life-only annuities simply stop; no state estate taxes.
         """
         if self.is_deceased:
             return
         self.is_deceased = True
-        self.model.event_log.add(Event(f"{self.name} died at age {self.age}"))
+        self._death_month_index = self.model.month_index
+        self.model.event_log.add(Event(EventKind.DIED, person=self, message=f"{self.name} died at age {self.age}"))
 
         # 1. Earned income stops immediately (jobs retire).
         for job in list(self.jobs):
@@ -977,10 +1569,14 @@ class Person(LifeModelAgent):
         spouse = self.spouse if (self.spouse is not None and not self.spouse.is_deceased) else None
         inheritor = spouse if spouse is not None else self._find_beneficiary()
 
-        # 2. Life-insurance death benefits pay out to the beneficiary; policies then close.
+        # 1b. Joint accounts pass to the surviving co-owner by right of survivorship, outside the estate.
+        self._settle_joint_accounts()
+
+        # 2. Life-insurance death benefits pay out to the beneficiary; policies then close (a
+        #    whole-life policy's cash value is absorbed by the death benefit).
         for policy in list(self.life_insurance_policies):
             policy.process_death_benefit()
-            policy.is_active = False
+            policy.close(f"{self.name}'s death: cash value absorbed by the death benefit")
 
         # 3. Settle annuities: life-only stops; period-certain (with payments left) and
         #    joint-and-survivor continue to the inheritor.
@@ -988,7 +1584,7 @@ class Person(LifeModelAgent):
 
         # 3b. End-of-life costs: funeral plus a final-year medical spike reduce the
         #     estate *before* it is valued, transferred, and estate-taxed. Opt-in: charged only
-        #     when the person has healthcare agents, so other simulations are unchanged.
+        #     when the person has healthcare agents (a household that does not model healthcare has none).
         self._charge_end_of_life_costs()
 
         # 3c. Settle pensions: a survivor election continues a reduced stream to a surviving
@@ -1000,6 +1596,7 @@ class Person(LifeModelAgent):
         # 4/5. Transfer the estate and adjust the survivor.
         if inheritor is not None:
             self._transfer_estate(inheritor, is_spouse=inheritor is spouse)
+            self._settle_unpaid_final_expenses(inheritor)
         else:
             self.model.event_log.add(Event(f"{self.name}'s estate had no beneficiary; assets dissolved"))
 
@@ -1009,11 +1606,59 @@ class Person(LifeModelAgent):
         #     with its own registry entry and keeps growing.
         self._settle_trusts_on_death(inheritor)
 
+        if inheritor is None:
+            self._dissolve_estate()
+
         if spouse is not None:
             self._apply_survivor_adjustments(spouse)
+        elif inheritor is not None:
+            # Income received this year before the death: a surviving spouse reports it on the year's
+            # joint return (the decedent stays on the survivor's tax unit until year end). Without
+            # one, the heir reports it (an approximation of the decedent's final return, which is not
+            # modeled); with no heir it goes untaxed.
+            inheritor.income.absorb(self.income)
 
         # 6. Remove the deceased (and any now-empty owned agents) from the simulation.
         self._remove_from_simulation()
+
+    def _settle_joint_accounts(self) -> None:
+        """Joint bank and brokerage accounts at this person's death: one titled to this person passes to the
+        surviving joint owner (registry and owner move; no money moves), one titled to the spouse becomes the
+        spouse's alone. A brokerage account's basis steps up on the decedent's half (IRC §1014(b)(9),
+        §2040(b))."""
+        from ..account.brokerage import BrokerageAccount
+
+        registries = self.model.registries
+        for registry in (registries.bank_accounts, registries.brokerage_accounts):
+            for account in list(registry.get_all_items()):
+                joint = getattr(account, "joint_owner", None)
+                if joint is None:
+                    continue
+                if account.person is self and not joint.is_deceased:
+                    if isinstance(account, BrokerageAccount):
+                        account.step_up_basis_at_death(0.5)
+                    registry.unregister(self, account)
+                    registry.register(joint, account)
+                    account.person = joint
+                    account.joint_owner = None
+                    if hasattr(account, "joint_primary"):
+                        account.joint_primary = False
+                    self.model.event_log.add(
+                        Event(
+                            EventKind.INHERITANCE,
+                            person=joint,
+                            amount=account.balance,
+                            account=account,
+                            cause=f"joint account with {self.name} (right of survivorship)",
+                            message=f"{self.name}'s joint {type(account).__name__} passed to {joint.name}",
+                        )
+                    )
+                elif joint is self:
+                    if isinstance(account, BrokerageAccount):
+                        account.step_up_basis_at_death(0.5)
+                    account.joint_owner = None
+                    if hasattr(account, "joint_primary"):
+                        account.joint_primary = False
 
     def _find_beneficiary(self) -> Optional["Person"]:
         """Non-spouse beneficiary: an explicit designation, else the first surviving family member."""
@@ -1033,14 +1678,16 @@ class Person(LifeModelAgent):
         """Charge funeral and final-year medical costs against the estate.
 
         Charged only when the person opted into the healthcare subsystem (has any healthcare
-        agent), so simulations without healthcare agents keep today's death flow byte-identical.
+        agent); a person without healthcare agents has no end-of-life costs.
         The funeral cost is CPI-indexed from the start year; the final-year medical spike is the
         configured multiplier times the person's current-year medical cost, and keys off the
         ``MedicalCosts`` agent(s) only — a decedent with just Medicare/LongTermCare agents incurs
-        the funeral cost alone. Costs are paid from the deceased's **bank accounts only** before
-        the estate is valued/transferred; any unpayable remainder is forgiven (the estate cannot
-        go negative), so a bank-poor but 401k-rich decedent underpays these costs — retirement
-        accounts are not liquidated for them (documented v1 simplification).
+        the funeral cost alone. Costs are paid from the deceased's bank accounts before the estate
+        is valued/transferred; whatever the bank can't cover is a debt of the estate: it is excluded
+        from the estate-tax base and charged to the inheritor as a death-year bill, which settlement
+        pays from the inherited assets through the household waterfall (see
+        :meth:`_settle_unpaid_final_expenses`). With no inheritor the estate is dissolved and the
+        remainder goes unpaid.
 
         The deceased's healthcare agents are then retired so they are not reassigned to the
         inheritor (medical costs are personal, not inheritable).
@@ -1053,7 +1700,10 @@ class Person(LifeModelAgent):
         cost = healthcare.funeral_cost * self.model.economy.cumulative_inflation(self.model.year)
         for medical in self.medical_costs:
             cost += healthcare.final_year_medical_multiplier * medical.annual_cost()
-        unpaid = self.deduct_from_bank_accounts(cost)
+        unpaid = self.deduct_from_bank_accounts(
+            cost, kind=FlowKind.SPENDING, sink="end-of-life costs", cause=f"{self.name}'s end-of-life costs"
+        )
+        self._unpaid_final_expenses = unpaid
         self.model.event_log.add(
             Event(f"{self.name}'s estate paid ${cost - unpaid:,.0f} in end-of-life costs (funeral + final medical)")
         )
@@ -1065,12 +1715,23 @@ class Person(LifeModelAgent):
         self.model.registries.medicare.clear(self)
         self.model.registries.long_term_care.clear(self)
 
+    def _settle_unpaid_final_expenses(self, inheritor: "Person") -> None:
+        """Charge end-of-life costs the decedent's bank couldn't cover to the inheritor this year."""
+        unpaid = self._unpaid_final_expenses
+        if unpaid <= 0:
+            return
+        self._unpaid_final_expenses = 0.0
+        inheritor.spending.add_expense(unpaid, category="end_of_life")
+        self.model.event_log.add(
+            Event(f"{inheritor.name} pays ${unpaid:,.0f} of {self.name}'s end-of-life costs from the estate")
+        )
+
     def _settle_pensions_on_death(self, spouse: Optional["Person"]):
         """Continue survivor pensions to a surviving spouse; terminate the rest.
 
         A pension with ``survivor_percent > 0`` and a surviving spouse transfers to that spouse at
         ``benefit x survivor_percent/100`` (a real single-life-vs-survivor modeling lever). Without
-        a survivor election or a surviving spouse the pension terminates, as it does today.
+        a survivor election or a surviving spouse the pension terminates.
 
         This runs before the estate transfer, so terminated pensions are removed from the registry
         (the generic reassignment won't touch them) and the survivor's pension is already re-owned
@@ -1078,7 +1739,8 @@ class Person(LifeModelAgent):
         """
         pensions = self.model.registries.pensions
         for pension in list(self.pensions):
-            if spouse is not None and getattr(pension, "survivor_percent", 0) > 0:
+            paid_out = getattr(pension, "paid_out", False)  # a lump sum leaves nothing to continue
+            if spouse is not None and getattr(pension, "survivor_percent", 0) > 0 and not paid_out:
                 pension.benefit_amount *= pension.survivor_percent / 100.0
                 # The continued stream is single-life on the survivor (no further survivor split).
                 pension.survivor_percent = 0.0
@@ -1086,6 +1748,9 @@ class Person(LifeModelAgent):
                 # against the survivor's own retirement status (a working 50-year-old widow still
                 # receives the joint-and-survivor benefit from the year of death).
                 pension.start_age = spouse.age
+                # The survivor's stream is a fixed benefit: it accrues no further service.
+                pension.accrues_service = False
+                pension.is_survivor_stream = True
                 pensions.unregister(self, pension)
                 pensions.register(spouse, pension)
                 pension.person = spouse
@@ -1136,7 +1801,9 @@ class Person(LifeModelAgent):
         per-beneficiary apportionment of who pays), even when a designation created the liability.
         """
         gross_estate = self._gross_estate_value()
-        taxable_base = max(0.0, gross_estate - self._marital_share(is_spouse))
+        # End-of-life costs still owed, and unpaid bills carried as debt, are debts of the estate
+        # (deductible, IRC §2053).
+        taxable_base = max(0.0, gross_estate - self._marital_share(is_spouse) - self._unpaid_final_expenses - self.debt)
 
         self._step_up_taxable_basis()
         self._transfer_designated_accounts()
@@ -1145,10 +1812,19 @@ class Person(LifeModelAgent):
             self._liquidate_pretax_to(inheritor)
 
         self._reassign_owned_agents(inheritor)
+        self._pass_cash_and_debt_to(inheritor)
 
         self._apply_estate_tax(inheritor, taxable_base)
 
-        self.model.event_log.add(Event(f"{self.name}'s estate transferred to {inheritor.name}"))
+        self.model.event_log.add(
+            Event(
+                EventKind.INHERITANCE,
+                person=inheritor,
+                amount=gross_estate,
+                cause=f"estate of {self.name}",
+                message=f"{self.name}'s estate transferred to {inheritor.name}",
+            )
+        )
 
     def _marital_share(self, is_spouse: bool) -> float:
         """Value of the estate passing to the surviving spouse (sheltered by the unlimited
@@ -1168,7 +1844,7 @@ class Person(LifeModelAgent):
         share = 0.0
         passing_outside_residual = 0.0
         for acct in self._owned_financial_agents():
-            beneficiary = getattr(acct, "beneficiary", None)
+            beneficiary = self._designated_beneficiary(acct)
             if beneficiary is None or beneficiary.is_deceased or beneficiary is self:
                 continue
             balance = getattr(acct, "balance", 0.0)
@@ -1189,6 +1865,13 @@ class Person(LifeModelAgent):
             share += max(0.0, residual)
         return share
 
+    @staticmethod
+    def _designated_beneficiary(account) -> Optional["Person"]:
+        """The person an account is designated to pass to at death, if any. A 529 plan's
+        ``beneficiary`` is the student (a ``Child``), not a designation, so only a ``Person`` counts."""
+        beneficiary = getattr(account, "beneficiary", None)
+        return beneficiary if isinstance(beneficiary, Person) else None
+
     def _transfer_designated_accounts(self):
         """Route each account with a designated surviving beneficiary directly to that person.
 
@@ -1202,7 +1885,7 @@ class Person(LifeModelAgent):
 
         spouse = self.spouse if (self.spouse is not None and not self.spouse.is_deceased) else None
         for acct in self._owned_financial_agents():
-            beneficiary = getattr(acct, "beneficiary", None)
+            beneficiary = self._designated_beneficiary(acct)
             if beneficiary is None or beneficiary.is_deceased or beneficiary is self:
                 continue
             if beneficiary is not spouse:
@@ -1215,7 +1898,7 @@ class Person(LifeModelAgent):
                     pretax = acct.balance
                     acct.balance = 0.0
                 if pretax > 0:
-                    self._distribute_inherited_pretax(pretax, beneficiary)
+                    self._distribute_inherited_pretax(pretax, beneficiary, [(acct, pretax)])
             acct.person = beneficiary
             if hasattr(acct, "owner"):
                 acct.owner = beneficiary
@@ -1224,7 +1907,16 @@ class Person(LifeModelAgent):
             for reg in self.model.registries.iter_registries():
                 if reg.unregister(self, acct):
                     reg.register(beneficiary, acct)
-            self.model.event_log.add(Event(f"{self.name}'s designated account transferred to {beneficiary.name}"))
+            self.model.event_log.add(
+                Event(
+                    EventKind.INHERITANCE,
+                    person=beneficiary,
+                    amount=acct.balance,
+                    account=acct,
+                    cause=f"designated beneficiary of {self.name}",
+                    message=f"{self.name}'s designated account transferred to {beneficiary.name}",
+                )
+            )
 
     def _gross_estate_value(self) -> float:
         """Approximate transferable estate value (account balances plus home equity).
@@ -1248,35 +1940,54 @@ class Person(LifeModelAgent):
         Under ``estate.inherited_pretax_mode == "ten_year"`` (default) the balance moves into an
         :class:`~life_model.account.inherited.InheritedPretaxAccount` that spreads the distribution
         (and its tax) over ten years per the SECURE Act. Under ``"lump_sum"`` the whole balance is
-        distributed and taxed to the beneficiary in the death year (the lump-sum simplification,
-        retained for comparability).
+        distributed and taxed to the beneficiary in the death year (a simplification, kept as an
+        option to compare against).
         """
         from ..account.job401k import Job401kAccount
         from ..account.traditional_IRA import TraditionalIRA
 
         total_pretax = 0.0
+        sources = []
         for acct in self._owned_financial_agents():
             if isinstance(acct, Job401kAccount):
+                sources.append((acct, acct.pretax_balance))
                 total_pretax += acct.pretax_balance
                 acct.pretax_balance = 0.0
             elif isinstance(acct, TraditionalIRA):
+                sources.append((acct, acct.balance))
                 total_pretax += acct.balance
                 acct.balance = 0.0
-        self._distribute_inherited_pretax(total_pretax, inheritor)
+        self._distribute_inherited_pretax(total_pretax, inheritor, sources)
 
-    def _distribute_inherited_pretax(self, amount: float, beneficiary: "Person"):
+    def _distribute_inherited_pretax(
+        self, amount: float, beneficiary: "Person", sources: "list[tuple[object, float]] | None" = None
+    ):
         """Pass ``amount`` of inherited pre-tax money to a non-spouse ``beneficiary`` per the
-        configured ``estate.inherited_pretax_mode`` (see ``_liquidate_pretax_to``)."""
+        configured ``estate.inherited_pretax_mode`` (see ``_liquidate_pretax_to``). ``sources`` are
+        the ``(account, amount)`` pairs it was taken from (posted as the inheritance's origin)."""
         if amount <= 0:
             return
+        sources = [(account, taken) for account, taken in (sources or []) if taken > 0]
+        cause = f"estate of {self.name}"
         mode = self.model.config.estate.inherited_pretax_mode
         if mode == "lump_sum":
-            beneficiary.income.add(IncomeType.PRETAX_DISTRIBUTION, amount)
-            beneficiary.receive_cash(amount, source=f"inherited retirement from {self.name}")
+            beneficiary.income.add(IncomeType.PRETAX_DISTRIBUTION, amount, source="inherited")
+            destination = beneficiary.cash_destination
+            beneficiary.receive_cash(amount, source=f"inherited retirement from {self.name}", post=False)
         else:  # "ten_year"
             from ..account.inherited import InheritedPretaxAccount
 
-            InheritedPretaxAccount(beneficiary, balance=amount, decedent_name=self.name)
+            with self.model.ledger.moving_balances():
+                destination = InheritedPretaxAccount(beneficiary, balance=amount, decedent_name=self.name)
+        for account, taken in sources:
+            self.model.ledger.post(
+                taken,
+                FlowKind.INHERITANCE,
+                from_account=account,
+                to_account=destination,
+                cause=cause,
+                agent=beneficiary,
+            )
 
     def _reassign_owned_agents(self, inheritor: "Person"):
         """Reassign ownership of every owned agent (accounts, homes, jobs, insurance, debts) to
@@ -1292,6 +2003,73 @@ class Person(LifeModelAgent):
                 if hasattr(item, "owner"):
                     item.owner = inheritor
         self.model.registries.transfer_owner(self, inheritor)
+
+    def _pass_cash_and_debt_to(self, inheritor: "Person") -> None:
+        """Hand the cash the decedent held outside any bank, and the unpaid bills they carried as
+        debt, to the inheritor (neither leaves the books with the decedent)."""
+        cause = f"estate of {self.name}"
+        if self.cash:
+            inheritor.receive_cash(self.cash, kind=FlowKind.INHERITANCE, from_account=cash_label(self), cause=cause)
+            self.cash = 0.0
+        # A return's balance due or refund passes with the estate.
+        for attribute, prefix in (("taxes_owed", "TaxDue"), ("tax_refund_due", "TaxRefund")):
+            amount = getattr(self, attribute)
+            if amount:
+                setattr(self, attribute, 0.0)
+                setattr(inheritor, attribute, getattr(inheritor, attribute) + amount)
+                ends = (f"{prefix}:{inheritor.unique_id}", f"{prefix}:{self.unique_id}")
+                if prefix == "TaxRefund":
+                    ends = ends[::-1]
+                self.model.ledger.post(
+                    amount, FlowKind.INHERITANCE, from_account=ends[0], to_account=ends[1], cause=cause, agent=inheritor
+                )
+        if self.debt:
+            debt = self.debt
+            self.debt = 0
+            inheritor.debt += debt
+            self.model.ledger.name_label(debt_label(inheritor), f"{inheritor.name}'s unpaid-bills debt")
+            self.model.ledger.post(
+                debt,
+                FlowKind.INHERITANCE,
+                from_account=debt_label(inheritor),
+                to_account=debt_label(self),
+                cause=cause,
+                agent=inheritor,
+            )
+
+    def _dissolve_estate(self) -> None:
+        """With no one to inherit, whatever the decedent still holds leaves the household: assets are
+        dissolved and debts discharged (posted so the books still balance)."""
+        from ..base_classes import FinancialAccount
+        from ..ledger import owned_lines
+
+        cause = f"estate of {self.name} dissolved (no beneficiary)"
+        for label, value, agent in owned_lines(self.model, self):
+            if value > 0:
+                self.model.ledger.post(
+                    value, FlowKind.FORFEIT, from_account=label, sink="dissolved estate", cause=cause, agent=self
+                )
+            else:
+                self.model.ledger.post(
+                    -value,
+                    FlowKind.FORFEIT,
+                    to_account=label,
+                    source="debts discharged with the estate",
+                    cause=cause,
+                    agent=self,
+                )
+            # Accounts leave the simulation with their owner; empty them so nothing left behind
+            # (a pledge, a ghost agent) can spend money that has left the books.
+            if isinstance(agent, FinancialAccount):
+                if hasattr(agent, "pretax_balance"):
+                    agent.pretax_balance = 0.0
+                    agent.roth_balance = 0.0
+                else:
+                    agent.balance = 0.0
+        self.cash = 0.0
+        self.debt = 0
+        self.taxes_owed = 0.0
+        self.tax_refund_due = 0.0
 
     def _settle_trusts_on_death(self, inheritor: Optional["Person"]):
         """Settle this person's trusts at death: revocable trusts pay out to their beneficiaries
@@ -1318,7 +2096,13 @@ class Person(LifeModelAgent):
         taxable = max(0.0, taxable_base - exemption)
         estate_tax = taxable * (rate / 100)
         if estate_tax > 0:
-            inheritor.pay_bills(estate_tax)
+            from .tax_unit import TaxUnit
+
+            cause = f"estate tax on {self.name}'s estate"
+            unpaid = TaxUnit.for_member(inheritor).pay_bills(
+                estate_tax, kind=FlowKind.TAX, sink="IRS: estate tax", cause=cause
+            )
+            inheritor.add_debt(unpaid, kind=FlowKind.TAX, sink="IRS: estate tax", cause=cause)
             self.model.event_log.add(Event(f"Estate tax of ${estate_tax:,.0f} paid on {self.name}'s estate"))
 
     def _apply_survivor_adjustments(self, spouse: "Person"):
@@ -1326,6 +2110,8 @@ class Person(LifeModelAgent):
         approximate the Social Security survivor benefit."""
         spouse.spouse = None
         spouse._widowed_year = self.model.year
+        spouse.spouse_death_year = self.model.year
+        spouse.deceased_spouse_this_year = self
         # Social Security survivor approximation: the survivor receives at least the deceased's
         # benefit (max of own vs. deceased's), applied as a monthly floor once benefits start.
         if self.social_security is not None and spouse.social_security is not None:
@@ -1341,7 +2127,8 @@ class Person(LifeModelAgent):
         # never transferred; remove them so they stop stepping.
         for acct in self._owned_financial_agents():
             acct.remove()
-        # Pensions and other benefits are life-only in v1: they stop at death.
+        # Pensions and other benefits still owned by the deceased are life-only: they stop at death (a
+        # survivor pension was already re-owned by the spouse in _settle_pensions_on_death).
         from ..base_classes import Benefit
 
         for benefit in [a for a in self.model.agents if isinstance(a, Benefit) and getattr(a, "person", None) is self]:
@@ -1349,31 +2136,132 @@ class Person(LifeModelAgent):
         # Drop the deceased from their family so no tax unit is built for them.
         if self in self.family.members:
             self.family.members.remove(self)
-        # Zero the deceased's own statistics so the model's per-agent sums exclude them.
-        for name in self.STATS_OWNED:
+        # Zero the deceased's balance statistics so the model's per-agent sums exclude them (their
+        # flows so far this year stay in the year's totals; see LifeModelAgent.remove).
+        flows = self.model._flow_stat_names()
+        for name in self.STATS_OWNED - flows:
             setattr(self, name, 0)
         self.remove()
 
-    def post_step(self):
+    def collect_stats(self):
+        """Year-end balances (after December's bills and the year's taxes)."""
+        if self.is_deceased:
+            return
+        self.stat_bank_balance = self.bank_account_balance
+        self.stat_brokerage_balance = self.brokerage_balance
+
+    def on_year_end(self):
+        # After the year's return was settled: next year's ledger and limits start empty.
         self.income.clear()
         self.hsa_medical_reimbursed = 0.0
         self._elective_deferrals_ytd = 0.0
+        self.roth_conversions_ytd = 0.0
+
+
+@dataclass
+class SpendingLine:
+    """A categorized line of living spending.
+
+    ``amount`` is per ``period`` (``"annual"``: a twelfth is paid each month; ``"monthly"``: paid every
+    month) in the run's first-year dollars, grown every year by ``growth_pct`` (None: the economy's
+    inflation). The line is paid in the years ``start_year`` through ``end_year`` (inclusive; open when
+    None). ``essential`` separates needs from wants in the reports (it does not change what is paid).
+    """
+
+    amount: float
+    period: str = "annual"
+    growth_pct: float | None = 0.0
+    start_year: int | None = None
+    end_year: int | None = None
+    essential: bool = True
+
+    def __post_init__(self):
+        if self.period not in ("annual", "monthly"):
+            raise ValueError(f"period must be 'annual' or 'monthly', got {self.period!r}")
+        if self.amount < 0:
+            raise ValueError("a spending line's amount must not be negative")
+        if self.start_year is not None and self.end_year is not None and self.end_year < self.start_year:
+            raise ValueError("end_year is before start_year")
+
+    @property
+    def annual_amount(self) -> float:
+        return self.amount * (12 if self.period == "monthly" else 1)
+
+    def active(self, year: int) -> bool:
+        return (self.start_year is None or year >= self.start_year) and (self.end_year is None or year <= self.end_year)
+
+
+class RecurringExpense(SpendingLine):
+    """A multi-year expense: a :class:`SpendingLine` from ``start_year`` through ``end_year``,
+    added to a person's spending with ``Spending.add_line`` (at construction, or from a ``LifeEvent``)."""
+
+    def __init__(
+        self,
+        amount: float,
+        start_year: int,
+        end_year: int | None = None,
+        *,
+        period: str = "annual",
+        growth_pct: float | None = 0.0,
+        essential: bool = True,
+    ):
+        super().__init__(amount, period, growth_pct, start_year, end_year, essential)
 
 
 class Spending(LifeModelAgent):
-    def __init__(self, model: LifeModel, base: float = 0, yearly_increase: float | None = 0):
+    """A person's living spending: an annual ``base`` paid a twelfth a month, plus one-time expenses
+    paid with the bills of the month they are added in (an expense added after the month's bills
+    were paid is paid the next month). The base escalates at year end."""
+
+    # The escalator runs at year end after the year's taxes are settled (0).
+    STEP_PRIORITY: ClassVar[dict[str, int]] = {"on_year_end": 10}
+
+    @deprecated_arguments({"base": "base_annual", "yearly_increase": "growth_pct"})
+    def __init__(
+        self,
+        model: LifeModel,
+        base_annual: float = 0,
+        growth_pct: float | None = 0,
+        *,
+        categories: "dict[str, SpendingLine] | None" = None,
+        schedule: "list[tuple[float, float]] | None" = None,
+    ):
         """Spending
 
         Args:
             model (LifeModel): LifeModel instance.
-            base (float): Base spending amount.
-            yearly_increase (float, optional): Yearly percentage increase in spending. 10 = 10%.
-                Pass None to grow with the economy's inflation each year. Defaults to 0 (no increase).
+            base_annual (float): Base spending amount (a year's; paid monthly): the uncategorized remainder
+                when ``categories`` are given (``base=`` is a deprecated alias).
+            growth_pct (float, optional): Yearly percentage increase in spending. 10 = 10%.
+                Pass None to grow with the economy's inflation each year. Defaults to 0 (no increase;
+                ``yearly_increase=`` is a deprecated alias).
+            categories (dict, optional): Categorized lines ``{name: SpendingLine(...)}`` on top of
+                ``base`` (keyword-only). Each is paid with the month's bills under its name.
+            schedule (list, optional): ``[(age, percent), ...]``: in the month the person reaches each
+                age, every line (base and categories) becomes ``percent`` of what it was (e.g. a
+                retirement spending smile ``[(75, 80), (85, 87.5)]``). Ages already reached when the
+                person is created count as applied (the entered amounts are today's).
         """
         super().__init__(model)
-        self.base = base
-        self._yearly_increase_override = yearly_increase
+        self.base = base_annual
+        self._yearly_increase_override = growth_pct
+        self.categories: dict[str, SpendingLine] = dict(categories or {})
+        self.schedule: list[tuple[float, float]] = sorted((float(a), float(p)) for a, p in (schedule or []))
+        for _, pct in self.schedule:
+            if pct < 0:
+                raise ValueError("a spending schedule percent must not be negative")
+        #: Schedule steps already applied (indexes into ``schedule``); set once the person is known.
+        self._schedule_applied: set[int] | None = None
+        # This year's categorized spending paid so far, by name.
+        self._category_paid: dict[str, float] = {}
+        #: The person whose spending this is (set by ``Person``).
+        self.person = None
+        #: This year's one-time expenses (added so far this year).
         self.one_time_expenses = 0
+        #: This year's one-time expenses by category (they sum to ``one_time_expenses``).
+        self.one_time_by_category: dict[str, float] = {}
+        # One-time expenses not yet paid, by category (paid with the next month's bills).
+        self._unpaid_by_category: dict[str, float] = {}
 
     @property
     def yearly_increase(self) -> float:
@@ -1386,28 +2274,128 @@ class Spending(LifeModelAgent):
     def yearly_increase(self, value: float | None) -> None:
         self._yearly_increase_override = value
 
-    def add_expense(self, amount: float):
-        """Adds a one-time expense.
+    def add_expense(self, amount: float, *, category: str = "one_time"):
+        """Adds a one-time expense, paid with this month's bills (or next month's, when added after
+        this month's bills were paid).
 
         Args:
             amount (float): Amount of expense to add.
+            category (str, optional): What it is for (``"medical"``, ``"dependents"``,
+                ``"insurance_premium"``, ...), shown on the ledger and in ``explain``. Keyword-only.
         """
         self.one_time_expenses += amount
+        self.one_time_by_category[category] = self.one_time_by_category.get(category, 0.0) + amount
+        self._unpaid_by_category[category] = self._unpaid_by_category.get(category, 0.0) + amount
+
+    @property
+    def unpaid_one_time_expenses(self) -> float:
+        """One-time expenses added but not yet paid."""
+        return sum(self._unpaid_by_category.values())
+
+    def month_base(self) -> float:
+        """This month's share of the base spending (a twelfth)."""
+        return self.base / 12
+
+    def add_line(self, name: str, line: SpendingLine) -> None:
+        """Add (or replace) a categorized spending line, e.g. a :class:`RecurringExpense` from an event."""
+        self.categories[name] = line
+
+    def _start_schedule(self) -> None:
+        """Mark the schedule steps the person has already passed (the entered amounts are today's)."""
+        if self.schedule and self.person is not None and self._schedule_applied is None:
+            age = self.person.age_years_fractional
+            self._schedule_applied = {k for k, (step_age, _) in enumerate(self.schedule) if age >= step_age}
+
+    def _apply_schedule(self) -> None:
+        """Apply the schedule steps the person has reached (each once)."""
+        if not self.schedule or self.person is None:
+            return
+        if self._schedule_applied is None:
+            self._start_schedule()
+        age = self.person.age_years_fractional
+        assert self._schedule_applied is not None
+        for k, (step_age, pct) in enumerate(self.schedule):
+            if k not in self._schedule_applied and age >= step_age:
+                self._schedule_applied.add(k)
+                self.base *= pct / 100
+                for line in self.categories.values():
+                    line.amount *= pct / 100
+
+    def category_month_lines(self) -> dict[str, float]:
+        """This month's categorized spending by name (the lines active this year)."""
+        year = self.model.year
+        return {
+            name: line.annual_amount / 12 for name, line in self.categories.items() if line.active(year) and line.amount
+        }
+
+    def take_month_lines(self) -> dict[str, float]:
+        """This month's bills by category: ``base`` (a twelfth of the base), every active categorized
+        line, plus every unpaid one-time category. Marks the one-time expenses as paid (the tax unit pays
+        the lines)."""
+        self._apply_schedule()
+        lines = {"base": self.month_base()} if self.base else {}
+        for name, amount in self.category_month_lines().items():
+            lines[name] = lines.get(name, 0.0) + amount
+            self._category_paid[name] = self._category_paid.get(name, 0.0) + amount
+        for category, amount in self._unpaid_by_category.items():
+            if amount:
+                lines[category] = lines.get(category, 0.0) + amount
+        self._unpaid_by_category = {}
+        return lines
+
+    def essential_spending_this_year(self) -> float:
+        """This year's categorized spending paid so far on essential lines."""
+        return sum(v for k, v in self._category_paid.items() if k in self.categories and self.categories[k].essential)
+
+    def discretionary_spending_this_year(self) -> float:
+        """This year's categorized spending paid so far on discretionary lines."""
+        return sum(
+            v for k, v in self._category_paid.items() if k in self.categories and not self.categories[k].essential
+        )
+
+    def year_spending_lines(self) -> dict[str, float]:
+        """This year's spending by category: ``base``, each categorized line paid so far and each
+        one-time category (any amount added to ``one_time_expenses`` directly is reported as
+        ``one_time``). Sums to :meth:`get_yearly_spending`."""
+        lines = {"base": self.base} if self.base else {}
+        for name, amount in self._category_paid.items():
+            if amount:
+                lines[name] = lines.get(name, 0.0) + amount
+        for category, amount in self.one_time_by_category.items():
+            lines[category] = lines.get(category, 0.0) + amount
+        untracked = self.one_time_expenses - sum(self.one_time_by_category.values())
+        if abs(untracked) > 1e-9:
+            lines["one_time"] = lines.get("one_time", 0.0) + untracked
+        return lines
 
     def get_yearly_spending(self) -> float:
-        """Gets yearly spending."""
-        return self.base + self.one_time_expenses
+        """This year's spending: the base plus the categorized lines paid and the one-time expenses added
+        so far this year."""
+        return self.base + sum(self._category_paid.values()) + self.one_time_expenses
+
+    @property
+    def base_spending(self) -> float:
+        """Base spending (an alias of ``base`` reported as the agent frame's ``Spending Base``
+        column, snapshotted before the year-end increase)."""
+        return self.base
 
     def adjust_base(self, base_percent: float):
-        """Adjusts base spending.
+        """Sets base spending to ``base_percent`` percent of what it is.
 
         Args:
-            base_percent (float): Percentage increase in spending. 50 = 50%.
+            base_percent (float): The new base as a percentage of the current one: 50 halves it, 110
+                raises it 10%.
         """
         self.base = self.base * (base_percent / 100)
 
-    def post_step(self):
-        # Consume-then-advance: the year's spending is read during the step stage; only after
-        # it has been spent do we clear one-time expenses and apply the yearly increase.
+    def on_year_end(self):
+        # Consume-then-advance: the year's spending was paid month by month; only after the year
+        # end do we start next year's one-time tally and apply the yearly increase. One-time
+        # expenses added after December's bills stay unpaid and are paid in January.
         self.base += self.base * (self.yearly_increase / 100)
+        for line in self.categories.values():
+            growth = self.model.economy.inflation(self.model.year) if line.growth_pct is None else line.growth_pct
+            line.amount *= 1 + growth / 100
         self.one_time_expenses = 0
+        self.one_time_by_category = {}
+        self._category_paid = {}

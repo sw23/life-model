@@ -4,29 +4,38 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 import html
+from typing import ClassVar
 
+from ..deprecated_names import deprecated_arguments
 from ..model import LifeModelAgent
 from ..people.person import Person
 
 
 class Apartment(LifeModelAgent):
-    def __init__(self, person: Person, name: str, monthly_rent: float, yearly_increase: float | None = 5):
+    """A rental: ``monthly_rent`` paid with each month's bills, raised at year end."""
+
+    # The rent escalator runs at year end, after the year's taxes (0).
+    STEP_PRIORITY: ClassVar[dict[str, int]] = {"on_year_end": 10}
+
+    @deprecated_arguments({"person": "owner", "monthly_rent": "rent_monthly", "yearly_increase": "rent_growth_pct"})
+    def __init__(self, owner: Person, name: str, rent_monthly: float, rent_growth_pct: float | None = 5):
         """Apartment
 
         Args:
-            person (Person): Primary resident or person paying apartment rent.
+            owner (Person): Primary resident or person paying apartment rent (``person=`` is deprecated).
             name (string): Apartment Name.
-            monthly_rent (float): Amount of rent charged monthly.
-            yearly_increase (float, optional): Percentage of rent increase every year. Pass None to
-                increase with the economy's inflation each year. Defaults to 5.
+            rent_monthly (float): Amount of rent charged monthly (``monthly_rent=`` is deprecated).
+            rent_growth_pct (float, optional): Percentage of rent increase every year. Pass None to
+                increase with the economy's inflation each year. Defaults to 5 (``yearly_increase=`` is
+                deprecated).
         """
-        super().__init__(person.model)
+        super().__init__(owner.model)
         self.name = name
-        self.monthly_rent = monthly_rent
-        self._yearly_increase_override = yearly_increase
+        self.monthly_rent = rent_monthly
+        self._yearly_increase_override = rent_growth_pct
 
         # Register with the model registry
-        self.model.registries.apartments.register(person, self)
+        self.model.registries.apartments.register(owner, self)
 
     @property
     def yearly_increase(self) -> float:
@@ -46,6 +55,6 @@ class Apartment(LifeModelAgent):
     def _repr_html_(self):
         return f"{html.escape(self.name)}, monthly rent ${self.monthly_rent:,}"
 
-    def post_step(self):
+    def on_year_end(self):
         # Rent escalator runs after the year's rent has been paid (consume-then-advance).
         self.monthly_rent += self.monthly_rent * (self.yearly_increase / 100)

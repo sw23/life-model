@@ -1,0 +1,48 @@
+# Household golden (synthetic, not real data). See ../README.md.
+spec_version: 1
+meta:
+  name: IRA deduction inside the phase-out
+  description: 'Household golden (synthetic): a covered worker contributing to a traditional IRA.'
+  as_of: 2025-01
+  start_year: 2025
+  end_year: 2025
+  seed: 1
+  default_state: TX
+people:
+- id: sam
+  name: Sam
+  age: 35
+  retirement_age: 67
+  spending:
+    amount_annual: 40000
+    growth_pct: 0
+  jobs:
+  - id: sam_job
+    company: Example Analytics
+    salary_annual: 82000
+  accounts:
+  - kind: bank
+    id: sam_checking
+    company: Community Bank
+    type: Checking
+    balance: 30000
+    interest_pct: 0.0
+    compounding: annual
+    primary: true
+  - kind: 401k
+    id: sam_401k
+    job: sam_job
+    pretax_balance: 10000
+    pretax_contrib_pct: 0
+    growth_pct: 0
+  - kind: traditional_ira
+    id: sam_ira
+    balance: 0
+    growth_pct: 0
+events:
+- at:
+    year: 2025
+  person: sam
+  action: contribute
+  account: sam_ira
+  amount: 7000

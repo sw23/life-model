@@ -9,30 +9,14 @@ import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
 
-from life_model.account.bank import BankAccount
-from life_model.account.brokerage import BrokerageAccount
-from life_model.account.hsa import HealthSavingsAccount, HSAType
-from life_model.account.job401k import Job401kAccount
-from life_model.account.roth_IRA import RothIRA
-from life_model.account.traditional_IRA import TraditionalIRA
 from life_model.base_classes import FinancialAccount
 from life_model.config.financial_config import FinancialConfig
 from life_model.config.scenarios import get_scenario
-from life_model.dependents.child import Child
-from life_model.healthcare.medical_costs import MedicalCosts
-from life_model.healthcare.medicare import Medicare
-from life_model.insurance.social_security import (
-    SocialSecurity,
-    get_avg_wage_index,
-    get_max_delayed_retirement_credit_age,
-    get_min_early_retirement_age,
-)
+from life_model.insurance.social_security import SocialSecurity, get_avg_wage_index
 from life_model.limits import required_min_distrib, rmd_start_age
-from life_model.model import LifeModel
-from life_model.people.family import Family
 from life_model.people.mortality import get_blended_chance_of_mortality, get_chance_of_mortality
-from life_model.people.person import GenderAtBirth, MortalityMode, Person, Spending
-from life_model.work.job import Job, Salary
+from life_model.people.person import GenderAtBirth
+from life_model.spec import create_model, populate_model
 
 from .actions import (
     TRANSFER_ACTIONS,
@@ -46,13 +30,14 @@ from .actions import (
     withdrawal_available,
 )
 from .economy_overlay import DEFAULT_REGIME_YEARS, ScenarioOverlay
+from .policies import NVEC, SLOT_NAMES, StandingPolicies, decode_policy_action
 from .rewards import DEFAULT_PRESET, RewardConfig, get_reward_config, step_reward
-from .scenarios import HOUSEHOLD_SCENARIOS, EpisodeSampler
+from .scenarios import AGENT_ID, HOUSEHOLD_SCENARIOS, EpisodeSampler, household_spec
 
 # Observation layout version. Bumped whenever the feature list, ordering,
 # normalization, or bounds below change, so checkpoints trained against a different layout are
 # rejected instead of silently misread.
-OBS_VERSION = 4
+OBS_VERSION = 5
 
 # Age at which tax-advantaged accounts can be tapped without the early-withdrawal penalty.
 PENALTY_FREE_AGE = 59.5
@@ -67,7 +52,7 @@ OBS_SPEC = [
     ("years_to_retirement", 0.0, 1.0),  # max(0, retirement_age - age) / 50
     ("is_retired", 0.0, 1.0),  # 0/1
     ("mortality_probability", 0.0, 1.0),  # SSA table chance of death at current age
-    ("life_progress", 0.0, 1.5),  # (age - start_age) / max_steps
+    ("life_progress", 0.0, 1.5),  # (age - start_age) / modeled years
     # --- balances (real $M) ---
     ("bank_balance", 0.0, 10.0),
     ("pretax_401k", 0.0, 10.0),
@@ -87,7 +72,7 @@ OBS_SPEC = [
     ("emergency_fund_years", 0.0, 10.0),  # bank balance / spending
     ("income_to_spending", 0.0, 10.0),
     # --- tax position (for the upcoming simulated year; the ledger itself is settled and
-    #     cleared inside model.step(), so the decision-relevant quantity is the projection) ---
+    #     cleared inside model.step_year(), so the decision-relevant quantity is the projection) ---
     ("projected_taxable_income", 0.0, 10.0),  # projected wages + RMD (real $M)
     ("bracket_headroom", 0.0, 10.0),  # $ to the next federal bracket edge / $100k (real)
     ("marginal_rate", 0.0, 1.0),  # marginal federal rate at the projected income
@@ -99,7 +84,7 @@ OBS_SPEC = [
     ("ira_room_fraction", 0.0, 1.0),  # remaining IRA contribution room / limit
     ("hsa_room_fraction", 0.0, 1.0),  # remaining HSA contribution room / limit
     # --- market / economy (realized, no lookahead of the upcoming year's draw) ---
-    ("time_progress", 0.0, 1.5),  # (year - start_year) / max_steps
+    ("time_progress", 0.0, 1.5),  # (year - start_year) / modeled years
     ("inflation", -1.0, 1.0),  # last realized year's inflation, percent / 100
     ("equity_return", -1.0, 1.0),  # last realized year's equity return, percent / 100
     ("bond_return", -1.0, 1.0),  # last realized year's bond return, percent / 100
@@ -109,18 +94,27 @@ OBS_SPEC = [
     ("years_to_ss_claim", 0.0, 1.0),  # max(0, claim_age - age) / 50
     ("employer_match_rate", 0.0, 2.0),  # employer dollars per deferred dollar
     ("employer_match_cap", 0.0, 1.0),  # matched deferrals as a share of pay
+    # --- decision timing ---
+    ("month_of_year", 0.0, 1.0),  # (month of the upcoming decision - 1) / 12: 0 at a January decision
+    ("months_to_next_decision", 0.0, 1.0),  # months the step will simulate / 12
 ]
+
+#: Features appended to :data:`OBS_SPEC` under the factored action space: each standing policy's
+#: value (``(index - 1) / (len(values) - 1)``, see ``policies.StandingPolicies.normalized``) and the
+#: bond fund ``sweep_to_bonds`` fills (real $M).
+POLICY_OBS_SPEC = [(f"policy_{name}", 0.0, 1.0) for name in SLOT_NAMES] + [("bond_fund", 0.0, 10.0)]
+
+#: ``decision_interval`` -> months simulated per ``env.step``.
+DECISION_INTERVALS: dict[str, int] = {"year": 12, "quarter": 3, "month": 1}
+#: Action spaces the environment offers: the flat ``Discrete(52)`` one-off moves, or the factored
+#: ``MultiDiscrete`` standing policies (``policies.py``).
+ACTION_SPACES = ("flat", "factored")
 
 _MONEY_SCALE = 1_000_000.0
 
 # After-tax valuation of tax-deferred balances in terminal wealth for the named scenario envs and
 # the SLM scoring env: the middle (22%) federal bracket.
 NAMED_ENV_BEQUEST_TAX_RATE = 0.22
-
-# Earliest year a synthesized earnings record may start (SSA quarter-of-coverage table start).
-_FIRST_EARNINGS_YEAR = 1978
-# Earliest year-of-age-62 SSA publishes bend points for.
-_FIRST_BEND_POINT_YEAR = 1979
 
 # Economy modes the environment accepts (see EconomyModel; "path" is reachable via a named
 # economy_scenario rather than directly).
@@ -130,14 +124,20 @@ _ECONOMY_MODES = ("fixed", "stochastic")
 class FinancialLifeEnv(gym.Env):
     """Gymnasium environment for financial life simulation.
 
-    An RL agent makes one financial decision per simulated year over a person's lifetime, with
-    the goal of optimizing long-term financial outcomes. The environment follows the modern
-    Gymnasium API: ``reset(seed=..., options=...) -> (obs, info)`` and
+    An RL agent makes financial decisions over a person's lifetime, with the goal of optimizing
+    long-term financial outcomes. The environment follows the modern Gymnasium API:
+    ``reset(seed=..., options=...) -> (obs, info)`` and
     ``step(action) -> (obs, reward, terminated, truncated, info)``.
+
+    **Decision interval and action space.** ``config["decision_interval"]`` is
+    ``"year"`` (default: one ``env.step`` simulates twelve months), ``"quarter"`` or ``"month"``; the reward accumulates over the interval. ``config["action_space"]``
+    is ``"flat"`` (default: ``Discrete(52)``, one one-off money move per decision, see ``actions.py``)
+    or ``"factored"`` (``MultiDiscrete``: a vector of standing policies that persist until changed,
+    see ``policies.py``).
 
     **Tax semantics:** actions execute through the model's real money path. A
     taxable withdrawal (pre-tax 401k, traditional IRA) records ordinary income on the person's
-    ledger, and the tax unit settles all taxes once per simulated year inside ``model.step()`` —
+    ledger, and the tax unit settles all taxes once per simulated year inside ``model.step_year()`` —
     so the tax on a withdrawal bites at year-end settlement within the same ``step()`` call, not
     at the instant of withdrawal. That is the simulator's actual semantics, and it is what makes
     pre-tax and Roth withdrawals genuinely different to the agent.
@@ -175,7 +175,7 @@ class FinancialLifeEnv(gym.Env):
             "max_action_amount": 50000,  # Max amount for transfer/withdrawal actions
             # Annual growth (percent) for the created 401k. None follows the economy's equity
             # return each year like every other investment account, so a 401k-heavy plan faces
-            # market risk; a number pins it (the pre-OBS_VERSION-4 world used a fixed 6.0).
+            # market risk; a number pins it at that rate.
             "account_growth": None,
             # Yearly spending / salary growth (percent). None follows the economy's inflation /
             # wage growth, so a high-inflation draw raises costs instead of a fixed 2%.
@@ -232,6 +232,13 @@ class FinancialLifeEnv(gym.Env):
             "initial_401k_pretax": 0.0,
             "initial_401k_roth": 0.0,
             "initial_brokerage": 0.0,
+            # The core invariant checker (life_model.invariants) run at each simulated year end:
+            # "off" for training throughput; tests run episodes under "strict".
+            "checks": "off",
+            # Months simulated per env.step: "year" (12), "quarter" (3) or "month" (1).
+            "decision_interval": "year",
+            # "flat": Discrete(52) one-off money moves; "factored": MultiDiscrete standing policies.
+            "action_space": "flat",
         }
 
         if config:
@@ -239,6 +246,18 @@ class FinancialLifeEnv(gym.Env):
 
         if self.config["economy_mode"] not in _ECONOMY_MODES:
             raise ValueError(f"Unknown economy_mode {self.config['economy_mode']!r}; expected one of {_ECONOMY_MODES}")
+        if self.config["decision_interval"] not in DECISION_INTERVALS:
+            raise ValueError(
+                f"Unknown decision_interval {self.config['decision_interval']!r}; "
+                f"expected one of {tuple(DECISION_INTERVALS)}"
+            )
+        if self.config["action_space"] not in ACTION_SPACES:
+            raise ValueError(f"Unknown action_space {self.config['action_space']!r}; expected one of {ACTION_SPACES}")
+        #: Months each ``step`` simulates.
+        self.interval_months = DECISION_INTERVALS[self.config["decision_interval"]]
+        #: Whether the action space is the factored standing-policy vector.
+        self.factored = self.config["action_space"] == "factored"
+        self.policies: StandingPolicies | None = None
 
         # Utility-based objective. ``reward_config`` (an explicit RewardConfig) wins;
         # otherwise config["reward_preset"] names a preset; otherwise the default preset. Recorded
@@ -250,19 +269,25 @@ class FinancialLifeEnv(gym.Env):
 
         self.render_mode = render_mode
 
-        # Calculate max steps before reset
-        self.max_steps = self.config["person_max_age"] - self.config["person_start_age"]
+        # Calculate max steps before reset: one step per decision interval over the modeled years.
+        self.max_years = self.config["person_max_age"] - self.config["person_start_age"]
+        self.max_steps = self.max_years * 12 // self.interval_months
         self.current_step = 0
 
-        # Fully discrete flat action space: every amount-bearing action crossed
-        # with the amount buckets, plus the singleton actions. "How much" is part of the policy.
-        self.action_space = spaces.Discrete(flat_action_count())
+        if self.factored:
+            # One small discrete choice per standing-policy slot, NO_CHANGE (0) in every slot.
+            self.action_space = spaces.MultiDiscrete(np.array(NVEC, dtype=np.int64))
+        else:
+            # Fully discrete flat action space: every amount-bearing action crossed with the amount
+            # buckets, plus the singleton actions. "How much" is part of the policy.
+            self.action_space = spaces.Discrete(flat_action_count())
 
         # Define observation space with the finite, documented per-feature bounds from OBS_SPEC
         # (observations are clipped to these bounds, so they are honest).
+        self.obs_spec = OBS_SPEC + (POLICY_OBS_SPEC if self.factored else [])
         self.observation_space = spaces.Box(
-            low=np.array([low for _, low, _ in OBS_SPEC], dtype=np.float32),
-            high=np.array([high for _, _, high in OBS_SPEC], dtype=np.float32),
+            low=np.array([low for _, low, _ in self.obs_spec], dtype=np.float32),
+            high=np.array([high for _, _, high in self.obs_spec], dtype=np.float32),
             dtype=np.float32,
         )
 
@@ -270,8 +295,8 @@ class FinancialLifeEnv(gym.Env):
         self.reset()
 
     def _get_state_size(self) -> int:
-        """Size of the observation vector (see OBS_SPEC for the feature layout)."""
-        return len(OBS_SPEC)
+        """Size of the observation vector (see OBS_SPEC, plus POLICY_OBS_SPEC when factored)."""
+        return len(self.obs_spec)
 
     def _resolve_episode_household(self, options: dict) -> dict[str, Any]:
         """Resolve the household parameters for this episode.
@@ -335,7 +360,8 @@ class FinancialLifeEnv(gym.Env):
         # Resolve this episode's household (fixed point values, or a seeded random draw).
         household = self._resolve_episode_household(options)
         self.episode_household = household
-        self.max_steps = self.config["person_max_age"] - household["person_start_age"]
+        self.max_years = self.config["person_max_age"] - household["person_start_age"]
+        self.max_steps = self.max_years * 12 // self.interval_months
 
         # Economy: stochastic by default so training sees good and bad years; a
         # named economy scenario (curriculum knob) is applied on top and wins where it sets
@@ -359,95 +385,48 @@ class FinancialLifeEnv(gym.Env):
             else:
                 financial_config.apply_scenario(scenario_name, scenario)
 
+        # The episode household as a declarative spec, built by life_model.spec's builder (which owns
+        # construction order). The named economy scenario is recorded in the spec but applied here,
+        # as an overlay, so the builder must not apply it again (apply_economy=False).
+        self.episode_spec = household_spec(household, self.config, config=financial_config)
+
         # Create new model instance, seeded for reproducibility. A reset without a seed (e.g. a
         # vector env's autoreset) derives the model seed from this env's seeded RNG; seeding the
         # LifeModel with None would draw OS entropy and make every later episode irreproducible.
         # RL rollouts never read the DataCollector frames, so collection is skipped for throughput.
         model_seed = seed if seed is not None else int(self.np_random.integers(2**31 - 1))
-        self.model = LifeModel(
-            start_year=self.config["start_year"], seed=model_seed, config=financial_config, collect_data=False
+        self.model = create_model(
+            self.episode_spec, config=financial_config, seed=model_seed, collect_data=False, apply_economy=False
         )
+        self.model.checks = self.config["checks"]
         if overlay is not None:
             overlay.install(self.model.economy)
-        self.family = Family(self.model)
+        # The household is generated, not user-written: skip the validator's per-reset cost (the
+        # sampler's households are validated in tests); not-yet-supported fields are still rejected.
+        built = populate_model(self.model, self.episode_spec, check=False)
+        self.family = built.family
 
-        # Create person with model-native stochastic mortality: death is decided by
-        # Person._check_mortality against the model's seeded RNG, and dying runs the full death
-        # machinery (life insurance, estate transfer/tax, survivor adjustments) inside the
-        # reward-visible world.
-        self.person = Person(
-            family=self.family,
-            name="RL_Agent",
-            age=household["person_start_age"],
-            retirement_age=household["person_retirement_age"],
-            spending=Spending(
-                model=self.model,
-                base=household["initial_spending"],
-                yearly_increase=self.config["spending_growth"],
-            ),
-            gender=household["person_gender"],
-            mortality_mode=MortalityMode.STOCHASTIC,
-        )
-
-        # Create bank account
-        self.bank_account = BankAccount(
-            owner=self.person,
-            company="Bank",
-            type="Checking",
-            balance=household["initial_bank_balance"],
-            interest_rate=0.5,
-        )
-
-        # Create job
-        self.job = Job(
-            owner=self.person,
-            company="Company",
-            role="Employee",
-            salary=Salary(
-                model=self.model,
-                base=household["initial_salary"],
-                yearly_increase=self.config["salary_growth"],
-                yearly_bonus=1,
-            ),
-        )
-
-        # Create the accounts the agent can act on so every action type is reachable.
-        self.job401k = Job401kAccount(
-            job=self.job,
-            pretax_balance=float(household.get("initial_401k_pretax") or 0.0),
-            roth_balance=float(household.get("initial_401k_roth") or 0.0),
-            average_growth=self.config["account_growth"],
-        )
-        self.brokerage = BrokerageAccount(
-            person=self.person, company="Brokerage", balance=float(household.get("initial_brokerage") or 0.0)
-        )
-        self.traditional_ira = TraditionalIRA(person=self.person)
-        self.roth_ira = RothIRA(person=self.person)
-        self.hsa = HealthSavingsAccount(person=self.person, hsa_type=HSAType.INDIVIDUAL)
-
-        # Optional household composition (defaults off, so a household that sets neither builds the
-        # same person as before). Children incur age-banded dependent costs; healthcare adds the
-        # age-banded medical-cost curve plus Medicare premiums from the eligibility age. All of
-        # these settle through the person's spending, so they reduce the money the agent can save.
-        self.children = [
-            Child(self.person, f"Child{i + 1}", self.model.start_year - int(age))
-            for i, age in enumerate(household.get("children_ages", ()) or ())
-        ]
+        # The person dies model-natively (stochastic mortality against the model's seeded RNG), and
+        # dying runs the full death machinery (life insurance, estate transfer/tax, survivor
+        # adjustments) inside the reward-visible world.
+        self.person = built.people[AGENT_ID]
+        self.bank_account = built.items["bank"]
+        self.job = built.items["job"]
+        # One of every account the agent can act on, so every action type is reachable.
+        self.job401k = built.items["401k"]
+        self.brokerage = built.items["brokerage"]
+        self.traditional_ira = built.items["traditional_ira"]
+        self.roth_ira = built.items["roth_ira"]
+        self.hsa = built.items["hsa"]
+        # Optional household composition (defaults off). Children incur age-banded dependent costs;
+        # healthcare adds the age-banded medical-cost curve plus Medicare premiums from the
+        # eligibility age. All of these settle through the person's spending.
+        self.children = list(self.person.children)
         if household.get("models_healthcare", False):
-            self.medical_costs = MedicalCosts(self.person)
-            self.medicare = Medicare(self.person)
-
-        # Social Security (after the job, so wages enter the earnings record in-simulation).
-        self.social_security: SocialSecurity | None = None
-        # Skipped for a person who turned 62 before SSA's bend-point table starts (1979): only
-        # artificial test households (start ages near 119) reach that.
-        turned_62 = self.config["start_year"] - int(household["person_start_age"]) + 62
-        if self.config["social_security"] and turned_62 >= _FIRST_BEND_POINT_YEAR:
-            self.social_security = SocialSecurity(
-                self.person,
-                withdrawal_start_age=self._ss_claim_age(household),
-                income_history=self._synthetic_earnings(household),
-            )
+            self.medical_costs = self.person.medical_costs[0]
+            self.medicare = self.person.medicare[0]
+        # Social Security (built after the job, so wages enter the earnings record in-simulation).
+        self.social_security: SocialSecurity | None = self.person.social_security
         self._ss_benefit_cache: tuple[int, float] | None = None
         # Savings boost: cut working-years spending by a share of salary (restored at retirement).
         boost = float(household.get("savings_boost_pct") or 0.0) / 100.0 * float(household["initial_salary"])
@@ -466,12 +445,14 @@ class FinancialLifeEnv(gym.Env):
             float(household.get("employer_match_rate") or 0.0), float(household.get("employer_match_cap") or 0.0)
         )
         self.action_executor = ActionExecutor(self.model, employer_match=self.employer_match)
+        # Factored space: the standing policies, bound to this episode's household (the employer
+        # match moves into the 401(k) plan, since deferrals then come from payroll).
+        self.policies = StandingPolicies(self) if self.factored else None
 
         # Reset step counter
         self.current_step = 0
 
-        # Set initial model end year
-        self.model.end_year = self.model.start_year + self.max_steps
+        # The model's end year (start_year + max_years) comes from the spec's meta.end_year.
 
         # Track initial state. The utility reward is per-year consumption plus a
         # terminal bequest/ruin term, so it carries no cross-step net-worth baseline — only the
@@ -494,39 +475,6 @@ class FinancialLifeEnv(gym.Env):
             self.person.spending.base /= self._working_spending_factor  # undo the working-years savings boost
         self.person.spending.base *= 1.0 if ratio is None else float(ratio)
         self._retirement_spending_applied = True
-
-    def _ss_claim_age(self, household: dict[str, Any]) -> int:
-        """The Social Security claiming age: the configured one, else the retirement age clipped to 62-70."""
-        config = self.model.config
-        low = get_min_early_retirement_age(config)
-        high = get_max_delayed_retirement_credit_age(config)
-        claim = household.get("ss_claim_age")
-        if claim is None:
-            claim = household["person_retirement_age"]
-        return int(min(max(int(claim), low), high))
-
-    def _synthetic_earnings(self, household: dict[str, Any]) -> list[tuple[int, float]]:
-        """Earnings record for the years worked before the episode starts.
-
-        Assumes a flat *real* career: each past year's wage is today's salary scaled by the
-        average wage index ratio, from ``career_start_age`` to the year before the start year,
-        capped at that year's taxable maximum. It overstates benefits for someone whose salary
-        recently jumped and understates them for someone who peaked earlier.
-        """
-        start_year = self.config["start_year"]
-        years_worked = max(0, int(household["person_start_age"]) - int(self.config["career_start_age"]))
-        salary = float(household["initial_salary"])
-        config, economy = self.model.config, self.model.economy
-        awi_now = get_avg_wage_index(start_year, config, economy=economy)
-        # SSA's wage index and quarter-of-coverage tables start in 1951 / 1978; earlier working
-        # years are dropped (only very old start ages reach them).
-        first_year = max(start_year - years_worked, _FIRST_EARNINGS_YEAR)
-        history: list[tuple[int, float]] = []
-        for year in range(first_year, start_year):
-            wage = salary * get_avg_wage_index(year, config, economy=economy) / awi_now
-            cap = self.model.config_for_year(year).tax.fica.social_security_max_income
-            history.append((year, round(min(wage, cap), 2)))
-        return history
 
     def _ss_annual_benefit(self) -> float:
         """Annual Social Security benefit in **current-year** dollars: the benefit paid once claiming,
@@ -552,44 +500,57 @@ class FinancialLifeEnv(gym.Env):
             self._ss_benefit_cache = (year, annual)
         return self._ss_benefit_cache[1]
 
-    def step(self, action: int) -> tuple[np.ndarray, float, bool, bool, dict]:
-        """Execute one step (one simulated year) in the environment.
+    def step(self, action) -> tuple[np.ndarray, float, bool, bool, dict]:
+        """Execute one decision: apply ``action``, then simulate one decision interval (twelve,
+        three or one monthly model steps).
 
         Args:
-            action: Flat discrete action index (see ``actions.decode_flat_action``): an
-                amount-bearing action type crossed with an amount bucket, or a singleton
-                (spending +/-, retire early, no-op).
+            action: Flat space: a discrete action index (see ``actions.decode_flat_action``): an
+                amount-bearing action type crossed with an amount bucket, or a singleton (spending
+                +/-, retire early, no-op). Factored space: one index per standing-policy slot (see
+                ``policies.SLOTS``; 0 is ``NO_CHANGE``).
 
         Returns:
             ``(observation, reward, terminated, truncated, info)`` per the Gymnasium API.
         """
+        action_type: ActionType | None = None
+        action_amount = 0.0
+        policy_changes: dict[str, str] | None = None
+        if self.factored:
+            # Standing policies: set what changed; the engine carries them out month by month.
+            policy_changes = self.policies.apply(action, interval_months=self.interval_months)
+            action_result = ActionResult(success=True, message=f"policy changes: {policy_changes or 'none'}")
+        else:
+            # Decode the flat action into its type and amount fraction.
+            flat = decode_flat_action(int(np.asarray(action).item()))
+            action_type = flat.action_type
+            amount_fraction = flat.amount_fraction or 0.0
 
-        # Decode the flat action into its type and amount fraction.
-        flat = decode_flat_action(int(np.asarray(action).item()))
-        action_type = flat.action_type
-        amount_fraction = flat.amount_fraction or 0.0
+            # Calculate action amount based on the bucket fraction and financial state
+            action_amount = self._calculate_action_amount(action_type, amount_fraction)
 
-        # Calculate action amount based on the bucket fraction and financial state
-        action_amount = self._calculate_action_amount(action_type, amount_fraction)
+            # Execute the action
+            action_result = self.action_executor.execute_action(
+                self.person,
+                action_type,
+                amount=action_amount,
+                percentage_change=self.SPENDING_STEP,
+            )
 
-        # Execute the action
-        action_result = self.action_executor.execute_action(
-            self.person,
-            action_type,
-            amount=action_amount,
-            percentage_change=self.SPENDING_STEP,
-        )
-
-        # Step the simulation forward one year. Mortality is model-native: the
-        # person may die inside this call, which runs the full death machinery and removes their
-        # agents from the model. Snapshot the pre-step net worth so the estate value at death is
-        # observable to the reward (post-death net worth reads ~0 once assets dissolve).
+        # Step the simulation forward one decision interval (with yearly decisions, the monthly model
+        # through its next year end, so rewards and observations describe a year). Mortality is
+        # model-native: the person may die inside this call, which runs the full death machinery and
+        # removes their agents from the model. Snapshot the pre-step net worth so the estate value at
+        # death is observable to the reward (post-death net worth reads ~0 once assets dissolve).
         net_worth_before_step = self._after_tax_net_worth()
         raw_net_worth_before_step = self._calculate_net_worth()
-        self.model.step()
+        months = self._simulate_interval()
         self.current_step += 1
         if not self.person.is_deceased:
             self._apply_retirement_spending()
+        if self.policies is not None:
+            self.policies.sync()
+            self.policies.refresh()
         if self.person.is_deceased and self._estate_value_at_death is None:
             self._estate_value_at_death = net_worth_before_step
             self._raw_estate_value_at_death = raw_net_worth_before_step
@@ -600,11 +561,59 @@ class FinancialLifeEnv(gym.Env):
         truncated = self.current_step >= self.max_steps and not terminated
 
         # Calculate reward (utility-based)
-        reward = self._calculate_reward(action_result, terminated=terminated, truncated=truncated)
+        reward = self._calculate_reward(action_result, terminated=terminated, truncated=truncated, months=months)
 
-        info = self._get_info(action_result, action_type=action_type, action_amount=action_amount)
+        info = self._get_info(
+            action_result, action_type=action_type, action_amount=action_amount, policy_changes=policy_changes
+        )
 
         return self._get_observation(), reward, terminated, truncated, info
+
+    def _simulate_interval(self) -> int:
+        """Run the model ``interval_months`` months (fewer if the run finishes); returns the months
+        simulated. Twelve monthly steps from a January are exactly ``model.step_year()``."""
+        simulated = 0
+        for _ in range(self.interval_months):
+            if self.model.is_finished:
+                self.model.step()  # clears ``running``; simulates nothing
+                break
+            self.model.step()
+            simulated += 1
+        return simulated
+
+    def spending_rate(self) -> float:
+        """The yearly living-spending rate in force: the base plus every categorized line active this
+        year, at their annual amounts. One-time expenses are not a rate and are left out.
+
+        Without categorized lines it is the base yearly spending (what ``Spending.get_yearly_spending()``
+        returns at a year boundary, after the year-end reset clears the paid categories and one-time
+        expenses); within a year it does not depend on how much of the year has been paid.
+        """
+        spending = self.person.spending
+        year = self.model.year
+        lines = getattr(spending, "categories", {}).values()
+        return spending.base + sum(line.annual_amount for line in lines if line.active(year))
+
+    def _deflator(self) -> float:
+        """Cumulative price level at the start of the model's current month (1.0 at reset)."""
+        month = self.model.month
+        return self.model.economy.cumulative_inflation(self.model.year, month if month > 1 else None)
+
+    @property
+    def decision_age(self) -> int:
+        """The person's age as the environment reports it at a decision: their age in the most
+        recently simulated month (the start age before the first step).
+
+        With yearly decisions this is the age during the year just simulated (``age_in(year - 1)``),
+        not ``Person.age``: between env steps the model sits in January of the upcoming year, and
+        ``Person.age`` is the age in that month. Reporting the age reached during the simulated year keeps
+        one step per year of age, which fixes the episode length, the age observations and termination.
+        """
+        if self.current_step == 0:
+            return self.person.age
+        if self.interval_months == 12:
+            return self.person.age_in(self.model.year - 1)
+        return (self.person.months_old - 1) // 12
 
     @property
     def died_from_natural_causes(self) -> bool:
@@ -614,20 +623,21 @@ class FinancialLifeEnv(gym.Env):
     def _mortality_probability(self) -> float:
         """The person's current-year chance of death from the SSA table (blended for OTHER)."""
         if self.person.gender == GenderAtBirth.OTHER:
-            return get_blended_chance_of_mortality(self.person.age)
-        return get_chance_of_mortality(self.person.age, self.person.gender)
+            return get_blended_chance_of_mortality(self.decision_age)
+        return get_chance_of_mortality(self.decision_age, self.person.gender)
 
     def _get_info(
         self,
         action_result: ActionResult | None,
         action_type: ActionType | None = None,
         action_amount: float = 0.0,
+        policy_changes: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         """Build the info dict returned by reset/step."""
-        return {
+        info = {
             "action_result": action_result,
             "net_worth": self._calculate_net_worth(),
-            "age": self.person.age,
+            "age": self.decision_age,
             "is_retired": self.person.is_retired,
             "bank_balance": self.person.bank_account_balance,
             "annual_spending": self.person.spending.get_yearly_spending(),
@@ -639,9 +649,17 @@ class FinancialLifeEnv(gym.Env):
             "bankrupt": self._calculate_net_worth() < self.BANKRUPTCY_THRESHOLD,
             "estate_value_at_death": self._estate_value_at_death,
             "mortality_probability": self._mortality_probability(),
-            # Legal-action mask so vectorized collectors can mask without sub-env access.
+            # Legal-action mask so vectorized collectors can mask without sub-env access (factored
+            # space: the per-slot masks concatenated, length sum(nvec)).
             "legal_mask": self.legal_action_mask(),
+            "year": self.model.year,
+            "month": self.model.month,
         }
+        if self.policies is not None:
+            # The standing policies in force after this step's changes (what the agent "is doing").
+            info["policy_vector"] = self.policies.as_dict()
+            info["policy_changes"] = dict(policy_changes or {})
+        return info
 
     def _calculate_action_amount(self, action_type: ActionType, fraction: float) -> float:
         """Dollar amount for a transfer/withdrawal action at an amount-bucket ``fraction``.
@@ -673,11 +691,11 @@ class FinancialLifeEnv(gym.Env):
         """(inflation, equity return, bond return), in percent, without lookahead.
 
         After at least one simulated year, these are the *realized* rates of the most recently
-        simulated year. Before any year has been simulated there is nothing realized yet, so the
+        completed year. Before any year has been completed there is nothing realized yet, so the
         configured long-run means are reported instead (never the upcoming year's stochastic
         draw, which would leak the future to the first decision).
         """
-        if self.current_step == 0:
+        if self.model.year <= self.model.start_year:
             economy_config = self.model.config.economy
             if economy_config.mode == "stochastic":
                 s = economy_config.stochastic
@@ -710,12 +728,11 @@ class FinancialLifeEnv(gym.Env):
         hand-computed values by name.
         """
         person = self.person
-        economy = self.model.economy
 
         # Cumulative price level over the simulated years so far (1.0 at reset). Money features
         # are divided by this so the agent sees real (start-of-episode dollar) values and isn't
         # fooled by nominal growth under inflation.
-        deflator = economy.cumulative_inflation(self.model.year)
+        deflator = self._deflator()
 
         # Balances (nominal, then deflated below).
         bank_balance = person.bank_account_balance
@@ -726,21 +743,22 @@ class FinancialLifeEnv(gym.Env):
         hsa = sum(acc.balance for acc in person.hsas)
         brokerage = sum(acc.balance for acc in person.brokerage_accounts)
         retirement_balance = pretax_401k + roth_401k + traditional_ira + roth_ira
-        # Real debt (car loans, credit cards, student loans, mortgages) — not the dead
-        # unpaid-bills carryover `person.debt` the old observation read.
+        # Real debt (car loans, credit cards, student loans, mortgages), not the unpaid-bills
+        # carryover `person.debt`.
         debt = person.outstanding_debt_balance
         annual_income = sum(job.salary.base for job in person.jobs if not job.retired)
         annual_spending = person.spending.get_yearly_spending()
         net_worth = self._calculate_net_worth()
 
         # Tax position for the upcoming year. The income ledger is settled and cleared inside
-        # model.step(), so at decision time the honest quantity is the projection: wages the
+        # model.step_year(), so at decision time the honest quantity is the projection: wages the
         # jobs will deposit plus the RMD the 401k will force. (Documented deviation from "income
         # so far": intra-year state is never observable at the env's decision boundary.)
-        next_age = person.age + 1
-        birth_year = self.model.year - next_age
-        start_age = rmd_start_age(birth_year, config=self.model.config, year=self.model.year)
-        projected_rmd = required_min_distrib(next_age, pretax_401k, config=self.model.config, start_age=start_age)
+        age = self.decision_age
+        # The RMD of the current calendar year, at the age the person reaches in it.
+        rmd_age = person.age_in(self.model.year)
+        start_age = rmd_start_age(person.birth_year, config=self.model.config, year=self.model.year)
+        projected_rmd = required_min_distrib(rmd_age, pretax_401k, config=self.model.config, start_age=start_age)
         projected_ordinary_income = annual_income + projected_rmd
         bracket_headroom, marginal_rate = self._projected_tax_position(projected_ordinary_income)
 
@@ -752,13 +770,14 @@ class FinancialLifeEnv(gym.Env):
         hsa_room_fraction = self.hsa.remaining_contribution_room() / max(hsa_limit, 1)
 
         inflation, equity_return, bond_return = self._observed_market_rates()
+        months_left = max(0, (self.model.end_year - self.model.year) * 12 + 13 - self.model.month)
 
-        return {
-            "age": person.age / 100.0,
-            "years_to_retirement": max(0.0, person.retirement_age - person.age) / 50.0,
+        features = {
+            "age": age / 100.0,
+            "years_to_retirement": max(0.0, person.retirement_age - age) / 50.0,
             "is_retired": 1.0 if person.is_retired else 0.0,
             "mortality_probability": self._mortality_probability(),
-            "life_progress": (person.age - self.episode_household["person_start_age"]) / self.max_steps,
+            "life_progress": (age - self.episode_household["person_start_age"]) / self.max_years,
             "bank_balance": bank_balance / deflator / _MONEY_SCALE,
             "pretax_401k": pretax_401k / deflator / _MONEY_SCALE,
             "roth_401k": roth_401k / deflator / _MONEY_SCALE,
@@ -780,31 +799,39 @@ class FinancialLifeEnv(gym.Env):
                 bracket_headroom / deflator / 100_000.0 if np.isfinite(bracket_headroom) else float("inf")
             ),
             "marginal_rate": marginal_rate,
-            "years_to_59_5": max(0.0, PENALTY_FREE_AGE - person.age) / 35.0,
-            "years_to_rmd_start": max(0.0, start_age - person.age) / 50.0,
+            "years_to_59_5": max(0.0, PENALTY_FREE_AGE - age) / 35.0,
+            "years_to_rmd_start": max(0.0, start_age - age) / 50.0,
             "projected_rmd": projected_rmd / deflator / _MONEY_SCALE,
             "ira_room_fraction": ira_room_fraction,
             "hsa_room_fraction": hsa_room_fraction,
-            "time_progress": (self.model.year - self.config["start_year"]) / self.max_steps,
+            "time_progress": (self.model.year - self.config["start_year"]) / self.max_years,
             "inflation": inflation / 100.0,
             "equity_return": equity_return / 100.0,
             "bond_return": bond_return / 100.0,
             "log_deflator": float(np.log(max(deflator, 1e-9))),
             "ss_annual_benefit": self._ss_annual_benefit() / deflator / 100_000.0,
             "years_to_ss_claim": (
-                max(0.0, self.social_security.withdrawal_start_age - person.age) / 50.0
+                max(0.0, self.social_security.withdrawal_start_age - age) / 50.0
                 if self.social_security is not None
                 else 0.0
             ),
             "employer_match_rate": self.employer_match.rate,
             "employer_match_cap": self.employer_match.cap,
+            "month_of_year": (self.model.month - 1) / 12.0,
+            "months_to_next_decision": min(self.interval_months, months_left) / 12.0,
         }
+        if self.policies is not None:
+            for name, value in zip(SLOT_NAMES, self.policies.normalized()):
+                features[f"policy_{name}"] = float(value)
+            bonds = sum(h.balance for h in person.fixed_income_holdings) if not person.is_deceased else 0.0
+            features["bond_fund"] = bonds / deflator / _MONEY_SCALE
+        return features
 
     def _get_observation(self) -> np.ndarray:
-        """Observation vector v2: assembled in OBS_SPEC order and clipped into the
-        declared per-feature bounds."""
+        """Observation vector: assembled in ``obs_spec`` order (OBS_SPEC, plus POLICY_OBS_SPEC when
+        factored) and clipped into the declared per-feature bounds."""
         features = self._compute_observation_features()
-        raw = np.array([features[name] for name, _, _ in OBS_SPEC], dtype=np.float32)
+        raw = np.array([features[name] for name, _, _ in self.obs_spec], dtype=np.float32)
         return np.clip(raw, self.observation_space.low, self.observation_space.high)
 
     def _calculate_net_worth(self) -> float:
@@ -833,18 +860,25 @@ class FinancialLifeEnv(gym.Env):
             return self._estate_value_at_death, self._raw_estate_value_at_death
         return self._after_tax_net_worth(), self._calculate_net_worth()
 
-    def _calculate_reward(self, action_result: ActionResult, terminated: bool, truncated: bool) -> float:
+    def _calculate_reward(
+        self, action_result: ActionResult, terminated: bool, truncated: bool, months: int = 12
+    ) -> float:
         """Utility-based reward for the current step.
 
-        The agent earns the CRRA utility of this year's **real** consumption every step, and on the
-        terminal step earns either a bequest utility on the real net worth it leaves behind or, if
-        it went bankrupt, a large ruin penalty. Time preference is handled entirely by the DQN's
-        ``gamma`` — there is no discounting inside the reward. See ``rewards.py`` for the pure,
-        unit-tested objective; this method only supplies the model-derived quantities it needs.
+        The agent earns the CRRA utility of its **real** consumption rate (:meth:`spending_rate`, in
+        force at the end of the interval, deflated to the start of the next month), weighted by the
+        share of a year the step simulated (``months / 12``: 1 for yearly decisions), and on the terminal step earns either a bequest utility on the real net
+        worth it leaves behind or, if it went bankrupt, a large ruin penalty. The spending rate is
+        read from ``Spending`` (not from a flow stat), so the year-end reset of flow stats and the
+        December tax settlement inside an interval cannot distort it. Time preference is handled
+        entirely by the algorithm's ``gamma`` — there is no discounting inside the reward. See
+        ``rewards.py`` for the pure, unit-tested objective; this method only supplies the
+        model-derived quantities it needs.
         """
-        deflator = self.model.economy.cumulative_inflation(self.model.year)
-        nominal_consumption = self.person.spending.get_yearly_spending()
-        self.total_lifetime_spending += nominal_consumption
+        deflator = self._deflator()
+        nominal_consumption = self.spending_rate()
+        period_fraction = months / 12.0
+        self.total_lifetime_spending += nominal_consumption * period_fraction
 
         # When the person died this step, the estate value at death (captured pre-dissolution) is
         # the wealth passed on, not the ~0 net worth left after assets dissolve out of the sim.
@@ -861,6 +895,7 @@ class FinancialLifeEnv(gym.Env):
             terminal=terminated or truncated,
             nominal_terminal_net_worth=terminal_net_worth,
             ruined=ruined,
+            period_fraction=period_fraction,
         )
 
     def _is_terminated(self) -> bool:
@@ -872,7 +907,7 @@ class FinancialLifeEnv(gym.Env):
         """
         return bool(
             self.person.is_deceased
-            or self.person.age >= self.config["person_max_age"]
+            or self.decision_age >= self.config["person_max_age"]
             or self._calculate_net_worth() < self.BANKRUPTCY_THRESHOLD
         )
 
@@ -883,7 +918,7 @@ class FinancialLifeEnv(gym.Env):
             mortality_prob = self._mortality_probability()
             status = "DECEASED" if self.died_from_natural_causes else "ALIVE"
             print(
-                f"Year: {self.model.year}, Age: {self.person.age}, Status: {status}, "
+                f"Year: {self.model.year}, Age: {self.decision_age}, Status: {status}, "
                 f"Mortality Risk: {mortality_prob:.1%}, "
                 f"Net Worth: ${net_worth:,.0f}, "
                 f"Bank: ${self.person.bank_account_balance:,.0f}, "
@@ -893,12 +928,18 @@ class FinancialLifeEnv(gym.Env):
         return None
 
     def get_legal_actions(self) -> list[int]:
-        """Get list of legal flat action indices for the current state.
+        """Get list of legal action indices for the current state.
 
-        Legality is decided solely by ``Action.can_execute`` (via the executor), so the mask can
-        never disagree with what ``execute`` will do. Each amount bucket is probed with the
-        exact dollar amount it would move this step, so a bucket that maps to $0 is illegal.
+        Flat space: the legal flat action indices. Legality is decided solely by
+        ``Action.can_execute`` (via the executor), so the mask can never disagree with what
+        ``execute`` will do. Each amount bucket is probed with the exact dollar amount it would move
+        this step, so a bucket that maps to $0 is illegal.
+
+        Factored space: the legal entries of the per-slot masks concatenated (index
+        ``sum(nvec[:i]) + v`` is value ``v`` of slot ``i``); ``NO_CHANGE`` is always legal.
         """
+        if self.factored:
+            return np.nonzero(self.policies.flat_mask())[0].tolist()
         legal_actions = []
         for index in range(self.action_space.n):
             flat = decode_flat_action(index)
@@ -913,14 +954,33 @@ class FinancialLifeEnv(gym.Env):
         return legal_actions
 
     def legal_action_mask(self) -> np.ndarray:
-        """Boolean legal-action mask of length ``action_space.n`` for the current state.
+        """Boolean legal-action mask for the current state: length ``action_space.n`` (flat), or the
+        per-slot masks concatenated, length ``sum(nvec)`` (factored).
 
         The array form of :meth:`get_legal_actions`, exposed in the reset/step ``info`` so a
         vectorized collector can mask actions per env without reaching into the sub-envs (works
         with both ``Sync`` and ``Async`` gymnasium vector backends)."""
+        if self.factored:
+            return self.policies.flat_mask()
         mask = np.zeros(self.action_space.n, dtype=bool)
         mask[self.get_legal_actions()] = True
         return mask
+
+    def legal_slot_masks(self) -> list[np.ndarray]:
+        """Factored space only: one boolean legal mask per standing-policy slot."""
+        if not self.factored:
+            raise ValueError("legal_slot_masks() needs action_space='factored'")
+        return self.policies.slot_masks()
+
+    def policy_vector(self) -> dict[str, str] | None:
+        """Factored space: the standing policies in force (``None`` under the flat space)."""
+        return None if self.policies is None else self.policies.as_dict()
+
+    def describe_action(self, action) -> dict[str, str] | str:
+        """A readable form of ``action``: the flat action's type, or the slot values it sets."""
+        if self.factored:
+            return {k: v for k, v in decode_policy_action(action).items() if v != "no_change"}
+        return decode_flat_action(int(np.asarray(action).item())).action_type.value
 
 
 class FinancialLifeEnvGenerator:

@@ -3,6 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
+import math
 from importlib.resources import files
 from typing import TYPE_CHECKING, Any
 
@@ -20,7 +21,9 @@ from .models import (
     HealthcareConfig,
     HousingConfig,
     InsuranceConfig,
+    PayrollConfig,
     RetirementConfig,
+    SaltCapYear,
     SocialSecurityConfig,
     TaxBracketsConfig,
     TaxConfig,
@@ -29,6 +32,127 @@ from .models import (
 
 if TYPE_CHECKING:
     from ..tax.federal import FilingStatus
+
+
+#: ``YearlyTaxParameters`` fields that live only in ``tax_years`` and are copied onto
+#: ``tax.federal`` by :meth:`FinancialConfig.year_view`.
+YEAR_ONLY_FEDERAL_FIELDS = (
+    "additional_standard_deduction",
+    "eitc",
+    "dependent_care",
+    "savers_credit",
+    "ira_phaseouts",
+    "student_loan_phaseout",
+    "amt",
+    "qbi",
+    "kiddie_tax",
+    "qcd_limit",
+    "ltc_premium_limits",
+    "compensation_limit",
+    "withholding",
+    "premium_tax_credit",
+    "qualifying_relative_income_limit",
+)
+
+
+def _project_credit_params(data: dict, factor: float, round_to) -> None:
+    """Index a year's credit, deduction and regime parameters past the table (in place, on ``model_dump()`` data).
+
+    A projection, not law: each amount is scaled by ``factor`` and rounded the way its statute rounds
+    the yearly adjustment (cited per line); statutory, unindexed amounts (the dependent care credit, the
+    §25A phase-outs, phase-out widths) are kept.
+    """
+
+    def down(value: float, base: int) -> int:
+        return int(math.floor(value * factor / base) * base)
+
+    def near(value: float, base: int) -> int:
+        return round_to(value * factor, base)
+
+    eitc = data.get("eitc")
+    if eitc is not None:
+        # §32(j)(2): earned income and phase-out amounts rounded to the nearest $10; the investment
+        # income limit to the nearest $50. The maximum credit is the rate times the earned income amount.
+        eitc["earned_income_amount"] = [near(v, 10) for v in eitc["earned_income_amount"]]
+        eitc["phaseout_start"] = [near(v, 10) for v in eitc["phaseout_start"]]
+        eitc["phaseout_start_joint"] = [near(v, 10) for v in eitc["phaseout_start_joint"]]
+        eitc["max_credit"] = [
+            round(amount * rate / 100) for amount, rate in zip(eitc["earned_income_amount"], eitc["credit_percent"])
+        ]
+        eitc["investment_income_limit"] = near(eitc["investment_income_limit"], 50)
+    savers = data.get("savers_credit")
+    if savers is not None:
+        # §25B(b)(3): joint amounts rounded down to $500; head of household 3/4 and others 1/2 of joint.
+        joint = [down(v, 500) for v in savers["joint"]]
+        savers.update(joint=joint, head_of_household=[v * 0.75 for v in joint], other=[v * 0.5 for v in joint])
+
+    def shift(phaseout: dict, base: int) -> None:
+        width = phaseout["end"] - phaseout["start"]
+        phaseout["start"] = down(phaseout["start"], base)
+        phaseout["end"] = phaseout["start"] + width
+
+    ira = data.get("ira_phaseouts")
+    if ira is not None:
+        # §219(g)(8) and §408A(c)(3)(D): rounded down to $1,000; the separate-return range is statutory.
+        for name in (
+            "traditional_single",
+            "traditional_joint",
+            "traditional_spouse_covered",
+            "roth_single",
+            "roth_joint",
+        ):
+            shift(ira[name], 1000)
+    student = data.get("student_loan_phaseout")
+    if student is not None:
+        # §221(f)(2): rounded down to $5,000.
+        for name in ("single", "joint"):
+            shift(student[name], 5000)
+    amt = data.get("amt")
+    if amt is not None:
+        # §55(d)(4)(B): exemption and phase-out amounts, and the §55(b)(1) breakpoint, rounded to $100.
+        for name in (
+            "exemption_single",
+            "exemption_joint",
+            "exemption_separate",
+            "phaseout_start_single",
+            "phaseout_start_joint",
+            "phaseout_start_separate",
+            "breakpoint",
+            "breakpoint_separate",
+        ):
+            amt[name] = near(amt[name], 100)
+    qbi = data.get("qbi")
+    if qbi is not None:
+        # §199A(e)(2)(B): thresholds indexed (nearest $50 here); the phase-in widths are statutory; the
+        # §199A(i) minimum deduction and its QBI floor are indexed after 2026 (nearest $5 here).
+        for name in ("threshold_single", "threshold_joint", "threshold_separate"):
+            qbi[name] = near(qbi[name], 50)
+        if qbi.get("minimum_deduction"):
+            qbi["minimum_deduction"] = near(qbi["minimum_deduction"], 5)
+            qbi["minimum_qbi"] = near(qbi["minimum_qbi"], 5)
+    kiddie = data.get("kiddie_tax")
+    if kiddie is not None:
+        kiddie["base_amount"] = near(kiddie["base_amount"], 50)  # §63(c)(4): nearest $50
+    if data.get("qcd_limit") is not None:
+        data["qcd_limit"] = down(data["qcd_limit"], 1000)  # §408(d)(8)(G): rounded down to $1,000
+    if data.get("ltc_premium_limits") is not None:
+        for row in data["ltc_premium_limits"]:
+            row["limit"] = near(row["limit"], 10)  # §213(d)(10)(B): nearest $10
+    if data.get("compensation_limit") is not None:
+        data["compensation_limit"] = down(data["compensation_limit"], 5000)  # §401(a)(17)(B): down to $5,000
+    # Withholding tables are derived from the projected brackets and standard deduction
+    # (``tax.payments.withholding_table``); the Step 1g amounts and supplemental rates are fixed.
+    if data.get("withholding") is not None:
+        data["withholding"]["standard"] = None
+        data["withholding"]["checkbox"] = None
+    if data.get("qualifying_relative_income_limit") is not None:
+        # §151(d)(4)(B): the exemption amount is rounded down to a multiple of $50.
+        data["qualifying_relative_income_limit"] = down(data["qualifying_relative_income_limit"], 50)
+    ptc = data.get("premium_tax_credit")
+    if ptc is not None:
+        # The poverty guideline grows with prices (HHS rounds to dollars); the applicable percentages (indexed
+        # by Rev. Proc. each year, §36B(b)(3)(A)(ii)) are kept at the last published table.
+        ptc["poverty_line"] = {k: near(v, 10) for k, v in ptc["poverty_line"].items()}
 
 
 class FinancialConfig:
@@ -133,6 +257,10 @@ class FinancialConfig:
     def equity_comp(self) -> EquityCompConfig:
         return self._model.equity_comp
 
+    @property
+    def payroll(self) -> PayrollConfig:
+        return self._model.payroll
+
     def tax_year(self, year: int, inflation_factor: float = 1.0) -> YearlyTaxParameters:
         """Get the tax parameters applicable to a given calendar year.
 
@@ -167,14 +295,30 @@ class FinancialConfig:
         params = table[chosen].model_copy(update={"year": year})
         if year > published_years[-1] and inflation_factor and inflation_factor != 1.0:
             params = self._project_tax_params(params, inflation_factor)
+        if year > published_years[-1] and params.salt is not None:
+            params = params.model_copy(update={"salt": self._statutory_salt(params.salt, published_years[-1], year)})
         return params
+
+    def _statutory_salt(self, last: "SaltCapYear", last_year: int, year: int) -> "SaltCapYear":
+        """The SALT cap of a year after the table: the statute's schedule, not inflation
+        (:class:`~life_model.config.models.SaltCapStatuteConfig`). The statute states no rounding for
+        the yearly increase, so the amounts are not rounded (TODO(verify) against IRS guidance)."""
+        rule = self._model.tax.federal.salt_cap_statute
+        if year >= rule.reversion_year:
+            return SaltCapYear(cap=rule.reversion_cap, phaseout_threshold=None)
+        steps = min(year, rule.increase_through_year) - last_year
+        if steps <= 0:
+            return last
+        growth = (1 + rule.annual_increase_percent / 100) ** steps
+        threshold = None if last.phaseout_threshold is None else round(last.phaseout_threshold * growth, 2)
+        return SaltCapYear(cap=round(last.cap * growth, 2), phaseout_threshold=threshold)
 
     def year_view(self, params: YearlyTaxParameters, inflation_factor: float = 1.0) -> "FinancialConfig":
         """A config for one simulated year: this config with ``params``' values swapped in.
 
         The year-table values replace the static ones everywhere the model reads them: the federal
         standard deduction and brackets, the Social Security wage base (FICA and AIME share it), and
-        the 401k, IRA and HSA contribution limits. Preferential capital-gains brackets are not in the
+        the 401k (402(g) and, when the table has it, 415(c)), IRA and HSA contribution limits. Preferential capital-gains brackets are not in the
         year table; past the last published year they are scaled by ``inflation_factor`` (the same
         factor the table values were projected with), otherwise left as configured.
 
@@ -184,7 +328,10 @@ class FinancialConfig:
         model = self._model
         federal = model.tax.federal
         capital_gains = federal.capital_gains
-        if inflation_factor and inflation_factor != 1.0:
+        if params.capital_gains is not None:
+            # The year's own table (already projected by ``tax_year`` past the last published year).
+            capital_gains = params.capital_gains
+        elif inflation_factor and inflation_factor != 1.0:
             capital_gains = TaxBracketsConfig(
                 **{
                     status: [self._scale_bracket(b, inflation_factor) for b in rows]
@@ -192,22 +339,54 @@ class FinancialConfig:
                     if rows is not None
                 }
             )
+        federal_updates: dict[str, Any] = {
+            "standard_deduction": params.standard_deduction,
+            "tax_brackets": params.tax_brackets,
+            "capital_gains": capital_gains,
+        }
+        if params.salt is not None:
+            federal_updates["salt_deduction_cap"] = params.salt.cap
+            federal_updates["salt_phaseout_threshold"] = params.salt.phaseout_threshold
+        if params.niit is not None:
+            federal_updates["niit"] = params.niit
+        for name in YEAR_ONLY_FEDERAL_FIELDS:
+            value = getattr(params, name)
+            if value is not None:
+                federal_updates[name] = value
+        if params.senior_deduction_amount is not None:
+            federal_updates["senior_deduction"] = federal.senior_deduction.model_copy(
+                update={"amount": params.senior_deduction_amount}
+            )
+        dependents = model.dependents
+        ctc = {
+            name: getattr(params, name)
+            for name in ("ctc_per_child", "ctc_refundable_max")
+            if getattr(params, name) is not None
+        }
+        if ctc:
+            dependents = dependents.model_copy(update=ctc)
+        # State packs with a year table resolve to the year's entry.
+        state = model.tax.state
+        if any(pack.years is not None for pack in state.packs.values()):
+            state = state.model_copy(
+                update={"packs": {code: pack.for_year(params.year) for code, pack in state.packs.items()}}
+            )
         tax = model.tax.model_copy(
             update={
-                "federal": federal.model_copy(
-                    update={
-                        "standard_deduction": params.standard_deduction,
-                        "tax_brackets": params.tax_brackets,
-                        "capital_gains": capital_gains,
-                    }
-                ),
+                "federal": federal.model_copy(update=federal_updates),
                 "fica": model.tax.fica.model_copy(update={"social_security_max_income": params.ss_wage_base}),
+                "state": state,
             }
         )
         retirement = model.retirement.model_copy(
             update={
                 "job_401k_contrib_limit": model.retirement.job_401k_contrib_limit.model_copy(
-                    update={"base": params.limit_401k_base, "catch_up_amount": params.limit_401k_catch_up}
+                    update={
+                        "base": params.limit_401k_base,
+                        "catch_up_amount": params.limit_401k_catch_up,
+                        "super_catch_up_amount": params.limit_401k_catch_up_60_63,
+                        **({"annual_additions_limit": params.limit_415c} if params.limit_415c is not None else {}),
+                    }
                 ),
                 "ira": model.retirement.ira.model_copy(update={"contribution_limit": params.limit_ira}),
             }
@@ -225,7 +404,9 @@ class FinancialConfig:
         view = object.__new__(FinancialConfig)
         view.config_file = self.config_file
         view.scenario = self.scenario
-        view._model = model.model_copy(update={"tax": tax, "retirement": retirement, "accounts": accounts})
+        view._model = model.model_copy(
+            update={"tax": tax, "retirement": retirement, "accounts": accounts, "dependents": dependents}
+        )
         return view
 
     @staticmethod
@@ -243,7 +424,7 @@ class FinancialConfig:
         Bracket rates and the RMD start age are structural and left unchanged; only dollar
         thresholds and limits are scaled. Rounding bases follow published IRS/SSA conventions
         (standard deduction & HSA to the nearest $50, brackets to the nearest $50, retirement
-        limits to the nearest $500, the IRA catch-up and gift exclusion to the nearest $1,000,
+        limits to the nearest $500, the gift exclusion to the nearest $1,000, the IRA catch-up down to $100,
         and the Social Security wage base to the nearest $300).
         """
 
@@ -271,10 +452,39 @@ class FinancialConfig:
         data["limit_401k_base"] = round_to(data["limit_401k_base"] * factor, 500)
         data["limit_401k_catch_up"] = round_to(data["limit_401k_catch_up"] * factor, 500)
         data["limit_ira"] = round_to(data["limit_ira"] * factor, 500)
-        data["limit_ira_catch_up"] = round_to(data["limit_ira_catch_up"] * factor, 1000)
+        # §219(b)(5)(C): the IRA catch-up is indexed, rounded down to a multiple of $100 (SECURE 2.0 §108).
+        data["limit_ira_catch_up"] = math.floor(data["limit_ira_catch_up"] * factor / 100) * 100
+        if data.get("limit_401k_catch_up_60_63") is not None:
+            # TODO(verify): rounding of the §414(v)(2)(E) amount after 2025 (assumed $500 steps, like §414(v)).
+            data["limit_401k_catch_up_60_63"] = round_to(data["limit_401k_catch_up_60_63"] * factor, 500)
+        if data.get("limit_health_fsa") is not None:
+            # §125(i)(2): indexed, rounded down to a multiple of $50.
+            data["limit_health_fsa"] = math.floor(data["limit_health_fsa"] * factor / 50) * 50
+        if data.get("limit_commuter_monthly") is not None:
+            # §132(f)(6): indexed, rounded down to a multiple of $5.
+            data["limit_commuter_monthly"] = math.floor(data["limit_commuter_monthly"] * factor / 5) * 5
         data["limit_hsa_self"] = round_to(data["limit_hsa_self"] * factor, 50)
         data["limit_hsa_family"] = round_to(data["limit_hsa_family"] * factor, 50)
         data["gift_exclusion"] = round_to(data["gift_exclusion"] * factor, 1000)
+        if data.get("limit_415c") is not None:
+            # §415(d)(4)(B): the defined-contribution limit is adjusted in $1,000 increments.
+            data["limit_415c"] = round_to(data["limit_415c"] * factor, 1000)
+        if data.get("capital_gains") is not None:
+            data["capital_gains"] = {
+                status: [scale_bracket(b) for b in rows] if rows is not None else None
+                for status, rows in data["capital_gains"].items()
+            }
+        # §24(i) (OBBBA): the credit and its refundable portion are indexed, rounded down to $100.
+        for name in ("ctc_per_child", "ctc_refundable_max"):
+            if data.get(name) is not None:
+                data[name] = math.floor(data[name] * factor / 100) * 100
+        # The SALT cap follows its statute (see ``tax_year``); NIIT thresholds and the senior deduction
+        # are statutory and unindexed; the §63(f) amounts are indexed in $50 steps.
+        if data.get("additional_standard_deduction") is not None:
+            data["additional_standard_deduction"] = {
+                k: round_to(v * factor, 50) for k, v in data["additional_standard_deduction"].items()
+            }
+        _project_credit_params(data, factor, round_to)
         # rmd_start_age is a structural (age) parameter, not a dollar amount — leave it.
         return YearlyTaxParameters(**data)
 
@@ -288,7 +498,8 @@ class FinancialConfig:
         ``single`` when the config carries no head_of_household data (documented behavior).
         """
         deduction = self._model.tax.federal.standard_deduction
-        if filing_status.value == 2:
+        # A qualifying surviving spouse uses the joint amounts (IRC §1(a), §63(c)(2)(A)).
+        if filing_status.value in (2, 5):
             return deduction.married_filing_jointly
         if filing_status.value == 3 and deduction.head_of_household is not None:
             return deduction.head_of_household
@@ -301,7 +512,7 @@ class FinancialConfig:
     def get_federal_tax_brackets(self, filing_status: "FilingStatus") -> list:
         """Get federal tax brackets for filing status (HEAD_OF_HOUSEHOLD falls back to single)."""
         brackets = self._model.tax.federal.tax_brackets
-        if filing_status.value == 2:
+        if filing_status.value in (2, 5):
             return brackets.married_filing_jointly
         if filing_status.value == 3 and brackets.head_of_household is not None:
             return brackets.head_of_household
@@ -313,7 +524,7 @@ class FinancialConfig:
         """Get preferential capital-gains brackets for filing status (HEAD_OF_HOUSEHOLD falls back
         to single)."""
         brackets = self._model.tax.federal.capital_gains
-        if filing_status.value == 2:
+        if filing_status.value in (2, 5):
             return brackets.married_filing_jointly
         if filing_status.value == 3 and brackets.head_of_household is not None:
             return brackets.head_of_household
@@ -331,7 +542,12 @@ class FinancialConfig:
     def get_job_401k_contrib_limit(self, age: int) -> int:
         """Get 401k contribution limit based on age"""
         limit = self._model.retirement.job_401k_contrib_limit
-        return limit.base + (limit.catch_up_amount if age >= limit.catch_up_age else 0)
+        if age < limit.catch_up_age:
+            return limit.base
+        low, high = limit.super_catch_up_ages
+        if limit.super_catch_up_amount is not None and low <= age <= high:
+            return limit.base + max(limit.catch_up_amount, limit.super_catch_up_amount)
+        return limit.base + limit.catch_up_amount
 
     def get_job_401k_annual_additions_limit(self) -> int:
         """Get the 415(c) overall annual-additions limit (employee + employer, per plan)."""
@@ -373,6 +589,13 @@ class FinancialConfig:
         (("retirement", "ira", "contribution_limit"), "limit_ira"),
         (("accounts", "hsa", "contribution_limit"), "limit_hsa_self"),
         (("accounts", "hsa", "contribution_limit_family"), "limit_hsa_family"),
+        (("tax", "federal", "capital_gains"), "capital_gains"),
+        (("tax", "federal", "niit"), "niit"),
+        (("tax", "federal", "salt_deduction_cap"), "salt.cap"),
+        (("tax", "federal", "salt_phaseout_threshold"), "salt.phaseout_threshold"),
+        (("tax", "federal", "senior_deduction", "amount"), "senior_deduction_amount"),
+        (("dependents", "ctc_per_child"), "ctc_per_child"),
+        (("dependents", "ctc_refundable_max"), "ctc_refundable_max"),
     )
 
     @classmethod
@@ -393,6 +616,11 @@ class FinancialConfig:
                 node = node[key]
             else:
                 for entry in merged.get("tax_years", {}).values():
+                    if "." in field:  # a field of a nested year entry (``salt.cap``)
+                        outer, inner = field.split(".", 1)
+                        if isinstance(entry.get(outer), dict):
+                            entry[outer] = {**entry[outer], inner: node}
+                        continue
                     if isinstance(node, dict) and isinstance(entry.get(field), dict):
                         entry[field] = cls._deep_merge(entry[field], node)
                     else:
