@@ -260,7 +260,7 @@ class FixedIncomeHolding(FinancialAccount):
         """Pay the holding out to the owner's bank at maturity (an I bond's deferred interest is taxed)."""
         amount = self.balance
         if self.kind in ("i_bond", "cd") and self.accrued_interest > 0:
-            self.person.income.add(self.income_type, self.accrued_interest, source="i_bond_interest")
+            self.person.income.add(self.income_type, self.accrued_interest, source=f"{self.kind}_interest")
             self.accrued_interest = 0.0
         self.balance = 0.0
         self.matured = True

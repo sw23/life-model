@@ -220,7 +220,7 @@ children's ages for the credits. The qualified charitable distribution's 70½ is
 | Jobs with `start_year` / `end_year` | Paid only from the start month through the end month; the job retires the month after | |
 | ESPP (`StockPlan(espp=)`) | Pay set aside each month | The purchase (and its discount income) in each purchase month (June, December) |
 | Contribution plans (`person.add_contribution_plan`) | Bank-sourced: after the month's bills, never more than the bank holds (December: less the year's estimated tax); payroll-sourced: with the paycheck | A 401(k) "max" / dollar plan's percent re-derived at the year start |
-| Savings sweep (`person.savings_policy`) | | Cash above the floor invested after the year's taxes |
+| Savings sweep (`person.savings_policy`) | | Cash above the floor invested after the year's taxes: at the year end into a taxable account, at the start of the next year into a tax-advantaged account |
 | Roth conversions (`person.roth_conversion_policy`, `convert_to_roth` events) | A dollar event in its month | A standing or `fill_bracket_pct` conversion in December, before the year's taxes |
 | Fixed income (`FixedIncomeHolding`) | CD interest credited, Treasury coupons and bond-fund distributions paid, I bond interest accrued (tax deferred); maturity in its month | An I bond's rate resets every six months from its issue month |
 | Spending | A twelfth of base and of each annual category (monthly categories in full); one-time expenses in the month they are added; a schedule step in the month the age is reached; part of it charged to a card with `spending_charge_pct` | The base and categories escalate at year end |

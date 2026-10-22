@@ -284,8 +284,8 @@ def _change_job(builder: "_Builder", person, event: s.ChangeJobEvent) -> None:
         if event.salary_annual is not None:
             job.salary.base = event.salary_annual
         if event.stop and not job.retired:
-            job.retired = True
-            builder.model.event_log.add(Event(f"{person.name} left {job.company}"))
+            # Leaving is retiring from the job: unvested match forfeited, the end of its income logged.
+            job.retire(message=f"{person.name} left {job.company}")
             if event.severance > 0:
                 # Severance is wages: income tax and FICA.
                 person.income.add_wages(ordinary_amount=event.severance, fica_wages=event.severance)
@@ -351,29 +351,18 @@ def _add_account(builder: "_Builder", event: s.AddAccountEvent) -> None:
 
 def _contribute(builder: "_Builder", person, account_id: str, amount: float) -> None:
     from ..charity.daf import DonorAdvisedFund
+    from ..policies import move_from_bank
 
     account = builder.built.items[account_id]
-    available = min(amount, sum(a.balance for a in person.usable_bank_accounts))
-    if available <= 0:
-        return
     if isinstance(account, DonorAdvisedFund):
-        account.contribute(available)  # debits the bank itself
-    elif hasattr(account, "contribute"):
-        # Tax-advantaged / 529: the account accepts at most its remaining room; debit what it took, bank by
-        # bank, posting each part as a transfer from that bank so the ledger records a move between the
-        # household's own accounts rather than new money from outside.
-        remaining = available
-        for bank in person.usable_bank_accounts:
-            if remaining <= 0:
-                break
-            accepted = account.contribute(min(remaining, bank.balance), from_account=bank)
-            if accepted <= 0:
-                break
-            bank.withdraw(accepted)
-            remaining -= accepted
-    else:
-        person.deduct_from_bank_accounts(available)
-        account.deposit(available)
+        available = min(amount, sum(a.balance for a in person.usable_bank_accounts))
+        if available > 0:
+            account.contribute(available)  # debits the bank itself
+        return
+    # Every other target goes through the policies' move: a contribution within a tax-advantaged
+    # account's or 529's room, a brokerage lot, a fixed-income purchase or a bank transfer, each part
+    # posted as a move between the household's own accounts rather than new money from outside.
+    move_from_bank(person, account, amount, cause=f"contribution to {account_id}")
 
 
 def _stop_contribution(builder: "_Builder", person, event: s.StopContributionEvent) -> None:

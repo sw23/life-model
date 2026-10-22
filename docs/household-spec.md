@@ -964,7 +964,7 @@ Builds: `ContributionPlan`.
 
 ## SavingsPolicy
 
-Surplus sweep above a cash floor, once a year after the taxes are paid.
+Surplus sweep above a cash floor, once a year after the taxes are paid: at the year end into a taxable account, at the start of the next year into a tax-advantaged account or 529 (within that year's room).
 
 Builds: `SavingsPolicy`.
 

@@ -268,6 +268,32 @@ class TestPensionFromStatement(unittest.TestCase):
         self.assertEqual(taxable, 0)
         model.run()
 
+    def test_lump_sum_rolls_into_a_401k_and_only_pretax_accounts_take_a_rollover(self):
+        from ..account.brokerage import BrokerageAccount
+        from ..account.job401k import Job401kAccount
+
+        model = _model(end_year=2027, checks="strict")
+        person = _person(model, birth="1961-01")
+        plan = Job401kAccount(owner=person, pretax_balance=0, growth_pct=0)
+        pension = Pension(
+            person,
+            company="Co",
+            vesting_years=5,
+            benefit_annual=24000,
+            start_age=65,
+            lump_sum=True,
+            lump_sum_amount=300000,
+            rollover_account=plan,
+        )
+        model.step_year()
+        self.assertTrue(pension.paid_out)
+        self.assertEqual(plan.pretax_balance, 300000)
+        self.assertEqual(sum(e.amount for e in person.income.entries if e.income_type == IncomeType.PENSION), 0)
+        model.run()
+        brokerage = BrokerageAccount(person, balance=0)
+        with self.assertRaises(TypeError):
+            Pension(person, company="Co2", vesting_years=5, benefit_annual=1, lump_sum=True, rollover_account=brokerage)
+
 
 class TestHealthAndDisability(unittest.TestCase):
     def test_health_policy_caps_medical_costs(self):

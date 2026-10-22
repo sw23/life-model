@@ -646,11 +646,16 @@ class Investment(FinancialAccount, ABC):
 class TaxAdvantagedAccount(Investment, ABC):
     """Base class for tax-advantaged accounts (IRAs, HSA).
 
-    Adds a year-indexed contribution limit hook, year-to-date contribution tracking (reset in
-    post_step), contribution-vs-earnings basis tracking (for Roth withdrawal ordering and HSA/529
-    penalty math), a :class:`TaxTreatment`, an early-withdrawal usability gate, and an RMD
-    participation flag.
+    Adds a year-indexed contribution limit hook, year-to-date contribution tracking (reset at the year
+    end, after the year's return is settled from it), contribution-vs-earnings basis tracking (for Roth
+    withdrawal ordering and HSA/529 penalty math), a :class:`TaxTreatment`, an early-withdrawal usability
+    gate, and an RMD participation flag.
     """
+
+    # The contribution counter resets with the person's yearly resets (20): after the tax settlement (0)
+    # reads it (the IRA phase-outs, the saver's credit) and after the year-end sweep (15), whatever the
+    # construction order.
+    STEP_PRIORITY: ClassVar[dict[str, int]] = {"on_year_end": 20}
 
     #: How this account is taxed. Subclasses set this.
     tax_treatment: TaxTreatment = TaxTreatment.ROTH
@@ -759,7 +764,8 @@ class TaxAdvantagedAccount(Investment, ABC):
         return self.person.age_years_fractional >= federal_retirement_age(self.model.config)
 
     def on_year_end(self):
-        """Track the year-end balance and reset the annual contribution counter."""
+        """Track the year-end balance and reset the annual contribution counter (after the year's return
+        was settled: see ``STEP_PRIORITY``)."""
         super().on_year_end()
         self.reset_annual_contributions()
 
