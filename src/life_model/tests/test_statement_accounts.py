@@ -320,6 +320,29 @@ class TestFixedIncome(unittest.TestCase):
         self.assertEqual(check_model(model), [])
 
 
+class TestYearlySpending(unittest.TestCase):
+    def test_a_part_year_counts_only_the_months_simulated(self):
+        model = LifeModel(start="2026-10", end_year=2026, checks="strict")
+        alex = _person(model, bank=100_000, spending=60_000)
+        self.assertAlmostEqual(alex.spending.get_yearly_spending(), 15_000)  # October through December
+        self.assertAlmostEqual(alex.spending.year_spending_lines()["base"], 15_000)
+        model.step_year()
+        self.assertAlmostEqual(alex.bank_account_balance, 85_000, places=2)
+        self.assertEqual(check_model(model), [])
+
+    def test_a_mid_year_change_counts_the_months_at_each_base(self):
+        model = _model()
+        alex = _person(model, bank=100_000, spending=12_000)
+        self.assertAlmostEqual(alex.spending.get_yearly_spending(), 12_000)
+        for _ in range(6):
+            model.step()
+        alex.spending.base = 24_000
+        self.assertAlmostEqual(alex.spending.get_yearly_spending(), 6 * 1_000 + 6 * 2_000)
+        model.step_year()
+        self.assertAlmostEqual(alex.bank_account_balance, 100_000 - 18_000, places=2)
+        self.assertAlmostEqual(alex.spending.get_yearly_spending(), 24_000)  # next year, at its base
+
+
 class TestPolicies(unittest.TestCase):
     def test_sweep_moves_surplus_above_the_floor(self):
         """Acceptance: the sweep moves surplus above the floor."""
@@ -339,6 +362,53 @@ class TestPolicies(unittest.TestCase):
         alex.savings_policy = SavingsPolicy(cash_floor=10_000, sweep_to=bonds)
         model.step_year()
         self.assertAlmostEqual(bonds.balance, 40_000, places=2)
+
+    def _ira_sweeper(self, *, plan: bool):
+        model = _model(end=2027)
+        alex = _person(model, bank=50_000)
+        Job(alex, company="Example Analytics", salary=Salary(model, base_annual=60_000))
+        ira = TraditionalIRA(alex, growth_pct=0)
+        if plan:
+            alex.add_contribution_plan(ContributionPlan(ira, amount_annual="max"))
+        alex.savings_policy = SavingsPolicy(cash_floor=10_000, sweep_to=ira)
+        return model, alex, ira
+
+    def test_sweep_into_an_ira_is_made_at_the_year_start_and_deducted_that_year(self):
+        """A sweep into a tax-advantaged account runs at the start of the year: the year-end return is
+        settled by then, so a year-end contribution would be deducted on no return."""
+        model, alex, ira = self._ira_sweeper(plan=False)
+        limits = []
+        for year in (2026, 2027):
+            limits.append(ira.annual_contribution_limit())
+            model.step_year()
+            self.assertAlmostEqual(ira.balance, sum(limits), places=2)
+            self.assertAlmostEqual(model.tax_returns[year].adjustments["ira_deduction"], limits[-1], places=2)
+        self.assertGreaterEqual(alex.bank_account_balance, 10_000)
+        self.assertEqual(check_model(model), [])
+
+    def test_sweep_into_an_ira_shares_the_years_room_with_the_contribution_plan(self):
+        model, _alex, ira = self._ira_sweeper(plan=True)
+        limits = []
+        for year in (2026, 2027):
+            limits.append(ira.annual_contribution_limit())
+            model.step_year()
+            self.assertAlmostEqual(ira.balance, sum(limits), places=2)
+            self.assertAlmostEqual(model.tax_returns[year].adjustments["ira_deduction"], limits[-1], places=2)
+        self.assertEqual(check_model(model), [])
+
+    def test_a_cd_matures_with_its_interest_labeled_as_the_cds(self):
+        model = _model()
+        alex = _person(model)
+        cd = FixedIncomeHolding(
+            alex, kind="cd", face=10_000, rate_pct=4.0, maturity="2026-02", accrued_interest=200, growth_pct=0
+        )
+        for _ in range(2):
+            model.step()
+        self.assertTrue(cd.matured)
+        interest = _income(alex, cd.income_type, source="cd_interest")
+        self.assertGreater(interest, 200)  # the opening accrual plus two months'
+        self.assertAlmostEqual(interest, _income(alex, cd.income_type))  # all of it labeled as the CD's
+        self.assertEqual(_income(alex, cd.income_type, source="i_bond_interest"), 0)
 
     def test_ira_contribution_plan_maxes_out_from_the_bank(self):
         model = _model(end=2027)

@@ -1232,8 +1232,13 @@ class LifeModelAgent(mesa.Agent):
     #   events:      LifeEvents (0)
     #   step:        payroll true-up (-30), account growth and bank interest (-10), the month's bills (0)
     #   post_step:   post_step life events (10)
-    #   on_year_end: LTC claims and life-insurance updates (-5), tax settlement (0), pension service
-    #                and COLA (5), escalators (10), the person's yearly resets (20)
+    #   on_year_start: the year's RMD and the like (0), the policy runner's plan refresh (5), the
+    #                sweep into tax-advantaged accounts (10)
+    #   on_year_end: LTC claims, life-insurance updates and Roth conversions (-5), tax settlement (0),
+    #                pension service and COLA (5), escalators (10), the sweep into taxable accounts (15),
+    #                the yearly resets of the person's ledger and the accounts' contribution counters (20)
+    # A subclass's STEP_PRIORITY is merged over its bases' (per stage), so declaring one stage's
+    # priority keeps the inherited ones.
     STEP_PRIORITY: ClassVar[dict[str, int]] = {}
 
     #: Model-level stats (``LifeModel.STATS`` / ``EXTRA_STATS`` names) this agent type reports.
@@ -1250,6 +1255,11 @@ class LifeModelAgent(mesa.Agent):
             raise TypeError(f"{cls.__name__}.STATS_OWNED names unknown model stats: {sorted(unknown)}")
         inherited = frozenset().union(*(getattr(base, "STATS_OWNED", frozenset()) for base in cls.__bases__))
         cls.STATS_OWNED = inherited | declared
+        priorities: dict[str, int] = {}
+        for base in reversed(cls.__bases__):
+            priorities.update(getattr(base, "STEP_PRIORITY", {}))
+        priorities.update(cls.__dict__.get("STEP_PRIORITY", {}))
+        cls.STEP_PRIORITY = priorities
 
     def __init__(self, model: LifeModel):
         """LifeModelAgent

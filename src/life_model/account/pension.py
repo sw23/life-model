@@ -125,7 +125,7 @@ class Pension(Benefit):
             lump_sum: Take the benefit as a lump sum at the start age instead of an annuity.
             lump_sum_amount: The plan's stated lump sum (else its present value at
                 ``lump_sum_rate_pct``, default the configured rate, over the owner's life expectancy).
-            rollover_account: An IRA (or other account) the lump sum is rolled into (not taxed);
+            rollover_account: A traditional IRA or 401(k) the lump sum is rolled into (not taxed);
                 otherwise it is paid to the bank and taxed as a pension distribution.
 
         Raises:
@@ -166,6 +166,10 @@ class Pension(Benefit):
         self.lump_sum = lump_sum
         self.lump_sum_amount = lump_sum_amount
         self.lump_sum_rate_pct = lump_sum_rate_pct
+        if rollover_account is not None and not self._accepts_rollover(rollover_account):
+            raise TypeError(
+                f"rollover_account must be a traditional IRA or 401(k), not {type(rollover_account).__name__}"
+            )
         self.rollover_account = rollover_account
         #: The factor fixed when payments start (early-retirement and survivor reductions; 1 before).
         self.commencement_factor: float | None = None
@@ -294,6 +298,14 @@ class Pension(Benefit):
         if self.lump_sum:
             self._pay_lump_sum()
 
+    @staticmethod
+    def _accepts_rollover(account) -> bool:
+        """Whether ``account`` holds pre-tax money a lump sum can be rolled into untaxed."""
+        from .job401k import Job401kAccount
+        from .traditional_IRA import TraditionalIRA
+
+        return isinstance(account, (TraditionalIRA, Job401kAccount))
+
     def _pay_lump_sum(self) -> None:
         from ..insurance.annuity import AnnuityPayoutType, calculate_annuity_factor
 
@@ -312,9 +324,10 @@ class Pension(Benefit):
             )
         cause = f"{self.company} pension lump sum"
         if self.rollover_account is not None:
-            # A direct rollover: not taxed, the money lands in the account.
+            # A direct rollover: not taxed, the money lands in the account's pre-tax money (a 401(k)'s
+            # deposit goes to its pre-tax bucket; a rollover is not a contribution against the year's room).
             account = self.rollover_account
-            account.balance += amount
+            account.deposit(amount)
             self.model.ledger.post(
                 amount,
                 FlowKind.BENEFIT,

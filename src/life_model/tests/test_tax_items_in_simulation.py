@@ -75,6 +75,21 @@ class TestQualifiedCharitableDistribution(unittest.TestCase):
         self.assertEqual(donation.cash_given_this_year, 1000)
         self.assertEqual(model.tax_returns[2024].itemized_components["charity"], 1000)
 
+    def test_a_full_limit_qcd_is_made_every_year(self):
+        """The year's room counts this year's QCDs only, not a donation's figure from the year before."""
+        model = _model(2024, end=2025, checks="strict")
+        lee = _person(model, "Lee", 75)
+        TraditionalIRA(lee, balance=1_000_000, growth_pct=0)
+        donation = Donation(lee, "Food Bank", annual_amount=200_000, donation_type=DonationType.QCD)
+        given = []
+        for _ in (2024, 2025):
+            limit = model.year_config.tax.federal.qcd_limit
+            model.step_year()
+            given.append(limit)
+            self.assertAlmostEqual(donation.stat_total_donated, sum(given))
+        self.assertEqual(donation.cash_given_this_year, 0)
+        self.assertEqual(check_model(model), [])
+
 
 class TestAppreciatedStockGift(unittest.TestCase):
     def test_shares_leave_without_a_gain_and_deduct_at_fmv_up_to_30_percent(self):
@@ -92,6 +107,19 @@ class TestAppreciatedStockGift(unittest.TestCase):
         self.assertAlmostEqual(r.itemized_components["charity_noncash"], 30000)
         self.assertEqual(pat.charitable_property_carryforwards, [(2024, 10000)])
         self.assertEqual(check_model(model), [])
+
+    def test_shares_held_under_a_year_are_not_given_in_kind(self):
+        """The in-kind gift uses the sale's twelve-month test, not the calendar year."""
+        model = _model(2024)
+        pat = _person(model, "Pat")
+        _job(pat, 100000)
+        brokerage = BrokerageAccount(pat, company="Example Brokerage", balance=0, growth_pct=0, dividend_yield_pct=0)
+        brokerage.deposit_with_basis(50000, 10000, acquired_year=2023, acquired_month=6)
+        donation = Donation(pat, "Food Bank", annual_amount=40000, donation_type=DonationType.STOCK)
+        model.step_year()  # the gift is made in January 2024: the lot is seven months old
+        self.assertEqual(brokerage.balance, 50000)
+        self.assertEqual(donation.property_given_this_year, 0)
+        self.assertEqual(model.tax_returns[2024].itemized_components["charity_noncash"], 0)
 
 
 class TestIRAPhaseouts(unittest.TestCase):
@@ -118,6 +146,34 @@ class TestIRAPhaseouts(unittest.TestCase):
         ira.contribute(7000)
         model.step_year()
         self.assertAlmostEqual(model.tax_returns[2024].adjustments["ira_deduction"], 7000)
+
+    def test_phaseout_does_not_depend_on_construction_order(self):
+        """The IRA's contribution counter resets after the settlement reads it, even when the IRA was built
+        before the family that files the return (a spouse married into a later family). 2024 joint, MAGI
+        132,000, a covered spouse: part of the 7,000 is nondeductible either way round."""
+        from ..account.job401k import Job401kAccount
+
+        def household(ira_first: bool):
+            model = _model(2024)
+            if not ira_first:
+                bo = _person(model, "Bo")
+                _job(bo, 50000)
+            alex = _person(model)
+            job = _job(alex, 82000)
+            Job401kAccount(job, pretax_contrib_pct=0)
+            ira = TraditionalIRA(alex, balance=0, growth_pct=0)
+            ira.contribute(7000)
+            if ira_first:
+                bo = _person(model, "Bo")
+                _job(bo, 50000)
+            bo.get_married(alex)  # Alex joins Bo's family
+            model.step_year()
+            return model.tax_returns[2024].adjustments["ira_deduction"], ira.nondeductible_basis
+
+        deduction, basis = household(ira_first=True)
+        self.assertLess(deduction, 7000)
+        self.assertAlmostEqual(basis, 7000 - deduction)
+        self.assertEqual(household(ira_first=False), (deduction, basis))
 
     def test_roth_excess_over_the_magi_limit_is_returned(self):
         # 2024 single, MAGI 153,500: (161,000 - 153,500) / 15,000 x 7,000 = 3,500 allowed; 3,500 returned.

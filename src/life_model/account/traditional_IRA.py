@@ -134,13 +134,16 @@ class TraditionalIRA(TaxAdvantagedAccount):
         limit = self.model.year_config.tax.federal.qcd_limit
         if limit is None:
             return 0.0
+        year = self.model.year
         total = 0.0
         for donation in self.person.donations:
             make = getattr(donation, "make_qcd", None)
             if make is None:
                 continue
-            room = limit - sum(getattr(d, "qcd_this_year", 0.0) for d in self.person.donations)
-            total += make(self, room)
+            # Only this year's QCDs use the room: a donation's counter keeps last year's figure until it
+            # resets (in its make_qcd, or its pre_step after this).
+            given = sum(d.qcd_this_year for d in self.person.donations if getattr(d, "_qcd_year", None) == year)
+            total += make(self, limit - given)
         return total
 
     def annual_contribution_limit(self) -> float:

@@ -794,8 +794,9 @@ class Job(LifeModelAgent):
             return
         self._book_payroll()
 
-    def retire(self):
-        """Retire from the job (unvested employer 401k money is forfeited)."""
+    def retire(self, *, message: str | None = None):
+        """Leave the job for good (unvested employer 401k money is forfeited). ``message`` words the
+        logged event (default: the owner retired from the company)."""
         if self.retired:
             return
         self.retired = True
@@ -806,7 +807,7 @@ class Job(LifeModelAgent):
                 EventKind.RETIRED,
                 person=self.owner,
                 cause=self.company,
-                message=f"{self.owner.name} retired from {self.company}",
+                message=message or f"{self.owner.name} retired from {self.company}",
             )
         )
 

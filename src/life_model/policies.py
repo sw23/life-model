@@ -288,15 +288,18 @@ def _is_529(account) -> bool:
 
 
 class SavingsPolicy:
-    """Invest cash above ``cash_floor`` in ``sweep_to`` once a year, after the year's taxes are paid."""
+    """Invest cash above ``cash_floor`` in ``sweep_to`` once a year, after the year's taxes are paid: at
+    the year end into a taxable account; at the start of the next year into a tax-advantaged account or a
+    529 (so the contribution is within that year's room and on that year's return)."""
 
     def __init__(self, *, cash_floor: float, sweep_to=None):
         """A surplus sweep.
 
         Args:
             cash_floor: Dollars kept in the owner's (non-reserve) bank accounts.
-            sweep_to: Where the surplus goes: a brokerage account, fixed-income holding, bank account or
-                tax-advantaged account (within its room). None keeps the cash (no sweep).
+            sweep_to: Where the surplus goes: a brokerage account, fixed-income holding or bank account
+                (swept at the year end), or a tax-advantaged account or 529 (swept at the start of the
+                following year, within its room). None keeps the cash (no sweep).
         """
         if cash_floor < 0:
             raise ValueError("cash_floor must be non-negative")
@@ -477,7 +480,9 @@ class PolicyRunner(LifeModelAgent):
     * ``pre_step`` (-50): a windowed 401(k) plan's percent (0 outside its start/end months), before payroll.
     * ``post_step`` (5): bank-sourced contributions, after the month's bills.
     * ``on_year_end`` (-5): Roth conversions, before the year's taxes (0).
-    * ``on_year_end`` (15, via :class:`SweepRunner`): the surplus sweep, after the taxes and escalators.
+    * ``on_year_end`` (15, via :class:`SweepRunner`): the surplus sweep into a taxable account, after the
+      taxes and escalators.
+    * ``on_year_start`` (10, via :class:`SweepRunner`): the surplus sweep into a tax-advantaged account.
     """
 
     STEP_PRIORITY: ClassVar[dict[str, int]] = {
@@ -549,19 +554,43 @@ class PolicyRunner(LifeModelAgent):
 
 
 class SweepRunner(LifeModelAgent):
-    """The surplus sweep of :class:`SavingsPolicy` (year end, after the taxes)."""
+    """The surplus sweep of :class:`SavingsPolicy`, after the year's taxes.
 
-    STEP_PRIORITY: ClassVar[dict[str, int]] = {"on_year_end": 15}
+    A sweep into a taxable account (brokerage, fixed income, bank) runs at the year end (15, after the
+    settlement and the escalators). A sweep into a tax-advantaged account or a 529 runs at the start of
+    the next year instead (10, after the year's RMD is fixed and the plans refreshed): the year-end return
+    is already settled and the contribution counters reset by then, so a year-end contribution would
+    neither count against the year's room nor be deducted on any return. Made in the new year it is
+    within that year's room and on that year's return.
+    """
+
+    STEP_PRIORITY: ClassVar[dict[str, int]] = {"on_year_start": 10, "on_year_end": 15}
 
     def __init__(self, model, runner: PolicyRunner):
         super().__init__(model)
         self.runner = runner
 
-    def on_year_end(self):
+    @staticmethod
+    def sweeps_at_year_start(account) -> bool:
+        """Whether a sweep into ``account`` is made at the start of the year (a contribution with a
+        yearly limit) rather than at the year end."""
+        from .base_classes import TaxAdvantagedAccount
+
+        return isinstance(account, TaxAdvantagedAccount) or _is_529(account)
+
+    def _sweep(self, *, year_start: bool) -> None:
         for person in self.runner._living():
             policy = person.savings_policy
-            if policy is not None and policy.sweep_to is not None:
+            if policy is None or policy.sweep_to is None:
+                continue
+            if self.sweeps_at_year_start(policy.sweep_to) == year_start:
                 sweep(person, policy)
+
+    def on_year_start(self):
+        self._sweep(year_start=True)
+
+    def on_year_end(self):
+        self._sweep(year_start=False)
 
 
 def _gross_pay_this_month(person: "Person") -> float:

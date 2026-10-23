@@ -336,9 +336,8 @@ class BrokerageAccount(Investment):
         posts the gift)."""
         if amount <= 0:
             return 0.0
-        year = self.model.year
         candidates = sorted(
-            (lot for lot in self.lots if year - lot.acquired_year >= 1 and lot.value > 0),
+            (lot for lot in self.lots if self._is_long_term(lot) and lot.value > 0),
             key=lambda lot: -(lot.gain / lot.value),
         )
         remaining = amount

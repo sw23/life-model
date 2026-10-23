@@ -2258,6 +2258,9 @@ class Spending(LifeModelAgent):
         self.person = None
         #: This year's one-time expenses (added so far this year).
         self.one_time_expenses = 0
+        # The base paid so far this year, and the period of the last month paid.
+        self._base_paid = 0.0
+        self._base_paid_period: int | None = None
         #: This year's one-time expenses by category (they sum to ``one_time_expenses``).
         self.one_time_by_category: dict[str, float] = {}
         # One-time expenses not yet paid, by category (paid with the next month's bills).
@@ -2334,6 +2337,8 @@ class Spending(LifeModelAgent):
         the lines)."""
         self._apply_schedule()
         lines = {"base": self.month_base()} if self.base else {}
+        self._base_paid += lines.get("base", 0.0)
+        self._base_paid_period = self.model.period
         for name, amount in self.category_month_lines().items():
             lines[name] = lines.get(name, 0.0) + amount
             self._category_paid[name] = self._category_paid.get(name, 0.0) + amount
@@ -2353,11 +2358,22 @@ class Spending(LifeModelAgent):
             v for k, v in self._category_paid.items() if k in self.categories and not self.categories[k].essential
         )
 
+    def base_this_year(self) -> float:
+        """This year's base spending: the twelfths paid so far plus one for each month of the year still
+        to be paid, at the current base. A full year at a steady base is ``base``; a part-year first year
+        or a mid-year change (a schedule step, an event) counts only what the engine pays."""
+        model = self.model
+        months_left = 12 - model.month + 1
+        if self._base_paid_period == model.period:
+            months_left -= 1
+        return self._base_paid + self.month_base() * max(0, months_left)
+
     def year_spending_lines(self) -> dict[str, float]:
-        """This year's spending by category: ``base``, each categorized line paid so far and each
-        one-time category (any amount added to ``one_time_expenses`` directly is reported as
-        ``one_time``). Sums to :meth:`get_yearly_spending`."""
-        lines = {"base": self.base} if self.base else {}
+        """This year's spending by category: ``base`` (:meth:`base_this_year`), each categorized line paid
+        so far and each one-time category (any amount added to ``one_time_expenses`` directly is reported
+        as ``one_time``). Sums to :meth:`get_yearly_spending`."""
+        base = self.base_this_year()
+        lines = {"base": base} if base else {}
         for name, amount in self._category_paid.items():
             if amount:
                 lines[name] = lines.get(name, 0.0) + amount
@@ -2369,9 +2385,9 @@ class Spending(LifeModelAgent):
         return lines
 
     def get_yearly_spending(self) -> float:
-        """This year's spending: the base plus the categorized lines paid and the one-time expenses added
-        so far this year."""
-        return self.base + sum(self._category_paid.values()) + self.one_time_expenses
+        """This year's spending: the base (:meth:`base_this_year`: what the year's months pay) plus the
+        categorized lines paid and the one-time expenses added so far this year."""
+        return self.base_this_year() + sum(self._category_paid.values()) + self.one_time_expenses
 
     @property
     def base_spending(self) -> float:
@@ -2399,3 +2415,4 @@ class Spending(LifeModelAgent):
         self.one_time_expenses = 0
         self.one_time_by_category = {}
         self._category_paid = {}
+        self._base_paid = 0.0

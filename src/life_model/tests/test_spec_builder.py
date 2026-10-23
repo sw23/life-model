@@ -371,6 +371,47 @@ class TestEventActions(unittest.TestCase):
         self.assertEqual(alex.bank_account_balance, 29000)
         self.assertEqual(alex.fica_wages, 9000)
 
+    def test_leaving_a_job_forfeits_the_unvested_match_and_logs_the_end_of_its_income(self):
+        data = minimal()
+        data["people"][0]["accounts"].append(
+            {
+                "kind": "401k",
+                "id": "plan",
+                "job": "job",
+                "pretax_contrib_pct": 6,
+                "match_tiers": [{"match_pct": 100, "up_to_pay_pct": 3}],
+                "match_vesting_years": 4,
+            }
+        )
+        data["meta"]["end_year"] = 2030
+        data["events"] = [{"at": 2028, "person": "alex", "action": "change_job", "job": "job", "stop": True}]
+        built = build(data)
+        model = built.model
+        model.step_year()
+        model.step_year()
+        plan = built.items["plan"]
+        self.assertGreater(plan.unvested_match, 0)
+        before = plan.pretax_balance
+        model.step_year()  # 2028: the event fires
+        self.assertTrue(built.items["job"].retired)
+        self.assertEqual(plan.unvested_match, 0)
+        self.assertLess(plan.pretax_balance, before)
+        self.assertEqual([e.cause for e in model.event_log.of_kind("retired")], ["Co"])
+        self.assertIn("left Co", model.event_log.of_kind("retired")[0].message)
+
+    def test_contribute_to_a_brokerage_is_posted_as_a_transfer(self):
+        from ..ledger import account_label
+
+        data = minimal()
+        data["people"][0]["accounts"].append({"kind": "brokerage", "id": "taxable"})
+        built = self._fire(
+            data, [{"at": 2027, "person": "alex", "action": "contribute", "account": "taxable", "amount": 5000}]
+        )
+        taxable = built.items["taxable"]
+        self.assertEqual(taxable.balance, 5000)
+        moves = [e for e in built.model.ledger if e.to_account == account_label(taxable)]
+        self.assertEqual([(e.amount, e.from_account is not None) for e in moves], [(5000.0, True)])
+
     def test_move_sell_buy_and_rentals(self):
         data = self._couple()
         data["relationships"] = {"marriages": [{"spouses": ["alex", "bo"]}]}
