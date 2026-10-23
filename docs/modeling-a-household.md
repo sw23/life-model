@@ -178,9 +178,11 @@ advice.
 
 ## Checklist for agents
 
-The same workflow is packaged as a Claude Code skill in
-[agent-skills/model-household/SKILL.md](agent-skills/model-household/SKILL.md) (copy it to
-`.claude/skills/model-household/SKILL.md` to install it):
+The same workflow is packaged as an agent skill in
+[agent-skills/model-household/SKILL.md](agent-skills/model-household/SKILL.md). A clone of this
+repository already has it installed (`.github/skills/model-household` links to it, and
+`.claude/skills` links to `.github/skills`); to use it in another project, copy it to that
+project's `.claude/skills/model-household/SKILL.md`:
 
 1. Gather facts from statements, not memory; record `meta.as_of`.
 2. Never invent a balance, rate or date: ask, or label an assumption.

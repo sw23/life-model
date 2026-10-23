@@ -107,7 +107,7 @@ fixtures use only synthetic names (a test enforces an allowlist).
   and brokerage accounts can be joint between spouses (`joint_owner=`; registered under the titled
   owner, usable by both, income split 50/50, passed to the survivor at a death). Constructors take canonical keyword names (`owner=`,
   `*_pct`, `*_annual`) and are keyword-only past the owner; deprecated names are still accepted with a
-  `DeprecationWarning` (`life_model/_compat.py`). Library code must use the canonical names.
+  `DeprecationWarning` (`life_model/deprecated_names.py`). Library code must use the canonical names.
 - **Construction.** The recommended path is the household spec (`life_model.spec`):
   `build_model(load(path))` validates, canonicalizes list order and constructs agents in a fixed
   order (`spec/builder.py` docstring). Direct constructors remain the low-level API; keep their
@@ -172,6 +172,12 @@ Generated docs (regenerate after changing their sources; tests fail while they a
 backtest example are written by `python scripts/household_goldens.py` (re-run it after changing a
 golden's inputs and review the `worksheet.md` diff) and `python scripts/backtest_example.py
 [statements]`.
+
+Agent skills live in `.github/skills/<name>/SKILL.md` (`.claude/skills` is a symlink to that
+directory): `dev-setup`, `implement-change`, `verify-simulation`, `refresh-financial-data`, and
+`model-household`, a link to [docs/agent-skills/model-household](docs/agent-skills/model-household/SKILL.md).
+Keep them consistent with this file. `CLAUDE.md` only imports this file; personal, machine-specific
+notes go in the git-ignored `CLAUDE.local.md`.
 
 ## Conventions
 
