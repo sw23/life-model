@@ -37,12 +37,13 @@ from life_model.work.job import Job, Salary
 
 model = LifeModel(start_year=2026, end_year=2046, checks="strict")
 family = Family(model)
-p = Person(family=family, name='A', age=40, retirement_age=65,
-           spending=Spending(model, base_annual=40000, growth_pct=2))
-BankAccount(owner=p, company='Bank', balance=50000, interest_pct=0.5)
-Job(owner=p, company='Co', role='Eng', salary=Salary(model, base_annual=100000, raise_pct=3, bonus_pct=0))
+p = Person(
+    family=family, name="A", age=40, retirement_age=65, spending=Spending(model, base_annual=40000, growth_pct=2)
+)
+BankAccount(owner=p, company="Bank", balance=50000, interest_pct=0.5)
+Job(owner=p, company="Co", role="Eng", salary=Salary(model, base_annual=100000, raise_pct=3, bonus_pct=0))
 result = model.run()
-print(result.model_frame[['Year', 'Income', 'Taxes', 'Spending', 'Bank Balance', 'Debt', 'Net Worth']].to_string())
+print(result.model_frame[["Year", "Income", "Taxes", "Spending", "Bank Balance", "Debt", "Net Worth"]].to_string())
 print(result.explain(2030))
 ```
 
