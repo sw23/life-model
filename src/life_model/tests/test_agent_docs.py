@@ -10,7 +10,8 @@
 * the generated constructor cheat sheet is current;
 * AGENTS.md, llms.txt and the docs link only to files that exist;
 * docs/cli.md documents every subcommand and flag;
-* the model-household skill has valid front matter.
+* the model-household skill has valid front matter, and every project skill in .github/skills (which
+  .claude/skills links to) names its directory.
 """
 
 import argparse
@@ -147,6 +148,24 @@ class TestAgentDocs(unittest.TestCase):
         self.assertGreater(len(front["description"]), 50)
         self.assertIn("my-models", text)
         self.assertIn("Never invent", text)
+
+    def test_project_skills(self):
+        skills = REPO_ROOT / ".github" / "skills"
+        self.assertEqual((REPO_ROOT / ".claude" / "skills").resolve(), skills.resolve())
+        self.assertEqual(
+            (skills / "model-household").resolve(), (REPO_ROOT / "docs" / "agent-skills" / "model-household").resolve()
+        )
+        names = []
+        for path in sorted(skills.glob("*/SKILL.md")):
+            text = path.read_text(encoding="utf-8")
+            self.assertTrue(text.startswith("---\n"), path)
+            front = yaml.safe_load(text.split("---\n", 2)[1])
+            self.assertEqual(front["name"], path.parent.name)
+            self.assertGreater(len(front["description"]), 50)
+            names.append(front["name"])
+        self.assertEqual(
+            names, ["dev-setup", "implement-change", "model-household", "refresh-financial-data", "verify-simulation"]
+        )
 
     def test_cli_doc_covers_every_command_and_flag(self):
         doc = (REPO_ROOT / "docs" / "cli.md").read_text(encoding="utf-8")
