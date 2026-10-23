@@ -176,7 +176,8 @@ golden's inputs and review the `worksheet.md` diff) and `python scripts/backtest
 Agent skills live in `.github/skills/<name>/SKILL.md` (`.claude/skills` is a symlink to that
 directory): `dev-setup`, `implement-change`, `verify-simulation`, `refresh-financial-data`, and
 `model-household`, a link to [docs/agent-skills/model-household](docs/agent-skills/model-household/SKILL.md).
-Keep them consistent with this file.
+Keep them consistent with this file. `CLAUDE.md` only imports this file; personal, machine-specific
+notes go in the git-ignored `CLAUDE.local.md`.
 
 ## Conventions
 

@@ -8,7 +8,7 @@ description: Set up a working Python environment and run tests, lint and docs fo
 ## Setup (once per session)
 
 The commands below write the working venv as `.venv/` (gitignored), as AGENTS.md does. If a local
-note (an untracked `CLAUDE.md`) names a different working env, use that one instead. Check it before
+note (the git-ignored `CLAUDE.local.md`) names a different working env, use that one instead. Check it before
 creating one:
 
 ```bash

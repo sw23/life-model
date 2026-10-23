@@ -151,3 +151,7 @@ deepqlearning/runs/
 # only the small committed sample + datasheet + reports live in git.
 slm/checkpoints/
 slm/data/dataset.jsonl
+
+# Personal agent instructions and settings (the shared ones are CLAUDE.md, AGENTS.md and .github/skills)
+CLAUDE.local.md
+.claude/settings.local.json
