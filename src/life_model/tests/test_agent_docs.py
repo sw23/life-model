@@ -149,6 +149,7 @@ class TestAgentDocs(unittest.TestCase):
         self.assertIn("my-models", text)
         self.assertIn("Never invent", text)
 
+    @unittest.skipUnless((REPO_ROOT / ".claude" / "skills").is_symlink(), "the skill symlinks are not in an sdist")
     def test_project_skills(self):
         skills = REPO_ROOT / ".github" / "skills"
         self.assertEqual((REPO_ROOT / ".claude" / "skills").resolve(), skills.resolve())
