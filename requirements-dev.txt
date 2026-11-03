@@ -1,5 +1,5 @@
 pytest-cov==7.1.0
-hypothesis>=6.170.9
+hypothesis>=6.170.14
 nbformat>=5.11.1
 nbconvert>=7.17.2
 ipykernel>=7.4.0
