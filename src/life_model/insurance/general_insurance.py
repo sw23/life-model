@@ -3,6 +3,7 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 import html
+import math
 from enum import Enum
 from typing import cast
 
@@ -75,6 +76,9 @@ class Insurance(LifeModelAgent):
         benefit_end_age: float | None = None,
         benefits_taxable: bool = False,
         marketplace=None,
+        benefit_growth_pct: float = 0.0,
+        lifetime_benefit_max: float | None = None,
+        waive_premium_in_claim: bool = True,
     ):
         """Models insurance coverage for a person
 
@@ -98,6 +102,7 @@ class Insurance(LifeModelAgent):
             benefit_pct: DISABILITY: the share of pre-disability pay replaced (e.g. 60).
             benefit_max_monthly: DISABILITY: the monthly benefit cap.
             elimination_months: DISABILITY: months from the disability before benefits start.
+                LONG_TERM_CARE: care months before benefits start, met once over every episode.
             benefit_end_age: DISABILITY: age benefits stop (``coverage_end_age``, else 65, when unset).
             benefits_taxable: DISABILITY: True when the premiums were paid by the employer or pre-tax
                 (benefits are then taxable income, IRC §104(a)(3), §105(a)); False (default): an
@@ -106,6 +111,12 @@ class Insurance(LifeModelAgent):
                 (:class:`~life_model.tax.ptc.MarketplaceCoverage`; keyword-only): the premium
                 is paid a twelfth a month while coverage is active, net of any advance premium tax credit,
                 and the year's premium tax credit is figured on the return (Form 8962).
+            benefit_growth_pct: LONG_TERM_CARE: an inflation rider (keyword-only): the annual benefit
+                (``coverage_amount``) and the lifetime maximum grow by this percent a year, compounded
+                from the policy's first year.
+            lifetime_benefit_max: LONG_TERM_CARE: the policy's lifetime benefit pool (None: unlimited).
+            waive_premium_in_claim: LONG_TERM_CARE: no premium is due for a year that starts while
+                benefits are being paid (default True).
         """
         person, annual_premium, premium_increase_rate = owner, premium_annual, premium_increase_pct
         super().__init__(cast(LifeModel, person.model))
@@ -146,6 +157,9 @@ class Insurance(LifeModelAgent):
         self.elimination_months = elimination_months
         self.benefit_end_age = benefit_end_age
         self.benefits_taxable = benefits_taxable
+        self.benefit_growth_pct = benefit_growth_pct
+        self.lifetime_benefit_max = lifetime_benefit_max
+        self.waive_premium_in_claim = waive_premium_in_claim
         #: DISABILITY: the claim's ``(month index it pays from, monthly benefit)`` once disabled.
         self.disability_claim: tuple[int, float] | None = None
         self.stat_disability_benefits = 0.0
@@ -172,6 +186,33 @@ class Insurance(LifeModelAgent):
     def years_active(self) -> int:
         """Years the policy has been active"""
         return self.model.year - self.policy_start_year
+
+    # --- long-term care: benefit growth, lifetime pool, premium waiver ---
+
+    @property
+    def benefit_growth_factor(self) -> float:
+        """The inflation rider's growth of the benefit since the policy's first year (1 without a rider)."""
+        return (1 + self.benefit_growth_pct / 100) ** max(0, self.years_active)
+
+    @property
+    def claim_limit(self) -> float:
+        """The most one claim can be for: the coverage amount, grown by any inflation rider."""
+        return self.coverage_amount * self.benefit_growth_factor
+
+    @property
+    def lifetime_benefit_remaining(self) -> float:
+        """What the lifetime maximum (grown by any inflation rider) has left (infinite when unlimited)."""
+        if self.lifetime_benefit_max is None:
+            return math.inf
+        return max(0.0, self.lifetime_benefit_max * self.benefit_growth_factor - self.stat_claims_paid_out)
+
+    def _premium_waived(self) -> bool:
+        """A long-term-care premium is waived while the policy is paying benefits."""
+        if self.insurance_type != InsuranceType.LONG_TERM_CARE or not self.waive_premium_in_claim:
+            return False
+        if self.lifetime_benefit_remaining <= 0:
+            return False
+        return any(care.receiving_benefits(self.elimination_months) for care in self.person.long_term_care)
 
     # --- health: cost sharing (deductible, coinsurance, out-of-pocket maximum) ---
 
@@ -295,14 +336,15 @@ class Insurance(LifeModelAgent):
             return False
 
         # Check if claim is within coverage limits
-        if claim.amount > self.coverage_amount:
+        limit = self.claim_limit
+        if claim.amount > limit + 1e-9:
             claim.status = ClaimStatus.DENIED
             self.model.event_log.add(Event(f"{self.person.name}'s claim denied - exceeds coverage limit"))
             return False
 
         # Calculate payout (simplified approval logic)
         if claim.amount > claim.deductible:
-            claim.payout_amount = min(claim.amount - claim.deductible, self.coverage_amount)
+            claim.payout_amount = min(claim.amount - claim.deductible, limit)
             claim.status = ClaimStatus.APPROVED
             claim.settlement_date = self.model.year
 
@@ -393,7 +435,12 @@ class Insurance(LifeModelAgent):
             self._marketplace_month()
             return
         if self.model.is_year_start and self.is_coverage_active and self.disability_claim is None:
-            self.pay_premium()
+            if self._premium_waived():
+                self.model.event_log.add(
+                    Event(f"{self.person.name}'s {self.company} long-term-care premium is waived during the claim")
+                )
+            else:
+                self.pay_premium()
         self._pay_disability_benefit()
 
     def _marketplace_month(self) -> None:

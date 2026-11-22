@@ -42,9 +42,11 @@ class MedicalCosts(LifeModelAgent):
         self.person = person
         self.annual_cost_override = annual_cost
         self.stat_medical_costs = 0.0
-        #: This year's covered costs before cost sharing, and the share charged (health policy years).
+        #: This year's costs before cost sharing, and the share charged under a health policy.
         self.gross_costs_ytd = 0.0
         self.oop_ytd = 0.0
+        # This month's charge as ``(period, gross, share under a health policy)``.
+        self._month_charge: tuple = (None, 0.0, 0.0)
         self.model.registries.medical_costs.register(person, self)
 
     def _band_cost(self, age: int) -> float:
@@ -82,6 +84,31 @@ class MedicalCosts(LifeModelAgent):
                 return policy
         return None
 
+    def _share_of(self, gross: float) -> float:
+        """Record ``gross`` covered costs this year and return the person's share: all of it, or with a
+        health policy the cost sharing (deductible, coinsurance, out-of-pocket maximum) on the year's total."""
+        policy = self.health_policy()
+        total = self.gross_costs_ytd + gross
+        self.gross_costs_ytd = total
+        if policy is None:
+            return gross
+        charged = policy.out_of_pocket(total) - self.oop_ytd
+        self.oop_ytd += charged
+        return charged
+
+    def final_year_cost(self, multiplier: float) -> float:
+        """The person's share of the rest of a final year's medical cost at death: ``multiplier`` times the
+        year's cost in total, less the costs already incurred this year (after any health policy's cost
+        sharing)."""
+        period, gross, oop = self._month_charge
+        if period == self.model.period:
+            # A death in pre_step comes after this month's charge, which dies unpaid with the person's bills.
+            self.gross_costs_ytd -= gross
+            self.oop_ytd -= oop
+            self._month_charge = (None, 0.0, 0.0)
+        remaining = max(0.0, multiplier * self.annual_cost() - self.gross_costs_ytd)
+        return self._share_of(remaining)
+
     def on_year_start(self):
         self.gross_costs_ytd = 0.0
         self.oop_ytd = 0.0
@@ -89,14 +116,9 @@ class MedicalCosts(LifeModelAgent):
     def pre_step(self):
         if self.person.is_deceased:
             return
-        cost = self.annual_cost() / 12
-        policy = self.health_policy()
-        if policy is not None:
-            gross = self.gross_costs_ytd + cost
-            charged = policy.out_of_pocket(gross) - self.oop_ytd
-            self.gross_costs_ytd = gross
-            self.oop_ytd += charged
-            cost = charged
+        gross = self.annual_cost() / 12
+        cost = self._share_of(gross)
+        self._month_charge = (self.model.period, gross, cost if self.health_policy() is not None else 0.0)
         if cost <= 0:
             return
         self.stat_medical_costs = snap_money(self.stat_medical_costs + cost)

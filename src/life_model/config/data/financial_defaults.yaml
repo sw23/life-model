@@ -1045,17 +1045,22 @@ economy:
 # values are vintage-stamped from CMS/SSA/Genworth/NFDA primary sources. Refresh annually via
 # the refresh-financial-data skill (Medicare Part B/D premiums, IRMAA tiers, LTC costs, funeral).
 healthcare:
-  # Age-banded out-of-pocket medical-cost curve (real start-year dollars, per person per year).
-  # max_age is the inclusive upper bound of the band. Scaled each year by cumulative inflation
-  # plus medical_inflation_premium. vintage: 2024, source: CMS NHE / MEPS OOP by age -- TODO(verify)
+  # Age-banded out-of-pocket medical-cost curve (real start-year dollars, per person per year): care only,
+  # premiums excluded (Medicare premiums are charged separately) and nursing-home care excluded (the
+  # long-term-care agent charges it). max_age is the inclusive upper bound of the band. Scaled each year by
+  # cumulative inflation plus medical_inflation_premium.
+  # vintage: 2023, source: AHRQ MEPS HC-251 (2023 Full Year Consolidated file), weighted mean TOTSLF23
+  # (out-of-pocket payments) by AGELAST, rounded to $100; MEPS covers the non-institutionalized population
+  # and captures about two-thirds of the NHE out-of-pocket total, so these are conservative.
   medical_cost_bands:
-    - {max_age: 39,  annual_cost: 1500}
-    - {max_age: 64,  annual_cost: 3000}
-    - {max_age: 74,  annual_cost: 6000}
-    - {max_age: 84,  annual_cost: 9000}
-    - {max_age: 200, annual_cost: 12000}
+    - {max_age: 39,  annual_cost: 700}
+    - {max_age: 64,  annual_cost: 1100}
+    - {max_age: 74,  annual_cost: 1600}
+    - {max_age: 84,  annual_cost: 1800}
+    - {max_age: 200, annual_cost: 2600}
   # Percentage points medical inflation runs above CPI.
-  # vintage: 2024, source: CMS National Health Expenditure projections -- TODO(verify)
+  # vintage: 2025, source: CMS National Health Expenditure Projections 2025-2034, Tables 1 and 5:
+  # per-capita out-of-pocket spending grows 4.4% a year 2024-2034 against 2.45% CPI-U (+2.0 points).
   medical_inflation_premium: 2.0
   medicare:
     eligibility_age: 65
@@ -1074,16 +1079,54 @@ healthcare:
       - {magi_min_single: 500000, magi_min_married_filing_jointly: 750000, part_b_monthly: 690.06, part_d_monthly_surcharge: 91.0}
   long_term_care:
     start_age: 65
-    # Annual hazard of entering a care episode, by age band (max_age inclusive).
-    # vintage: 2024, source: calibrated to ASPE lifetime-risk data -- TODO(verify) annual incidence
+    # Annual hazard of a paid care episode starting, by age band (max_age inclusive). The age shape is an
+    # assumption; the level is calibrated (with mean_duration_years and the nursing-home mortality
+    # multiplier) so a 65-year-old under the SSA period table has a 45% lifetime chance of paid care and
+    # 1.8 years of it per user. vintage: 2022, source: ASPE, "Long-Term Services and Supports for Older
+    # Americans: Risks and Financing, 2022" (45.3% ever use paid LTSS; 0.8 paid years on average).
     hazard_bands:
-      - {max_age: 74,  annual_hazard: 0.005}
-      - {max_age: 84,  annual_hazard: 0.02}
-      - {max_age: 200, annual_hazard: 0.06}
-    annual_cost: 111325       # vintage: 2024, source: Genworth/CareScout (semi-private nursing home)
-    mean_duration_years: 2.3  # vintage: 2024, source: ASPE mean paid nursing-home episode
-  funeral_cost: 8300              # vintage: 2023, source: NFDA median funeral w/ viewing and burial
-  final_year_medical_multiplier: 2.0  # vintage: 2024, source: elevated end-of-life spend -- TODO(verify)
+      - {max_age: 74,  annual_hazard: 0.01}
+      - {max_age: 84,  annual_hazard: 0.04}
+      - {max_age: 200, annual_hazard: 0.12}
+    # Nursing home, semi-private room, national median ($315/day).
+    # vintage: 2025, source: CareScout 2025 Cost of Care Survey (released 2026-03-02).
+    annual_cost: 114975
+    # Mean episode length in years (drawn in whole months, geometric); calibrated with hazard_bands (above).
+    mean_duration_years: 1.33
+    # Care settings: entry_share is the share of episodes starting there; mortality_multiplier is a hazard
+    # ratio on the mortality table while in care. A setting without annual_cost costs annual_cost.
+    # Costs: vintage: 2025, source: CareScout 2025 Cost of Care Survey national medians (home care:
+    # $35/hour x 44 hours/week; assisted living $6,200/month). Entry shares: derived so the settings' share
+    # of paid-care spending matches ASPE 2022 (53% nursing facility, 47% community and residential), the
+    # community share split evenly between home care and assisted living (an assumption). Nursing-home
+    # multiplier: derived so decedents' mean nursing-home stay is about a year (Kelly et al. 2010, J Am
+    # Geriatr Soc 58(9):1701: mean 13.7 months, median 5); no primary source gives a hazard ratio for home
+    # care or assisted living, so those keep the table's mortality.
+    settings:
+      - {name: home_care,       annual_cost: 80080, entry_share: 0.29, mortality_multiplier: 1.0}
+      - {name: assisted_living, annual_cost: 74400, entry_share: 0.28, mortality_multiplier: 1.0}
+      - {name: nursing_home,    entry_share: 0.43, mortality_multiplier: 2.5}
+    # Medicaid long-term-care eligibility (used with healthcare.medicaid: true).
+    medicaid:
+      # vintage: 2026, source: SSI resource limit for an individual (20 CFR 416.1205; not indexed).
+      asset_limit: 2000
+      # vintage: 2026, source: CMS Informational Bulletin 2025-12-09, 2026 SSI and spousal impoverishment
+      # standards (maximum community spouse resource standard; states may use the $32,532 minimum).
+      community_spouse_resource_allowance: 162660
+      # vintage: 2026, source: CMS Informational Bulletin 2026-04-27 (minimum monthly maintenance needs
+      # allowance from 2026-07-01).
+      minimum_monthly_maintenance_needs_allowance: 2705.00
+      # Federal minimum $30 (42 U.S.C. 1396a(q)); states set more.
+      # vintage: 2025, source: Consumer Voice personal needs allowance chart (state median about $60).
+      personal_needs_allowance_monthly: 60
+  # vintage: 2023, source: NFDA 2023 General Price List Study (median funeral with viewing and burial;
+  # $6,280 with cremation).
+  funeral_cost: 8300
+  # Final-year medical cost as a multiple of the person's annual medical cost (the year's total, including
+  # the months already charged). vintage: 2008, source: De Nardi, French, Jones & McCauley 2016, Fiscal
+  # Studies 37:717 (MCBS: last-year-of-life out-of-pocket $6,500 vs $2,740 for the average elderly person,
+  # 2.4x including nursing homes); 2.0 with nursing-home care charged by the long-term-care agent.
+  final_year_medical_multiplier: 2.0
   medical_deduction_agi_floor: 7.5    # percent; IRC §213(a) unreimbursed-medical AGI floor
 
 # Year-indexed tax parameters (published values, 2022-2026). Accessed via

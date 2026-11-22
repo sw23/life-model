@@ -148,7 +148,10 @@ def test_medical_cost_is_budgeted_inside_spending():
     household = _add_children_and_healthcare(np.random.default_rng(0), dict(raw))
     child_costs = sum(12000 if a < 6 else 8000 for a in household["children_ages"])
     assert household["initial_spending"] + child_costs + _starting_medical_cost(45) == pytest.approx(40000.0)
-    assert _starting_medical_cost(45) == 3000
+    from life_model.config.financial_config import default_financial_config
+
+    # 45 is in the simulator's 40-64 band.
+    assert _starting_medical_cost(45) == default_financial_config().healthcare.medical_cost_bands[1].annual_cost
 
 
 def test_training_economies_exclude_the_held_out_recession():

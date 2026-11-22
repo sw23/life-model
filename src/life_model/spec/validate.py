@@ -48,6 +48,7 @@ ASSUMPTION_CODES = frozenset(
         "default_child_costs",
         "child_birth_month_assumed",
         "no_health_coverage",
+        "no_end_of_life_costs",
         "cash_not_invested",
         "ss_estimate_assumes_work",
     }
@@ -259,6 +260,7 @@ class _SpecChecker:
         self.check_tax_inputs()
         self.check_children()
         self.check_retirement_gaps()
+        self.check_late_life_costs()
         self.check_cash_sweep()
         return self.findings
 
@@ -335,6 +337,37 @@ class _SpecChecker:
     LOW_CASH_YIELD_PCT = 1.0
     #: Runs at least this long get the surplus-cash warning.
     LONG_RUN_YEARS = 10
+
+    def check_late_life_costs(self) -> None:
+        """Warn when an ltc policy has no care need to pay for, and when a person who can die in the run has
+        no healthcare block (the funeral and final-year medical costs are charged only with one)."""
+        for i, p in enumerate(self.spec.people):
+            path = f"people[{i}]"
+            care = p.healthcare
+            if any(policy.kind == "ltc" for policy in p.insurance) and (care is None or not care.long_term_care):
+                self.warn(
+                    f"{path}.healthcare.long_term_care",
+                    f"{p.name} has a long-term-care policy but no long-term-care need is modeled, so the policy "
+                    "only pays premiums and never a benefit.",
+                    "add healthcare: {long_term_care: true} (the care hazard and costs the policy reimburses), or "
+                    "remove the policy.",
+                    "ltc_policy_without_care",
+                )
+            dies = p.mortality == "stochastic" or (
+                p.mortality == "fixed_age" and p.death_age is not None and self._year_at(p, p.death_age) <= self.end
+            )
+            has_care = care is not None and (
+                care.medical_costs or care.medical_costs_annual is not None or care.medicare or care.long_term_care
+            )
+            if dies and not has_care:
+                self.warn(
+                    f"{path}.healthcare",
+                    f"{p.name} can die during the run but has no healthcare block, so no funeral or final-year "
+                    "medical costs are charged at death.",
+                    "add healthcare: {medical_costs: true, medicare: true} (the funeral and a final-year medical "
+                    "cost are then charged at death), or accept it (meta.accepted_warnings: [no_end_of_life_costs]).",
+                    "no_end_of_life_costs",
+                )
 
     def check_cash_sweep(self) -> None:
         """Warn when nobody sweeps surplus cash and the bank pays a low yield over a long run: income left after

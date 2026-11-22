@@ -216,7 +216,10 @@ notes go in the git-ignored `CLAUDE.local.md`.
   `Salary` growth default to 0%; rent rises 5%; investments grow at 7%; cash earns 0% and surplus
   cash is never invested without a `SavingsPolicy`; every child costs the configured bands on top of
   spending; health costs stop with the job (no coverage before Medicare, no Medicare premiums without
-  `healthcare`); a person with no state files in `DEFAULT` (a flat 6% of the federal-style base);
+  `healthcare`); funeral and final-year medical costs are charged only for a person with a `healthcare`
+  block; long-term care is off unless `healthcare.long_term_care`, and an unpaid care cost becomes debt
+  unless `healthcare.medicaid` (an `ltc` policy without `long_term_care` only pays premiums); a person
+  with no state files in `DEFAULT` (a flat 6% of the federal-style base);
   taxes are paid as a December lump unless a job withholds or the person pays estimates. An unknown
   state code is an error (`UnknownStateError`), never a silent fallback. The spec validator warns or
   errors on these (a spec keeps a warning on purpose with `meta.accepted_warnings`); direct

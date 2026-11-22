@@ -52,8 +52,9 @@ class TestMedicalCosts(unittest.TestCase):
         person = _make_person(model, age=70, base_spending=10000)
         MedicalCosts(person)
         model.step_year()
-        # Age 70 -> 71 during pre_step, still in the 65-74 band (6000 real, start-year factor 1.0).
-        self.assertEqual(person.stat_money_spent, 16000)
+        # Age 70 -> 71 during pre_step, still in the 65-74 band (start-year factor 1.0).
+        band = model.config.healthcare.medical_cost_bands[2].annual_cost
+        self.assertEqual(person.stat_money_spent, 10000 + band)
 
     def test_medical_inflation_premium_applies(self):
         """Nominal medical cost grows at CPI + premium (2pp above the fixed 3% CPI)."""

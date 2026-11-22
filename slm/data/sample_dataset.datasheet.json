@@ -1,10 +1,9 @@
 {
-  "config_hash": "b27a4838a65f3529",
-  "created_utc": "2026-10-08T16:51:41+00:00",
+  "config_hash": "ab764506d1b1d447",
+  "created_utc": "2026-11-18T17:19:30+00:00",
   "decision_basis_counts": {
-    "clear": 159,
-    "equivalent": 80,
-    "no_viable": 1
+    "clear": 181,
+    "equivalent": 59
   },
   "decision_space": [
     "save0_pretax_claimret_conventional",
@@ -73,28 +72,26 @@
     "pre_retiree"
   ],
   "label_counts": {
-    "no_plan_lever": 1,
-    "save0_pretax_claim70_conventional": 6,
+    "save0_pretax_claim70_conventional": 3,
     "save0_pretax_claimfra_bracketfill": 1,
-    "save0_pretax_claimfra_conventional": 25,
-    "save0_pretax_claimret_bracketfill": 10,
-    "save0_pretax_claimret_conventional": 67,
-    "save0_roth_claim70_bracketfill": 3,
-    "save0_roth_claim70_conventional": 6,
-    "save0_roth_claimfra_bracketfill": 4,
-    "save0_roth_claimfra_conventional": 4,
-    "save0_roth_claimret_bracketfill": 22,
-    "save0_roth_claimret_conventional": 23,
-    "save0_split_claim70_conventional": 5,
-    "save0_split_claimfra_conventional": 6,
-    "save0_split_claimret_conventional": 14,
-    "save10_pretax_claim70_conventional": 4,
-    "save10_pretax_claimfra_conventional": 1,
-    "save10_pretax_claimret_conventional": 28,
-    "save10_roth_claimret_conventional": 3,
-    "save10_split_claim70_conventional": 1,
-    "save5_pretax_claimret_conventional": 5,
-    "save5_roth_claimret_conventional": 1
+    "save0_pretax_claimfra_conventional": 13,
+    "save0_pretax_claimret_bracketfill": 15,
+    "save0_pretax_claimret_conventional": 43,
+    "save0_roth_claim70_bracketfill": 2,
+    "save0_roth_claim70_conventional": 3,
+    "save0_roth_claimfra_bracketfill": 13,
+    "save0_roth_claimret_bracketfill": 79,
+    "save0_roth_claimret_conventional": 25,
+    "save0_split_claim70_conventional": 3,
+    "save0_split_claimfra_conventional": 2,
+    "save0_split_claimret_bracketfill": 2,
+    "save0_split_claimret_conventional": 3,
+    "save10_pretax_claim70_conventional": 5,
+    "save10_pretax_claimret_bracketfill": 1,
+    "save10_pretax_claimret_conventional": 22,
+    "save10_roth_claimret_conventional": 1,
+    "save5_pretax_claimfra_conventional": 1,
+    "save5_pretax_claimret_conventional": 3
   },
   "max_label_share": 0.35,
   "min_trials_per_candidate": 8,
@@ -107,40 +104,40 @@
   "reward_preset": "retirement_security",
   "scale_note": "pipeline-validation scale (not a publishable adviser)",
   "schema_version": 2,
-  "simulator_commit": "4715e2573600304fc2a82e0bdef3e2810ab67845",
+  "simulator_commit": "cc496b10ddc9b796374a0fb2884b976f2bfb3345",
   "solvency_by_scenario": {
     "basic": {
-      "mean_best_success": 0.9305,
+      "mean_best_success": 0.975,
       "n": 40.0,
-      "share_best_at_most_half": 0.025,
+      "share_best_at_most_half": 0.0,
       "share_no_viable": 0.0
     },
     "high_earner": {
-      "mean_best_success": 0.993,
+      "mean_best_success": 0.9984,
       "n": 40.0,
       "share_best_at_most_half": 0.0,
       "share_no_viable": 0.0
     },
     "late_career": {
-      "mean_best_success": 0.9664,
+      "mean_best_success": 0.968,
       "n": 40.0,
       "share_best_at_most_half": 0.025,
       "share_no_viable": 0.0
     },
     "low_earner": {
-      "mean_best_success": 0.6969,
-      "n": 40.0,
-      "share_best_at_most_half": 0.225,
-      "share_no_viable": 0.025
-    },
-    "mid_career": {
-      "mean_best_success": 0.8875,
+      "mean_best_success": 0.8602,
       "n": 40.0,
       "share_best_at_most_half": 0.1,
       "share_no_viable": 0.0
     },
+    "mid_career": {
+      "mean_best_success": 0.9414,
+      "n": 40.0,
+      "share_best_at_most_half": 0.025,
+      "share_no_viable": 0.0
+    },
     "pre_retiree": {
-      "mean_best_success": 0.9695,
+      "mean_best_success": 0.9867,
       "n": 40.0,
       "share_best_at_most_half": 0.0,
       "share_no_viable": 0.0

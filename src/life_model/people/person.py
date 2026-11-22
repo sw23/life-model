@@ -1504,14 +1504,23 @@ class Person(LifeModelAgent):
         if self.mortality_mode == MortalityMode.FIXED_AGE:
             if self.death_age is not None and self.age >= self.death_age:
                 self.die()
-        elif self.mortality_mode == MortalityMode.STOCHASTIC:
-            if self.gender == GenderAtBirth.OTHER:
-                chance = get_blended_chance_of_mortality(self.age)
-            else:
-                chance = get_chance_of_mortality(self.age, self.gender)
-            # Draw against the model RNG so seeded runs are reproducible.
-            if self.model.random.random() <= monthly_hazard(chance):
-                self.die()
+        elif self.mortality_mode == MortalityMode.STOCHASTIC and self.model.random.random() <= monthly_hazard(
+            self.annual_mortality_chance()
+        ):
+            # Drawn against the model RNG so seeded runs are reproducible.
+            self.die()
+
+    def annual_mortality_chance(self) -> float:
+        """This year's probability of death: the mortality table's ``q`` at the person's age, raised by
+        long-term care to ``1 - (1 - q) ** m`` (a hazard ratio of the care setting's multiplier ``m``)."""
+        if self.gender == GenderAtBirth.OTHER:
+            chance = get_blended_chance_of_mortality(self.age)
+        else:
+            chance = get_chance_of_mortality(self.age, self.gender)
+        multiplier = max((care.mortality_multiplier for care in self.long_term_care), default=1.0)
+        if multiplier != 1.0 and chance < 1.0:
+            chance = 1.0 - (1.0 - chance) ** multiplier
+        return chance
 
     def step(self):
         # Bills and taxes are settled at the tax-unit level in Family. Here the person only handles
@@ -1679,8 +1688,9 @@ class Person(LifeModelAgent):
 
         Charged only when the person opted into the healthcare subsystem (has any healthcare
         agent); a person without healthcare agents has no end-of-life costs.
-        The funeral cost is CPI-indexed from the start year; the final-year medical spike is the
-        configured multiplier times the person's current-year medical cost, and keys off the
+        The funeral cost is CPI-indexed from the start year; the final-year medical cost brings the year's
+        medical costs up to the configured multiplier times a year's cost (after any health policy's cost
+        sharing), and keys off the
         ``MedicalCosts`` agent(s) only — a decedent with just Medicare/LongTermCare agents incurs
         the funeral cost alone. Costs are paid from the deceased's bank accounts before the estate
         is valued/transferred; whatever the bank can't cover is a debt of the estate: it is excluded
@@ -1695,11 +1705,14 @@ class Person(LifeModelAgent):
         healthcare_agents = [*self.medical_costs, *self.medicare, *self.long_term_care]
         if not healthcare_agents:
             return
+        # The year's long-term-care months are claimed against insurance before the estate is valued.
+        for care in self.long_term_care:
+            care.settle_at_death()
 
         healthcare = self.model.config.healthcare
         cost = healthcare.funeral_cost * self.model.economy.cumulative_inflation(self.model.year)
         for medical in self.medical_costs:
-            cost += healthcare.final_year_medical_multiplier * medical.annual_cost()
+            cost += medical.final_year_cost(healthcare.final_year_medical_multiplier)
         unpaid = self.deduct_from_bank_accounts(
             cost, kind=FlowKind.SPENDING, sink="end-of-life costs", cause=f"{self.name}'s end-of-life costs"
         )

@@ -175,6 +175,34 @@ class TestSpecErrors(unittest.TestCase):
 
 
 class TestSpecWarnings(unittest.TestCase):
+    def test_ltc_policy_without_the_care_model(self):
+        """An ltc policy whose holder has no long_term_care model only pays premiums: warn."""
+        data = minimal()
+        data["people"][0]["insurance"] = [{"kind": "ltc", "premium_annual": 3000, "coverage_amount": 100000}]
+        (finding,) = [f for f in validate_spec(data) if f.code == "ltc_policy_without_care"]
+        self.assertEqual(finding.level, WARNING)
+        self.assertEqual(finding.path, "people[0].healthcare.long_term_care")
+        data["people"][0]["healthcare"] = {"long_term_care": True}
+        self.assertNotIn("ltc_policy_without_care", codes(validate_spec(data)))
+
+    def test_mortality_without_healthcare_has_no_end_of_life_costs(self):
+        """A person who can die but has no healthcare block pays no funeral or final medical costs: an
+        assumption warning."""
+        data = minimal(mortality="stochastic")
+        self.assertNotIn("no_end_of_life_costs", codes(validate_spec(data)))
+        (finding,) = [f for f in validate_spec(data, include_assumptions=True) if f.code == "no_end_of_life_costs"]
+        self.assertEqual(finding.path, "people[0].healthcare")
+        data["people"][0]["healthcare"] = {"medicare": True}
+        self.assertNotIn("no_end_of_life_costs", codes(validate_spec(data, include_assumptions=True)))
+        # A fixed death age after the run ends does not warn.
+        data = minimal(mortality="fixed_age", death_age=90)
+        self.assertNotIn("no_end_of_life_costs", codes(validate_spec(data, include_assumptions=True)))
+
+    def test_medicaid_needs_long_term_care(self):
+        data = minimal()
+        data["people"][0]["healthcare"] = {"medicaid": True}
+        self.assertTrue(any(f.level == ERROR for f in validate_spec(data)))
+
     def test_fraction_looking_percent_names_the_field_and_value(self):
         data = minimal()
         data["people"][0]["accounts"].append({"kind": "brokerage", "balance": 1000, "growth_pct": 0.045})

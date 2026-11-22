@@ -54,6 +54,9 @@ the results with explicit assumptions. You do not need to read `src/`. Reference
    - **Health coverage before 65 and Medicare after**: payroll premiums stop with the job. For an
      early retiree add a `kind: health` policy (`coverage_start_age` to 64) and
      `healthcare: {medicare: true}`, or state the gap as an assumption.
+   - **Late-life costs are opt-in**: a person who can die pays no funeral or final-year medical cost
+     without a `healthcare` block; long-term care needs `healthcare.long_term_care: true` (an `ltc`
+     policy pays nothing without it), and `medicaid: true` lets Medicaid pay care after spend-down.
    - **Surplus cash** stays in the bank at its yield unless a `savings_policy` sweeps it.
    - **Joint accounts**: list a joint checking or brokerage account once with `joint: true` (the
      other spouse then needs no bank account of their own).

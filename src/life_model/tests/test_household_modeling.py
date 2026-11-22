@@ -416,7 +416,7 @@ class TestStartingStateAndInputs(unittest.TestCase):
 
 def _joint_couple(*, filing_status: str = "joint", alex_dies_at: int | None = None) -> dict:
     data = minimal()
-    data["meta"].update({"end_year": 2034, "accepted_warnings": ["cash_not_invested"]})
+    data["meta"].update({"end_year": 2034, "accepted_warnings": ["cash_not_invested", "no_end_of_life_costs"]})
     alex = data["people"][0]
     alex["accounts"] = [
         {"kind": "bank", "id": "joint_checking", "balance": 20000, "interest_pct": 2, "primary": True, "joint": True},

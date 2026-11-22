@@ -87,6 +87,37 @@ def _shift_retirement(model: LifeModel) -> LifeModel:
     return model
 
 
+#: The healthcare constants the annual reference engine ran with: the comparison measures the engine, so it
+#: keeps them when the packaged constants are refreshed.
+REFERENCE_HEALTHCARE = {
+    "healthcare": {
+        "medical_cost_bands": [
+            {"max_age": 39, "annual_cost": 1500},
+            {"max_age": 64, "annual_cost": 3000},
+            {"max_age": 74, "annual_cost": 6000},
+            {"max_age": 84, "annual_cost": 9000},
+            {"max_age": 200, "annual_cost": 12000},
+        ],
+        "long_term_care": {
+            "hazard_bands": [
+                {"max_age": 74, "annual_hazard": 0.005},
+                {"max_age": 84, "annual_hazard": 0.02},
+                {"max_age": 200, "annual_hazard": 0.06},
+            ],
+            "annual_cost": 111325,
+            "mean_duration_years": 2.3,
+            "settings": [{"name": "nursing_home", "entry_share": 1.0}],
+        },
+    }
+}
+
+
+def _reference_config() -> FinancialConfig:
+    config = FinancialConfig()
+    config.apply_scenario("reference_healthcare", REFERENCE_HEALTHCARE)
+    return config
+
+
 def _spec_fixed(name: str) -> LifeModel:
     data = to_data(load_example(name))
     data.pop("economy", None)
@@ -94,8 +125,12 @@ def _spec_fixed(name: str) -> LifeModel:
         person["mortality"] = "immortal"
         person.pop("death_age", None)
         person.pop("birth", None)  # the annual engine's values are for the age-only example
+        if person.get("healthcare"):
+            # The reference example modeled no long-term-care need.
+            person["healthcare"].pop("long_term_care", None)
+            person["healthcare"].pop("medicaid", None)
     data["meta"]["end_year"] = data["meta"]["start_year"] + 19
-    return build_model(HouseholdSpec.model_validate(data))
+    return build_model(HouseholdSpec.model_validate(data), config=_reference_config())
 
 
 #: Year-end net worth from a year-step reference engine (one period per year, recorded at commit f66307f) under
@@ -115,9 +150,9 @@ TOLERANCE_PERCENT = {2026: 1.0, 2030: 2.5, 2035: 2.5, 2045: 3.0}
 
 class TestFixedEconomyMatchesTheAnnualEngine(unittest.TestCase):
     def _models(self):
-        fixed = FinancialConfig  # the scenarios' stochastic retiree is compared under a fixed economy
+        # The scenarios' stochastic retiree is compared under a fixed economy (and the reference healthcare).
         original = scenarios._stochastic_config
-        scenarios._stochastic_config = fixed
+        scenarios._stochastic_config = _reference_config
         try:
             yield "spec_single_renter", _spec_fixed("single_renter")
             yield "spec_married_homeowners", _spec_fixed("married_homeowners")

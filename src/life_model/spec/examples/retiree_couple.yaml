@@ -99,6 +99,7 @@ people:
   healthcare:
     medical_costs: true
     medicare: true
+    long_term_care: true
   giving:
   - kind: donation
     charity: Food Bank
@@ -169,6 +170,7 @@ people:
   healthcare:
     medical_costs: true
     medicare: true
+    long_term_care: true
 relationships:
   marriages:
   - spouses:

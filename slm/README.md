@@ -127,8 +127,8 @@ gymnasium + pydantic. The **training** stack (`transformers`, `peft`, `trl`, `da
 ## Committed artifacts
 
 * `data/sample_dataset.jsonl` + `.datasheet.json` — pipeline-validation scale: 240 decisions (40
-  households per scenario, adaptive 8-32 trials, 35% label cap) + 48 refusals, seed 20. Basis 159
-  clear / 80 equivalent / 1 no-viable.
+  households per scenario, adaptive 8-32 trials, 35% label cap) + 48 refusals, seed 20. Basis 181
+  clear / 59 equivalent / 0 no-viable.
 * `reports/adviser_eval.json` + `adviser_eval_summary.txt` — every adviser on the same 72 held-out
   households (seed 777, 12 per scenario) under held-out seeds and the held-out `recession`
   overlay, 32 shared trials per plan, produced by `reports/run_eval.py`.

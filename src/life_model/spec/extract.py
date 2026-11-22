@@ -1013,6 +1013,9 @@ class _Extractor:
                     elimination_months=policy.elimination_months,
                     benefit_end_age=policy.benefit_end_age,
                     benefits_taxable=policy.benefits_taxable,
+                    benefit_growth_pct=policy.benefit_growth_pct,
+                    lifetime_benefit_max=policy.lifetime_benefit_max,
+                    waive_premium_in_claim=policy.waive_premium_in_claim,
                     marketplace=s.Marketplace(
                         slcsp_monthly=policy.marketplace.slcsp_monthly,
                         advance_monthly=policy.marketplace.advance_monthly,
@@ -1061,6 +1064,7 @@ class _Extractor:
             medical_costs_annual=override,
             medicare=bool(person.medicare),
             long_term_care=bool(person.long_term_care),
+            medicaid=any(care.medicaid for care in person.long_term_care),
         )
         active = flags.medical_costs or flags.medicare or flags.long_term_care or override is not None
         return flags if active else None

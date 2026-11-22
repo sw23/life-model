@@ -981,6 +981,9 @@ class _Builder:
             benefit_end_age=policy.benefit_end_age,
             benefits_taxable=policy.benefits_taxable,
             marketplace=_marketplace(policy.marketplace),
+            benefit_growth_pct=policy.benefit_growth_pct,
+            lifetime_benefit_max=policy.lifetime_benefit_max,
+            waive_premium_in_claim=policy.waive_premium_in_claim,
         )
 
     # --- SS, healthcare, giving ---
@@ -1190,7 +1193,7 @@ class _Builder:
                 if p.healthcare.medicare:
                     Medicare(person)
                 if p.healthcare.long_term_care:
-                    LongTermCare(person)
+                    LongTermCare(person, medicaid=p.healthcare.medicaid)
 
         # Build-time events (claiming age, fixed death age) adjust constructor inputs; resolve
         # them now that every Person exists (their ages anchor get_year_at_age).

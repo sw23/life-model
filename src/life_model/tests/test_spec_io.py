@@ -401,11 +401,20 @@ def _kitchen_sink() -> dict:
             "premium_schedule": "age_banded",
         },
         {"kind": "life", "policy": "whole", "death_benefit": 3e5, "premium_monthly": 250, "cash_value_growth_pct": 3},
-        {"kind": "ltc", "company": "LTC Co", "premium_annual": 2500, "coverage_amount": 150000, "coverage_end_age": 95},
+        {
+            "kind": "ltc",
+            "company": "LTC Co",
+            "premium_annual": 2500,
+            "coverage_amount": 150000,
+            "coverage_end_age": 95,
+            "benefit_growth_pct": 3,
+            "lifetime_benefit_max": 300000,
+            "waive_premium_in_claim": False,
+        },
         {"kind": "umbrella", "premium_annual": 300, "coverage_amount": 1e6, "premium_increase_pct": 1},
     ]
     alex["social_security"] = {"claim_age": 68, "earnings_history": {2018: 50000, 2019: 52000}}
-    alex["healthcare"] = {"medical_costs": True, "long_term_care": True}
+    alex["healthcare"] = {"medical_costs": True, "long_term_care": True, "medicaid": True}
     alex["giving"] = [
         {"kind": "donation", "charity": "Library", "amount_annual": 500, "frequency_years": 2, "end_year": 2040}
     ]

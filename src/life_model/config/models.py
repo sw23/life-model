@@ -1448,21 +1448,78 @@ class LTCHazardBandConfig(StrictModel):
     annual_hazard: float = Field(ge=0, le=1)
 
 
+class CareSettingConfig(StrictModel):
+    """One long-term-care setting: what a care month there costs, how often an episode starts there and how
+    much it raises the death hazard."""
+
+    name: str
+    #: Annual cost (start-year dollars, medical inflation); None: the long-term-care ``annual_cost``.
+    annual_cost: float | None = Field(default=None, ge=0)
+    #: Share of care episodes that start in this setting (the settings' shares sum to 1).
+    entry_share: float = Field(ge=0, le=1)
+    #: Hazard ratio on the mortality table while in care here: the annual death probability q becomes
+    #: ``1 - (1 - q) ** mortality_multiplier``.
+    mortality_multiplier: float = Field(default=1.0, ge=0)
+
+
+class MedicaidLTCConfig(StrictModel):
+    """Medicaid long-term-care eligibility (the federal spousal-impoverishment standards; states vary)."""
+
+    #: Countable assets an unmarried applicant may keep (the SSI resource limit; not inflation-indexed).
+    # vintage: 2026, source: 20 CFR 416.1205 (SSI resource limit, individual).
+    asset_limit: float = Field(default=2000, ge=0)
+    #: Assets a spouse living at home keeps on top of ``asset_limit`` (start-year dollars, CPI-indexed).
+    # vintage: 2026, source: CMS Informational Bulletin 2025-12-09 (maximum community spouse resource standard).
+    community_spouse_resource_allowance: float = Field(default=162660, ge=0)
+    #: Monthly income a spouse at home may keep, topped up from the patient's income (CPI-indexed).
+    # vintage: 2026, source: CMS Informational Bulletin 2026-04-27 (from 2026-07-01).
+    minimum_monthly_maintenance_needs_allowance: float = Field(default=2705.00, ge=0)
+    #: Monthly income the patient keeps; the rest of their income pays toward care (not indexed).
+    # vintage: 2025, source: Consumer Voice personal needs allowance chart (state median; federal minimum $30).
+    personal_needs_allowance_monthly: float = Field(default=60, ge=0)
+
+
+def _default_care_settings() -> "list[CareSettingConfig]":
+    # Costs: vintage: 2025, source: CareScout 2025 Cost of Care Survey national medians. Entry shares and the
+    # nursing-home hazard ratio are derived from ASPE 2022 and Kelly et al. 2010 (see financial_defaults.yaml).
+    return [
+        CareSettingConfig(name="home_care", annual_cost=80080, entry_share=0.29, mortality_multiplier=1.0),
+        CareSettingConfig(name="assisted_living", annual_cost=74400, entry_share=0.28, mortality_multiplier=1.0),
+        CareSettingConfig(name="nursing_home", annual_cost=None, entry_share=0.43, mortality_multiplier=2.5),
+    ]
+
+
 class LongTermCareConfig(StrictModel):
     start_age: int = Field(default=65, ge=0)
-    # Annual hazard of entering a care episode, by age band (TODO(verify): calibrated to ASPE
-    # lifetime-risk data, not a published annual-incidence table).
+    # Annual hazard of a paid care episode starting, by age band: calibrated with mean_duration_years to
+    # ASPE 2022 (45.3% of 65-year-olds ever use paid LTSS, 0.8 paid years on average); see the YAML.
     hazard_bands: list[LTCHazardBandConfig] = Field(
         default_factory=lambda: [
-            LTCHazardBandConfig(max_age=74, annual_hazard=0.005),
-            LTCHazardBandConfig(max_age=84, annual_hazard=0.02),
-            LTCHazardBandConfig(max_age=200, annual_hazard=0.06),
+            LTCHazardBandConfig(max_age=74, annual_hazard=0.01),
+            LTCHazardBandConfig(max_age=84, annual_hazard=0.04),
+            LTCHazardBandConfig(max_age=200, annual_hazard=0.12),
         ]
     )
-    # vintage: 2024, source: Genworth/CareScout Cost of Care (semi-private nursing home, median).
-    annual_cost: float = Field(default=111325, ge=0)
-    # vintage: 2024, source: ASPE (mean paid nursing-home episode ~2.3 years).
-    mean_duration_years: float = Field(default=2.3, gt=0)
+    # vintage: 2025, source: CareScout 2025 Cost of Care Survey (semi-private nursing home, national median).
+    annual_cost: float = Field(default=114975, ge=0)
+    # Mean episode length in years (drawn in whole months, geometric with this mean); calibrated with
+    # hazard_bands.
+    mean_duration_years: float = Field(default=1.33, gt=0)
+    #: Care settings an episode can start in (a setting without a cost costs ``annual_cost``).
+    settings: list[CareSettingConfig] = Field(default_factory=_default_care_settings)
+    medicaid: MedicaidLTCConfig = Field(default_factory=MedicaidLTCConfig)
+
+    @model_validator(mode="after")
+    def _settings_valid(self) -> "LongTermCareConfig":
+        if not self.settings:
+            raise ValueError("long_term_care.settings needs at least one setting")
+        names = [setting.name for setting in self.settings]
+        if len(set(names)) != len(names):
+            raise ValueError("long_term_care.settings names must be unique")
+        total = sum(setting.entry_share for setting in self.settings)
+        if abs(total - 1.0) > 1e-6:
+            raise ValueError(f"long_term_care.settings entry shares must sum to 1 (got {total:g})")
+        return self
 
 
 class HealthcareConfig(StrictModel):
@@ -1471,26 +1528,27 @@ class HealthcareConfig(StrictModel):
     Every field has a default so existing YAML without a ``healthcare`` section still loads.
     """
 
-    # Age-banded out-of-pocket medical-cost curve (real start-year dollars).
-    # vintage: 2024, source: CMS NHE / MEPS out-of-pocket by age — TODO(verify) exact per-band OOP.
+    # Age-banded out-of-pocket medical-cost curve (real start-year dollars; care only, no premiums or
+    # nursing-home care). vintage: 2023, source: AHRQ MEPS HC-251, weighted mean TOTSLF23 by age.
     medical_cost_bands: list[MedicalCostBandConfig] = Field(
         default_factory=lambda: [
-            MedicalCostBandConfig(max_age=39, annual_cost=1500),
-            MedicalCostBandConfig(max_age=64, annual_cost=3000),
-            MedicalCostBandConfig(max_age=74, annual_cost=6000),
-            MedicalCostBandConfig(max_age=84, annual_cost=9000),
-            MedicalCostBandConfig(max_age=200, annual_cost=12000),
+            MedicalCostBandConfig(max_age=39, annual_cost=700),
+            MedicalCostBandConfig(max_age=64, annual_cost=1100),
+            MedicalCostBandConfig(max_age=74, annual_cost=1600),
+            MedicalCostBandConfig(max_age=84, annual_cost=1800),
+            MedicalCostBandConfig(max_age=200, annual_cost=2600),
         ]
     )
     # Percentage points that medical inflation runs above CPI.
-    # vintage: 2024, source: CMS National Health Expenditure projections — TODO(verify).
+    # vintage: 2025, source: CMS NHE Projections 2025-2034 (per-capita out-of-pocket growth less CPI-U).
     medical_inflation_premium: float = Field(default=2.0, ge=0)
     medicare: MedicareConfig = Field(default_factory=MedicareConfig)
     long_term_care: LongTermCareConfig = Field(default_factory=LongTermCareConfig)
     # vintage: 2023, source: NFDA median cost of a funeral with viewing and burial ($8,300).
     funeral_cost: float = Field(default=8300, ge=0)
-    # Final-year medical spend as a multiple of the person's current-year medical cost.
-    # vintage: 2024, source: end-of-life spending is elevated — TODO(verify) exact multiplier.
+    # Final-year medical cost as a multiple of the person's annual medical cost (the year's total).
+    # vintage: 2008, source: De Nardi, French, Jones & McCauley 2016, Fiscal Studies 37:717 (2.4x including
+    # nursing homes; 2.0 with nursing-home care charged separately).
     final_year_medical_multiplier: float = Field(default=2.0, ge=0)
     # AGI floor (percent) above which unreimbursed medical is deductible (IRC §213(a)).
     medical_deduction_agi_floor: float = Field(default=7.5, ge=0, le=100)

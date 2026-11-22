@@ -37,9 +37,10 @@ class TestEndOfLifeCosts(unittest.TestCase):
     def _run_death(self, with_medical: bool, cfg=None, balance=500000):
         """A parent dies at 80 (fixed age); the child inherits. Returns (child, model).
 
-        Death happens in ``Person.pre_step`` (priority -20), before the MedicalCosts agent's
-        own ``pre_step`` (priority 0) charges the regular annual cost — so in the death year the
-        only healthcare charge is the end-of-life cost, making the arithmetic exact.
+        Death happens in ``Person.pre_step`` (priority 1), after the MedicalCosts agent's own
+        ``pre_step`` (priority 0) books January's cost, which dies unpaid with the person's bills —
+        so in the death year the only healthcare charge paid is the end-of-life cost, making the
+        arithmetic exact.
         """
         model = LifeModel(start_year=2026, end_year=2026, config=cfg or _flat_config())
         family = Family(model)
@@ -71,6 +72,32 @@ class TestEndOfLifeCosts(unittest.TestCase):
         delta = child_without.bank_account_balance - child_with.bank_account_balance
         self.assertAlmostEqual(delta, expected_end_of_life, places=2)
         self.assertTrue(any("end-of-life" in e.message for e in model.event_log.list))
+
+    def test_final_year_cost_counts_the_months_already_charged(self):
+        """The final-year medical cost is the multiplier times a year's cost in total: a death in July,
+        after six months of regular costs, charges the rest (2.0 x 10,000 - 6 x 10,000 / 12 = 15,000)."""
+        model = LifeModel(start_year=2026, end_year=2026, config=_flat_config())
+        family = Family(model)
+        parent = Person(
+            family=family,
+            name="Parent",
+            age=80,
+            retirement_age=65,
+            spending=Spending(model, base_annual=0),
+            mortality_mode=MortalityMode.FIXED_AGE,
+            death_age=81,
+            birth="1945-07",
+        )
+        child = Person(family=family, name="Child", age=51, retirement_age=65, spending=Spending(model, base_annual=0))
+        BankAccount(owner=parent, company="Bank", balance=500000)
+        BankAccount(owner=child, company="Bank", balance=0)
+        MedicalCosts(parent)
+        model.step_year()
+        self.assertTrue(parent.is_deceased)
+        healthcare = model.config.healthcare
+        regular = 6 * 10000 / 12
+        end_of_life = healthcare.funeral_cost + healthcare.final_year_medical_multiplier * 10000 - regular
+        self.assertAlmostEqual(child.bank_account_balance, 500000 - regular - end_of_life, places=2)
 
     def test_no_healthcare_agents_death_flow_unchanged(self):
         """Without healthcare agents the death flow charges nothing (opt-in guarantee)."""
