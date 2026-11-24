@@ -521,6 +521,7 @@ def _refinance(builder: "_Builder", event: s.RefinanceEvent) -> None:
     }
     if isinstance(target, Home):
         kwargs["cash_out_for_improvements"] = event.cash_out_for_improvements
+        kwargs["rate_compounding"] = event.rate_compounding
     loan.refinance(event.rate_pct, **kwargs)
 
 

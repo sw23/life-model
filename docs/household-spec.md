@@ -1379,6 +1379,7 @@ Refinance a mortgage (``debt`` is the home's id) or a car or student loan: a new
 | `action` | `"refinance"` |  | **required** |  |  |
 | `debt` | string |  | **required** |  | Id of the home (its mortgage) or of the car / student loan. |
 | `rate_pct` | number | percent | **required** |  | New APR. |
+| `rate_compounding` | `"monthly"` \\| `"semiannual"` |  | `"monthly"` |  | Compounding of a mortgage's new quoted rate. Semiannual quotes are converted to the monthly equivalent. Car and student loans use monthly. |
 | `term_years` | integer (optional) | years | — |  | New term in years. |
 | `term_months` | integer (optional) | months | — |  | New term in months. |
 | `costs` | number | USD | `0.0` |  | Closing costs. |

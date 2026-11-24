@@ -1041,14 +1041,17 @@ class Mortgage(Loan):
         finance_costs: bool = False,
         cash_out: float = 0.0,
         cash_out_for_improvements: bool = False,
+        rate_compounding: MortgageRateCompounding = "monthly",
     ) -> float:
         """Refinance (see :meth:`Loan.refinance`). A cash-out beyond the old balance is home-equity
         debt (its interest not deductible after 2017) unless ``cash_out_for_improvements`` (it then
-        adds to the home's cost basis as an improvement and is acquisition debt). The new rate
-        is quoted with monthly compounding."""
+        adds to the home's cost basis as an improvement and is acquisition debt). ``rate_compounding``
+        is the new quote's convention; a semiannual quote is converted to the monthly equivalent."""
+        rate = mortgage_rate_on_monthly_basis(rate_pct, rate_compounding)
         self._cash_out_for_improvements = cash_out_for_improvements
-        new_principal = super().refinance(
-            rate_pct,
+        new_principal = self._refinance(
+            rate,
+            quoted_rate_pct=rate_pct,
             term_months=term_months,
             term_years=term_years,
             costs=costs,
@@ -1056,7 +1059,7 @@ class Mortgage(Loan):
             cash_out=cash_out,
         )
         self.quoted_rate_pct = rate_pct
-        self.rate_compounding = "monthly"
+        self.rate_compounding = rate_compounding
         self._renewal_baseline = None
         self._renewal_opening_payments = 0
         self.prepayment_privilege = None  # A refinance creates a new loan with a new contract.

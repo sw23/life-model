@@ -1351,6 +1351,8 @@ class _SpecChecker:
                     )
                 elif isinstance(target, s.Home) and target.mortgage is None:
                     self.error(f"{path}.debt", f"home {event.debt!r} has no mortgage to refinance", code="invalid")
+                elif not isinstance(target, s.Home) and event.rate_compounding != "monthly":
+                    self.error(f"{path}.rate_compounding", "Only a mortgage refinance can use a semiannual quote.")
             if isinstance(event, s.HelocDrawEvent) and not is_kind(event.heloc, s.HomeEquityLine):
                 self.error(f"{path}.heloc", f"unknown home equity line {event.heloc!r}", code="unknown_reference")
             if isinstance(event, s.BridgeEvent | s.MortgageMaturityEvent) and event.bridge is not None:

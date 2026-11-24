@@ -3164,6 +3164,11 @@ class RefinanceEvent(EventBase):
     action: Literal["refinance"]
     debt: Identifier = spec_field(description="Id of the home (its mortgage) or of the car / student loan.")
     rate_pct: NonNegativePercent = spec_field(description="New APR.", unit="percent")
+    rate_compounding: MortgageRateCompounding = spec_field(
+        "monthly",
+        description="Compounding of a mortgage's new quoted rate. Semiannual quotes are converted to the monthly "
+        "equivalent. Car and student loans use monthly.",
+    )
     term_years: int | None = spec_field(None, description="New term in years.", unit="years", ge=1)
     term_months: int | None = spec_field(None, description="New term in months.", unit="months", ge=1)
     costs: NonNegativeMoney = spec_field(0.0, description="Closing costs.", unit="USD")
