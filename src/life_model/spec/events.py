@@ -51,6 +51,8 @@ if TYPE_CHECKING:
 
 #: Event actions applied at build time (constructor inputs) rather than as LifeEvent callables.
 BUILD_TIME_ACTIONS = ("claim_social_security", "die")
+#: Actions compiled to a stage other than ``events`` (a prepayment waits for the month's bills).
+ACTION_STAGES = {"prepay_mortgage": "post_step"}
 
 
 def scheduled_date(event: s.EventBase, *, day_required: bool = True) -> date:
@@ -305,7 +307,7 @@ def _compile_one(builder: "_Builder", timing: EventTiming, event, year: int) -> 
 
     if action == "prepay_mortgage":
         name = _name(event, f"{person.name} prepays the mortgage")
-        return [_life_event(year, name, event, _prepay_mortgage, builder, person, event, stage="post_step")]
+        return [_life_event(year, name, event, _prepay_mortgage, builder, person, event, stage=ACTION_STAGES[action])]
 
     if action == "heloc_draw":
         name = _name(event, f"{person.name} draws ${event.amount:,.0f} on a home equity line")

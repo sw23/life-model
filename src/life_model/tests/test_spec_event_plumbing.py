@@ -16,9 +16,10 @@ from pathlib import Path
 from ..debt import terms
 from ..lifeevents import LifeEvent
 from ..model import EVENT_KIND_DOCS
-from ..spec import SpecWarning, build_household, spec_from_model
+from ..spec import SpecWarning, build_household, spec_from_model, validate_spec
 from ..spec import events as spec_events
 from ..spec import schema as s
+from ..spec.validate import errors
 from .spec_helpers import fixture_config, minimal, spec_of
 
 
@@ -89,6 +90,104 @@ class TestSnapshotKeepsRelativeOrder(unittest.TestCase):
         resumed.model.step_year()
         self.assertEqual(resumed.items["new_cash"].balance, continuous.items["new_cash"].balance)
         self.assertGreater(continuous.items["new_cash"].balance, 0)
+
+
+def _home_purchase_inputs(dependent: dict, *, buy_at) -> dict:
+    data = minimal()
+    data["meta"]["end_year"] = 2029
+    data["people"][0]["accounts"][0]["balance"] = 200000
+    home = {
+        "id": "new_home",
+        "kind": "home",
+        "purchase_price": 300000,
+        "down_payment": 60000,
+        "pmi": False,
+        "expenses": {},
+        "mortgage": {"original_amount": 240000, "rate_pct": 5, "term_years": 30},
+    }
+    data["events"] = [
+        {"id": "m_buy", "action": "buy_home", "person": "alex", "home": home, "at": buy_at},
+        {"person": "alex", **dependent},
+    ]
+    return data
+
+
+#: Spec inputs and dates of each action that acts on an added home.
+DEPENDENTS = {
+    "renew_mortgage": {"home": "new_home", "rate_pct": 4},
+    "refinance": {"debt": "new_home", "rate_pct": 4, "term_years": 15},
+    "prepay_mortgage": {"home": "new_home"},
+    "pay_mortgage_at_maturity": {"home": "new_home", "interest_due": 10},
+    "sell_home": {"home": "new_home"},
+}
+DATES = {
+    "renew_mortgage": {"year": 2027, "month": 3},
+    "refinance": {"year": 2027, "month": 3},
+    "prepay_mortgage": {"year": 2027, "month": 3, "day": 31},
+    "pay_mortgage_at_maturity": {"year": 2027, "month": 3, "day": 5},
+    "sell_home": {"year": 2027, "month": 3},
+}
+
+
+class TestEventsBeforeTheirHome(unittest.TestCase):
+    def findings(self, action: str, *, buy_at, at=None, event_id: str = "z_dependent"):
+        dependent = {"id": event_id, "action": action, "at": at or DATES[action], **DEPENDENTS[action]}
+        data = _home_purchase_inputs(dependent, buy_at=buy_at)
+        return data, [f for f in errors(validate_spec(data, config=fixture_config())) if f.code == "event_order"]
+
+    def test_an_event_in_an_earlier_year_than_the_purchase_is_an_error(self):
+        for action in DEPENDENTS:
+            with self.subTest(action=action):
+                _, found = self.findings(action, buy_at={"year": 2028})
+                self.assertEqual(len(found), 1)
+                self.assertIn("new_home", found[0].message)
+
+    def test_same_month_order_follows_the_engine(self):
+        buy_at = {"year": 2027, "month": 3, "day": 5}
+        cases = [
+            # (action, at, id, rejected): same day and stage fire in id order; prepayments fire after bills.
+            ("renew_mortgage", {"year": 2027, "month": 3}, "a_renew", True),
+            ("refinance", {"year": 2027, "month": 3, "day": 5}, "a_refinance", True),
+            ("refinance", {"year": 2027, "month": 3, "day": 5}, "z_refinance", False),
+            ("sell_home", {"year": 2027, "month": 3, "day": 20}, "a_sale", False),
+            ("prepay_mortgage", {"year": 2027, "month": 3, "day": 31}, "a_prepay", False),
+        ]
+        for action, at, event_id, rejected in cases:
+            with self.subTest(action=action, event_id=event_id):
+                data, found = self.findings(action, buy_at=buy_at, at=at, event_id=event_id)
+                self.assertEqual(bool(found), rejected)
+                if not rejected:
+                    build(data).model.run()
+
+    def test_an_event_relative_to_the_purchase_follows_it(self):
+        _, found = self.findings(
+            "renew_mortgage", buy_at={"year": 2027, "month": 3}, at={"relative": {"after": "m_buy"}}, event_id="a"
+        )
+        self.assertEqual(found, [])
+
+    def test_opening_homes_are_unaffected(self):
+        data = minimal(
+            housing=[
+                {
+                    "kind": "home",
+                    "id": "home",
+                    "purchase_price": 250000,
+                    "pmi": False,
+                    "expenses": {},
+                    "mortgage": {"original_amount": 120000, "term_months": 120, "rate_pct": 3},
+                }
+            ]
+        )
+        data["events"] = [
+            {
+                "action": "renew_mortgage",
+                "person": "alex",
+                "home": "home",
+                "at": {"year": 2026, "month": 7},
+                "rate_pct": 4,
+            }
+        ]
+        self.assertEqual(errors(validate_spec(data, config=fixture_config())), [])
 
 
 class TestSchemaIndependence(unittest.TestCase):
