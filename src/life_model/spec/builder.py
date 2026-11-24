@@ -933,7 +933,11 @@ class _Builder:
                 escrow_monthly=m.escrow_monthly,
                 rate_compounding=m.rate_compounding,
                 renewal_state=None if renewal_state is None else MortgageRenewalState(**renewal_state.model_dump()),
-                prepayment_privilege=None if privilege is None else privilege.resolve(as_of, m.original_amount),
+                prepayment_privilege=(
+                    None
+                    if privilege is None
+                    else prepayment_privilege(privilege, as_of=as_of, default_basis=m.original_amount)
+                ),
                 **terms,
             )
             self._remember_loan(mortgage, m)
@@ -1383,3 +1387,23 @@ def _marketplace(value):
     if value is None:
         return None
     return MarketplaceCoverage(slcsp_monthly=value.slcsp_monthly, advance_monthly=value.advance_monthly)
+
+
+def prepayment_privilege(terms: s.MortgagePrepaymentPrivilege, *, as_of: date, default_basis: float | None):
+    """The core annual lump-sum cap for spec ``terms``, opened in the contract year containing ``as_of``.
+
+    The basis is ``terms.basis_amount``, else ``default_basis`` (the original principal, or the balance
+    at renewal). A ValueError reports a cap with neither.
+    """
+    from ..housing.prepayment import MortgagePrepaymentPrivilege
+
+    basis = terms.basis_amount if terms.basis_amount is not None else default_basis
+    if basis is None:
+        raise ValueError("A prepayment cap needs a basis amount when the original principal is unknown")
+    return MortgagePrepaymentPrivilege(
+        anniversary=terms.anniversary,
+        annual_limit_pct=terms.annual_limit_pct,
+        basis_amount=basis,
+        as_of=as_of,
+        used=terms.used,
+    )

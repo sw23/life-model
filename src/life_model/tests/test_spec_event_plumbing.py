@@ -6,10 +6,14 @@
 """Dated event plumbing in the spec layer: event dates, snapshot re-dating, event order checks and the
 schema's independence from the engine."""
 
+import ast
+import typing
 import unittest
 import warnings
 from datetime import date
+from pathlib import Path
 
+from ..debt import terms
 from ..lifeevents import LifeEvent
 from ..model import EVENT_KIND_DOCS
 from ..spec import SpecWarning, build_household
@@ -47,6 +51,23 @@ class TestLifeEventDate(unittest.TestCase):
 class TestEventKindDocs(unittest.TestCase):
     def test_life_event_fired_documents_the_scheduled_day(self):
         self.assertIn("scheduled_day", EVENT_KIND_DOCS["life_event_fired"])
+
+
+class TestSchemaIndependence(unittest.TestCase):
+    def test_schema_module_imports_only_the_spec_package(self):
+        tree = ast.parse(Path(s.__file__).read_text())
+        outside_spec = []
+        for node in tree.body:
+            if isinstance(node, ast.ImportFrom):
+                module = node.module or ""
+                if node.level > 1 or (node.level == 0 and module.split(".")[0] == "life_model"):
+                    outside_spec.append("." * node.level + module)
+            elif isinstance(node, ast.Import):
+                outside_spec += [alias.name for alias in node.names if alias.name.split(".")[0] == "life_model"]
+        self.assertEqual(outside_spec, [])
+
+    def test_rate_compounding_matches_the_engine(self):
+        self.assertEqual(typing.get_args(s.MortgageRateCompounding), typing.get_args(terms.MortgageRateCompounding))
 
 
 if __name__ == "__main__":

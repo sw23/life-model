@@ -35,9 +35,6 @@ from typing import Annotated, Any, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from ..debt.terms import MortgageRateCompounding
-from ..housing.prepayment import MortgagePrepaymentPrivilege as ContractPrepaymentPrivilege
-
 #: Version of the spec format written by :func:`life_model.spec.io.dump`.
 SPEC_VERSION = 1
 
@@ -1843,6 +1840,10 @@ Debt = Annotated[CarLoan | StudentLoan | CreditCard | HomeEquityLine | BridgeLin
 # --- Housing -------------------------------------------------------------------------------------
 
 
+#: Compounding convention of a quoted mortgage rate (``debt.terms.MortgageRateCompounding``).
+MortgageRateCompounding = Literal["monthly", "semiannual"]
+
+
 class MortgageRenewalState(SpecModel):
     """The PMI schedule and acquisition debt limits saved when a mortgage has renewed."""
 
@@ -1879,18 +1880,6 @@ class MortgagePrepaymentPrivilege(SpecModel):
     used: NonNegativeMoney = spec_field(
         0.0, description="Amount already used in the opening contract year.", unit="USD", allow_inf_nan=False
     )
-
-    def resolve(self, as_of: date, default_basis: float | None) -> ContractPrepaymentPrivilege:
-        basis = self.basis_amount if self.basis_amount is not None else default_basis
-        if basis is None:
-            raise ValueError("A prepayment cap needs a basis amount when the original principal is unknown")
-        return ContractPrepaymentPrivilege(
-            anniversary=self.anniversary,
-            annual_limit_pct=self.annual_limit_pct,
-            basis_amount=basis,
-            as_of=as_of,
-            used=self.used,
-        )
 
 
 class Mortgage(_LoanTerms):

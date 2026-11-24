@@ -1147,9 +1147,13 @@ class _SpecChecker:
         from ..debt.terms import mortgage_rate_on_monthly_basis
 
         if m.prepayment_privilege is not None:
+            from .builder import prepayment_privilege
+
             year, month = as_of or (self.start, self.start_month)
             try:
-                m.prepayment_privilege.resolve(date(year, month, 1), m.original_amount)
+                prepayment_privilege(
+                    m.prepayment_privilege, as_of=date(year, month, 1), default_basis=m.original_amount
+                )
             except ValueError as error:
                 self.error(f"{path}.prepayment_privilege", str(error))
 

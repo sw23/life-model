@@ -543,9 +543,13 @@ def _renew_mortgage(builder: "_Builder", event: s.MortgageRenewalEvent) -> None:
     if home.sold or home.mortgage is None or home.mortgage.principal <= 0:
         builder.model.event_log.add(Event(f"mortgage renewal skipped: {event.home} has no outstanding mortgage"))
         return
+    from .builder import prepayment_privilege
+
     new_terms = event.prepayment_privilege
     privilege = (
-        new_terms.resolve(scheduled_date(event, day_required=False), home.mortgage.principal)
+        prepayment_privilege(
+            new_terms, as_of=scheduled_date(event, day_required=False), default_basis=home.mortgage.principal
+        )
         if isinstance(new_terms, s.MortgagePrepaymentPrivilege)
         else new_terms
     )
