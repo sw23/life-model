@@ -145,7 +145,9 @@ class DatedBridgeLine(HomeEquityLine):
         return 0.0
 
     def post_step(self) -> None:
-        if self.drawn_principal:
+        # A line still owned by a decedent was discharged with an estate that had no heir (an heir or
+        # surviving spouse takes the line over); like the estate's other debts, it is frozen.
+        if self.drawn_principal and not self.person.is_deceased:
             year, month = self.model.year, self.model.month
             boundary = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
             self._accrue(boundary)

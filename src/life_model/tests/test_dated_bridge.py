@@ -233,6 +233,26 @@ class TestDatedBridge(unittest.TestCase):
             self.assertFalse(run.model.event_log.of_kind(EventKind.SHORTFALL_DEBT))
             assert_conservation(run.model, monthly=True)
 
+    def test_an_estate_with_no_heir_discharges_the_bridge_and_it_stops_accruing(self):
+        inputs = bridge_inputs()
+        inputs["meta"]["end_year"] = 2028
+        inputs["events"] = [event for event in inputs["events"] if event["action"] == "draw_bridge"]
+        inputs["events"].append({"action": "die", "person": "alex", "at": 2027})
+        built = self.build(inputs)
+        built.model.checks = "strict"
+        line = built.items["line"]
+        built.model.step_year()
+        owed_at_death = line.balance
+        built.model.run()
+        self.assertEqual(line.balance, owed_at_death)
+        records = built.model.ledger.to_records()
+        self.assertFalse([r for r in records if r["sink"] == "bridge interest" and r["year"] > 2026])
+        (discharged,) = [
+            r for r in records if r["kind"] == "forfeit" and str(r["to_account"]).startswith("DatedBridgeLine:")
+        ]
+        self.assertAlmostEqual(discharged["amount"], owed_at_death, places=2)
+        assert_conservation(built.model, monthly=True)
+
     def test_collateral_sale_retires_the_line_at_the_sale_date(self):
         inputs = bridge_inputs()
         inputs["events"][0]["home"] = "home"
