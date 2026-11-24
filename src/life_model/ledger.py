@@ -386,12 +386,19 @@ class CashFlowLedger:
 
 @dataclass(frozen=True, slots=True)
 class PositionIdentity:
-    """Account and owner details as of the balance sheet's date."""
+    """Account and owner details as of the balance sheet's date.
+
+    ``account_spec_id`` is the household spec ``id`` of the line's item (a mortgage reports its
+    home's ``id``), or None for an item written without one and for a person's own lines. The joint
+    owner is the spouse on a joint bank or brokerage account.
+    """
 
     account_name: str
     account_spec_id: str | None
     owner_name: str
     owner_spec_id: str | None
+    joint_owner_name: str | None = None
+    joint_owner_spec_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -486,6 +493,18 @@ def balance_sheet_lines(agent: Any) -> list[tuple[str, float, Any]]:
     return []
 
 
+def _position_spec_id(agent: Any) -> str | None:
+    """The spec ``id`` a balance-sheet line reports: the agent's own, or, for a home's mortgage
+    (written inside its home in a spec), the home's."""
+    explicit = getattr(agent, "spec_id", None)
+    if explicit is not None:
+        return explicit
+    home = getattr(agent, "home", None)
+    if home is not None and getattr(home, "mortgage", None) is agent:
+        return getattr(home, "spec_id", None)
+    return None
+
+
 def household_balance_sheet(model: "LifeModel", *, include_positions: bool = False) -> BalanceSheet:
     """Every living person's assets and liabilities (see :func:`balance_sheet_lines`).
 
@@ -506,11 +525,14 @@ def household_balance_sheet(model: "LifeModel", *, include_positions: bool = Fal
             lines[label] = lines.get(label, 0.0) + value
             owners[label] = owner_id
             if details is not None:
+                joint = None if agent is owner else getattr(agent, "joint_owner", None)
                 details[label] = PositionIdentity(
                     account_name=label.partition(":")[0] if agent is owner else describe_account(agent),
-                    account_spec_id=None if agent is owner else getattr(agent, "spec_id", None),
+                    account_spec_id=None if agent is owner else _position_spec_id(agent),
                     owner_name=owner.name,
                     owner_spec_id=getattr(owner, "spec_id", None),
+                    joint_owner_name=None if joint is None else joint.name,
+                    joint_owner_spec_id=None if joint is None else getattr(joint, "spec_id", None),
                 )
     return BalanceSheet(lines=lines, owners=owners, position_details=details)
 

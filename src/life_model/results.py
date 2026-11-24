@@ -16,8 +16,10 @@ Frames are built lazily from the model on first use, so ``run()`` stays cheap fo
 ignore its return value.
 """
 
+import functools
 import json
 import os
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -45,8 +47,29 @@ MONTHLY_POSITION_COLUMNS = (
     "owner_id",
     "owner_name",
     "owner_spec_id",
+    "joint_owner_name",
+    "joint_owner_spec_id",
     "balance",
 )
+#: Text columns of :attr:`RunResult.monthly_positions` (read back as strings from CSV).
+_POSITION_TEXT_COLUMNS = (
+    "account",
+    "account_type",
+    "account_name",
+    "account_spec_id",
+    "owner_name",
+    "owner_spec_id",
+    "joint_owner_name",
+    "joint_owner_spec_id",
+)
+#: Position types of balance-sheet lines that are not spec items of their own.
+_LINE_TYPES = {
+    "Cash": "cash",
+    "Debt": "unpaid_bills_debt",
+    "TaxDue": "tax_due",
+    "TaxRefund": "tax_refund",
+    "Mortgage": "mortgage",
+}
 #: Ledger kinds that are income (inflows shown under "Income" by :meth:`RunResult.explain`).
 _INCOME_KINDS = (
     "wage",
@@ -75,6 +98,36 @@ def _require_parquet() -> None:
 def _money(value: float) -> str:
     sign = "-" if value < 0 else ""
     return f"{sign}${abs(value):,.0f}"
+
+
+@functools.cache
+def _spec_kinds() -> dict[str, str]:
+    """The household spec ``kind`` of each core class a spec item builds (from ``CORE_CLASS``)."""
+    from typing import get_args
+
+    from .spec import schema
+
+    kinds: dict[str, str] = {}
+    pending = [schema.SpecModel]
+    while pending:
+        model = pending.pop()
+        pending.extend(model.__subclasses__())
+        core = model.__dict__.get("CORE_CLASS")
+        field = model.model_fields.get("kind")
+        values = get_args(field.annotation) if field is not None else ()
+        if core is not None and len(values) == 1:
+            kinds[core] = values[0]
+    return kinds
+
+
+def position_type(label: str) -> str:
+    """The ``account_type`` of a balance-sheet line: the spec ``kind`` of the item that holds it
+    (``bank``, ``401k``, ``bridge_line``), ``mortgage``, or for a person's own lines ``cash``,
+    ``unpaid_bills_debt``, ``tax_due`` or ``tax_refund``. A class no spec item builds is reported
+    in snake case (``MyAccount`` becomes ``my_account``)."""
+    name = label.partition(":")[0]
+    known = _LINE_TYPES.get(name) or _spec_kinds().get(name)
+    return known if known is not None else re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
 
 
 class RunResult:
@@ -231,16 +284,19 @@ class RunResult:
                             "year": year,
                             "month": month,
                             "account": account,
-                            "account_type": account.partition(":")[0],
+                            "account_type": position_type(account),
                             "account_name": identity.account_name,
                             "account_spec_id": identity.account_spec_id,
                             "owner_id": sheet.owners[account],
                             "owner_name": identity.owner_name,
                             "owner_spec_id": identity.owner_spec_id,
+                            "joint_owner_name": identity.joint_owner_name,
+                            "joint_owner_spec_id": identity.joint_owner_spec_id,
                             "balance": sheet.lines[account],
                         }
                     )
-            self._monthly_positions = pd.DataFrame(rows, columns=list(MONTHLY_POSITION_COLUMNS))
+            frame = pd.DataFrame(rows, columns=list(MONTHLY_POSITION_COLUMNS))
+            self._monthly_positions = frame.astype(dict.fromkeys(_POSITION_TEXT_COLUMNS, "string"))
         return self._monthly_positions
 
     @property
@@ -476,8 +532,8 @@ class RunResult:
             if parquet:
                 return pd.read_parquet(path)
             if name == "monthly_positions":
-                text = ("account", "account_type", "account_name", "account_spec_id", "owner_name", "owner_spec_id")
-                return pd.read_csv(path, dtype=dict.fromkeys(text, str), keep_default_na=False, na_values=[""])
+                dtype = dict.fromkeys(_POSITION_TEXT_COLUMNS, str)
+                return pd.read_csv(path, dtype=dtype, keep_default_na=False, na_values=[""])
             return pd.read_csv(path)
 
         tax_returns = {}

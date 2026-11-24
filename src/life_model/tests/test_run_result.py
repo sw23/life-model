@@ -305,7 +305,7 @@ class TestMonthlyPositions(unittest.TestCase):
         self.assertIsNone(result.monthly_frame)
         self.assertEqual(positions["month"].unique().tolist(), [7, 8, 9, 10, 11, 12])
         july = positions[positions["month"] == 7].set_index("account_type")["balance"]
-        self.assertEqual((july["BankAccount"], july["CarLoan"]), (950, -450))
+        self.assertEqual((july["bank"], july["car"]), (950, -450))
         self.assertEqual(positions["owner_id"].unique().tolist(), [owner.unique_id])
         self.assertEqual(
             positions.groupby(["year", "month"])["balance"].sum().tolist(),
@@ -340,11 +340,11 @@ class TestMonthlyPositions(unittest.TestCase):
         pd.testing.assert_frame_equal(detailed.model_frame, ordinary.model_frame)
         pd.testing.assert_frame_equal(detailed.ledger, ordinary.ledger)
         positions = detailed.monthly_positions
-        bank = positions[positions["account_type"] == "BankAccount"]
+        bank = positions[positions["account_type"] == "bank"]
         self.assertEqual(set(bank["account_spec_id"]), {"NA"})
         self.assertEqual(set(bank["owner_spec_id"]), {"001"})
         real = detailed.real_dollars().monthly_positions
-        real_bank = real[real["account_type"] == "BankAccount"]
+        real_bank = real[real["account_type"] == "bank"]
         self.assertAlmostEqual(real_bank.iloc[-1]["balance"], bank.iloc[-1]["balance"] / detailed.deflators[2027])
         with tempfile.TemporaryDirectory() as directory:
             folder = Path(directory)
@@ -358,3 +358,40 @@ class TestMonthlyPositions(unittest.TestCase):
             if HAS_PYARROW:
                 loaded = RunResult.load(detailed.to_parquet(folder / "parquet"))
                 pd.testing.assert_frame_equal(loaded.monthly_positions, positions, check_dtype=False)
+
+    def test_positions_use_spec_kinds_home_ids_for_mortgages_and_joint_owners(self):
+        spec = minimal(
+            accounts=[
+                {"kind": "bank", "id": "joint_bank", "balance": 1000, "interest_pct": 0, "joint": True},
+                {"kind": "401k", "id": "alex_401k", "job": "job", "pretax_balance": 5000},
+            ],
+            housing=[
+                {
+                    "kind": "home",
+                    "id": "house",
+                    "purchase_price": 300000,
+                    "expenses": {},
+                    "mortgage": {"original_amount": 200000, "rate_pct": 5, "term_years": 30},
+                }
+            ],
+        )
+        spouse = minimal(id="sam", name="Sam", jobs=[], accounts=[{"kind": "bank", "balance": 500}])["people"][0]
+        spec["people"].append(spouse)
+        spec["relationships"] = {"marriages": [{"spouses": ["alex", "sam"], "year": 2020}]}
+        positions = run(spec, years=1, seed=1, checks="off", collect_positions=True).monthly_positions
+        first = positions[(positions["year"] == 2026) & (positions["month"] == 1)].set_index("account")
+        kinds = set(first["account_type"])
+        self.assertTrue({"bank", "401k", "home", "mortgage", "cash", "unpaid_bills_debt"} <= kinds, kinds)
+        self.assertFalse({"BankAccount", "Job401kAccount", "Mortgage", "Cash", "Debt"} & kinds)
+        by_type = first.groupby("account_type")
+        self.assertEqual(by_type.get_group("mortgage")["account_spec_id"].tolist(), ["house"])
+        self.assertEqual(by_type.get_group("401k")["account_spec_id"].tolist(), ["alex_401k"])
+        joint = first[first["account_spec_id"] == "joint_bank"]
+        self.assertEqual((joint["owner_spec_id"].item(), joint["joint_owner_spec_id"].item()), ("alex", "sam"))
+        self.assertEqual(joint["joint_owner_name"].item(), "Sam")
+        self.assertTrue(first[first["account_spec_id"] != "joint_bank"]["joint_owner_spec_id"].isna().all())
+        with tempfile.TemporaryDirectory() as directory:
+            loaded = RunResult.load(
+                run(spec, years=1, seed=1, checks="off", collect_positions=True).to_csv(Path(directory) / "csv")
+            )
+            pd.testing.assert_frame_equal(loaded.monthly_positions, positions, check_dtype=False)
