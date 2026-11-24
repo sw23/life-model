@@ -295,6 +295,16 @@ class Person(LifeModelAgent):
 
         if policy is not None and policy.sweep_to is not None and policy.sweep_to.person is not self:
             raise ValueError(f"{self.name} does not own the sweep account")
+        source = None if policy is None else policy.source_bank
+        if source is not None:
+            from ..account.bank import BankAccount
+
+            if not isinstance(source, BankAccount):
+                raise ValueError("A savings sweep's source must be a bank account")
+            if source.person is not self:
+                raise ValueError(f"{self.name} does not own the sweep's source bank")
+            if source.reserve:
+                raise ValueError("A savings sweep's source cannot be a reserve account")
         self._savings_policy = policy
         if policy is not None:
             PolicyRunner.for_model(self.model).watch(self)

@@ -310,6 +310,8 @@ class SavingsPolicy:
                 (swept at the year end), or a tax-advantaged account or 529 (swept at the start of the
                 following year, within its room). None keeps the cash (no sweep).
             source_bank: The owner's spendable bank account that alone funds the sweep, when supplied.
+                Assigning the policy to a person checks that the person holds it as a non-reserve bank
+                account.
             start_year: First transfer year, inclusive.
             end_year: Last transfer year, inclusive.
         """
