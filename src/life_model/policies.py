@@ -38,6 +38,7 @@ from .model import Event, LifeModelAgent
 if TYPE_CHECKING:
     from .account.bank import BankAccount
     from .people.person import Person
+    from .people.tax_unit import TaxUnit
     from .work.job import Job
 
 #: ``ContributionPlan`` sources.
@@ -631,13 +632,19 @@ def available_cash_after_tax(person: "Person") -> float:
 
     cash = person.usable_bank_balance
     unit = TaxUnit.for_member(person)
-    owed = sum(getattr(m, "taxes_owed", 0.0) for m in unit.living_members)
-    reserve = owed + unit.expected_unpaid_tax()
+    reserve = unit_tax_holdback(unit)
     if reserve > 0:
         bank = unit.bank_account_balance
         share = cash / bank if bank > 0 else 1.0
         cash -= reserve * share
     return max(0.0, cash)
+
+
+def unit_tax_holdback(unit: "TaxUnit") -> float:
+    """Tax the unit still owes from its bank cash: last year's balance due until April plus this year's
+    tax accrued so far and not yet withheld or paid (:meth:`TaxUnit.expected_unpaid_tax`)."""
+    owed = sum(getattr(m, "taxes_owed", 0.0) for m in unit.living_members)
+    return owed + unit.expected_unpaid_tax()
 
 
 def _contribute_from_bank(person: "Person", plan: ContributionPlan) -> float:

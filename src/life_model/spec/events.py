@@ -431,19 +431,57 @@ def _add_account(builder: "_Builder", event: s.AddAccountEvent) -> None:
 
 
 def _reserve_cash(builder: "_Builder", person, event: s.ReserveCashEvent, name: str) -> None:
+    """Earmark up to the requested amount from the funding bank.
+
+    After the person's death the bank's current owner (the surviving spouse) funds the earmark; a
+    bank nobody alive owns skips it. The amount is capped at the bank's balance and at the owner's
+    spendable cash after the year's unpaid tax, so an optional earmark never leaves that tax to
+    forced sales.
+    """
+    from datetime import date
+    from decimal import ROUND_DOWN
+
     from ..account.bank import BankAccount
     from ..account.cash_reserve import CashReserve
+    from ..model import EventKind, snap_money
+    from ..policies import available_cash_after_tax
 
     bank = builder.built.items.get(event.bank)
-    if not isinstance(bank, BankAccount) or bank.owner is not person:
-        raise ValueError(f"Funding bank {event.bank!r} must be open and owned by {person.name}")
+    owner = getattr(bank, "owner", None)
+    if (
+        not isinstance(bank, BankAccount)
+        or owner is None
+        or owner.is_deceased
+        or (owner is not person and not person.is_deceased)
+    ):
+        builder.model.event_log.add(Event(f"cash reserve skipped: {event.bank} has no living owner"))
+        return
+    after_tax = available_cash_after_tax(owner)
+    available = snap_money(max(0.0, min(bank.balance, after_tax)))
+    amount = float(Decimal(str(min(event.amount, available))).quantize(Decimal("0.01"), rounding=ROUND_DOWN))
+    year, month, day = event.at.year, event.at.month, event.at.day
+    if year is None or month is None or day is None:
+        raise ValueError("reserve_cash needs an explicit calendar day")
+    details = {
+        "date": date(year, month, day).isoformat(),
+        "requested": event.amount,
+        "available": available,
+        "tax_holdback": snap_money(max(0.0, owner.usable_bank_balance - after_tax)),
+        "release_on": event.release_on.isoformat(),
+    }
+    if amount <= 0:
+        builder.model.event_log.add(Event(EventKind.CASH_RESERVED, person=owner, amount=0.0, cause=name, **details))
+        return
     reserve = CashReserve(
-        person,
+        owner,
         name=name,
-        amount=event.amount,
+        amount=amount,
         bank=bank,
         schedule=builder.event_schedule(),
         release_on=event.release_on,
+    )
+    builder.model.event_log.add(
+        Event(EventKind.CASH_RESERVED, person=owner, amount=amount, account=reserve, cause=name, **details)
     )
     if event.id is not None:
         builder.built.items[event.id] = reserve

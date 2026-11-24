@@ -110,3 +110,91 @@ class TestCashReserve(unittest.TestCase):
                 self.assertEqual((rebuilt.items["earmark"].balance, rebuilt.items["investments"].balance), (0, 1000))
                 assert_conservation(rebuilt.model, monthly=True)
                 self.assertEqual(account_residuals(rebuilt.model, 2027, month=2), {})
+
+
+def _reserve_spec(*, bank=50000, amount=60000, at=(2026, 3, 10), release_on="2026-08-15", jobs=(), end=2026):
+    data = minimal(
+        jobs=list(jobs),
+        spending={"amount_annual": 12000},
+        accounts=[
+            {"kind": "bank", "id": "bank", "balance": bank, "interest_pct": 0},
+            {"kind": "brokerage", "id": "investments", "balance": 100000, "growth_pct": 0},
+        ],
+    )
+    data["meta"]["end_year"] = end
+    data["events"] = [
+        {
+            "id": "earmark",
+            "action": "reserve_cash",
+            "person": "alex",
+            "at": {"year": at[0], "month": at[1], "day": at[2]},
+            "bank": "bank",
+            "amount": amount,
+            "release_on": release_on,
+        }
+    ]
+    return data
+
+
+def _married(data, *, spouse_bank=30000):
+    import copy
+
+    sam = copy.deepcopy(data["people"][0])
+    sam.update(id="sam", name="Sam", accounts=[{"kind": "bank", "id": "sam_bank", "balance": spouse_bank}])
+    data["people"].append(sam)
+    data["relationships"] = {"marriages": [{"spouses": ["alex", "sam"], "year": 2020}]}
+    return data
+
+
+class TestReserveCashEvent(unittest.TestCase):
+    def _run(self, data):
+        built = build_household(spec_of(data), config=fixture_config(), collect="month")
+        built.model.checks = "strict"
+        built.model.run()
+        assert_conservation(built.model, monthly=True)
+        return built
+
+    def _reserve_events(self, model):
+        return model.event_log.of_kind("cash_reserved")
+
+    def test_reserve_beyond_bank_cash_earmarks_what_is_available(self):
+        built = self._run(_reserve_spec())
+        (event,) = self._reserve_events(built.model)
+        # Two months of $1,000 spending have left $48,000 in the bank by March's events.
+        self.assertEqual((event.amount, event.details["requested"]), (48000, 60000))
+        self.assertEqual(event.details["available"], 48000)
+        self.assertEqual(event.details["release_on"], "2026-08-15")
+
+    def test_reserve_holds_back_the_years_unpaid_tax(self):
+        job = {"id": "job", "company": "Co", "salary_annual": 120000, "raise_pct": 0}
+        data = _reserve_spec(amount=1_000_000, at=(2026, 12, 5), release_on="2027-02-01", jobs=[job])
+        built = self._run(data)
+        (event,) = self._reserve_events(built.model)
+        (tax_return,) = built.model.tax_returns.values()
+        # The holdback is the whole year's unwithheld tax, so December's settlement is paid from the bank.
+        self.assertAlmostEqual(event.details["tax_holdback"], tax_return.total_tax, places=2)
+        self.assertLess(event.amount, event.details["requested"])
+        # Only December's own $1,000 of spending, paid after the earmark, reaches the brokerage account.
+        sales = sum(e.amount for e in built.model.event_log.of_kind("forced_sale"))
+        self.assertAlmostEqual(sales, 1000, places=2)
+
+    def test_reserve_with_no_spare_cash_is_skipped_and_logged(self):
+        built = self._run(_reserve_spec(bank=0))
+        (event,) = self._reserve_events(built.model)
+        self.assertEqual((event.amount, event.details["requested"]), (0, 60000))
+        self.assertNotIn("earmark", built.items)
+
+    def test_reserve_after_the_owner_dies_follows_the_bank_to_the_spouse(self):
+        data = _married(_reserve_spec(amount=5000, at=(2027, 3, 10), release_on="2027-06-15", end=2027))
+        data["events"].append({"action": "die", "person": "alex", "at": {"year": 2027}})
+        built = self._run(data)
+        (event,) = self._reserve_events(built.model)
+        self.assertEqual((event.person_name, event.amount), ("Sam", 5000))
+        self.assertEqual(built.items["earmark"].owner.name, "Sam")
+
+    def test_reserve_after_a_single_owner_dies_is_skipped(self):
+        data = _reserve_spec(amount=5000, at=(2027, 3, 10), release_on="2027-06-15", end=2027)
+        data["events"].append({"action": "die", "person": "alex", "at": {"year": 2027}})
+        built = self._run(data)
+        self.assertEqual(self._reserve_events(built.model), [])
+        self.assertTrue(any("reserve skipped" in e.message for e in built.model.event_log.of_kind("note")))
