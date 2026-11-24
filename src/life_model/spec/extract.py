@@ -841,7 +841,8 @@ class _Extractor:
             "term_months": None if whole else loan.term_months,
             "payment_monthly": None if abs(payment - default_payment) < 1e-9 else payment,
             "origination": None if loan.origination is None else f"{loan.origination[0]}-{loan.origination[1]:02d}",
-            "payments_made": None if made == 0 or made_from_origination is not None else made,
+            # The origination implies first payment the month after; a refinance pays in its own month.
+            "payments_made": None if made == 0 or made == made_from_origination else made,
             "extra_principal_monthly": loan.extra_principal_monthly,
             "schedule": getattr(loan, "schedule", "contract"),
         }

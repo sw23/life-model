@@ -110,10 +110,16 @@ class TestMortgageRateCompounding(unittest.TestCase):
         snapshot = spec_from_model(built.model)
         statement = snapshot.people[0].housing[0].mortgage
         self.assertEqual((statement.rate_pct, statement.rate_compounding), (4.8, "semiannual"))
-        resumed = build_household(snapshot, config=fixture_config(), collect="month").items["home"].mortgage
+        resumed_run = build_household(snapshot, config=fixture_config(), collect="month")
+        resumed = resumed_run.items["home"].mortgage
         self.assertEqual((resumed.quoted_rate_pct, resumed.rate_compounding), (4.8, "semiannual"))
         self.assertAlmostEqual(resumed.yearly_interest_rate, loan.yearly_interest_rate, places=12)
         self.assertAlmostEqual(resumed.monthly_payment, loan.monthly_payment, places=8)
+        self.assertAlmostEqual(resumed.principal, loan.principal, places=6)
+        for _ in range(6):
+            built.model.step()
+            resumed_run.model.step()
+        self.assertAlmostEqual(resumed.principal, loan.principal, places=6)
 
     def test_core_refinance_converts_the_quote_before_amortizing(self):
         built = build_household(spec_of(self._inputs()), config=fixture_config())
