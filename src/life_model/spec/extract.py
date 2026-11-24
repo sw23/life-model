@@ -1167,8 +1167,8 @@ class _Extractor:
 
         Before the first step they are returned as written. Afterwards an event is re-timed to its
         remaining dates (and ``until`` for a recurring expense), because its anchors or earlier years
-        may already have fired. Keep a dated relative event tied to its anchor if both are pending
-        on the same day, so they still fire in that order.
+        may already have fired. Keep a relative event tied to its anchor if both are first pending on
+        the same date (year, month and day, dated or not), so they still fire in that order.
         """
         from ..lifeevents import LifeEvents
 
@@ -1198,7 +1198,7 @@ class _Extractor:
                 continue
             at = s.At(year=first_year, month=first_month, day=first_day)
             relative = source.at.relative
-            if first_day is not None and relative is not None:
+            if relative is not None:
                 anchor = by_spec_id.get(relative.after)
                 if anchor is not None and first_pending[id(anchor)] == (first_year, first_month, first_day):
                     at = source.at

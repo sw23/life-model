@@ -16,10 +16,10 @@ from pathlib import Path
 from ..debt import terms
 from ..lifeevents import LifeEvent
 from ..model import EVENT_KIND_DOCS
-from ..spec import SpecWarning, build_household
+from ..spec import SpecWarning, build_household, spec_from_model
 from ..spec import events as spec_events
 from ..spec import schema as s
-from .spec_helpers import fixture_config, spec_of
+from .spec_helpers import fixture_config, minimal, spec_of
 
 
 def build(data: dict, **kwargs):
@@ -51,6 +51,44 @@ class TestLifeEventDate(unittest.TestCase):
 class TestEventKindDocs(unittest.TestCase):
     def test_life_event_fired_documents_the_scheduled_day(self):
         self.assertIn("scheduled_day", EVENT_KIND_DOCS["life_event_fired"])
+
+
+class TestSnapshotKeepsRelativeOrder(unittest.TestCase):
+    def test_undated_relative_event_still_follows_its_anchor_after_a_snapshot(self):
+        data = minimal()
+        data["meta"]["end_year"] = 2028
+        # The dependent's id sorts first, so only its anchor link makes it fire second.
+        data["events"] = [
+            {
+                "id": "a_contribution",
+                "at": {"relative": {"after": "b_account"}},
+                "person": "alex",
+                "action": "contribute",
+                "account": "new_cash",
+                "amount": 300,
+            },
+            {
+                "id": "b_account",
+                "at": {"year": 2027},
+                "person": "alex",
+                "action": "add_account",
+                "account": {"id": "new_cash", "kind": "brokerage", "balance": 0},
+            },
+        ]
+        continuous = build(data)
+        continuous.model.step_year()
+        snapshot = spec_from_model(continuous.model)
+        relative = next(event for event in snapshot.events if event.id == "a_contribution")
+        self.assertIsNotNone(relative.at.relative)
+        self.assertEqual(relative.at.relative.after, "b_account")
+        resumed = build_household(snapshot, config=fixture_config())
+        self.assertEqual(
+            [event.spec_source.id for event in resumed.life_events.life_events], ["b_account", "a_contribution"]
+        )
+        continuous.model.step_year()
+        resumed.model.step_year()
+        self.assertEqual(resumed.items["new_cash"].balance, continuous.items["new_cash"].balance)
+        self.assertGreater(continuous.items["new_cash"].balance, 0)
 
 
 class TestSchemaIndependence(unittest.TestCase):
