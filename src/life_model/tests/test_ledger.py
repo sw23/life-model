@@ -85,6 +85,16 @@ class TestLedgerEntries(unittest.TestCase):
         self.assertEqual([entry.from_account for entry in ledger.entries], ["Bank:1", "Payer:2"])
         self.assertAlmostEqual(ledger.entries[-1].amount, 0.01)
 
+    def test_bill_split_posts_a_sub_cent_line_left_unfunded_from_the_payer(self):
+        ledger = LifeModel(start_year=2026, end_year=2026).ledger
+        funding = deque([("Bank:1", 4.0)])
+        _BillLine(4.0, FlowKind.SPENDING, None, "bill").post(ledger, "Payer:2", funding=funding)
+        _BillLine(0.003, FlowKind.SPENDING, None, "tail").post(ledger, "Payer:2", funding=funding)
+        self.assertEqual(
+            [(entry.cause, entry.from_account, entry.amount) for entry in ledger.entries],
+            [("bill", "Bank:1", 4.0), ("tail", "Payer:2", 0.003)],
+        )
+
     def test_paycheck_tax_and_spending_are_posted(self):
         model = LifeModel(start_year=2026, end_year=2026)
         person = _person(model, spending=30000)

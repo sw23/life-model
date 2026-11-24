@@ -1905,8 +1905,9 @@ class _BillLine:
                 funding.popleft()
             else:
                 funding[0] = (account, available - paid)
-        if remaining >= 0.005:
-            # The unfunded portion uses the account paired with the new debt.
+        if remaining > 0:
+            # The unfunded portion uses the account paired with the new debt. Splits fold roundoff
+            # above, so this is a real amount: a shortfall, or a line arriving after funding ran out.
             self._post_cash(ledger, payer, remaining)
 
     def _post_cash(self, ledger, account, amount: float) -> None:
