@@ -8,7 +8,7 @@
 from calendar import monthrange
 from dataclasses import dataclass
 from datetime import date
-from decimal import ROUND_DOWN, Decimal
+from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
 
 _CENT = Decimal("0.01")
 _ZERO = Decimal(0)
@@ -19,6 +19,7 @@ class MortgagePrepaymentPrivilege:
     """A fixed contract basis and the amount used in the period containing `as_of`.
 
     Accepts integers, floats, and decimals as numeric inputs and computes the cap with decimals.
+    The basis is rounded to whole cents.
     """
 
     anniversary: date
@@ -39,6 +40,8 @@ class MortgagePrepaymentPrivilege:
         self.anniversary = anniversary
         self.annual_limit_pct = Decimal(str(annual_limit_pct))
         self.basis_amount = Decimal(str(basis_amount))
+        if self.basis_amount.is_finite():
+            self.basis_amount = self.basis_amount.quantize(_CENT, rounding=ROUND_HALF_UP)
         self.as_of = as_of
         self.used = Decimal(str(used))
         if not self.annual_limit_pct.is_finite() or not 0 <= self.annual_limit_pct <= 100:
