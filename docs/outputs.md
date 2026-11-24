@@ -328,7 +328,7 @@ notebook table (`_repr_html_`) shows the life story; detail kinds are kept but n
 | Kind | Detail | Meaning |
 | --- | --- | --- |
 | `note` |  | Free-text event (what Event(message) creates); the engine's untyped messages. |
-| `life_event_fired` |  | A scheduled LifeEvent fired (details: stage; the record also has name and scheduled_year). |
+| `life_event_fired` |  | A scheduled LifeEvent fired (details: stage, and scheduled_day when the event has a day; the record also has name, scheduled_year and scheduled_month). |
 | `retired` |  | A job ended (retirement, a layoff, death). |
 | `retirement_age` |  | A person reached the federal retirement age (59.5). |
 | `married` |  | Two people married (details: spouse). |

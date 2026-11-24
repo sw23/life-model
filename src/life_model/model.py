@@ -155,7 +155,8 @@ class EventKind(str, Enum):
 #: One-line meaning of every :class:`EventKind` (rendered into docs/outputs.md).
 EVENT_KIND_DOCS: dict[str, str] = {
     "note": "Free-text event (what Event(message) creates); the engine's untyped messages.",
-    "life_event_fired": "A scheduled LifeEvent fired (details: stage; the record also has name and scheduled_year).",
+    "life_event_fired": "A scheduled LifeEvent fired (details: stage, and scheduled_day when the event has a day; "
+    "the record also has name, scheduled_year and scheduled_month).",
     "retired": "A job ended (retirement, a layoff, death).",
     "retirement_age": "A person reached the federal retirement age (59.5).",
     "married": "Two people married (details: spouse).",

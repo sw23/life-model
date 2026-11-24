@@ -167,14 +167,23 @@ class LifeEvent:
         if stage not in LIFE_EVENT_STAGES:
             raise ValueError(f"Unknown life event stage {stage!r}; expected one of {LIFE_EVENT_STAGES}")
         self.year = year
-        self._set_date(month, day)
+        self.set_date(month, day)
         self.name = name
         self.event = event
         self.event_args = event_args
         self.stage = stage
 
-    def _set_date(self, month: int | None, day: int | None) -> None:
-        """Validate the date supplied directly or resolved by the spec compiler."""
+    def set_date(self, month: int | None, day: int | None) -> None:
+        """Set the month and day the event fires in, within its ``year``.
+
+        Args:
+            month (int, optional): Month (1-12), or None for the first simulated month of the year.
+            day (int, optional): Calendar day within ``month``; requires an explicit month.
+
+        Raises:
+            ValueError: The month is outside 1-12, a day is given without a month, or the day does
+                not exist in that month.
+        """
         month = None if month is None else int(month)
         if month is not None and not 1 <= month <= 12:
             raise ValueError(f"Life event month must be 1-12, got {month}")

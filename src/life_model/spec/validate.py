@@ -1273,7 +1273,12 @@ class _SpecChecker:
             if event.at.person is not None:
                 self.check_person_ref(event.at.person, f"{path}.at.person")
             if event.at.day is not None and isinstance(event, s.ClaimSocialSecurityEvent | s.DieEvent):
-                self.error(f"{path}.at.day", f"'{event.action}' uses an age threshold and cannot specify a day.")
+                self.error(
+                    f"{path}.at.day",
+                    f"'{event.action}' is applied as an age when the household is built, so a day would have no "
+                    "effect.",
+                    "remove at.day.",
+                )
             rel = event.at.relative
             if rel is not None:
                 if rel.after not in by_id:
