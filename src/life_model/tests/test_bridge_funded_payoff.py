@@ -12,7 +12,7 @@ from ..model import EventKind
 from ..spec import build_household, spec_from_model, validate_spec
 from ..spec.io import dumps, loads
 from .spec_helpers import fixture_config, spec_of
-from .test_dated_bridge import bridge_inputs
+from .test_dated_bridge import booked_bridge_interest, bridge_inputs
 from .test_mortgage_maturity import inherited_mortgage_inputs
 
 
@@ -43,7 +43,10 @@ class TestBridgeFundedPayoff(unittest.TestCase):
         for run in (built, reloaded):
             run.model.step()
             self.assertEqual(run.items["line"].balance, 0)
-            self.assertAlmostEqual(run.items["line"].interest_paid_this_year, 60.98, places=2)
+            # A resumed run opens with January's interest as a liability and charges only February's.
+            line = run.items["line"]
+            self.assertAlmostEqual(line.interest_paid_this_year, 60.98 if run is built else 30.49, places=2)
+            self.assertEqual(line.interest_paid_this_year, booked_bridge_interest(run.model, 2026))
             self.assertAlmostEqual(run.items["cash"].balance, 16439.02, places=2)
             assert_conservation(run.model, monthly=True)
         self.assertEqual(qualified_residence_interest(built.items["line"].person), 500)
