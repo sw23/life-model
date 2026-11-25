@@ -77,21 +77,82 @@ class TestCashFundedClosing(unittest.TestCase):
         assert_conservation(built.model, monthly=True)
         self.assertEqual(account_residuals(built.model, 2026, month=1), {})
 
-    def test_late_cash_reports_shortfall_before_creating_property_or_debt(self):
-        from ..housing.closing import ClosingShortfall
-
+    def test_late_cash_falls_back_to_the_waterfall_and_logs_the_gap(self):
+        # The receipt lands after the closing, so the bank holds $120,000 against $100,000 of required down
+        # payment, $20,000 of costs and a $30,000 floor: $30,000 short. The purchase still closes on the
+        # required down payment through the household waterfall, like a buy_home without cash_funding.
         built = self._household(31)
         model = built.model
         owner = built.people["alex"]
-        before = (len(model.agents), len(model.ledger))
-        with self.assertRaises(ClosingShortfall) as failure:
-            model.step()
-        self.assertEqual(failure.exception.amount, 30000)
-        self.assertEqual((len(model.agents), len(model.ledger)), before)
-        self.assertEqual(
-            (built.items["bank"].balance, built.items["investments"].balance, owner.debt), (120000, 100000, 0)
+        model.step()
+        (gap,) = model.event_log.of_kind("closing_shortfall")
+        self.assertEqual((gap.amount, gap.details["required"], gap.details["available"]), (30000, 100000, 70000))
+        home = built.items["new_home"]
+        self.assertEqual((home.down_payment, home.mortgage.loan_amount), (100000, 400000))
+        self.assertEqual((built.items["bank"].balance, built.items["investments"].balance, owner.debt), (0, 100000, 0))
+        assert_conservation(model, monthly=True)
+        self.assertEqual(account_residuals(model, 2026, month=1), {})
+
+    def test_shortfall_beyond_every_account_becomes_debt(self):
+        # With no brokerage to sell and a $110,000 minimum, the $130,000 of down payment and costs exceeds
+        # the $120,000 bank balance; the waterfall carries the $10,000 as unpaid-bills debt.
+        spec = self._spec(31)
+        spec.people[0].accounts[1].balance = 0
+        spec.events[1].cash_funding.minimum_down_payment = 110000
+        built = build_household(spec, config=fixture_config(), collect="month", check=False)
+        built.model.checks = "strict"
+        built.model.step()
+        (gap,) = built.model.event_log.of_kind("closing_shortfall")
+        self.assertEqual(gap.amount, 40000)
+        self.assertEqual(built.items["new_home"].down_payment, 110000)
+        debts = built.model.event_log.of_kind("shortfall_debt")
+        self.assertAlmostEqual(sum(d.amount for d in debts), 10000, places=2)
+        assert_conservation(built.model, monthly=True)
+
+    def test_december_fraction_closing_holds_back_the_years_tax(self):
+        # $200,000 of salary with no withholding settles its tax in December. A December closing that puts
+        # all available cash down leaves that tax to forced brokerage sales unless the down payment holds it back.
+        data = minimal(
+            jobs=[{"id": "job", "company": "Co", "salary_annual": 200000, "raise_pct": 0}],
+            spending={"amount_annual": 0},
+            accounts=[
+                {"kind": "bank", "id": "bank", "balance": 150000, "interest_pct": 0},
+                {"kind": "brokerage", "id": "investments", "balance": 100000, "growth_pct": 0},
+            ],
         )
-        self.assertEqual(owner.homes, [])
+        data["meta"]["end_year"] = 2026
+        data["events"] = [
+            {
+                "id": "closing",
+                "at": {"year": 2026, "month": 12, "day": 10},
+                "person": "alex",
+                "action": "buy_home",
+                "home": {
+                    "kind": "home",
+                    "id": "new_home",
+                    "purchase_price": 500000,
+                    "expenses": {"property_tax_pct": 0, "insurance_pct": 0},
+                },
+                "cash_funding": {
+                    "closing_costs": 10000,
+                    "cash_floor": 0,
+                    "minimum_down_payment": 100000,
+                    "mortgage_limit": 400000,
+                    "term_years": 25,
+                    "rate_pct": 5,
+                },
+            }
+        ]
+        built = build_household(spec_of(data), config=fixture_config(), collect="month")
+        built.model.checks = "strict"
+        built.model.run()
+        home = built.items["new_home"]
+        # The $60,615 of tax is held back; only December's first mortgage payment, paid from the bank after
+        # the closing, reaches the brokerage account (all available cash put down sold $61,614).
+        sales = sum(e.amount for e in built.model.event_log.of_kind("forced_sale"))
+        self.assertLessEqual(sales, home.mortgage.monthly_payment)
+        self.assertEqual(home.down_payment, 279280)
+        assert_conservation(built.model, monthly=True)
 
     def test_mortgage_cap_sets_required_cash_even_when_minimum_down_is_lower(self):
         from ..housing.closing import ClosingShortfall, cash_funded_down_payment

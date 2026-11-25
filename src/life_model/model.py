@@ -147,6 +147,7 @@ class EventKind(str, Enum):
     MORTGAGE_PAID_AT_MATURITY = "mortgage_paid_at_maturity"
     MORTGAGE_PREPAYMENT = "mortgage_prepayment"
     CASH_RESERVED = "cash_reserved"
+    CLOSING_SHORTFALL = "closing_shortfall"
 
     @property
     def is_detail(self) -> bool:
@@ -182,6 +183,9 @@ EVENT_KIND_DOCS: dict[str, str] = {
     "cash_reserved": "Bank cash was earmarked until a release date (amount: cash earmarked, which is less than "
     "requested when the funding bank's cash after the year's unpaid tax falls short; details: date, requested, "
     "available, tax_holdback, release_on).",
+    "closing_shortfall": "A cash-funded closing lacked the bank cash its terms require, so the purchase closed on the "
+    "required down payment through the payment waterfall (amount: the bank cash missing; details: required, "
+    "available).",
 }
 
 _DETAIL_KINDS = frozenset(

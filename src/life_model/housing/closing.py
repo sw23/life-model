@@ -19,10 +19,16 @@ _CENT = Decimal("0.01")
 
 
 class ClosingShortfall(ValueError):
-    """Additional bank cash needed to close on the stated terms."""
+    """Additional bank cash needed to close on the stated terms.
 
-    def __init__(self, amount: Decimal):
+    ``required`` is the down payment the terms demand and ``available`` the bank cash left for it after
+    closing costs and the retained floor, when the shortfall comes from sizing a down payment.
+    """
+
+    def __init__(self, amount: Decimal, *, required: Decimal | None = None, available: Decimal | None = None):
         self.amount = amount
+        self.required = required
+        self.available = available
         super().__init__(f"Home closing requires {amount:.2f} in additional bank cash")
 
 
@@ -35,6 +41,15 @@ def _money(value: Decimal | float, name: str) -> Decimal:
 
 def _bank_cash(owner: "Person") -> Decimal:
     balance = snap_money(TaxUnit.for_member(owner).bank_account_balance)
+    return Decimal(str(balance)).quantize(_CENT, rounding=ROUND_DOWN)
+
+
+def _bank_cash_after_tax(owner: "Person") -> Decimal:
+    """The household's bank cash less the tax it still owes this year and from last year's return."""
+    from ..policies import unit_tax_holdback
+
+    unit = TaxUnit.for_member(owner)
+    balance = snap_money(max(0.0, unit.bank_account_balance - unit_tax_holdback(unit)))
     return Decimal(str(balance)).quantize(_CENT, rounding=ROUND_DOWN)
 
 
@@ -69,7 +84,13 @@ def cash_funded_down_payment(
     down_payment_fraction: Decimal | float = Decimal(1),
     extra_down_payment: Decimal | float = Decimal(0),
 ) -> Decimal:
-    """Calculate a closing down payment from bank cash without moving balances or creating a loan."""
+    """Calculate a closing down payment from bank cash without moving balances or creating a loan.
+
+    The required down payment (the minimum, or what the mortgage limit leaves) may use all bank cash
+    above the closing costs and floor. The optional share above it (``down_payment_fraction`` and
+    ``extra_down_payment``) comes only from cash left after the year's unpaid tax, so an optional
+    payment doesn't leave that tax to forced sales.
+    """
     price = _money(price, "price")
     costs = _money(closing_costs, "closing_costs")
     retained = _money(cash_floor, "cash_floor")
@@ -85,6 +106,7 @@ def cash_funded_down_payment(
     available = _bank_cash(owner) - costs - retained
     required = max(minimum, price - limit)
     if available < required:
-        raise ClosingShortfall(required - available)
-    preferred = (available * fraction + extra).quantize(_CENT, rounding=ROUND_DOWN)
-    return min(price, available, max(required, preferred))
+        raise ClosingShortfall(required - available, required=required, available=available)
+    optional = max(Decimal(0), min(available, _bank_cash_after_tax(owner) - costs - retained))
+    preferred = min(optional, (optional * fraction + extra).quantize(_CENT, rounding=ROUND_DOWN))
+    return min(price, max(required, preferred))
