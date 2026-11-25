@@ -1279,6 +1279,16 @@ class LifeModelAgent(mesa.Agent):
         priorities.update(cls.__dict__.get("STEP_PRIORITY", {}))
         cls.STEP_PRIORITY = priorities
 
+    def __repr__(self) -> str:
+        """``<Class id=N>``, plus the agent's ``name`` when it has one.
+
+        Agents link to each other in cycles (a person to its family, an account to its owner), so a
+        repr built from every attribute would recurse without end.
+        """
+        name = getattr(self, "name", None)
+        suffix = f" name={name!r}" if isinstance(name, str) else ""
+        return f"<{type(self).__name__} id={self.unique_id}{suffix}>"
+
     def __init__(self, model: LifeModel):
         """LifeModelAgent
 
