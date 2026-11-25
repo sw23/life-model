@@ -190,6 +190,38 @@ class TestCashFundedClosing(unittest.TestCase):
         self.assertEqual((first.balance, second.balance, owner.debt, home.home_value), (0, 0, 0, 1000.13))
         self.assertAlmostEqual(sum(row.amount for row in built.model.ledger if row.sink == "closing costs"), 2.23)
 
+    def test_cash_only_purchase_posts_any_unpaid_amount_as_debt(self):
+        from unittest import mock
+
+        from ..people.tax_unit import TaxUnit
+
+        data = minimal(jobs=[], spending={"amount_annual": 0}, accounts=[])
+        built = build_household(spec_of(data), config=fixture_config(), check=False, collect="month")
+        owner = built.people["alex"]
+        BankAccount(owner, balance=2000, interest_pct=0)
+        pay = TaxUnit.pay_from_banks
+
+        def short_by_a_dollar(unit, amount, **kwargs):
+            return pay(unit, amount - 1.0, **kwargs) + 1.0
+
+        with mock.patch.object(TaxUnit, "pay_from_banks", short_by_a_dollar):
+            Home(
+                owner,
+                name="Home",
+                purchase_price=1000,
+                value_growth_pct=0,
+                down_payment=1000,
+                mortgage=None,
+                expenses=HomeExpenses(built.model),
+                purchase=True,
+                closing_cost_percent=10,
+                cash_only=True,
+            )
+        # The down payment and the closing costs each leave $1 unpaid, carried as debt rather than dropped.
+        self.assertAlmostEqual(owner.debt, 2.0, places=9)
+        built.model.step()
+        assert_conservation(built.model, monthly=True)
+
 
 class TestPurchaseAfterTheBuyersDeath(unittest.TestCase):
     def _spec(self, *, cash_funding, married):

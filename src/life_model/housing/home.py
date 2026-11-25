@@ -255,16 +255,22 @@ class Home(LifeModelAgent):
         ledger = self.model.ledger
         cause = f"purchase of {self.name}"
         unit = TaxUnit.for_member(self.person)
-        pay = unit._pay_from_banks if self._cash_only else unit.pay_bills
+        if self._cash_only:
+
+            def pay(amount: float, **post) -> float:
+                # Bank cash was checked to the cent before the purchase, so only float residue can remain.
+                return snap_money(unit.pay_from_banks(amount, **post))
+
+        else:
+            pay = unit.pay_bills
         # The down payment buys equity (a transfer into the home); the mortgage lends the rest of
-        # the price (borrowed into the home); closing costs are spent.
+        # the price (borrowed into the home); closing costs are spent. Anything left unpaid is
+        # carried as debt.
         with ledger.caused_by(cause):
             unpaid = pay(self.down_payment, kind=FlowKind.HOUSING, to_account=self, cause=cause)
-            if not self._cash_only:
-                self.person.add_debt(unpaid, to_account=self, cause=cause)
+            self.person.add_debt(unpaid, to_account=self, cause=cause)
             unpaid = pay(closing_costs, kind=FlowKind.HOUSING, sink="closing costs", cause=cause)
-            if not self._cash_only:
-                self.person.add_debt(unpaid, kind=FlowKind.HOUSING, sink="closing costs", cause=cause)
+            self.person.add_debt(unpaid, kind=FlowKind.HOUSING, sink="closing costs", cause=cause)
         principal = self.mortgage.principal if self.mortgage is not None else 0.0
         if self.mortgage is not None:
             ledger.post(

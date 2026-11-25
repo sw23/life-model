@@ -665,12 +665,12 @@ class TaxUnit:
         cause = cause or sink or "bill payment"
         post = {"kind": kind, "cause": cause, "sink": sink, "to_account": to_account}
         with self.members[0].model.ledger.caused_by(f"raise cash for {cause}"):
-            remaining = self._pay_from_banks(amount, **post)
+            remaining = self.pay_from_banks(amount, **post)
             for source in self.withdrawal_order[1:]:
                 if remaining <= 0:
                     break
                 self._raise_cash(source, remaining)
-                remaining = self._pay_from_banks(remaining, **post)
+                remaining = self.pay_from_banks(remaining, **post)
         return max(0.0, remaining)
 
     def _bank_accounts_in_draw_order(self) -> list:
@@ -694,7 +694,7 @@ class TaxUnit:
             return sorted(self.members, key=lambda m: (m.early_withdrawal_penalty(100.0), m.name, m.age))
         return sorted(self.members, key=lambda m: (m.name, m.age))
 
-    def _pay_from_banks(
+    def pay_from_banks(
         self, amount: float, *, kind=None, sink=None, to_account=None, cause=None, paid_from=None
     ) -> float:
         """Pay ``amount`` from the unit's bank accounts in :meth:`_bank_accounts_in_draw_order`.
@@ -1182,12 +1182,12 @@ class TaxUnit:
             self._draw_hsa_for_medical(bills)
             paid_from = {}
             with model.ledger.caused_by(f"pay {when} bills"):
-                remaining = self._pay_from_banks(bills, paid_from=paid_from)
+                remaining = self.pay_from_banks(bills, paid_from=paid_from)
                 for source in self.withdrawal_order[1:]:
                     if remaining < 0.005:
                         break
                     self._raise_cash(source, remaining)
-                    remaining = self._pay_from_banks(remaining, paid_from=paid_from)
+                    remaining = self.pay_from_banks(remaining, paid_from=paid_from)
             shortfall = round_money(max(0.0, remaining))
             payer = self._payer_account()
             # With one funding account, each bill stays one entry.
@@ -1466,7 +1466,7 @@ class TaxUnit:
         payer = self._payer_account()
         net_due = bills + taxes.total
         if net_due >= 0:
-            shortfall = round_money(max(0.0, self._pay_from_banks(net_due)))
+            shortfall = round_money(max(0.0, self.pay_from_banks(net_due)))
         else:
             # The refund lands in the highest-yield bank (or the head's cash pocket without one).
             accounts = self._bank_accounts_in_draw_order()
