@@ -189,3 +189,71 @@ class TestCashFundedClosing(unittest.TestCase):
         )
         self.assertEqual((first.balance, second.balance, owner.debt, home.home_value), (0, 0, 0, 1000.13))
         self.assertAlmostEqual(sum(row.amount for row in built.model.ledger if row.sink == "closing costs"), 2.23)
+
+
+class TestPurchaseAfterTheBuyersDeath(unittest.TestCase):
+    def _spec(self, *, cash_funding, married):
+        import copy
+
+        data = minimal(
+            jobs=[],
+            spending={"amount_annual": 0},
+            accounts=[
+                {"kind": "bank", "id": "bank", "balance": 150000, "interest_pct": 0},
+                {"kind": "brokerage", "id": "investments", "balance": 100000, "growth_pct": 0},
+            ],
+        )
+        data["meta"]["end_year"] = 2028
+        purchase = {
+            "id": "closing",
+            "at": {"year": 2027, "month": 3, "day": 10},
+            "person": "alex",
+            "action": "buy_home",
+            "home": {
+                "kind": "home",
+                "id": "new_home",
+                "purchase_price": 500000,
+                "expenses": {"property_tax_pct": 0, "insurance_pct": 0},
+            },
+        }
+        if cash_funding:
+            purchase["cash_funding"] = {
+                "closing_costs": 20000,
+                "cash_floor": 30000,
+                "minimum_down_payment": 100000,
+                "mortgage_limit": 400000,
+                "term_years": 25,
+                "rate_pct": 5,
+            }
+        else:
+            purchase["home"]["down_payment"] = 100000
+            purchase["home"]["mortgage"] = {"original_amount": 400000, "rate_pct": 5, "term_years": 25}
+        data["events"] = [
+            purchase,
+            {"action": "die", "person": "alex", "at": {"year": 2027}},
+            {"action": "sell_home", "person": "alex", "home": "new_home", "at": {"year": 2028, "month": 6}},
+        ]
+        if married:
+            sam = copy.deepcopy(data["people"][0])
+            sam.update(id="sam", name="Sam", accounts=[{"kind": "bank", "id": "sam_bank", "balance": 30000}])
+            data["people"].append(sam)
+            data["relationships"] = {"marriages": [{"spouses": ["alex", "sam"], "year": 2020}]}
+        return spec_of(data)
+
+    def test_a_purchase_dated_after_the_buyers_death_is_skipped(self):
+        for cash_funding in (False, True):
+            for married in (False, True):
+                with self.subTest(cash_funding=cash_funding, married=married):
+                    built = build_household(
+                        self._spec(cash_funding=cash_funding, married=married),
+                        config=fixture_config(),
+                        collect="month",
+                    )
+                    built.model.checks = "strict"
+                    built.model.run()
+                    assert_conservation(built.model, monthly=True)
+                    self.assertNotIn("new_home", built.items)
+                    self.assertEqual(built.model.event_log.of_kind("home_bought"), [])
+                    notes = [e.message for e in built.model.event_log.of_kind("note")]
+                    self.assertTrue(any("home purchase skipped" in n for n in notes), notes)
+                    self.assertTrue(any("home sale skipped" in n for n in notes), notes)

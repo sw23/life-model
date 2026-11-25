@@ -375,7 +375,15 @@ def _end_rental(builder: "_Builder", person, rental_id: str) -> None:
 def _buy_home(builder: "_Builder", person, home: s.Home, cash_funding: s.HomeCashFunding | None = None) -> None:
     """Buy ``home``. With ``cash_funding`` the down payment is sized from bank cash; when the bank can't
     cover the terms, a ``closing_shortfall`` event records the gap and the purchase closes on the
-    required down payment through the household waterfall, like a purchase without ``cash_funding``."""
+    required down payment through the household waterfall, like a purchase without ``cash_funding``.
+    A purchase dated after the buyer's death is skipped, and so are later events on that home."""
+    if person.is_deceased:
+        builder.model.event_log.add(
+            Event(f"home purchase skipped: {person.name} died before closing on {home.id or home.name or 'a home'}")
+        )
+        if home.id is not None:
+            builder.built.skipped_homes.add(home.id)
+        return
     cash_only = cash_funding is not None
     if cash_funding is not None:
         from ..housing.closing import ClosingShortfall, cash_funded_down_payment
@@ -428,7 +436,17 @@ def _buy_home(builder: "_Builder", person, home: s.Home, cash_funding: s.HomeCas
         agent.spec_id = home.id
 
 
+def _never_bought(builder: "_Builder", home_id: str | None, action: str) -> bool:
+    """Whether ``home_id`` names a home whose purchase was skipped; logs the skipped ``action``."""
+    if home_id is None or home_id not in builder.built.skipped_homes:
+        return False
+    builder.model.event_log.add(Event(f"{action} skipped: {home_id} was never bought"))
+    return True
+
+
 def _sell_home(builder: "_Builder", home_id: str, selling_cost_pct: float | None, day: int | None) -> None:
+    if _never_bought(builder, home_id, "home sale"):
+        return
     from datetime import date
 
     when = date(builder.model.year, builder.model.month, day or 1)
@@ -565,6 +583,8 @@ def _change_contribution(builder: "_Builder", person, event: s.ChangeContributio
 def _refinance(builder: "_Builder", event: s.RefinanceEvent) -> None:
     from ..housing.home import Home
 
+    if _never_bought(builder, event.debt, "refinance"):
+        return
     target = builder.built.items[event.debt]
     loan = target.mortgage if isinstance(target, Home) else target
     if loan is None or loan.principal <= 0:
@@ -585,6 +605,8 @@ def _refinance(builder: "_Builder", event: s.RefinanceEvent) -> None:
 def _renew_mortgage(builder: "_Builder", event: s.MortgageRenewalEvent) -> None:
     from datetime import date
 
+    if _never_bought(builder, event.home, "mortgage renewal"):
+        return
     home = builder.built.items.get(event.home)
     if home is None:
         raise ValueError(f"Home {event.home!r} must exist before its mortgage can be renewed")
@@ -626,6 +648,8 @@ def _prepay_mortgage(builder: "_Builder", person, event: s.MortgagePrepaymentEve
 
     from ..housing.home import Home
 
+    if _never_bought(builder, event.home, "mortgage prepayment"):
+        return
     home = builder.built.items.get(event.home)
     if not isinstance(home, Home) or home.person is not person or home.mortgage is None:
         raise ValueError("A mortgage prepayment needs an existing mortgage on the borrower's home")

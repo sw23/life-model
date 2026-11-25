@@ -83,6 +83,8 @@ class BuiltHousehold:
     people: dict[str, Any] = field(default_factory=dict)
     items: dict[str, Any] = field(default_factory=dict)
     life_events: Any = None
+    #: Ids of homes whose purchase was skipped because the buyer had died; later events on them skip too.
+    skipped_homes: set[str] = field(default_factory=set)
 
     def item(self, key: str) -> Any:
         """The agent built for ``key`` (``KeyError`` when absent)."""
