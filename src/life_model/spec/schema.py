@@ -820,7 +820,9 @@ class CashReserveAccount(SpecModel):
     kind: Literal["cash_reserve"]
     id: Identifier | None = _id_field("account")
     name: str = spec_field("Earmarked cash", description="Label used on the ledger.")
-    balance: float = spec_field(description="Starting earmarked balance.", unit="USD", gt=0, allow_inf_nan=False)
+    balance: NonNegativeMoney = spec_field(
+        description="Starting earmarked balance.", unit="USD", gt=0, allow_inf_nan=False
+    )
     release_on: date = spec_field(description="Calendar date when the balance becomes available.")
 
 
@@ -3071,7 +3073,12 @@ class ReserveCashEvent(EventBase):
 
     action: Literal["reserve_cash"]
     bank: Identifier = spec_field(description="Id of the owner's funding bank.")
-    amount: float = spec_field(description="Cash to earmark.", unit="USD", gt=0, allow_inf_nan=False)
+    amount: NonNegativeMoney = spec_field(
+        description="Cash to earmark (less when the bank's cash after the year's unpaid tax falls short).",
+        unit="USD",
+        gt=0,
+        allow_inf_nan=False,
+    )
     release_on: date = spec_field(description="Release date in a later month, before ordinary events that day.")
 
     @model_validator(mode="after")

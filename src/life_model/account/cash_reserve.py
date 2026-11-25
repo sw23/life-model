@@ -22,9 +22,14 @@ class CashReserve(FinancialAccount):
     """An owned cash balance held until its scheduled release.
 
     Supply a bank to transfer cash into the reserve, or omit it for cash already earmarked at
-    opening. The balance counts toward net worth and earns zero interest. On the release date,
-    the current owner receives the cash before ordinary events that day in the same schedule.
+    opening. The balance counts toward net worth (reported as Cash Reserve Balance, not Bank
+    Balance) and earns zero interest. It is never drawn to pay bills, even when the household
+    borrows. On the release date, the current owner receives the cash before ordinary events that
+    day in the same schedule.
     """
+
+    BALANCE_STAT = "stat_cash_reserve_balance"
+    STATS_OWNED = frozenset({"stat_cash_reserve_balance"})
 
     def __init__(
         self,
@@ -54,6 +59,7 @@ class CashReserve(FinancialAccount):
 
         self.name = name
         self.release_on = release_on
+        self.stat_cash_reserve_balance = 0.0
         super().__init__(owner, amount if bank is None else 0)
         if bank is not None:
             funded = bank.withdraw(amount)

@@ -1278,7 +1278,7 @@ Move cash from an owned bank into an earmark until its scheduled release.
 | `name` | string (optional) |  | — |  | Description shown in the event list. |
 | `action` | `"reserve_cash"` |  | **required** |  |  |
 | `bank` | string |  | **required** |  | Id of the owner's funding bank. |
-| `amount` | number | USD | **required** |  | Cash to earmark. |
+| `amount` | number | USD | **required** |  | Cash to earmark (less when the bank's cash after the year's unpaid tax falls short). |
 | `release_on` | date |  | **required** |  | Release date in a later month, before ordinary events that day. |
 
 ## ContributeEvent

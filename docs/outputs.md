@@ -63,6 +63,7 @@ at the year end.
 | 529 Balance | `stat_529_balance` | EXTRA_STATS | Plan529 | sum | yes |  | 529 education plan balances at year end. |
 | Fixed Income Balance | `stat_fixed_income_balance` | EXTRA_STATS | FixedIncomeHolding | sum | yes |  | CDs, Treasuries, I bonds and bond funds (fixed-income holdings) at year end. |
 | Inherited IRA Balance | `stat_inherited_ira_balance` | EXTRA_STATS | InheritedPretaxAccount | sum | yes |  | Inherited (10-year rule) IRA balances. |
+| Cash Reserve Balance | `stat_cash_reserve_balance` | EXTRA_STATS | CashReserve | sum | yes |  | Earmarked cash held until its release date (counted in net worth, not in Bank Balance). |
 | Annuity Balance | `stat_annuity_balance` | EXTRA_STATS | Annuity | sum | yes |  | Annuity accumulation balances plus annuitized reserves. |
 | DAF Balance | `stat_daf_balance` | EXTRA_STATS | DonorAdvisedFund | sum | yes |  | Donor-advised fund balances (not counted in net worth). |
 | Trust Balance | `stat_trust_balance` | EXTRA_STATS | Trust | sum | yes |  | Trust balances (only revocable trusts count in net worth). |

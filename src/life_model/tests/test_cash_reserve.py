@@ -198,3 +198,22 @@ class TestReserveCashEvent(unittest.TestCase):
         built = self._run(data)
         self.assertEqual(self._reserve_events(built.model), [])
         self.assertTrue(any("reserve skipped" in e.message for e in built.model.event_log.of_kind("note")))
+
+    def test_earmarked_cash_has_its_own_model_frame_column(self):
+        built = self._run(_reserve_spec(amount=20000, release_on="2027-02-15", end=2026))
+        frame = built.model.datacollector.get_model_vars_dataframe()
+        row = frame.iloc[-1]
+        self.assertEqual(row["Cash Reserve Balance"], 20000)
+        sheet = built.model.month_balance_sheets[(2026, 12)].closing
+        self.assertAlmostEqual(row["Bank Balance"] + row["Cash Reserve Balance"] + 100000, sheet.net_worth, places=6)
+
+    def test_validator_warns_when_a_release_falls_after_the_run(self):
+        from ..spec.validate import validate_spec, warnings_of
+
+        data = _reserve_spec(amount=1000, release_on="2028-01-15", end=2026)
+        data["people"][0]["accounts"].append(
+            {"kind": "cash_reserve", "id": "held", "balance": 500, "release_on": "2027-05-01"}
+        )
+        codes = {(f.path, f.code) for f in warnings_of(validate_spec(spec_of(data)))}
+        self.assertIn(("events[0].release_on", "release_after_run"), codes)
+        self.assertIn(("people[0].accounts[2].release_on", "release_after_run"), codes)

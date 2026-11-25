@@ -531,6 +531,11 @@ class LifeModel(mesa.Model):
             "CDs, Treasuries, I bonds and bond funds (fixed-income holdings) at year end.",
         ),
         MoneyStat("stat_inherited_ira_balance", "Inherited IRA Balance", "Inherited (10-year rule) IRA balances."),
+        MoneyStat(
+            "stat_cash_reserve_balance",
+            "Cash Reserve Balance",
+            "Earmarked cash held until its release date (counted in net worth, not in Bank Balance).",
+        ),
         MoneyStat("stat_annuity_balance", "Annuity Balance", "Annuity accumulation balances plus annuitized reserves."),
         MoneyStat("stat_daf_balance", "DAF Balance", "Donor-advised fund balances (not counted in net worth)."),
         MoneyStat("stat_trust_balance", "Trust Balance", "Trust balances (only revocable trusts count in net worth)."),

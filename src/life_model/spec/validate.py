@@ -888,6 +888,17 @@ class _SpecChecker:
                 code="no_disability_policy",
             )
 
+    def check_release_in_run(self, release: date, path: str) -> None:
+        """Warn when earmarked cash is released after the run ends, so it stays locked to the end."""
+        if release.year > self.end:
+            self.warn(
+                path,
+                f"The release date {release.isoformat()} is after the run ends ({self.end}); "
+                "the cash stays earmarked through the last simulated month.",
+                "Release the cash within the run, or extend meta.end_year.",
+                code="release_after_run",
+            )
+
     def check_account_rules(self, account, path: str) -> None:
         """Account rules: a standalone 401k takes no contributions or match; an allocation sums to 100 and
         needs growth to follow the economy."""
@@ -895,6 +906,7 @@ class _SpecChecker:
             release = account.release_on
             if (release.year, release.month) < (self.start, self.start_month):
                 self.error(f"{path}.release_on", "Release date precedes the first simulated month.")
+            self.check_release_in_run(release, f"{path}.release_on")
         if isinstance(account, s.Job401k) and account.job is None:
             if account.pretax_contrib_pct or account.roth_contrib_pct or account.after_tax_contrib_pct:
                 self.error(
@@ -1361,6 +1373,7 @@ class _SpecChecker:
                 target = item_ids.get(event.bank)
                 if target is None or target[0] != event.person or not isinstance(target[2], s.BankAccount):
                     self.error(f"{path}.bank", "Funding bank must be owned by the person setting aside cash.")
+                self.check_release_in_run(event.release_on, f"{path}.release_on")
             if isinstance(event, s.ContributeEvent):
                 target = item_ids.get(event.account)
                 if target is None or target[1] != "accounts":
