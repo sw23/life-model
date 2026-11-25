@@ -647,6 +647,9 @@ def _pay_mortgage_at_maturity(builder: "_Builder", event: s.MortgageMaturityEven
 
 
 def _prepay_mortgage(builder: "_Builder", person, event: s.MortgagePrepaymentEvent) -> None:
+    """Prepay from the home's current living owner (the surviving spouse after the borrower's death),
+    with that owner's cash and tax holdback; a sold home, a paid-off mortgage or a home nobody alive
+    owns skips the prepayment."""
     from datetime import date
 
     from ..housing.home import Home
@@ -654,7 +657,12 @@ def _prepay_mortgage(builder: "_Builder", person, event: s.MortgagePrepaymentEve
     if _never_bought(builder, event.home, "mortgage prepayment"):
         return
     home = builder.built.items.get(event.home)
-    if not isinstance(home, Home) or home.person is not person or home.mortgage is None:
+    if not isinstance(home, Home) or home.sold or home.person.is_deceased or home.mortgage is None:
+        builder.model.event_log.add(
+            Event(f"mortgage prepayment skipped: {event.home} has no active homeowner mortgage")
+        )
+        return
+    if home.person is not person and not person.is_deceased:
         raise ValueError("A mortgage prepayment needs an existing mortgage on the borrower's home")
     assert event.at.year is not None and event.at.month is not None and event.at.day is not None
     when = date(event.at.year, event.at.month, event.at.day)

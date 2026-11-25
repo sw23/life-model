@@ -1205,7 +1205,7 @@ class _Extractor:
             update: dict[str, Any] = {"at": at}
             if isinstance(source, s.RecurringExpenseEvent):
                 update["until"] = s.At(year=max(when[0] for when in dates[id(source)]))
-            if isinstance(source, s.MortgageMaturityEvent):
+            if isinstance(source, s.MortgageMaturityEvent | s.MortgagePrepaymentEvent):
                 owner = next((p for p in self.people() if any(self.item_id(h) == source.home for h in p.homes)), None)
                 if owner is not None:
                     update["person"] = self.pid(owner)

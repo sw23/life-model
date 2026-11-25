@@ -211,3 +211,79 @@ class TestMortgagePrepayment(unittest.TestCase):
         inputs = prepayment_inputs(home="other-home")
         findings = validate_spec(spec_of(inputs), config=fixture_config())
         self.assertTrue(any(f.level == "error" and f.path == "events[1].home" for f in findings))
+
+
+class TestPrepaymentAfterTheBorrowersDeath(unittest.TestCase):
+    def _spec(self, *, married):
+        import copy
+
+        data = minimal(
+            jobs=[],
+            spending={"amount_annual": 0},
+            accounts=[{"kind": "bank", "id": "bank", "balance": 50000, "interest_pct": 0}],
+            housing=[
+                {
+                    "kind": "home",
+                    "id": "home",
+                    "purchase_price": 300000,
+                    "value_growth_pct": 0,
+                    "expenses": {"property_tax_pct": 0, "insurance_pct": 0},
+                    "pmi": False,
+                    "mortgage": {"original_amount": 120000, "term_years": 25, "rate_pct": 0},
+                }
+            ],
+        )
+        data["meta"]["end_year"] = 2027
+        data["events"] = [
+            {"action": "die", "person": "alex", "at": {"year": 2027}},
+            {
+                "id": "prepay",
+                "action": "prepay_mortgage",
+                "person": "alex",
+                "home": "home",
+                "at": {"year": 2027, "month": 6, "day": 30},
+                "cash_fraction": 0.5,
+            },
+        ]
+        if married:
+            sam = copy.deepcopy(data["people"][0])
+            sam.update(
+                id="sam", name="Sam", accounts=[{"kind": "bank", "id": "sam_bank", "balance": 30000}], housing=[]
+            )
+            data["people"].append(sam)
+            data["relationships"] = {"marriages": [{"spouses": ["alex", "sam"], "year": 2020}]}
+        return spec_of(data)
+
+    def _run(self, spec):
+        built = build_household(spec, config=fixture_config(), collect="month")
+        built.model.checks = "strict"
+        built.model.run()
+        assert_conservation(built.model, monthly=True)
+        return built
+
+    def test_prepayment_follows_the_home_to_the_surviving_spouse(self):
+        built = self._run(self._spec(married=True))
+        (event,) = built.model.event_log.of_kind(EventKind.MORTGAGE_PREPAYMENT)
+        self.assertEqual(event.person_name, "Sam")
+        self.assertGreater(event.amount, 0)
+
+    def test_prepayment_after_a_single_borrowers_death_is_skipped(self):
+        built = self._run(self._spec(married=False))
+        self.assertEqual(built.model.event_log.of_kind(EventKind.MORTGAGE_PREPAYMENT), [])
+        notes = [e.message for e in built.model.event_log.of_kind(EventKind.NOTE)]
+        self.assertTrue(any("mortgage prepayment skipped" in n for n in notes), notes)
+
+    def test_snapshot_after_the_death_resumes_the_survivors_prepayment(self):
+        from ..spec.io import dumps, loads
+
+        continuous = self._run(self._spec(married=True))
+        partial = build_household(self._spec(married=True), config=fixture_config(), collect="month")
+        for _ in range(15):
+            partial.model.step()
+        snapshot = loads(dumps(spec_from_model(partial.model), "yaml"), "yaml")
+        (pending,) = [e for e in snapshot.events if e.action == "prepay_mortgage"]
+        self.assertEqual(pending.person, "sam")
+        resumed = self._run(snapshot)
+        self.assertAlmostEqual(
+            resumed.items["home"].mortgage.principal, continuous.items["home"].mortgage.principal, places=6
+        )
