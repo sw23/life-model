@@ -300,6 +300,28 @@ class Loan(LifeModelAgent, ABC):
         Closing ``costs`` not financed are paid now through the household waterfall; ``cash_out`` is
         paid to the owner. Returns the new principal.
         """
+        return self._refinance(
+            rate_pct,
+            quoted_rate_pct=rate_pct,
+            term_months=term_months,
+            term_years=term_years,
+            costs=costs,
+            finance_costs=finance_costs,
+            cash_out=cash_out,
+        )
+
+    def _refinance(
+        self,
+        rate_pct: float,
+        *,
+        quoted_rate_pct: float,
+        term_months: int | None,
+        term_years: float | None,
+        costs: float,
+        finance_costs: bool,
+        cash_out: float,
+    ) -> float:
+        """:meth:`refinance` at the monthly-basis annual ``rate_pct``; the event reports ``quoted_rate_pct``."""
         from .ledger import FlowKind
         from .model import Event, EventKind
 
@@ -342,7 +364,7 @@ class Loan(LifeModelAgent, ABC):
                 amount=new_principal,
                 account=self,
                 cause=cause,
-                message=f"{self.person.name} refinanced {name}: ${new_principal:,.0f} at {rate_pct:g}% for "
+                message=f"{self.person.name} refinanced {name}: ${new_principal:,.0f} at {quoted_rate_pct:g}% for "
                 f"{term_months} months (${self.monthly_payment:,.2f}/month)",
             )
         )

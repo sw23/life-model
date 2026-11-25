@@ -131,3 +131,30 @@ class TestSavingsSweepControls(unittest.TestCase):
                 inputs["people"][0]["savings_policy"]["source_bank"] = source
                 findings = validate_spec(spec_of(inputs), config=fixture_config())
                 self.assertTrue(any(f.level == "error" and f.path.endswith(".source_bank") for f in findings))
+
+
+class TestSavingsPolicySourceBank(unittest.TestCase):
+    def test_assignment_requires_a_spendable_bank_the_person_owns(self):
+        from ..account.bank import BankAccount
+        from ..account.brokerage import BrokerageAccount
+        from ..model import LifeModel
+        from ..people.family import Family
+        from ..people.person import Person, Spending
+        from ..policies import SavingsPolicy
+
+        model = LifeModel(start_year=2026, end_year=2026, config=fixture_config())
+        family = Family(model)
+        alex = Person(family, "Alex", 40, 65, Spending(model, base_annual=0))
+        sam = Person(family, "Sam", 40, 65, Spending(model, base_annual=0))
+        alex.get_married(sam)
+        own = BankAccount(alex, balance=1000, interest_pct=0)
+        reserve = BankAccount(alex, balance=1000, interest_pct=0, reserve=True)
+        spouses = BankAccount(sam, balance=1000, interest_pct=0)
+        brokerage, other_brokerage = BrokerageAccount(alex), BrokerageAccount(alex)
+        cases = ((reserve, "reserve"), (spouses, "Alex does not own"), (other_brokerage, "bank account"))
+        for source, pattern in cases:
+            with self.subTest(source=source), self.assertRaisesRegex(ValueError, pattern):
+                alex.savings_policy = SavingsPolicy(cash_floor=0, sweep_to=brokerage, source_bank=source)
+            self.assertIsNone(alex.savings_policy)
+        alex.savings_policy = SavingsPolicy(cash_floor=0, sweep_to=brokerage, source_bank=own)
+        self.assertIs(alex.savings_policy.source_bank, own)

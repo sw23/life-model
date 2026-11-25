@@ -90,13 +90,17 @@ class DatedBridgeLine(HomeEquityLine):
         return self.accrued_interest + self.drawn_principal * rate * days / 365
 
     def _accrue(self, when: date) -> None:
+        """Book interest through ``when``: it is charged, and counted in the interest stats, as it accrues."""
         interest = self._interest_at(when)
         increment = _cents(interest) - _cents(self.accrued_interest)
         self.accrued_interest = interest
         self.accrued_through = when if self.drawn_principal else None
         self.balance = float(self.drawn_principal + _cents(interest))
+        charged = float(increment)
+        self.interest_paid_this_year += charged
+        self.person.stat_interest_paid = snap_money(self.person.stat_interest_paid + charged)
         self.model.ledger.post(
-            float(increment),
+            charged,
             FlowKind.DEBT_SERVICE,
             from_account=self,
             sink="bridge interest",
@@ -141,7 +145,9 @@ class DatedBridgeLine(HomeEquityLine):
         return 0.0
 
     def post_step(self) -> None:
-        if self.drawn_principal:
+        # A line still owned by a decedent was discharged with an estate that had no heir (an heir or
+        # surviving spouse takes the line over); like the estate's other debts, it is frozen.
+        if self.drawn_principal and not self.person.is_deceased:
             year, month = self.model.year, self.model.month
             boundary = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
             self._accrue(boundary)
@@ -172,12 +178,9 @@ class DatedBridgeLine(HomeEquityLine):
         self._clear()
 
     def _clear(self) -> None:
-        interest_paid = float(_cents(self.accrued_interest))
         if self.drawn_principal:
             self.stat_principal_payment_history.append(float(self.drawn_principal))
-            self.stat_interest_payment_history.append(interest_paid)
-        self.interest_paid_this_year += interest_paid
-        self.person.stat_interest_paid = snap_money(self.person.stat_interest_paid + interest_paid)
+            self.stat_interest_payment_history.append(float(_cents(self.accrued_interest)))
         self.drawn_principal = self.accrued_interest = _ZERO
         self.accrued_through = None
         self.balance = 0.0

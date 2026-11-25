@@ -228,12 +228,17 @@ def render() -> str:
         "year": "Simulated year.",
         "month": "Simulated month (1–12).",
         "account": "Balance-sheet label, also used in the ledger's from and to columns.",
-        "account_type": "Agent class or type of a balance-sheet line such as `Cash` or `TaxDue`.",
+        "account_type": "Household spec `kind` of the item holding the line (`bank`, `401k`, `home`, "
+        "`bridge_line`), `mortgage`, or for a person's own lines `cash`, `unpaid_bills_debt`, `tax_due` or "
+        "`tax_refund`. A class that no spec item builds appears in snake case.",
         "account_name": "Display name at the month end.",
-        "account_spec_id": "Household spec item ID when the position's agent has one.",
+        "account_spec_id": "Household spec item `id`; a mortgage reports its home's. Empty for an item "
+        "written without an `id` and for a person's own lines.",
         "owner_id": "Owner's model ID at the month end.",
         "owner_name": "Owner's display name at the month end.",
         "owner_spec_id": "Household spec person ID when known.",
+        "joint_owner_name": "The spouse on a joint bank or brokerage account; empty otherwise.",
+        "joint_owner_spec_id": "That spouse's household spec person ID when known.",
         "balance": "Closing balance in dollars. Assets are positive and liabilities are negative.",
     }
     out += [

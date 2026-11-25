@@ -15,6 +15,12 @@ from .spec_helpers import fixture_config, spec_of
 from .test_mortgage_maturity import maturity_inputs
 
 
+def booked_bridge_interest(model, year):
+    """The bridge interest the run's ledger charged in ``year``."""
+    records = model.ledger.to_records()
+    return round(sum(r["amount"] for r in records if r["sink"] == "bridge interest" and r["year"] == year), 2)
+
+
 def bridge_inputs(*, receipt_month=1, receipt_day=31, limit=60000):
     inputs = maturity_inputs(receipt_day)
     inputs["meta"]["end_year"] = 2026
@@ -83,9 +89,48 @@ class TestDatedBridge(unittest.TestCase):
         for current in (built, *reloaded):
             current.model.step()
             self.assertEqual(current.items["line"].balance, 0)
-            self.assertAlmostEqual(current.items["line"].interest_paid_this_year, 60.98, places=2)
+            # A resumed run opens with January's interest as a liability and charges only February's.
+            line = current.items["line"]
+            self.assertAlmostEqual(line.interest_paid_this_year, 60.98 if current is built else 30.49, places=2)
+            self.assertEqual(line.interest_paid_this_year, booked_bridge_interest(current.model, 2026))
             self.assertAlmostEqual(current.items["cash"].balance, 16439.02, places=2)
             assert_conservation(current.model, monthly=True)
+
+    def test_interest_stats_follow_the_ledger_across_a_year_boundary(self):
+        inputs = bridge_inputs()
+        inputs["meta"]["end_year"] = 2027
+        inputs["events"] = [
+            {
+                "action": "draw_bridge",
+                "person": "alex",
+                "bridge": "line",
+                "at": {"year": 2026, "month": 12, "day": 15},
+                "amount": 10000,
+            },
+            {"action": "repay_bridge", "person": "alex", "bridge": "line", "at": {"year": 2027, "month": 1, "day": 10}},
+        ]
+        built = self.build(inputs)
+        built.model.checks = "strict"
+        line = built.items["line"]
+        recorded = {}
+        for year in (2026, 2027):
+            built.model.step_year()
+            recorded[year] = line.interest_paid_this_year
+        result = built.model.result()
+        booked: dict[int, float] = {}
+        for record in built.model.ledger.to_records():
+            if record["sink"] == "bridge interest":
+                booked[record["year"]] = round(booked.get(record["year"], 0.0) + record["amount"], 2)
+        # 10,000 * 5.2% * 17 / 365 accrues in 2026 and 9 more days in 2027, 37.04 in all.
+        self.assertEqual(booked, {2026: 24.22, 2027: 12.82})
+        self.assertEqual(recorded, booked)
+        self.assertEqual(line.stat_interest_payment_history, [37.04])
+        interest_paid = dict(zip(result.model_frame["Year"], result.model_frame["Interest Paid"], strict=True))
+        returns = {year: tax_return.to_dict() for (year, _unit), tax_return in built.model.tax_returns.items()}
+        for year, interest in booked.items():
+            # The mortgage interest is the whole itemized deduction here; bridge interest is not deductible.
+            self.assertAlmostEqual(interest_paid[year], returns[year]["itemized_deductions"] + interest, places=2)
+        assert_conservation(built.model, monthly=True)
 
     def test_accrued_interest_does_not_consume_credit_headroom(self):
         inputs = bridge_inputs()
@@ -165,18 +210,48 @@ class TestDatedBridge(unittest.TestCase):
         snapshot = spec_from_model(built.model)
         self.assertEqual([event.person for event in snapshot.events], ["bo"])
         resumed = build_household(loads(dumps(snapshot, "json")), config=fixture_config(), collect="month")
-        days = (date(2027, 6, 5) - date(2026, 1, 28)).days
-        interest = Decimal(53500) * Decimal("0.052") * days / 365
-        expected = float(interest.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
-        for run in (built, resumed):
+
+        def cents(through):
+            interest = Decimal(53500) * Decimal("0.052") * (through - date(2026, 1, 28)).days / 365
+            return interest.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+        # 2027's interest: from the year start, or from the snapshot for the resumed run.
+        repaid = date(2027, 6, 5)
+        expected = {
+            "built": cents(repaid) - cents(date(2027, 1, 1)),
+            "resumed": cents(repaid) - cents(date(2027, 2, 1)),
+        }
+        for label, run in (("built", built), ("resumed", resumed)):
             for _ in range(5):
                 run.model.step()
             line = run.items["line"]
             self.assertEqual(line.person.name, "Bo")
             self.assertEqual(line.balance, 0)
-            self.assertEqual(line.interest_paid_this_year, expected)
+            self.assertEqual(line.stat_interest_payment_history[-1], float(cents(repaid)))
+            self.assertEqual(line.interest_paid_this_year, float(expected[label]))
+            self.assertEqual(line.interest_paid_this_year, booked_bridge_interest(run.model, 2027))
             self.assertFalse(run.model.event_log.of_kind(EventKind.SHORTFALL_DEBT))
             assert_conservation(run.model, monthly=True)
+
+    def test_an_estate_with_no_heir_discharges_the_bridge_and_it_stops_accruing(self):
+        inputs = bridge_inputs()
+        inputs["meta"]["end_year"] = 2028
+        inputs["events"] = [event for event in inputs["events"] if event["action"] == "draw_bridge"]
+        inputs["events"].append({"action": "die", "person": "alex", "at": 2027})
+        built = self.build(inputs)
+        built.model.checks = "strict"
+        line = built.items["line"]
+        built.model.step_year()
+        owed_at_death = line.balance
+        built.model.run()
+        self.assertEqual(line.balance, owed_at_death)
+        records = built.model.ledger.to_records()
+        self.assertFalse([r for r in records if r["sink"] == "bridge interest" and r["year"] > 2026])
+        (discharged,) = [
+            r for r in records if r["kind"] == "forfeit" and str(r["to_account"]).startswith("DatedBridgeLine:")
+        ]
+        self.assertAlmostEqual(discharged["amount"], owed_at_death, places=2)
+        assert_conservation(built.model, monthly=True)
 
     def test_collateral_sale_retires_the_line_at_the_sale_date(self):
         inputs = bridge_inputs()

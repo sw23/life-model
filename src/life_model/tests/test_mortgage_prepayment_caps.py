@@ -123,6 +123,36 @@ class TestMortgagePrepaymentCaps(unittest.TestCase):
                     self.assertFalse([line for line in run.model.ledger.to_records() if line["kind"] == "borrow"])
                     assert_conservation(run.model, monthly=True)
 
+    def test_a_renewal_basis_is_whole_cents_in_the_engine_and_the_snapshot(self):
+        inputs = capped_inputs()
+        inputs["people"][0]["housing"][0]["mortgage"].update(rate_pct=4.5)
+        inputs["people"][0]["housing"][0]["mortgage"]["prepayment_privilege"].update(anniversary="2025-01-01", used=0)
+        inputs["events"] = [
+            {
+                "action": "renew_mortgage",
+                "person": "alex",
+                "home": "home",
+                "at": "2026-07",
+                "rate_pct": 5.1,
+                "prepayment_privilege": {"anniversary": "2026-07-01", "annual_limit_pct": 15},
+            },
+            prepay(8, 31),
+        ]
+        built = build_household(spec_of(inputs), config=fixture_config(), collect="month")
+        for _ in range(7):
+            built.model.step()
+        engine_cap = built.items["home"].mortgage.prepayment_privilege
+        self.assertEqual(engine_cap.basis_amount, engine_cap.basis_amount.quantize(Decimal("0.01")))
+        snapshot = spec_from_model(built.model)
+        basis = snapshot.people[0].housing[0].mortgage.prepayment_privilege.basis_amount
+        self.assertEqual(Decimal(str(basis)), engine_cap.basis_amount)
+        resumed = build_household(loads(dumps(snapshot, "yaml"), "yaml"), config=fixture_config(), collect="month")
+        for run in (built, resumed):
+            run.model.step()
+        paid = [run.model.event_log.of_kind(EventKind.MORTGAGE_PREPAYMENT)[-1].amount for run in (built, resumed)]
+        self.assertEqual(paid[0], paid[1])
+        self.assertEqual(paid[0], float(engine_cap.annual_limit))
+
     def test_invalid_contract_inputs_are_rejected(self):
         for changes in ({"annual_limit_pct": 1}, {"anniversary": "2026-02-01"}):
             with self.subTest(changes=changes):

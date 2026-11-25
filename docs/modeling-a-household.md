@@ -73,10 +73,12 @@ give both events IDs that sort with the receipt first (for example, `01-sale` an
 Set the payoff's optional `bridge` to a borrower-owned `bridge_line` id to draw automatically.
 The draw rounds the amount needed to fund the payoff and preserve `cash_floor` up to whole cents,
 then caps it at approved headroom. The payoff records the bridge draw and carries any remaining gap
-as `shortfall_debt`, due with the next month's bills. The model treats bridge interest as
-non-deductible financing expense, including interest on an automatic draw. Qualified refinancing
-can count as acquisition debt up to the prior qualifying principal under U.S. rules.
-[IRS Publication 936](https://www.irs.gov/publications/p936)
+as `shortfall_debt`, due with the next month's bills. Bridge interest is never deductible in the
+model, including interest on an automatic draw. Under U.S. rules, debt that refinances a mortgage
+can stay acquisition debt up to the balance it replaced
+([IRS Publication 936](https://www.irs.gov/publications/p936)), but the model doesn't apply that
+rule to a bridge that pays off a mortgage, so the mortgage-interest deduction can be understated in
+that case.
 
 Schedule `prepay_mortgage` on the last calendar day of a month to apply spendable cash
 to principal after scheduled bills. Each month it uses the same tax holdback as bank-funded

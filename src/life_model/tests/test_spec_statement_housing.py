@@ -162,6 +162,30 @@ class TestRefinanceAndDrawEvents(unittest.TestCase):
         self.assertEqual(model.household.items["line"].improvement_balance, 25000)
         self.assertIn("refinanced", set(result.events["kind"]))
 
+    def test_a_snapshot_after_a_refinance_resumes_with_the_same_balance(self):
+        data = self._data()
+        data["events"] = data["events"][:1]  # the June 2027 refinance
+        built = build_model(spec_of(data), config=fixture_config(), collect="month")
+        built.checks = "strict"
+        mortgage = built.household.items["house"].mortgage
+        for months_after in (1, 2, 7):
+            with self.subTest(months_after=months_after):
+                while (built.year, built.month) < (2027, 6 + months_after):
+                    built.step()
+                resumed = build_model(spec_from_model(built), config=fixture_config(), collect="month")
+                resumed_mortgage = resumed.household.items["house"].mortgage
+                self.assertEqual(resumed_mortgage.payments_made, mortgage.payments_made)
+                self.assertAlmostEqual(resumed_mortgage.principal, mortgage.principal, places=6)
+                later, resumed_later = copy.deepcopy(built), resumed
+                for _ in range(5):
+                    later.step()
+                    resumed_later.step()
+                self.assertAlmostEqual(
+                    resumed_later.household.items["house"].mortgage.principal,
+                    later.household.items["house"].mortgage.principal,
+                    places=6,
+                )
+
     def test_refinance_target_must_be_a_mortgaged_home_or_loan(self):
         data = self._data()
         data["events"][0]["debt"] = "line"

@@ -38,6 +38,7 @@ Every compiled ``LifeEvent`` carries ``spec_source`` (the event or marriage it c
 :func:`~life_model.spec.extract.spec_from_model` reads back.
 """
 
+from datetime import date
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, cast
 
@@ -50,6 +51,21 @@ if TYPE_CHECKING:
 
 #: Event actions applied at build time (constructor inputs) rather than as LifeEvent callables.
 BUILD_TIME_ACTIONS = ("claim_social_security", "die")
+#: Actions compiled to a stage other than ``events`` (a prepayment waits for the month's bills).
+ACTION_STAGES = {"prepay_mortgage": "post_step"}
+
+
+def scheduled_date(event: s.EventBase, *, day_required: bool = True) -> date:
+    """The calendar date of an event dated with an explicit year and month (day 1 when the day is optional).
+
+    The validator guarantees these dates for the actions that call this; a ValueError reports a spec
+    that bypassed it.
+    """
+    at = event.at
+    if at.year is None or at.month is None or (day_required and at.day is None):
+        needed = "a full calendar date" if day_required else "an explicit year and month"
+        raise ValueError(f"'{event.action}' needs {needed}, got {at!r}")
+    return date(at.year, at.month, at.day or 1)
 
 
 class EventTiming:
@@ -188,7 +204,7 @@ def compile_events(builder: "_Builder", timing: EventTiming) -> list[LifeEvent]:
         depth = timing.depth(event)
         for offset, life_event in enumerate(_compile_one(builder, timing, event, year)):
             fixed_month = getattr(life_event, "fixed_month", None)
-            life_event._set_date(fixed_month or month, day if fixed_month in (None, month) else None)
+            life_event.set_date(fixed_month or month, day if fixed_month in (None, month) else None)
             compiled.append(
                 ((life_event.year, life_event.month or 0, life_event.day or 1, depth, index, offset), life_event)
             )
@@ -291,7 +307,7 @@ def _compile_one(builder: "_Builder", timing: EventTiming, event, year: int) -> 
 
     if action == "prepay_mortgage":
         name = _name(event, f"{person.name} prepays the mortgage")
-        return [_life_event(year, name, event, _prepay_mortgage, builder, person, event, stage="post_step")]
+        return [_life_event(year, name, event, _prepay_mortgage, builder, person, event, stage=ACTION_STAGES[action])]
 
     if action == "heloc_draw":
         name = _name(event, f"{person.name} draws ${event.amount:,.0f} on a home equity line")
@@ -450,8 +466,6 @@ def _never_bought(builder: "_Builder", home_id: str | None, action: str) -> bool
 def _sell_home(builder: "_Builder", home_id: str, selling_cost_pct: float | None, day: int | None) -> None:
     if _never_bought(builder, home_id, "home sale"):
         return
-    from datetime import date
-
     when = date(builder.model.year, builder.model.month, day or 1)
     builder.built.items[home_id].sell(selling_cost_pct, when=when)
 
@@ -479,7 +493,6 @@ def _reserve_cash(builder: "_Builder", person, event: s.ReserveCashEvent, name: 
     spendable cash after the year's unpaid tax, so an optional earmark never leaves that tax to
     forced sales.
     """
-    from datetime import date
     from decimal import ROUND_DOWN
 
     from ..account.bank import BankAccount
@@ -602,12 +615,11 @@ def _refinance(builder: "_Builder", event: s.RefinanceEvent) -> None:
     }
     if isinstance(target, Home):
         kwargs["cash_out_for_improvements"] = event.cash_out_for_improvements
+        kwargs["rate_compounding"] = event.rate_compounding
     loan.refinance(event.rate_pct, **kwargs)
 
 
 def _renew_mortgage(builder: "_Builder", event: s.MortgageRenewalEvent) -> None:
-    from datetime import date
-
     if _never_bought(builder, event.home, "mortgage renewal"):
         return
     home = builder.built.items.get(event.home)
@@ -616,10 +628,13 @@ def _renew_mortgage(builder: "_Builder", event: s.MortgageRenewalEvent) -> None:
     if home.sold or home.mortgage is None or home.mortgage.principal <= 0:
         builder.model.event_log.add(Event(f"mortgage renewal skipped: {event.home} has no outstanding mortgage"))
         return
-    assert event.at.year is not None and event.at.month is not None
+    from .builder import prepayment_privilege
+
     new_terms = event.prepayment_privilege
     privilege = (
-        new_terms.resolve(date(event.at.year, event.at.month, 1), home.mortgage.principal)
+        prepayment_privilege(
+            new_terms, as_of=scheduled_date(event, day_required=False), default_basis=home.mortgage.principal
+        )
         if isinstance(new_terms, s.MortgagePrepaymentPrivilege)
         else new_terms
     )
@@ -632,16 +647,13 @@ def _renew_mortgage(builder: "_Builder", event: s.MortgageRenewalEvent) -> None:
 
 
 def _pay_mortgage_at_maturity(builder: "_Builder", event: s.MortgageMaturityEvent) -> None:
-    from datetime import date
-
     from ..housing.home import Home
 
     home = builder.built.items.get(event.home)
     if not isinstance(home, Home) or home.sold or home.person.is_deceased or home.mortgage is None:
         builder.model.event_log.add(Event(f"mortgage payoff skipped: {event.home} has no active homeowner mortgage"))
         return
-    assert event.at.year is not None and event.at.month is not None and event.at.day is not None
-    when = date(event.at.year, event.at.month, event.at.day)
+    when = scheduled_date(event)
     bridge = _owned_bridge(builder, home.person, event.bridge) if event.bridge is not None else None
     home.mortgage.pay_at_maturity(when, interest_due=event.interest_due, cash_floor=event.cash_floor, bridge=bridge)
 
@@ -650,8 +662,6 @@ def _prepay_mortgage(builder: "_Builder", person, event: s.MortgagePrepaymentEve
     """Prepay from the home's current living owner (the surviving spouse after the borrower's death),
     with that owner's cash and tax holdback; a sold home, a paid-off mortgage or a home nobody alive
     owns skips the prepayment."""
-    from datetime import date
-
     from ..housing.home import Home
 
     if _never_bought(builder, event.home, "mortgage prepayment"):
@@ -664,8 +674,7 @@ def _prepay_mortgage(builder: "_Builder", person, event: s.MortgagePrepaymentEve
         return
     if home.person is not person and not person.is_deceased:
         raise ValueError("A mortgage prepayment needs an existing mortgage on the borrower's home")
-    assert event.at.year is not None and event.at.month is not None and event.at.day is not None
-    when = date(event.at.year, event.at.month, event.at.day)
+    when = scheduled_date(event)
     home.mortgage.prepay_surplus(when, cash_fraction=event.cash_fraction, cash_floor=event.cash_floor)
 
 
@@ -683,16 +692,13 @@ def _owned_bridge(builder: "_Builder", person, bridge_id: str):
 
 
 def _bridge_transaction(builder: "_Builder", event: s.DrawBridgeEvent | s.RepayBridgeEvent) -> None:
-    from datetime import date
-
     from ..debt.bridge import DatedBridgeLine
 
     line = builder.built.items.get(event.bridge)
     if not isinstance(line, DatedBridgeLine) or line.home.sold or line.person.is_deceased:
         builder.model.event_log.add(Event(f"bridge transaction skipped: {event.bridge} has no active borrower"))
         return
-    assert event.at.year is not None and event.at.month is not None and event.at.day is not None
-    when = date(event.at.year, event.at.month, event.at.day)
+    when = scheduled_date(event)
     if isinstance(event, s.DrawBridgeEvent):
         line.draw(event.amount, when=when)
     else:

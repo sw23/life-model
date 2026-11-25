@@ -841,7 +841,8 @@ class _Extractor:
             "term_months": None if whole else loan.term_months,
             "payment_monthly": None if abs(payment - default_payment) < 1e-9 else payment,
             "origination": None if loan.origination is None else f"{loan.origination[0]}-{loan.origination[1]:02d}",
-            "payments_made": None if made == 0 or made_from_origination is not None else made,
+            # The origination implies first payment the month after; a refinance pays in its own month.
+            "payments_made": None if made == 0 or made == made_from_origination else made,
             "extra_principal_monthly": loan.extra_principal_monthly,
             "schedule": getattr(loan, "schedule", "contract"),
         }
@@ -1167,8 +1168,8 @@ class _Extractor:
 
         Before the first step they are returned as written. Afterwards an event is re-timed to its
         remaining dates (and ``until`` for a recurring expense), because its anchors or earlier years
-        may already have fired. Keep a dated relative event tied to its anchor if both are pending
-        on the same day, so they still fire in that order.
+        may already have fired. Keep a relative event tied to its anchor if both are first pending on
+        the same date (year, month and day, dated or not), so they still fire in that order.
         """
         from ..lifeevents import LifeEvents
 
@@ -1198,7 +1199,7 @@ class _Extractor:
                 continue
             at = s.At(year=first_year, month=first_month, day=first_day)
             relative = source.at.relative
-            if first_day is not None and relative is not None:
+            if relative is not None:
                 anchor = by_spec_id.get(relative.after)
                 if anchor is not None and first_pending[id(anchor)] == (first_year, first_month, first_day):
                     at = source.at

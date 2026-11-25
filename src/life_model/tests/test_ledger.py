@@ -85,6 +85,16 @@ class TestLedgerEntries(unittest.TestCase):
         self.assertEqual([entry.from_account for entry in ledger.entries], ["Bank:1", "Payer:2"])
         self.assertAlmostEqual(ledger.entries[-1].amount, 0.01)
 
+    def test_bill_split_posts_a_sub_cent_line_left_unfunded_from_the_payer(self):
+        ledger = LifeModel(start_year=2026, end_year=2026).ledger
+        funding = deque([("Bank:1", 4.0)])
+        _BillLine(4.0, FlowKind.SPENDING, None, "bill").post(ledger, "Payer:2", funding=funding)
+        _BillLine(0.003, FlowKind.SPENDING, None, "tail").post(ledger, "Payer:2", funding=funding)
+        self.assertEqual(
+            [(entry.cause, entry.from_account, entry.amount) for entry in ledger.entries],
+            [("bill", "Bank:1", 4.0), ("tail", "Payer:2", 0.003)],
+        )
+
     def test_paycheck_tax_and_spending_are_posted(self):
         model = LifeModel(start_year=2026, end_year=2026)
         person = _person(model, spending=30000)
@@ -167,6 +177,85 @@ class TestMonthlyBillFunding(unittest.TestCase):
         )
         self.assertEqual((first.balance, second.balance, person.debt), (0, 0, 200))
         self.assertEqual(account_residuals(model, 2026, month=1), {})
+        assert_conservation(model, monthly=True)
+
+
+class TestDecemberTaxFunding(unittest.TestCase):
+    def _model(self, first_balance, second_balance, *, salary=100_000, spending=0, second_interest=1.0):
+        config = FinancialConfig(config_file=str(Path(__file__).parent / "fixtures" / "test_config.yaml"))
+        model = LifeModel(start_year=2026, end_year=2026, config=config, collect="month")
+        person = _person(model, spending=spending)
+        first = BankAccount(owner=person, company="First Bank", balance=first_balance, interest_pct=0)
+        second = BankAccount(owner=person, company="Second Bank", balance=second_balance, interest_pct=second_interest)
+        if salary:
+            Job(owner=person, company="Acme", role="Analyst", salary=Salary(model, base_annual=salary))
+        return model, person, first, second
+
+    def test_december_taxes_post_from_the_banks_that_paid(self):
+        model, person, first, second = self._model(0, 50_000, salary=120_000, spending=110_000, second_interest=1.0)
+        model.run()
+
+        taxes = [row for row in model.ledger if row.month == 12 and row.kind == "tax"]
+        by_bank: dict[str, float] = {}
+        for row in taxes:
+            by_bank[row.from_account] = by_bank.get(row.from_account, 0.0) + row.amount
+        self.assertIn(account_label(first), by_bank)
+        self.assertIn(account_label(second), by_bank)
+        self.assertAlmostEqual(by_bank[account_label(first)], 10_000, places=2)
+        self.assertAlmostEqual(
+            by_bank[account_label(first)] + by_bank[account_label(second)],
+            person.tax_returns[2026].total_tax,
+            places=2,
+        )
+        self.assertEqual(first.balance, 0)
+        self.assertEqual(account_residuals(model, 2026, month=12), {})
+        self.assertEqual(account_residuals(model, 2026), {})
+        assert_conservation(model, monthly=True)
+
+    def test_unfunded_december_tax_reconciles_through_debt(self):
+        model, person, first, second = self._model(1_000, 2_000, salary=120_000, spending=119_000, second_interest=0)
+        model.run()
+
+        self.assertEqual((first.balance, second.balance), (0, 0))
+        self.assertGreater(person.debt, 0)
+        (borrowing,) = [row for row in model.ledger if row.month == 12 and row.kind == "borrow"]
+        self.assertEqual(
+            (borrowing.from_account, borrowing.to_account),
+            (debt_label(person), account_label(first)),
+        )
+        self.assertEqual(account_residuals(model, 2026, month=12), {})
+        self.assertEqual(account_residuals(model, 2026), {})
+        assert_conservation(model, monthly=True)
+
+    def test_december_net_refund_reconciles_to_highest_yield_bank(self):
+        model, person, first, second = self._model(1_000, 2_000, salary=15_000, second_interest=2.0)
+        person.add_child("Kid", birth_year=2020)
+        model.run()
+
+        self.assertLess(person.tax_returns[2026].total_tax, 0)
+        refunds = [row for row in model.ledger if row.month == 12 and row.kind == "tax" and row.amount < 0]
+        self.assertTrue(refunds)
+        self.assertTrue(all(row.from_account == account_label(second) for row in refunds))
+        self.assertGreater(second.balance, 2_000 + abs(person.tax_returns[2026].total_tax))
+        self.assertGreater(first.balance, 0)
+        self.assertEqual(account_residuals(model, 2026, month=12), {})
+        self.assertEqual(account_residuals(model, 2026), {})
+        assert_conservation(model, monthly=True)
+
+    def test_december_partial_credit_split_across_banks_reconciles(self):
+        # Refundable federal credits leave federal income tax negative while FICA keeps net tax due positive.
+        model, person, first, second = self._model(0, 5_000, salary=25_000, spending=19_500, second_interest=1.0)
+        person.add_child("Kid", birth_year=2020)
+        model.run()
+
+        self.assertGreater(person.tax_returns[2026].total_tax, 0)
+        dec_taxes = [row for row in model.ledger if row.month == 12 and row.kind == "tax"]
+        self.assertTrue(any(row.amount < 0 and row.from_account == account_label(first) for row in dec_taxes))
+        self.assertTrue(any(row.amount > 0 and row.from_account == account_label(second) for row in dec_taxes))
+        self.assertEqual(first.balance, 0)
+        self.assertLess(second.balance, 5_000)
+        self.assertEqual(account_residuals(model, 2026, month=12), {})
+        self.assertEqual(account_residuals(model, 2026), {})
         assert_conservation(model, monthly=True)
 
 

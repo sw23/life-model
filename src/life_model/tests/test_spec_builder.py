@@ -352,7 +352,7 @@ class TestEventTiming(unittest.TestCase):
     def test_day_validation_respects_event_timing(self):
         at = {"year": 2027, "month": 2, "day": 5}
         cases = [
-            ({"action": "die", "at": at}, "uses an age threshold"),
+            ({"action": "die", "at": at}, "a day would have no effect"),
             ({"action": "convert_to_roth", "at": at, "fill_bracket_pct": 12}, "must be scheduled in December"),
             ({"action": "recurring_expense", "at": 2026, "until": at, "amount_annual": 1}, "selects the last year"),
         ]

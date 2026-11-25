@@ -720,7 +720,7 @@ class TaxUnit:
         return amount
 
     def _payer_account(self):
-        """The fallback cash account for unfunded amounts and lump-sum annual bills."""
+        """The fallback cash account for unfunded amounts and single-account settlements."""
         accounts = self._bank_accounts_in_draw_order()
         if accounts:
             return accounts[0]
@@ -1415,9 +1415,8 @@ class TaxUnit:
 
         The household waterfall (all banks, fixed income, all brokerage, Roth basis under 59.5, pre-tax,
         remaining Roth, emergency reserves) moves into the banks only what the taxes still need, each
-        taxable step sized against the tax it triggers. The taxes are posted to the ledger by line
-        (``_BillLine``) from the household's payer account (:meth:`_payer_account`); a shortfall
-        becomes debt.
+        taxable step sized against the tax it triggers. Tax postings use the accounts that funded them,
+        falling back to :meth:`_payer_account` for unfunded amounts; a shortfall becomes debt.
         """
         model = self.members[0].model
         year = model.year
@@ -1465,18 +1464,25 @@ class TaxUnit:
         # (which would create negative debt).
         payer = self._payer_account()
         net_due = bills + taxes.total
+        paid_from: dict = {}
         if net_due >= 0:
-            shortfall = round_money(max(0.0, self.pay_from_banks(net_due)))
+            shortfall = round_money(max(0.0, self.pay_from_banks(net_due, paid_from=paid_from)))
+            post_payer = payer
+            # With one funding account, each tax line stays one entry.
+            funding = deque(paid_from.items()) if any(account is not payer for account in paid_from) else None
         else:
             # The refund lands in the highest-yield bank (or the head's cash pocket without one).
             accounts = self._bank_accounts_in_draw_order()
             if accounts:
-                accounts[-1].balance += -net_due
+                post_payer = accounts[-1]
+                post_payer.balance += -net_due
             else:
+                post_payer = payer
                 self.members[0].receive_cash(-net_due, source="refundable tax credits", post=False)
             shortfall = 0.0
+            funding = None
         for line in bill_lines:
-            line.post(model.ledger, payer)
+            line.post(model.ledger, post_payer, funding=funding)
         self.members[0].add_debt(shortfall, to_account=payer, cause=f"unpaid {year} taxes")
 
         self._record_stats(taxes, tax_return)
@@ -1905,8 +1911,9 @@ class _BillLine:
                 funding.popleft()
             else:
                 funding[0] = (account, available - paid)
-        if remaining >= 0.005:
-            # The unfunded portion uses the account paired with the new debt.
+        if remaining > 0:
+            # The unfunded portion uses the account paired with the new debt. Splits fold roundoff
+            # above, so this is a real amount: a shortfall, or a line arriving after funding ran out.
             self._post_cash(ledger, payer, remaining)
 
     def _post_cash(self, ledger, account, amount: float) -> None:

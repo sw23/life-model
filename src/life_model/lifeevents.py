@@ -21,9 +21,9 @@ Events in the same schedule and stage fire by calendar day. An unspecified day s
 Events on the same day keep their scheduled order.
 """
 
+import calendar
 import warnings
 from collections.abc import Callable
-from datetime import date
 from typing import ClassVar
 
 from .model import Event, EventKind, LifeModelAgent
@@ -167,21 +167,32 @@ class LifeEvent:
         if stage not in LIFE_EVENT_STAGES:
             raise ValueError(f"Unknown life event stage {stage!r}; expected one of {LIFE_EVENT_STAGES}")
         self.year = year
-        self._set_date(month, day)
+        self.set_date(month, day)
         self.name = name
         self.event = event
         self.event_args = event_args
         self.stage = stage
 
-    def _set_date(self, month: int | None, day: int | None) -> None:
-        """Validate the date supplied directly or resolved by the spec compiler."""
+    def set_date(self, month: int | None, day: int | None) -> None:
+        """Set the month and day the event fires in, within its ``year``.
+
+        Args:
+            month (int, optional): Month (1-12), or None for the first simulated month of the year.
+            day (int, optional): Calendar day within ``month``; requires an explicit month.
+
+        Raises:
+            ValueError: The month is outside 1-12, a day is given without a month, or the day does
+                not exist in that month.
+        """
         month = None if month is None else int(month)
         if month is not None and not 1 <= month <= 12:
             raise ValueError(f"Life event month must be 1-12, got {month}")
         if day is not None:
             if month is None:
                 raise ValueError("A life event day requires an explicit month")
-            date(self.year, month, day)
+            last_day = calendar.monthrange(self.year, month)[1]
+            if not 1 <= int(day) <= last_day:
+                raise ValueError(f"Life event day must be 1-{last_day} for {self.year}-{month:02d}, got {day}")
         self.month = month
         self.day = day
 
