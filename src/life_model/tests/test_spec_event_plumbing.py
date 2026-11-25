@@ -7,11 +7,14 @@
 schema's independence from the engine."""
 
 import ast
+import itertools
 import typing
 import unittest
 import warnings
 from datetime import date
 from pathlib import Path
+
+from pydantic import ValidationError
 
 from ..debt import terms
 from ..lifeevents import LifeEvent
@@ -188,6 +191,103 @@ class TestEventsBeforeTheirHome(unittest.TestCase):
             }
         ]
         self.assertEqual(errors(validate_spec(data, config=fixture_config())), [])
+
+
+#: Actions on an added home, by spec inputs (events stage, plus the post_step prepayment).
+_ORDER_ACTIONS = {
+    "renew_mortgage": {"home": "new_home", "rate_pct": 4},
+    "refinance": {"debt": "new_home", "rate_pct": 4, "term_years": 15},
+    "move": {"sell_home": "new_home"},
+    "pay_mortgage_at_maturity": {"home": "new_home", "interest_due": 10},
+    "prepay_mortgage": {"home": "new_home"},
+}
+#: Dates for the event adding the home: the start year's first month, explicit months and days (including a
+#: month's last day, where only the stage orders it against a prepayment), and age timing.
+_ADD_DATES = [
+    {"year": 2026},
+    {"year": 2026, "month": 4},
+    {"year": 2027},
+    {"year": 2027, "month": 3},
+    {"year": 2027, "month": 3, "day": 10},
+    {"year": 2027, "month": 3, "day": 31},
+    {"age": 41},
+]
+#: Dates for the action: the same set, more days, and timing relative to the addition (which has its day or not).
+_ACTION_DATES = [
+    *_ADD_DATES,
+    {"year": 2026, "month": 4, "day": 30},
+    {"year": 2027, "month": 3, "day": 1},
+    {"year": 2027, "month": 3, "day": 20},
+    {"relative": {"after": "m_add"}},
+    {"relative": {"after": "m_add", "years": 1}},
+]
+
+
+def _order_case(start, adder, add_at, action, at, action_id) -> dict:
+    # Born March 1986: age-timed events fall in March, and the opening age matches either start month.
+    data = minimal(age=40 if start else 39, birth="1986-03")
+    data["meta"]["end_year"] = 2028
+    if start is not None:
+        data["meta"]["start"] = start
+    data["people"][0]["accounts"][0]["balance"] = 500000
+    home = {
+        "id": "new_home",
+        "kind": "home",
+        "purchase_price": 300000,
+        "down_payment": 60000,
+        "pmi": False,
+        "expenses": {},
+        "mortgage": {"original_amount": 240000, "rate_pct": 5, "term_years": 30},
+    }
+    add = {"id": "m_add", "person": "alex", "at": add_at, "action": adder}
+    add.update({"home": home} if adder == "buy_home" else {"buy_home": home})
+    data["events"] = [add, {"id": action_id, "person": "alex", "action": action, "at": at, **_ORDER_ACTIONS[action]}]
+    return data
+
+
+def _engine_fires_action_first(data: dict, config) -> bool | None:
+    """Whether the engine fires the action before the addition (None unless both fire in the run).
+
+    Every compiled event's callable is replaced by a recorder, so the order is the engine's real
+    firing order and an action on a missing home cannot fail."""
+    built = build_household(spec_of(data), config=config, check=False, collect_data=False)
+    fired: list[str] = []
+    for life_event in built.life_events.life_events:
+        life_event.event, life_event.event_args = (lambda source=life_event.spec_source: fired.append(source.id)), ()
+    built.model.run()
+    return None if len(fired) != 2 else fired[0] != "m_add"
+
+
+class TestEventOrderMatchesEngine(unittest.TestCase):
+    def test_event_order_errors_match_the_engine_firing_order(self):
+        """The validator's event_order error appears exactly when the compiled events fire the action first."""
+        config = fixture_config()
+        compared = {True: 0, False: 0}
+        mismatches = []
+        grid = itertools.product(
+            (None, "2026-04"), ("buy_home", "move"), _ADD_DATES, _ORDER_ACTIONS, _ACTION_DATES, ("a_action", "z_action")
+        )
+        for case in grid:
+            data = _order_case(*case)
+            try:
+                spec = spec_of(data)
+            except ValidationError:
+                continue  # a date the action does not accept (e.g. a renewal not on the 1st)
+            found = errors(validate_spec(spec, config=config))
+            if any(f.code != "event_order" for f in found):
+                continue
+            first = _engine_fires_action_first(data, config)
+            if first is None:
+                continue
+            compared[first] += 1
+            if any(f.code == "event_order" for f in found) != first:
+                mismatches.append(
+                    (case, "engine fires the action first" if first else "engine fires the addition first")
+                )
+        self.assertEqual(mismatches, [])
+        # Both outcomes are well covered, so the comparison cannot pass vacuously.
+        self.assertGreater(compared[True], 300)
+        self.assertGreater(compared[False], 300)
 
 
 class TestSchemaIndependence(unittest.TestCase):
