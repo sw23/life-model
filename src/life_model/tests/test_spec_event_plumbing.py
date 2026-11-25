@@ -39,7 +39,7 @@ class TestLifeEventDate(unittest.TestCase):
         self.assertEqual((event.month, event.day), (3, 15))
         event.set_date(None, None)
         self.assertEqual((event.month, event.day), (None, None))
-        for month, day, message in ((13, None, "1-12"), (None, 5, "explicit month"), (2, 30, "day is out of range")):
+        for month, day, message in ((13, None, "1-12"), (None, 5, "explicit month"), (2, 30, "1-28 for 2027-02")):
             with self.subTest(month=month, day=day), self.assertRaisesRegex(ValueError, message):
                 event.set_date(month, day)
 

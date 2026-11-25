@@ -21,9 +21,9 @@ Events in the same schedule and stage fire by calendar day. An unspecified day s
 Events on the same day keep their scheduled order.
 """
 
+import calendar
 import warnings
 from collections.abc import Callable
-from datetime import date
 from typing import ClassVar
 
 from .model import Event, EventKind, LifeModelAgent
@@ -190,7 +190,9 @@ class LifeEvent:
         if day is not None:
             if month is None:
                 raise ValueError("A life event day requires an explicit month")
-            date(self.year, month, day)
+            last_day = calendar.monthrange(self.year, month)[1]
+            if not 1 <= int(day) <= last_day:
+                raise ValueError(f"Life event day must be 1-{last_day} for {self.year}-{month:02d}, got {day}")
         self.month = month
         self.day = day
 
