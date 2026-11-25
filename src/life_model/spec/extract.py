@@ -1216,10 +1216,16 @@ class _Extractor:
         from ..debt.bridge import DatedBridgeLine
 
         lines = {self.item_id(line): line for line in self.model.agents if isinstance(line, DatedBridgeLine)}
+        skipped = getattr(getattr(self.model, "household", None), "skipped_homes", set())
         events: list[s.Event] = []
         for source in self.pending_sources():
             if isinstance(source, s.Marriage):
                 continue
+            # A home whose purchase was skipped (the buyer had died) never exists: drop later events on it.
+            if _home_target(source) in skipped:
+                continue
+            if isinstance(source, s.MoveEvent) and source.sell_home in skipped:
+                source = source.model_copy(update={"sell_home": None})
             if isinstance(source, s.BridgeEvent) and (line := lines.get(source.bridge)) is not None:
                 if line.home.sold or line.person.is_deceased:
                     continue
@@ -1231,6 +1237,17 @@ class _Extractor:
             events.append(source)
         events += [record["event"] for record in self.build_time]
         return _sorted(events)
+
+
+def _home_target(event) -> str | None:
+    """The home id an event acts on (a refinance's ``debt`` when it names a home), else None."""
+    if isinstance(
+        event, s.SellHomeEvent | s.MortgageRenewalEvent | s.MortgageMaturityEvent | s.MortgagePrepaymentEvent
+    ):
+        return event.home
+    if isinstance(event, s.RefinanceEvent):
+        return event.debt
+    return None
 
 
 _DEFAULT_FIXED_NAMES = {"cd": "CD", "treasury": "Treasury", "i_bond": "I bond", "bond_fund": "Bond fund"}

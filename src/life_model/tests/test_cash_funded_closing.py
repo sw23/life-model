@@ -305,3 +305,27 @@ class TestPurchaseAfterTheBuyersDeath(unittest.TestCase):
                     notes = [e.message for e in built.model.event_log.of_kind("note")]
                     self.assertTrue(any("home purchase skipped" in n for n in notes), notes)
                     self.assertTrue(any("home sale skipped" in n for n in notes), notes)
+
+    def test_snapshot_after_a_skipped_purchase_drops_events_on_that_home(self):
+        from ..spec import validate_spec
+        from ..spec.validate import errors
+
+        spec = self._spec(cash_funding=True, married=True)
+        continuous = build_household(spec, config=fixture_config(), collect="month")
+        continuous.model.run()
+        partial = build_household(spec, config=fixture_config(), collect="month")
+        for _ in range(15):
+            partial.model.step()
+        snapshot = loads(dumps(spec_from_model(partial.model), "yaml"), "yaml")
+        self.assertEqual(errors(validate_spec(snapshot)), [])
+        self.assertNotIn("sell_home", [event.action for event in snapshot.events])
+        resumed = build_household(snapshot, config=fixture_config(), collect="month")
+        resumed.model.checks = "strict"
+        resumed.model.run()
+        assert_conservation(resumed.model, monthly=True)
+        last = (2028, 12)
+        self.assertAlmostEqual(
+            resumed.model.month_balance_sheets[last].closing.net_worth,
+            continuous.model.month_balance_sheets[last].closing.net_worth,
+            places=6,
+        )
