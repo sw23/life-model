@@ -169,13 +169,19 @@ class TestLongTermCare(unittest.TestCase):
 
 
 def _care_model(overrides=None, start_year=2026, end_year=2026, seed=None):
-    """A flat-dollar model (zero CPI and medical premium) with ``healthcare.long_term_care`` overrides."""
+    """A flat-dollar model (zero CPI and medical premium) with ``healthcare.long_term_care`` overrides.
+
+    No episode starts on its own unless ``overrides`` sets ``hazard_bands``, so a test's scripted
+    episodes are the only care in the run.
+    """
     from ..config.financial_config import FinancialConfig
 
     cfg = FinancialConfig()
     overlay = {"economy": {"inflation": 0.0}, "healthcare": {"medical_inflation_premium": 0.0}}
-    if overrides:
-        overlay["healthcare"]["long_term_care"] = overrides
+    overlay["healthcare"]["long_term_care"] = {
+        "hazard_bands": [{"max_age": 200, "annual_hazard": 0.0}],
+        **(overrides or {}),
+    }
     cfg.apply_scenario("care", overlay)
     return LifeModel(start_year=start_year, end_year=end_year, seed=seed, config=cfg)
 
