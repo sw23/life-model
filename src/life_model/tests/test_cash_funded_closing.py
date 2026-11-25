@@ -8,7 +8,7 @@ import unittest
 from ..account.bank import BankAccount
 from ..checks import account_residuals, assert_conservation
 from ..housing.home import Home, HomeExpenses
-from ..spec import build_household
+from ..spec import build_household, spec_from_model
 from ..spec.io import Format, dumps, loads
 from .spec_helpers import fixture_config, minimal, spec_of
 
@@ -189,6 +189,22 @@ class TestCashFundedClosing(unittest.TestCase):
         )
         self.assertEqual((first.balance, second.balance, owner.debt, home.home_value), (0, 0, 0, 1000.13))
         self.assertAlmostEqual(sum(row.amount for row in built.model.ledger if row.sink == "closing costs"), 2.23)
+
+    def test_a_semiannual_quote_converts_before_the_new_loan_amortizes(self):
+        from ..debt.terms import mortgage_rate_on_monthly_basis
+
+        spec = self._spec(27)
+        spec.events[1].cash_funding.rate_pct = 5
+        spec.events[1].cash_funding.rate_compounding = "semiannual"
+        self.assertEqual(loads(dumps(spec, "yaml"), "yaml"), spec)
+        built = build_household(spec, config=fixture_config(), collect="month", check=False)
+        built.model.step()
+        mortgage = built.items["new_home"].mortgage
+        self.assertEqual((mortgage.quoted_rate_pct, mortgage.rate_compounding), (5, "semiannual"))
+        self.assertAlmostEqual(mortgage.yearly_interest_rate, mortgage_rate_on_monthly_basis(5, "semiannual"))
+        snapshot = spec_from_model(built.model)
+        (home,) = [h for h in snapshot.people[0].housing if h.id == "new_home"]
+        self.assertEqual(home.mortgage.rate_compounding, "semiannual")
 
     def test_cash_only_purchase_posts_any_unpaid_amount_as_debt(self):
         from unittest import mock

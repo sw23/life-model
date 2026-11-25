@@ -418,7 +418,10 @@ def _buy_home(builder: "_Builder", person, home: s.Home, cash_funding: s.HomeCas
         principal = price - down
         mortgage = (
             s.Mortgage(
-                original_amount=float(principal), rate_pct=cash_funding.rate_pct, term_years=cash_funding.term_years
+                original_amount=float(principal),
+                rate_pct=cash_funding.rate_pct,
+                rate_compounding=cash_funding.rate_compounding,
+                term_years=cash_funding.term_years,
             )
             if principal
             else None
