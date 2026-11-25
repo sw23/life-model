@@ -110,6 +110,29 @@ limit applies to principal. A sale of
 the collateral clears the bridge through the sale date before depositing the net proceeds.
 For same-day events that rely on one another, give them IDs that sort in the intended order.
 
+To set cash aside for a later date, such as a deposit held for a closing, schedule `reserve_cash`
+with the funding `bank` (an account the person owns), the `amount` and a `release_on` date in a
+later month, at an explicit `at: {year, month, day}`. Cash already earmarked on the statement date
+is an opening `cash_reserve` account with its `balance` and `release_on`. Earmarked cash counts in
+net worth (the model frame reports it as Cash Reserve Balance, not Bank Balance), earns no interest,
+and is never drawn to pay bills, even when the household has to borrow. On the release date it
+returns to the bank before that day's other events, so a same-day closing can use it. The earmark
+takes at most the bank's balance and the owner's cash after the year's unpaid tax; the
+`cash_reserved` event records the requested and earmarked amounts. After the person's death the
+bank's surviving owner funds it. The validator warns (`release_after_run`) when the release falls
+after the run ends.
+
+A `buy_home` event can size the purchase from bank cash with `cash_funding`: the `closing_costs`,
+a `cash_floor` to keep in the bank, the `minimum_down_payment`, the `mortgage_limit`, and the new
+loan's `rate_pct` (with `rate_compounding: semiannual` for a semiannual quote) and `term_years`.
+The required down payment, the larger of the minimum and the price above the mortgage limit, can
+use all bank cash above the costs and floor. `down_payment_fraction` and `extra_down_payment` add
+an optional share from cash left after the year's unpaid tax. The mortgage covers the rest of the
+price. When the bank can't cover the required down payment, the `closing_shortfall` event records
+the gap and the purchase closes on the required down payment through the household payment
+waterfall, so any amount no account covers becomes `shortfall_debt`. A purchase dated after the
+buyer's death is skipped, and later events on that home skip too.
+
 Two rules matter most. **Never invent a value**: a missing balance or rate is a question for the
 person, or a labeled assumption, never a plausible-looking number. Behavioral inputs that
 statements never show (raises, spending growth) are not "missing values": use the economy-linked
