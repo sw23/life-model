@@ -2463,11 +2463,22 @@ class Healthcare(SpecModel):
         "Without it an unpaid care cost becomes debt. Needs long_term_care.",
         core="LongTermCare.medicaid",
     )
+    facility_spending_offset_pct: Annotated[float, Field(ge=0, le=100)] | None = spec_field(
+        None,
+        description="Percent of the person's living spending (the base and essential spending lines) an assisted "
+        "living or nursing home fee replaces, cut for each month there, instead of each facility's configured "
+        "offset (assisted living 55.1%, nursing home 70.5%; home care is never cut). A spouse at home keeps their "
+        "own spending. Needs long_term_care.",
+        unit="percent",
+        core="LongTermCare.facility_spending_offset_pct",
+    )
 
     @model_validator(mode="after")
     def _medicaid_needs_care(self) -> "Healthcare":
         if self.medicaid and not self.long_term_care:
             raise ValueError("medicaid needs long_term_care: true (Medicaid here pays long-term care)")
+        if self.facility_spending_offset_pct is not None and not self.long_term_care:
+            raise ValueError("facility_spending_offset_pct needs long_term_care: true")
         return self
 
 

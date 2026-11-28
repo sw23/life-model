@@ -220,7 +220,10 @@ notes go in the git-ignored `CLAUDE.local.md`.
   spending; health costs stop with the job (no coverage before Medicare, no Medicare premiums without
   `healthcare`); funeral and final-year medical costs are charged only for a person with a `healthcare`
   block; long-term care is off unless `healthcare.long_term_care`, and an unpaid care cost becomes debt
-  unless `healthcare.medicaid` (an `ltc` policy without `long_term_care` only pays premiums); a person
+  unless `healthcare.medicaid` (an `ltc` policy without `long_term_care` only pays premiums); an assisted
+  living or nursing home month cuts the resident's own living spending (base and essential lines) by the
+  setting's `spending_offset_pct` (BLS CE shares; `healthcare.facility_spending_offset_pct` overrides), and
+  all of it on Medicaid, while housing bills, debts and the spouse's spending continue; a person
   with no state files in `DEFAULT` (a flat 6% of the federal-style base);
   taxes are paid as a December lump unless a job withholds or the person pays estimates. An unknown
   state code is an error (`UnknownStateError`), never a silent fallback. The spec validator warns or

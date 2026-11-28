@@ -13,7 +13,10 @@ care episode in a setting drawn from the configured entry shares (home care, ass
 nursing home), lasting a whole number of months drawn from a geometric distribution with the
 configured mean. While in care, a twelfth of the setting's annual cost (indexed by medical inflation)
 is charged each month through ``person.spending.add_expense``, and the setting's mortality multiplier
-raises the person's death hazard (see :meth:`Person.annual_mortality_chance`).
+raises the person's death hazard (see :meth:`Person.annual_mortality_chance`). A facility's fee replaces
+part of the resident's living spending: each month there, their base and essential spending lines are cut
+by the setting's ``spending_offset_pct`` (or the person's ``facility_spending_offset_pct``; home care cuts
+nothing), see :meth:`Spending.offset_month`. A spouse at home keeps their own spending.
 
 Active ``InsuranceType.LONG_TERM_CARE`` policies reimburse the year's care cost at the year end (or at
 death): the care months after the policy's elimination period (met once, counted over every episode),
@@ -21,13 +24,16 @@ up to the year's benefit (the issued benefit grown by any inflation rider) and t
 lifetime maximum. With ``medicaid=True``, Medicaid pays a care month once the person's countable assets
 (with a spouse at home: the couple's, less the community spouse resource allowance) are at most the asset
 limit; the person then pays only their income above the personal needs allowance (and above what a spouse
-at home keeps up to the minimum monthly maintenance needs allowance).
+at home keeps up to the minimum monthly maintenance needs allowance). A facility resident on Medicaid pays
+none of their living spending on top of that (the personal needs allowance is what they keep).
 
 Documented simplifications:
 
 * At most one episode is active at a time; the setting is fixed for the episode (no move from home care
   to a facility).
-* Living spending, housing and other bills continue unchanged while in care.
+* Housing (a home's costs and mortgage, rent), debts and one-time bills continue unchanged while in care;
+  the facility offset cuts only the ``Spending`` base and essential lines. Home care cuts nothing, on
+  Medicaid too.
 * Medicaid: every financial account and cash counts (the home, cars and pensions do not); the
   community spouse keeps the full resource allowance; no look-back period, home-equity limit or estate
   recovery. Income for the patient's share is last month's Social Security, pension, annuity and
@@ -68,19 +74,25 @@ class LongTermCare(LifeModelAgent):
     # The year's claim runs before the tax settlement (0), which deducts the net medical cost.
     STEP_PRIORITY: ClassVar[dict[str, int]] = {"on_year_end": -5}
 
-    def __init__(self, person: Person, *, medicaid: bool = False):
+    def __init__(self, person: Person, *, medicaid: bool = False, facility_spending_offset_pct: float | None = None):
         """Model long-term-care need and costs for a person.
 
         Args:
             person: The person at risk of needing long-term care.
             medicaid: Medicaid pays care once countable assets are spent down to the configured limit
                 (keyword-only; off by default: an unpaid care cost becomes debt).
+            facility_spending_offset_pct: Percent of the person's living spending a facility's fee replaces,
+                instead of each facility setting's configured ``spending_offset_pct`` (keyword-only; None: the
+                configured offsets). Home care (a setting configured with no offset) is never cut.
         """
         super().__init__(cast(LifeModel, person.model))
         self.model: LifeModel = cast(LifeModel, self.model)
         self.person = person
         self.config = self.model.config.healthcare.long_term_care
         self.medicaid = medicaid
+        if facility_spending_offset_pct is not None and not 0 <= facility_spending_offset_pct <= 100:
+            raise ValueError(f"facility_spending_offset_pct must be 0-100, got {facility_spending_offset_pct}")
+        self.facility_spending_offset_pct = facility_spending_offset_pct
         self._stream: random.Random | None = None
         self.in_care = False
         self.care_months_remaining = 0
@@ -124,6 +136,22 @@ class LongTermCare(LifeModelAgent):
 
     def _setting_named(self, name: str):
         return next((setting for setting in self.config.settings if setting.name == name), None)
+
+    @property
+    def spending_offset_pct(self) -> float:
+        """Percent of living spending the current setting's fee replaces: the person's override for a facility
+        (a setting configured with an offset), else the setting's configured offset; 0 out of care."""
+        if not self.in_care:
+            return 0.0
+        configured = self.setting.spending_offset_pct
+        if configured > 0 and self.facility_spending_offset_pct is not None:
+            return float(self.facility_spending_offset_pct)
+        return configured
+
+    @property
+    def spending_offset_this_year(self) -> float:
+        """Living spending this year that facility fees replaced (the cut on the person's ``Spending``)."""
+        return self.person.spending.facility_offset_this_year
 
     @property
     def mortality_multiplier(self) -> float:
@@ -196,10 +224,12 @@ class LongTermCare(LifeModelAgent):
         self.care_months_remaining = self._draw_episode_months() if months is None else int(months)
         self.episodes_started += 1
         self.episode_starts.append((self.model.year, self.model.month))
+        offset = self.spending_offset_pct
+        cut = f"; living spending cut {offset:g}% while there" if offset else ""
         self.model.event_log.add(
             Event(
                 f"{self.person.name} entered long-term care ({chosen.name.replace('_', ' ')}) at age "
-                f"{self.person.age} ({self.care_months_remaining} month(s) expected)"
+                f"{self.person.age} ({self.care_months_remaining} month(s) expected{cut})"
             )
         )
 
@@ -272,6 +302,8 @@ class LongTermCare(LifeModelAgent):
         annual = self.config.annual_cost if setting.annual_cost is None else setting.annual_cost
         gross = annual * self._medical_inflation_factor() / 12
         charged = gross
+        paid = 0.0
+        offset_pct = self.spending_offset_pct
         if self.medicaid and self.medicaid_eligible():
             spouse = self._community_spouse()
             spouse_income = self._last_spouse_income if spouse is not None else None
@@ -282,6 +314,12 @@ class LongTermCare(LifeModelAgent):
             if paid > 0 and self.medicaid_paid_this_year == 0:
                 self.model.event_log.add(Event(f"Medicaid began paying {self.person.name}'s long-term care"))
             self.medicaid_paid_this_year = snap_money(self.medicaid_paid_this_year + paid)
+        # The facility's fee replaces the resident's living spending this month (charged with this month's
+        # bills, after this stage). A Medicaid resident of a facility keeps only the personal needs
+        # allowance, so none of their living spending is paid on top of patient pay.
+        on_medicaid = paid > 0 and setting.spending_offset_pct > 0
+        if on_medicaid or offset_pct > 0:
+            self.person.spending.offset_month(100.0 if on_medicaid else offset_pct, all_lines=on_medicaid)
         self.care_months_total += 1
         self._charged_period = self.model.period
         self._months_this_year.append((self.care_months_total, charged))

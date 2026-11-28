@@ -471,5 +471,155 @@ class TestMedicaidLongTermCare(unittest.TestCase):
         self.assertFalse(ltc.medicaid_eligible())
 
 
+#: SETTINGS with facility spending offsets (home care keeps all living spending).
+OFFSET_SETTINGS = [
+    dict(SETTINGS[0], spending_offset_pct=0.0),
+    dict(SETTINGS[1], spending_offset_pct=40.0),
+    dict(SETTINGS[2], spending_offset_pct=50.0),
+]
+
+
+class TestFacilitySpendingOffset(unittest.TestCase):
+    """A facility replaces the resident's housing, food, utilities and transport: their living spending is cut
+    by the setting's offset for each facility month (Plan 33 D1)."""
+
+    def _person(self, model, *, base=36000, name="P", family=None, balance=10_000_000, **spending):
+        family = family or Family(model)
+        person = Person(
+            family=family,
+            name=name,
+            age=80,
+            retirement_age=65,
+            spending=Spending(model, base_annual=base, **spending),
+        )
+        BankAccount(owner=person, company="Bank", balance=balance)
+        return person
+
+    def test_a_nursing_home_month_cuts_the_resident_spending_by_the_offset(self):
+        """Five nursing-home months at a 50% offset: $36,000 a year of base spending pays $1,500 less each."""
+        model = _care_model({"settings": OFFSET_SETTINGS})
+        person = self._person(model)
+        ltc = LongTermCare(person)
+        ltc.start_episode("nursing_home", months=5)
+        model.step_year()
+        self.assertAlmostEqual(person.spending.facility_offset_this_year, 5 * 1500)
+        self.assertAlmostEqual(ltc.spending_offset_this_year, 5 * 1500)
+        # The base pays 7 full months and 5 half months; the care cost is charged on top.
+        self.assertAlmostEqual(person.stat_money_spent, 7 * 3000 + 5 * 1500 + 120000 * 5 / 12)
+
+    def test_each_facility_setting_uses_its_own_offset(self):
+        for name, pct in (("assisted_living", 40.0), ("nursing_home", 50.0)):
+            with self.subTest(setting=name):
+                model = _care_model({"settings": OFFSET_SETTINGS})
+                person = self._person(model)
+                LongTermCare(person).start_episode(name, months=12)
+                model.step_year()
+                self.assertAlmostEqual(person.spending.facility_offset_this_year, 36000 * pct / 100)
+
+    def test_home_care_leaves_spending_unchanged(self):
+        model = _care_model({"settings": OFFSET_SETTINGS})
+        person = self._person(model)
+        LongTermCare(person).start_episode("home_care", months=12)
+        model.step_year()
+        self.assertEqual(person.spending.facility_offset_this_year, 0.0)
+        self.assertAlmostEqual(person.stat_money_spent, 36000 + 60000)
+
+    def test_a_married_resident_spouse_keeps_their_spending(self):
+        """Only the resident's own spending is cut; the spouse at home pays their whole base."""
+        model = _care_model({"settings": OFFSET_SETTINGS})
+        family = Family(model)
+        a = self._person(model, name="A", family=family)
+        b = self._person(model, name="B", family=family, base=30000)
+        a.get_married(b)
+        LongTermCare(a).start_episode("nursing_home", months=12)
+        LongTermCare(b)
+        model.step_year()
+        self.assertAlmostEqual(a.spending.facility_offset_this_year, 18000)
+        self.assertEqual(b.spending.facility_offset_this_year, 0.0)
+        self.assertAlmostEqual(a.stat_money_spent + b.stat_money_spent, 18000 + 120000 + 30000)
+
+    def test_the_offset_applies_to_essential_lines_not_discretionary_ones(self):
+        """Categorized spending: essential lines are cut with the base; discretionary lines are kept."""
+        from ..people.person import SpendingLine
+
+        model = _care_model({"settings": OFFSET_SETTINGS})
+        person = self._person(
+            model,
+            base=12000,
+            categories={
+                "groceries": SpendingLine(6000, essential=True),
+                "travel": SpendingLine(4800, essential=False),
+            },
+        )
+        LongTermCare(person).start_episode("nursing_home", months=12)
+        model.step_year()
+        self.assertAlmostEqual(person.spending.facility_offset_this_year, (12000 + 6000) * 0.5)
+        # Half the base and groceries, all of the travel, plus the care cost.
+        self.assertAlmostEqual(person.stat_money_spent, 6000 + 3000 + 4800 + 120000)
+
+    def test_one_time_expenses_are_not_cut(self):
+        """The care charge itself (a one-time line) and other one-time bills are paid in full."""
+        model = _care_model({"settings": OFFSET_SETTINGS})
+        person = self._person(model, base=0)
+        ltc = LongTermCare(person)
+        ltc.start_episode("nursing_home", months=12)
+        model.step_year()
+        self.assertEqual(person.spending.facility_offset_this_year, 0.0)
+        self.assertAlmostEqual(person.stat_money_spent, 120000)
+
+    def test_a_medicaid_resident_pays_no_living_spending(self):
+        """On Medicaid the resident keeps only the personal needs allowance, so no living spending is charged
+        on top of patient pay (all lines, not just the offset share)."""
+        from ..people.person import SpendingLine
+
+        model = _care_model({"settings": OFFSET_SETTINGS, "medicaid": TestMedicaidLongTermCare.MEDICAID})
+        person = self._person(model, balance=1000, categories={"travel": SpendingLine(2400, essential=False)})
+        ltc = LongTermCare(person, medicaid=True)
+        ltc.start_episode("nursing_home", months=12)
+        model.step_year()
+        self.assertAlmostEqual(ltc.medicaid_paid_this_year, 120000)
+        self.assertAlmostEqual(person.spending.facility_offset_this_year, 36000 + 2400)
+        self.assertAlmostEqual(person.stat_money_spent, 0.0)
+        self.assertAlmostEqual(person.debt, 0.0)
+
+    def test_a_per_person_override_replaces_the_facility_offsets(self):
+        model = _care_model({"settings": OFFSET_SETTINGS})
+        person = self._person(model)
+        ltc = LongTermCare(person, facility_spending_offset_pct=25)
+        ltc.start_episode("assisted_living", months=12)
+        model.step_year()
+        self.assertAlmostEqual(person.spending.facility_offset_this_year, 9000)
+
+    def test_the_override_never_applies_to_home_care(self):
+        model = _care_model({"settings": OFFSET_SETTINGS})
+        person = self._person(model)
+        ltc = LongTermCare(person, facility_spending_offset_pct=25)
+        ltc.start_episode("home_care", months=12)
+        model.step_year()
+        self.assertEqual(person.spending.facility_offset_this_year, 0.0)
+
+    def test_the_override_must_be_a_percentage(self):
+        model = _care_model({"settings": OFFSET_SETTINGS})
+        with self.assertRaises(ValueError):
+            LongTermCare(self._person(model), facility_spending_offset_pct=120)
+
+    def test_the_offset_resets_each_year(self):
+        model = _care_model({"settings": OFFSET_SETTINGS}, end_year=2027)
+        person = self._person(model)
+        LongTermCare(person).start_episode("nursing_home", months=3)
+        model.step_year()
+        self.assertAlmostEqual(person.spending.facility_offset_this_year, 3 * 1500)
+        model.step_year()
+        self.assertEqual(person.spending.facility_offset_this_year, 0.0)
+
+    def test_packaged_defaults_offset_only_the_facilities(self):
+        """The shipped offsets come from BLS CE shares: home care 0, assisted living and nursing home above."""
+        model = LifeModel(start_year=2026, end_year=2026)
+        offsets = {s.name: s.spending_offset_pct for s in model.config.healthcare.long_term_care.settings}
+        self.assertEqual(offsets["home_care"], 0.0)
+        self.assertAlmostEqual(offsets["assisted_living"], 55.1)
+        self.assertAlmostEqual(offsets["nursing_home"], 70.5)
+
+
 if __name__ == "__main__":
     unittest.main()

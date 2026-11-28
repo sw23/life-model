@@ -1102,10 +1102,17 @@ healthcare:
     # multiplier: derived so decedents' mean nursing-home stay is about a year (Kelly et al. 2010, J Am
     # Geriatr Soc 58(9):1701: mean 13.7 months, median 5); no primary source gives a hazard ratio for home
     # care or assisted living, so those keep the table's mortality.
+    # spending_offset_pct: percent of the resident's living spending a facility fee replaces, cut for each
+    # month there (home care replaces none). vintage: 2016-2017, source: BLS Consumer Expenditure Survey
+    # Table 3600 (one-person consumer units, reference person 65 and older): of $29,223 a year of spending
+    # other than healthcare ($33,422 less $4,199, since medical costs are charged separately), a nursing home
+    # replaces food $3,762, shelter $8,062, utilities $2,602, household operations $1,120, housekeeping
+    # supplies $568 and transportation $4,479 (70.5%); assisted living the same without transportation, which
+    # its fee usually leaves out (55.1%).
     settings:
-      - {name: home_care,       annual_cost: 80080, entry_share: 0.29, mortality_multiplier: 1.0}
-      - {name: assisted_living, annual_cost: 74400, entry_share: 0.28, mortality_multiplier: 1.0}
-      - {name: nursing_home,    entry_share: 0.43, mortality_multiplier: 2.5}
+      - {name: home_care,       annual_cost: 80080, entry_share: 0.29, mortality_multiplier: 1.0, spending_offset_pct: 0.0}
+      - {name: assisted_living, annual_cost: 74400, entry_share: 0.28, mortality_multiplier: 1.0, spending_offset_pct: 55.1}
+      - {name: nursing_home,    entry_share: 0.43, mortality_multiplier: 2.5, spending_offset_pct: 70.5}
     # Medicaid long-term-care eligibility (used with healthcare.medicaid: true).
     medicaid:
       # vintage: 2026, source: SSI resource limit for an individual (20 CFR 416.1205; not indexed).
