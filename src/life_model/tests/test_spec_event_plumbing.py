@@ -16,6 +16,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
+from ..checks import assert_conservation
 from ..debt import bridge, terms
 from ..lifeevents import LifeEvent
 from ..model import EVENT_KIND_DOCS
@@ -257,6 +258,68 @@ def _engine_fires_action_first(data: dict, config) -> bool | None:
         life_event.event, life_event.event_args = (lambda source=life_event.spec_source: fired.append(source.id)), ()
     built.model.run()
     return None if len(fired) != 2 else fired[0] != "m_add"
+
+
+class TestHomeSaleAfterTheOwnersDeath(unittest.TestCase):
+    """A dated sale of a home whose owner died: the house passed to a surviving spouse sells; the house of a
+    single owner whose estate dissolved (no beneficiary) has left the books, so its sale is skipped."""
+
+    def _data(self, sale, *, married):
+        import copy
+
+        data = minimal(
+            jobs=[],
+            spending={"amount_annual": 0},
+            accounts=[{"kind": "bank", "id": "bank", "balance": 50000, "interest_pct": 0}],
+            housing=[
+                {
+                    "kind": "home",
+                    "id": "house",
+                    "purchase_price": 300000,
+                    "expenses": {"property_tax_pct": 0, "insurance_pct": 0},
+                }
+            ],
+        )
+        data["meta"]["end_year"] = 2028
+        data["events"] = [{"action": "die", "person": "alex", "at": {"year": 2027}}, sale]
+        if married:
+            sam = copy.deepcopy(data["people"][0])
+            sam.update(id="sam", name="Sam", housing=[], accounts=[{"kind": "bank", "id": "sam_bank", "balance": 0}])
+            data["people"].append(sam)
+            data["relationships"] = {"marriages": [{"spouses": ["alex", "sam"], "year": 2020}]}
+        return data
+
+    SALES: typing.ClassVar[dict] = {
+        "sell_home": {"action": "sell_home", "person": "alex", "home": "house", "at": {"year": 2028, "month": 6}},
+        "move": {
+            "action": "move",
+            "person": "alex",
+            "sell_home": "house",
+            "new_rental": {"kind": "rental", "id": "flat", "rent_monthly": 1500},
+            "at": {"year": 2028, "month": 6},
+        },
+    }
+
+    def _run(self, sale, *, married):
+        built = build(self._data(sale, married=married), collect="month")
+        built.model.checks = "strict"
+        built.model.run()
+        assert_conservation(built.model, monthly=True)
+        return built
+
+    def test_a_dissolved_estates_home_is_not_sold(self):
+        for name, sale in self.SALES.items():
+            with self.subTest(event=name):
+                built = self._run(sale, married=False)
+                self.assertFalse(built.items["house"].sold)
+                notes = [e.message for e in built.model.event_log.of_kind("note")]
+                self.assertTrue(any("home sale skipped" in n for n in notes), notes)
+                self.assertEqual(built.people["alex"].bank_account_balance, 0.0)
+
+    def test_an_inherited_home_still_sells_for_the_survivor(self):
+        built = self._run(self.SALES["sell_home"], married=True)
+        self.assertTrue(built.items["house"].sold)
+        self.assertGreater(built.people["sam"].bank_account_balance, 250000)
 
 
 class TestEventOrderMatchesEngine(unittest.TestCase):
