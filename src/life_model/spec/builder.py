@@ -1268,7 +1268,11 @@ class _Builder:
                 if p.healthcare.medicare:
                     Medicare(person)
                 if p.healthcare.long_term_care:
-                    LongTermCare(person, medicaid=p.healthcare.medicaid)
+                    LongTermCare(
+                        person,
+                        medicaid=p.healthcare.medicaid,
+                        facility_spending_offset_pct=p.healthcare.facility_spending_offset_pct,
+                    )
 
         # Build-time events (claiming age, fixed death age) adjust constructor inputs; resolve
         # them now that every Person exists (their ages anchor get_year_at_age).

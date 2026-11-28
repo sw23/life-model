@@ -1134,6 +1134,14 @@ class _Extractor:
             medicare=bool(person.medicare),
             long_term_care=bool(person.long_term_care),
             medicaid=any(care.medicaid for care in person.long_term_care),
+            facility_spending_offset_pct=next(
+                (
+                    care.facility_spending_offset_pct
+                    for care in person.long_term_care
+                    if care.facility_spending_offset_pct is not None
+                ),
+                None,
+            ),
         )
         active = flags.medical_costs or flags.medicare or flags.long_term_care or override is not None
         return flags if active else None

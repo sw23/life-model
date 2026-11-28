@@ -203,6 +203,19 @@ class TestSpecWarnings(unittest.TestCase):
         data["people"][0]["healthcare"] = {"medicaid": True}
         self.assertTrue(any(f.level == ERROR for f in validate_spec(data)))
 
+    def test_facility_spending_offset_needs_long_term_care_and_a_percentage(self):
+        for healthcare in (
+            {"facility_spending_offset_pct": 50},
+            {"long_term_care": True, "facility_spending_offset_pct": 150},
+        ):
+            with self.subTest(healthcare=healthcare):
+                data = minimal()
+                data["people"][0]["healthcare"] = healthcare
+                self.assertTrue(any(f.level == ERROR for f in validate_spec(data)))
+        data = minimal()
+        data["people"][0]["healthcare"] = {"long_term_care": True, "facility_spending_offset_pct": 50}
+        self.assertFalse(any(f.level == ERROR for f in validate_spec(data)))
+
     def test_fraction_looking_percent_names_the_field_and_value(self):
         data = minimal()
         data["people"][0]["accounts"].append({"kind": "brokerage", "balance": 1000, "growth_pct": 0.045})

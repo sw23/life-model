@@ -1460,6 +1460,11 @@ class CareSettingConfig(StrictModel):
     #: Hazard ratio on the mortality table while in care here: the annual death probability q becomes
     #: ``1 - (1 - q) ** mortality_multiplier``.
     mortality_multiplier: float = Field(default=1.0, ge=0)
+    #: Percent of the resident's living spending (the base and essential categorized lines) the setting's fee
+    #: replaces, cut for each care month there; 0 (home care) keeps it all. A setting with an offset above 0 is
+    #: a facility: on Medicaid the resident there keeps only the personal needs allowance, so all of their
+    #: living spending is cut.
+    spending_offset_pct: float = Field(default=0.0, ge=0, le=100)
 
 
 class MedicaidLTCConfig(StrictModel):

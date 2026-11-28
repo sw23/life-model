@@ -414,7 +414,12 @@ def _kitchen_sink() -> dict:
         {"kind": "umbrella", "premium_annual": 300, "coverage_amount": 1e6, "premium_increase_pct": 1},
     ]
     alex["social_security"] = {"claim_age": 68, "earnings_history": {2018: 50000, 2019: 52000}}
-    alex["healthcare"] = {"medical_costs": True, "long_term_care": True, "medicaid": True}
+    alex["healthcare"] = {
+        "medical_costs": True,
+        "long_term_care": True,
+        "medicaid": True,
+        "facility_spending_offset_pct": 60,
+    }
     alex["giving"] = [
         {"kind": "donation", "charity": "Library", "amount_annual": 500, "frequency_years": 2, "end_year": 2040}
     ]

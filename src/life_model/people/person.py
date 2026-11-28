@@ -2340,6 +2340,10 @@ class Spending(LifeModelAgent):
         self.one_time_by_category: dict[str, float] = {}
         # One-time expenses not yet paid, by category (paid with the next month's bills).
         self._unpaid_by_category: dict[str, float] = {}
+        # This month's facility offset: (period, percent, whether discretionary lines are cut too).
+        self._month_offset: tuple[int, float, bool] | None = None
+        #: Living spending not paid this year because a care facility's fee replaced it.
+        self.facility_offset_this_year = 0.0
 
     @property
     def yearly_increase(self) -> float:
@@ -2406,15 +2410,52 @@ class Spending(LifeModelAgent):
             name: line.annual_amount / 12 for name, line in self.categories.items() if line.active(year) and line.amount
         }
 
+    def offset_month(self, pct: float, *, all_lines: bool = False) -> None:
+        """Cut this month's living spending by ``pct`` percent: a care facility's fee replaces it (set by
+        :class:`~life_model.healthcare.LongTermCare` when it charges a facility month, before the bills).
+
+        The cut applies to the base and the essential categorized lines, or with ``all_lines`` to every
+        categorized line too (a Medicaid resident keeps only the personal needs allowance). One-time
+        expenses (the care charge itself, premiums, medical bills) are never cut.
+        """
+        self._month_offset = (self.model.period, min(100.0, max(0.0, pct)), all_lines)
+
+    def _offset_pct(self, line: "SpendingLine | None" = None) -> float:
+        """This month's facility offset in percent for the base (``line`` None) or a categorized line."""
+        offset = self._month_offset
+        if offset is None or offset[0] != self.model.period:
+            return 0.0
+        _, pct, all_lines = offset
+        if line is not None and not line.essential and not all_lines:
+            return 0.0
+        return pct
+
+    def _after_offset(self, amount: float, line: "SpendingLine | None" = None) -> float:
+        """``amount`` less this month's facility offset (the cut is added to ``facility_offset_this_year``)."""
+        pct = self._offset_pct(line)
+        if not pct:
+            return amount
+        cut = amount * pct / 100
+        self.facility_offset_this_year += cut
+        return amount - cut
+
     def take_month_lines(self) -> dict[str, float]:
         """This month's bills by category: ``base`` (a twelfth of the base), every active categorized
-        line, plus every unpaid one-time category. Marks the one-time expenses as paid (the tax unit pays
-        the lines)."""
+        line, plus every unpaid one-time category, after any facility offset (:meth:`offset_month`). Marks
+        the one-time expenses as paid (the tax unit pays the lines)."""
         self._apply_schedule()
-        lines = {"base": self.month_base()} if self.base else {}
-        self._base_paid += lines.get("base", 0.0)
+        lines = {}
+        if self.base:
+            base = self._after_offset(self.month_base())
+            if base:
+                lines["base"] = base
+            # What the base actually paid (base_this_year counts paid months from it).
+            self._base_paid += base
         self._base_paid_period = self.model.period
         for name, amount in self.category_month_lines().items():
+            amount = self._after_offset(amount, self.categories[name])
+            if not amount:
+                continue
             lines[name] = lines.get(name, 0.0) + amount
             self._category_paid[name] = self._category_paid.get(name, 0.0) + amount
         for category, amount in self._unpaid_by_category.items():
@@ -2491,3 +2532,7 @@ class Spending(LifeModelAgent):
         self.one_time_by_category = {}
         self._category_paid = {}
         self._base_paid = 0.0
+
+    def on_year_start(self):
+        # Reset at the year start (not the end) so the finished year's cut stays readable after it settles.
+        self.facility_offset_this_year = 0.0

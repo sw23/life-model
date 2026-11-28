@@ -932,6 +932,7 @@ Opt-in healthcare cost agents.
 | `medicare` | boolean |  | `False` | `Medicare` | Medicare premiums and IRMAA from the eligibility age. |
 | `long_term_care` | boolean |  | `False` | `LongTermCare` | Long-term-care need: a monthly onset hazard from the configured start age, an episode in home care, assisted living or a nursing home (each with its cost and a higher death hazard), claimed against any ltc insurance. |
 | `medicaid` | boolean |  | `False` | `LongTermCare.medicaid` | Medicaid pays long-term care once countable assets are spent down to the limit (a spouse at home keeps the resource allowance); the person pays their income above the personal needs allowance. Without it an unpaid care cost becomes debt. Needs long_term_care. |
+| `facility_spending_offset_pct` | number (optional) | percent | — | `LongTermCare.facility_spending_offset_pct` | Percent of the person's living spending (the base and essential spending lines) an assisted living or nursing home fee replaces, cut for each month there, instead of each facility's configured offset (assisted living 55.1%, nursing home 70.5%; home care is never cut). A spouse at home keeps their own spending. Needs long_term_care. |
 
 ## Donation
 
