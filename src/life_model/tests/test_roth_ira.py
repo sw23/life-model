@@ -21,23 +21,23 @@ class TestRothIRA(unittest.TestCase):
         )
 
     def _ira(self, **kwargs):
-        kwargs.setdefault("growth_rate", 5.0)
+        kwargs.setdefault("growth_pct", 5.0)
         return RothIRA(self.person, **kwargs)
 
     def test_contribute_up_to_limit(self):
-        ira = self._ira(contribution_limit=6000)
+        ira = self._ira(contribution_limit_annual=6000)
         self.assertEqual(ira.contribute(4000), 4000)
         self.assertEqual(ira.balance, 4000)
 
     def test_contribute_clamped_at_limit(self):
-        ira = self._ira(contribution_limit=6000)
+        ira = self._ira(contribution_limit_annual=6000)
         ira.contribute(5000)
         self.assertEqual(ira.contribute(5000), 1000)
         self.assertEqual(ira.balance, 6000)
 
     def test_deposit_is_a_plain_credit(self):
         """deposit() credits without using contribution room (rollovers); validation is uniform."""
-        ira = self._ira(contribution_limit=6000)
+        ira = self._ira(contribution_limit_annual=6000)
         self.assertTrue(ira.deposit(1000))
         self.assertEqual(ira.balance, 1000)
         self.assertEqual(ira.remaining_contribution_room(), 6000)
@@ -46,24 +46,24 @@ class TestRothIRA(unittest.TestCase):
             ira.deposit(-100)
 
     def test_withdraw_capped_at_balance(self):
-        ira = self._ira(contribution_limit=6000, balance=3000)
+        ira = self._ira(contribution_limit_annual=6000, balance=3000)
         self.assertEqual(ira.withdraw(5000), 3000)
         self.assertEqual(ira.balance, 0)
         self.assertEqual(ira.withdraw(100), 0)
 
     def test_deposit_withdraw_round_trip(self):
-        ira = self._ira(contribution_limit=6000)
+        ira = self._ira(contribution_limit_annual=6000)
         ira.deposit(2000)
         self.assertEqual(ira.withdraw(2000), 2000)
         self.assertEqual(ira.balance, 0)
 
     def test_growth_positive_on_positive_balance(self):
-        ira = self._ira(contribution_limit=6000, balance=1000)
+        ira = self._ira(contribution_limit_annual=6000, balance=1000)
         growth = ira.calculate_growth()
         self.assertAlmostEqual(growth, 50.0, places=6)
 
     def test_reset_annual_contributions(self):
-        ira = self._ira(contribution_limit=6000)
+        ira = self._ira(contribution_limit_annual=6000)
         ira.contribute(6000)
         ira.reset_annual_contributions()
         self.assertEqual(ira.contributions_ytd, 0)

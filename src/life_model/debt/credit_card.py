@@ -5,7 +5,6 @@
 import html
 from enum import Enum
 
-from ..deprecated_names import deprecated_arguments
 from ..ledger import FlowKind
 from ..model import LifeModelAgent
 from ..people.person import Person
@@ -43,24 +42,6 @@ class RevolvingDebt(LifeModelAgent):
     #: The registry (``model.registries.<name>``) the debt is listed in.
     REGISTRY = "credit_cards"
 
-    @deprecated_arguments(
-        {
-            "person": "owner",
-            "yearly_interest_rate": "rate_pct",
-            "minimum_payment_percent": "minimum_payment_pct",
-            "fixed_payment": "payment_monthly",
-        },
-        positional=(
-            "name",
-            "credit_limit",
-            "balance",
-            "rate_pct",
-            "minimum_payment_pct",
-            "minimum_payment_floor",
-            "payment_strategy",
-            "payment_monthly",
-        ),
-    )
     def __init__(
         self,
         owner: Person,
@@ -77,8 +58,7 @@ class RevolvingDebt(LifeModelAgent):
     ):
         """Revolving debt.
 
-        Every argument after the owner is keyword-only (positional use and the names ``person``,
-        ``yearly_interest_rate``, ``minimum_payment_percent`` and ``fixed_payment`` are deprecated).
+        Every argument after the owner is keyword-only.
 
         Args:
             owner: The person who owns this debt.
@@ -278,26 +258,6 @@ class RevolvingDebt(LifeModelAgent):
 class CreditCard(RevolvingDebt):
     """A credit card: revolving debt with a card name and (optional) network type."""
 
-    @deprecated_arguments(
-        {
-            "person": "owner",
-            "card_name": "name",
-            "current_balance": "balance",
-            "yearly_interest_rate": "rate_pct",
-            "minimum_payment_percent": "minimum_payment_pct",
-            "fixed_payment": "payment_monthly",
-        },
-        positional=(
-            "name",
-            "credit_limit",
-            "balance",
-            "rate_pct",
-            "minimum_payment_pct",
-            "card_type",
-            "payment_strategy",
-            "payment_monthly",
-        ),
-    )
     def __init__(
         self,
         owner: Person,
@@ -314,9 +274,7 @@ class CreditCard(RevolvingDebt):
     ):
         """Models a credit card for a person.
 
-        Every argument after the owner is keyword-only (positional use and the names ``person``,
-        ``card_name``, ``current_balance``, ``yearly_interest_rate``, ``minimum_payment_percent`` and
-        ``fixed_payment`` are deprecated).
+        Every argument after the owner is keyword-only.
 
         Args:
             owner: The person who owns this credit card.

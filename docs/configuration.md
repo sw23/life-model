@@ -42,13 +42,13 @@ Security table lookups, and the annuity pricing functions) accept an optional
 are used. Called without `config`, a helper falls back to the packaged defaults
 (`life_model.config.financial_config.default_financial_config()`).
 
-### The deprecated global `config`
+### The removed global `config`
 
-`life_model.config.config_manager.config` is deprecated and emits a
-`DeprecationWarning` on use. It does not affect `LifeModel` instances, which own
-their config; mutating it only changes the fallback used by helpers called without
-`config`. Pass `LifeModel(config=..., scenario=...)` instead. It will be removed in
-a future release.
+`life_model.config.config_manager` (the process-global `config`, deprecated in
+0.4.0) has been removed. It never affected `LifeModel` instances, which own their
+config. Pass `LifeModel(config=..., scenario=...)` instead, or use
+`life_model.config.financial_config.default_financial_config()` for the packaged
+defaults.
 
 ### Typed access
 

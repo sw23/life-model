@@ -6,7 +6,6 @@
 from typing import ClassVar
 
 from ..base_classes import TaxAdvantagedAccount, TaxTreatment
-from ..deprecated_names import deprecated_arguments
 from ..ledger import FlowKind
 from ..limits import required_rmd_for_year
 from ..model import Event, EventKind, snap_money
@@ -25,10 +24,6 @@ class TraditionalIRA(TaxAdvantagedAccount):
     # month's pre_step (same ordering as Job401kAccount); growth stays in step.
     STEP_PRIORITY: ClassVar[dict[str, int]] = {"pre_step": -10, "step": -10}
 
-    @deprecated_arguments(
-        {"person": "owner", "growth_rate": "growth_pct", "contribution_limit": "contribution_limit_annual"},
-        positional=("balance", "growth_pct", "contribution_limit_annual"),
-    )
     def __init__(
         self,
         owner: Person,
@@ -50,12 +45,11 @@ class TraditionalIRA(TaxAdvantagedAccount):
         :class:`TaxAdvantagedAccount`.
 
         Args:
-            owner: The person to which this IRA belongs (deprecated alias ``person``).
+            owner: The person to which this IRA belongs.
             balance: Current balance in the IRA
-            growth_pct: Expected annual growth rate percentage (deprecated alias ``growth_rate``).
+            growth_pct: Expected annual growth rate percentage.
                 Defers to the economy's equity return when None.
-            contribution_limit_annual: Override for the annual contribution limit (deprecated alias
-                ``contribution_limit``). Uses the year's IRA limit plus the age-50 catch-up when None.
+            contribution_limit_annual: Override for the annual contribution limit. Uses the year's IRA limit plus the age-50 catch-up when None.
                 The limit is shared across all of a person's IRAs.
             nondeductible_basis: Form 8606 basis (nondeductible contributions not yet recovered, line
                 14 of the last filed 8606). The year's nondeductible contributions (the deduction

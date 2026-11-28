@@ -4,16 +4,11 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 import html
 
-from ..base_classes import LOAN_RENAMES, Loan
-from ..deprecated_names import deprecated_arguments
+from ..base_classes import Loan
 from ..people.person import Person
 
 
 class CarLoan(Loan):
-    @deprecated_arguments(
-        LOAN_RENAMES,
-        positional=("original_amount", "term_years", "rate_pct", "name", "current_balance", "payment_monthly"),
-    )
     def __init__(
         self,
         owner: Person,
@@ -34,15 +29,15 @@ class CarLoan(Loan):
         """Models a car loan for a person
 
         Args:
-            owner: The person to which this loan belongs (``person=`` is a deprecated alias)
+            owner: The person to which this loan belongs
             original_amount: Amount originally borrowed (may be omitted with ``current_balance`` and
-                ``remaining_months``; ``loan_amount=`` is a deprecated alias)
-            term_years: Original term in years (or ``term_months``; ``length_years=`` is deprecated)
-            rate_pct: APR, percent (``yearly_interest_rate=`` is deprecated)
+                ``remaining_months``)
+            term_years: Original term in years (or ``term_months``)
+            rate_pct: APR, percent
             name: Name of this vehicle (Make/Model)
             current_balance: Current principal (defaults to the schedule's: the original amount for a
-                new loan; ``principal=`` is deprecated)
-            payment_monthly: Monthly payment (calculated if not provided; ``monthly_payment=`` is deprecated)
+                new loan)
+            payment_monthly: Monthly payment (calculated if not provided)
             term_months: Term in months (66, 75, ...).
             origination: Origination month ``"YYYY-MM"``.
             payments_made: Payments made before the run (instead of ``origination``).
@@ -51,7 +46,7 @@ class CarLoan(Loan):
             schedule: ``"contract"`` (the original terms rule; default) or ``"statement"`` (trust a current
                 balance above the original schedule; see :mod:`life_model.debt.terms`).
 
-        Every argument after the owner is keyword-only (positional use is deprecated).
+        Every argument after the owner is keyword-only.
 
         Raises:
             LoanTermsError: When the statement inputs disagree (see :mod:`life_model.debt.terms`).

@@ -11,9 +11,8 @@ from datetime import date
 from decimal import ROUND_CEILING, ROUND_DOWN, Decimal
 from typing import TYPE_CHECKING, ClassVar, Literal
 
-from ..base_classes import LOAN_RENAMES, Loan
+from ..base_classes import Loan
 from ..debt.terms import MortgageRateCompounding, mortgage_rate_on_monthly_basis, scheduled_balance
-from ..deprecated_names import deprecated_arguments
 from ..ledger import FlowKind
 from ..model import Event, EventKind, LifeModel, LifeModelAgent, round_money, snap_money
 from ..people.person import Person
@@ -58,7 +57,6 @@ class Home(LifeModelAgent):
     # Appreciation at year end, after the year's taxes (0) read the year's property tax.
     STEP_PRIORITY: ClassVar[dict[str, int]] = {"on_year_end": 10}
 
-    @deprecated_arguments({"person": "owner", "value_yearly_increase": "value_growth_pct"})
     def __init__(
         self,
         owner: Person,
@@ -81,12 +79,11 @@ class Home(LifeModelAgent):
         """Home
 
         Args:
-            owner (Person): Primary resident or person that pays the bills (``person=`` is deprecated).
+            owner (Person): Primary resident or person that pays the bills.
             name (string): Name of the house or neighborhood.
             purchase_price (float): Purchase price of the home (its "original value" for PMI).
             value_growth_pct (float): Percentage of yearly home value appreciation. Pass None to
-                appreciate with the economy's home-appreciation rate each year (``value_yearly_increase=``
-                is deprecated).
+                appreciate with the economy's home-appreciation rate each year.
             down_payment (float): Amount of down payment.
             mortgage (Mortgage): Mortgage associated with the home.
             expenses (HomeExpenses): Home expenses associated with the home.
@@ -472,18 +469,6 @@ class HomeExpenses(LifeModelAgent):
     # Escalators at year end, after the year's taxes (0).
     STEP_PRIORITY: ClassVar[dict[str, int]] = {"on_year_end": 10}
 
-    @deprecated_arguments(
-        {
-            "property_tax_percent": "property_tax_pct",
-            "home_insurance_percent": "insurance_pct",
-            "maintenance_amount": "maintenance_annual",
-            "maintenance_increase": "maintenance_growth_pct",
-            "improvement_amount": "improvement_annual",
-            "improvement_increase": "improvement_growth_pct",
-            "hoa_amount": "hoa_annual",
-            "hoa_increase": "hoa_growth_pct",
-        }
-    )
     def __init__(
         self,
         model: LifeModel,
@@ -528,10 +513,6 @@ class HomeExpenses(LifeModelAgent):
             insurance_growth_pct (float, optional): Yearly growth of ``insurance_annual`` (None: inflation).
             inflation (bool, optional): True: maintenance, improvements and HOA dues grow with the
                 economy's inflation (their growth arguments are ignored).
-
-        The names (``property_tax_percent``, ``home_insurance_percent``, ``maintenance_amount``,
-        ``maintenance_increase``, ``improvement_amount``, ``improvement_increase``, ``hoa_amount``,
-        ``hoa_increase``) are deprecated aliases.
         """
         super().__init__(model)
         self.property_tax_percent = property_tax_pct
@@ -655,11 +636,6 @@ class Mortgage(Loan):
 
     STATS_OWNED = frozenset({"stat_mortgage_principal"})
 
-    @deprecated_arguments(
-        {**{k: v for k, v in LOAN_RENAMES.items() if k != "person"}, "start_date": "start_year"},
-        positional=("original_amount", "start_year", "term_years", "rate_pct", "current_balance", "payment_monthly"),
-        keep_positional=0,
-    )
     def __init__(
         self,
         *,
@@ -682,8 +658,7 @@ class Mortgage(Loan):
     ):
         """Mortgage
 
-        Every argument is keyword-only (positional use and the names ``loan_amount``, ``start_date``,
-        ``length_years``, ``yearly_interest_rate``, ``principal`` and ``monthly_payment`` are deprecated).
+        Every argument is keyword-only.
 
         Args:
             original_amount (float): Amount originally borrowed (may be omitted when the current balance

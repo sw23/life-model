@@ -7,7 +7,6 @@ import html
 from typing import ClassVar
 
 from ..base_classes import FinancialAccount
-from ..deprecated_names import deprecated_arguments
 from ..economy import annual_to_monthly
 from ..ledger import FlowKind
 from ..model import compound_interest
@@ -38,7 +37,6 @@ class BankAccount(FinancialAccount):
     # Accrue interest before tax-unit settlement (0) so the interest is on this year's return.
     STEP_PRIORITY: ClassVar[dict[str, int]] = {"step": -10}
 
-    @deprecated_arguments({"interest_rate": "interest_pct"}, positional=("company", "type", "balance", "interest_pct"))
     def __init__(
         self,
         owner: Person,
@@ -59,8 +57,7 @@ class BankAccount(FinancialAccount):
             company (str): Company at which the bank account belongs.
             type (str, optional): Type of account. Defaults to 'Bank'.
             balance (float, optional): Balance of account. Defaults to 0.
-            interest_pct (float, optional): Nominal annual interest rate (APR, percent); deprecated
-                alias ``interest_rate``. Defers to the economy's cash yield each year if None.
+            interest_pct (float, optional): Nominal annual interest rate (APR, percent). Defers to the economy's cash yield each year if None.
             compounding (str, optional): ``"monthly"`` or ``"annual"`` compounding of
                 ``interest_pct``. Defaults to the configured ``accounts.bank.compound_rate`` (monthly).
             reserve (bool, optional): An emergency reserve: income is not deposited here
@@ -74,7 +71,7 @@ class BankAccount(FinancialAccount):
             joint_primary (bool, optional): The joint owner's income is paid here even when they have bank
                 accounts of their own.
 
-        Every argument after ``owner`` is keyword-only (positional use is deprecated).
+        Every argument after ``owner`` is keyword-only.
         """
         interest_rate = interest_pct
         super().__init__(owner, balance)

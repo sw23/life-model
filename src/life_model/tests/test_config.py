@@ -4,9 +4,7 @@
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
 import unittest
-import warnings
 
-from ..config.config_manager import GlobalConfigManager
 from ..config.financial_config import FinancialConfig, default_financial_config, resolve_financial_config
 from ..tax.federal import FilingStatus
 
@@ -114,75 +112,6 @@ class TestFinancialConfig(unittest.TestCase):
         brackets = self.config.get_federal_tax_brackets(FilingStatus.SINGLE)
         self.assertEqual(brackets[0][2], 15)  # Higher first bracket rate
         self.assertEqual(self.config.get_max_tax_rate(FilingStatus.SINGLE), 45.0)
-
-
-class TestGlobalConfigManager(unittest.TestCase):
-    """The deprecated global manager is a thin, warning shim over the shared fallback config."""
-
-    def tearDown(self):
-        # The shim mutates the shared fallback config; never leak a scenario into other tests.
-        default_financial_config().reset_to_defaults()
-
-    def test_singleton_behavior(self):
-        """Test that GlobalConfigManager is a singleton"""
-        config1 = GlobalConfigManager()
-        config2 = GlobalConfigManager()
-
-        self.assertIs(config1, config2)
-
-    def test_financial_access_warns_and_returns_shared_default(self):
-        config_manager = GlobalConfigManager()
-
-        with self.assertWarns(DeprecationWarning):
-            financial = config_manager.financial
-        self.assertIs(financial, default_financial_config())
-        self.assertEqual(financial.tax.state.tax_rate, 6.0)
-
-    def test_apply_scenario(self):
-        """Test applying scenarios through global manager"""
-        config_manager = GlobalConfigManager()
-
-        recession_overrides = {
-            "accounts": {
-                "bank": {
-                    "default_interest_rate": 0.1  # Lower interest rates
-                },
-                "brokerage": {
-                    "default_growth_rate": 3.0  # Lower growth expectations
-                },
-            }
-        }
-
-        with self.assertWarns(DeprecationWarning):
-            config_manager.apply_scenario("recession", recession_overrides)
-
-        fallback = default_financial_config()
-        self.assertEqual(fallback.scenario, "recession")
-        self.assertEqual(fallback.accounts.bank.default_interest_rate, 0.1)
-        self.assertEqual(fallback.accounts.brokerage.default_growth_rate, 3.0)
-
-    def test_reset_to_defaults(self):
-        """Test resetting to default values"""
-        config_manager = GlobalConfigManager()
-
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            config_manager.apply_scenario("test", {"tax": {"state": {"tax_rate": 99.0}}})
-            self.assertEqual(default_financial_config().tax.state.tax_rate, 99.0)
-
-            config_manager.reset_to_defaults()
-            self.assertEqual(default_financial_config().tax.state.tax_rate, 6.0)
-            self.assertIsNone(config_manager.get_current_scenario())
-
-    def test_global_scenario_does_not_affect_models(self):
-        """Each LifeModel owns its config, so mutating the deprecated global cannot change a model."""
-        from ..model import LifeModel
-
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            GlobalConfigManager().apply_scenario("test", {"tax": {"state": {"tax_rate": 99.0}}})
-
-        self.assertEqual(LifeModel().config.tax.state.tax_rate, 6.0)
 
 
 class TestConfigurationIntegration(unittest.TestCase):
@@ -375,39 +304,11 @@ class TestNoImportTimeFileIO(unittest.TestCase):
 
         code = (
             "import life_model\n"
-            "import life_model.config.config_manager\n"
             "from life_model.config import financial_config\n"
             "assert financial_config._default_config is None, 'config loaded at import time'\n"
         )
         result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=False)
         self.assertEqual(result.returncode, 0, msg=result.stderr)
-
-
-class TestNoLibraryUseOfGlobalConfig(unittest.TestCase):
-    """Library code must read the owning model's config, never the deprecated global shim."""
-
-    def test_no_module_imports_config_manager(self):
-        import ast
-        from pathlib import Path
-
-        import life_model
-
-        root = Path(life_model.__file__).parent
-        offenders = []
-        for path in sorted(root.rglob("*.py")):
-            relative = path.relative_to(root)
-            if relative.parts[0] == "tests" or relative == Path("config/config_manager.py"):
-                continue
-            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
-                if isinstance(node, ast.ImportFrom):
-                    names = [node.module or ""]
-                elif isinstance(node, ast.Import):
-                    names = [alias.name for alias in node.names]
-                else:
-                    continue
-                if any(name.endswith("config_manager") for name in names):
-                    offenders.append(str(relative))
-        self.assertEqual(offenders, [], msg="Use model.config or resolve_financial_config(config) instead")
 
 
 if __name__ == "__main__":

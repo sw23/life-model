@@ -131,7 +131,7 @@ class TestTraditionalVersusRoth(unittest.TestCase):
         person = Person(Family(model), "W", 40, 65, Spending(model, base_annual=0))
         BankAccount(person, company="Bank", balance=10000, interest_pct=0)
         Job(person, company="Co", role="Dev", salary=Salary(model, base_annual=60000, raise_pct=0))
-        account_cls(person, growth_rate=0).contribute(6000)
+        account_cls(person, growth_pct=0).contribute(6000)
         model.step_year()
         return model.datacollector.get_model_vars_dataframe()["Federal Taxes"].iloc[-1]
 

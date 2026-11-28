@@ -22,7 +22,7 @@ from ..services.debt_service import DebtService
 def _loan(amount: float) -> CarLoan:
     person = Mock(spec=Person)
     person.model = Mock()
-    return CarLoan(person=person, loan_amount=amount, length_years=5, yearly_interest_rate=6.0, name="Car")
+    return CarLoan(owner=person, original_amount=amount, term_years=5, rate_pct=6.0, name="Car")
 
 
 class TestDebtService(unittest.TestCase):

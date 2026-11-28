@@ -6,7 +6,6 @@ from abc import ABC, abstractmethod
 from enum import Enum
 from typing import TYPE_CHECKING, ClassVar, Optional
 
-from .deprecated_names import deprecated_arguments
 from .economy import annual_to_monthly
 from .ledger import FlowKind
 from .limits import federal_retirement_age
@@ -130,17 +129,6 @@ class FinancialAccount(LifeModelAgent, ABC):
         self.record_balance_history()
 
 
-#: Deprecated loan argument names and their canonical replacements.
-LOAN_RENAMES = {
-    "person": "owner",
-    "loan_amount": "original_amount",
-    "yearly_interest_rate": "rate_pct",
-    "length_years": "term_years",
-    "principal": "current_balance",
-    "monthly_payment": "payment_monthly",
-}
-
-
 class Loan(LifeModelAgent, ABC):
     """Abstract base class for amortizing loans.
 
@@ -162,7 +150,6 @@ class Loan(LifeModelAgent, ABC):
     (a loan behind on its payments) and amortizes from it.
     """
 
-    @deprecated_arguments(LOAN_RENAMES)
     def __init__(
         self,
         owner: "Person",

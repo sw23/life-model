@@ -6,7 +6,6 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any, cast
 
 from ..config.financial_config import resolve_financial_config as _fin
-from ..deprecated_names import deprecated_arguments
 from ..economy import annual_to_monthly
 from ..ledger import FlowKind
 from ..model import Event, EventKind, LifeModel, LifeModelAgent
@@ -214,28 +213,6 @@ class Annuity(LifeModelAgent):
 
     STATS_OWNED = frozenset({"stat_annuity_balance"})
 
-    @deprecated_arguments(
-        {
-            "person": "owner",
-            "initial_balance": "balance",
-            "interest_rate": "rate_pct",
-            "monthly_payout": "payout_monthly",
-            "surrender_charge_rate": "surrender_charge_pct",
-            "survivor_percent": "survivor_pct",
-            "cola_percent": "cola_pct",
-        },
-        positional=(
-            "annuity_type",
-            "balance",
-            "rate_pct",
-            "payout_type",
-            "payout_start_age",
-            "payout_monthly",
-            "period_certain_years",
-            "surrender_charge_years",
-            "surrender_charge_pct",
-        ),
-    )
     def __init__(
         self,
         owner: Person,
@@ -259,10 +236,7 @@ class Annuity(LifeModelAgent):
     ):
         """Models an annuity for a person
 
-        Every argument after the owner is keyword-only. Deprecated (one release): positional arguments,
-        and the names ``person`` (owner), ``initial_balance`` (balance), ``interest_rate`` (rate_pct),
-        ``monthly_payout`` (payout_monthly), ``surrender_charge_rate`` (surrender_charge_pct),
-        ``survivor_percent`` (survivor_pct) and ``cola_percent`` (cola_pct).
+        Every argument after the owner is keyword-only.
 
         Args:
             owner: The person to which this annuity belongs

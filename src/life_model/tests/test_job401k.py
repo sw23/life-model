@@ -33,7 +33,7 @@ class TestJob401k(unittest.TestCase):
         self.assertEqual(account.get_balance(), 1500)
 
     def test_contribution_helpers_scale_with_salary(self):
-        account = self._account(pretax_contrib_percent=10, roth_contrib_percent=5, company_match_percent=50)
+        account = self._account(pretax_contrib_pct=10, roth_contrib_pct=5, company_match_percent=50)
         self.assertEqual(account.pretax_contrib(100000), 10000)
         self.assertEqual(account.roth_contrib(100000), 5000)
         self.assertEqual(account.company_match(10000), 5000)
@@ -72,7 +72,7 @@ class TestJob401k(unittest.TestCase):
 
     def test_growth_applied_in_step_with_annual_compounding(self):
         """Growth runs in step (after this year's contributions) at an APY, like every Investment."""
-        account = self._account(pretax_balance=10000, roth_balance=10000, average_growth=10)
+        account = self._account(pretax_balance=10000, roth_balance=10000, growth_pct=10)
         account.on_year_start()
         account.pre_step()  # RMD only; the owner is far below RMD age.
         self.assertEqual(account.pretax_balance, 10000)

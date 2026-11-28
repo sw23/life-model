@@ -7,7 +7,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from ..base_classes import Investment
-from ..deprecated_names import deprecated_arguments
 from ..ledger import FlowKind
 from ..people.person import Person
 from ..tax.income import IncomeType
@@ -87,10 +86,6 @@ class BrokerageAccount(Investment):
     long-term gain.
     """
 
-    @deprecated_arguments(
-        {"person": "owner", "growth_rate": "growth_pct", "dividend_yield": "dividend_yield_pct"},
-        positional=("company", "balance", "growth_pct"),
-    )
     def __init__(
         self,
         owner: Person,
@@ -108,18 +103,17 @@ class BrokerageAccount(Investment):
         """Models a brokerage/investment account
 
         Args:
-            owner: The person who owns this account (deprecated alias ``person``).
+            owner: The person who owns this account.
             company: Brokerage company name.
             balance: Current account balance. Seeded as a single lot with basis equal to the
                 balance and acquired in the first simulated month, i.e. an account opened with no
                 embedded gain. Mutually exclusive with ``lots``.
             lots: The statement's tax lots (:class:`Lot`: value, cost basis, acquired), so embedded
                 gains and holding periods are what the statement says.
-            growth_pct: Expected annual growth rate percentage (deprecated alias ``growth_rate``).
+            growth_pct: Expected annual growth rate percentage.
                 Defers to the economy's equity return (or the allocation's blend) when None.
             dividend_yield_pct: Percentage of the balance paid out as qualified dividends each year,
-                carved *out of* the total return rather than added on top (deprecated alias
-                ``dividend_yield``). Defers to the config default when None.
+                carved *out of* the total return rather than added on top. Defers to the config default when None.
             reinvest_dividends: Reinvest dividends as new lots (default) or pay them to the owner's bank.
             allocation: Target allocation in percent by asset class (``{"equity": 70, "bond": 30}``),
                 rebalanced yearly.

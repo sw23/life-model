@@ -23,13 +23,13 @@ class TestHSA(unittest.TestCase):
         return HealthSavingsAccount(self.person, **kwargs)
 
     def test_contribute_up_to_limit(self):
-        hsa = self._hsa(contribution_limit=4000)
+        hsa = self._hsa(contribution_limit_annual=4000)
         self.assertEqual(hsa.contribute(3000), 3000)
         self.assertEqual(hsa.balance, 3000)
         self.assertEqual(hsa.contributions_ytd, 3000)
 
     def test_contribute_clamped_at_limit(self):
-        hsa = self._hsa(contribution_limit=4000)
+        hsa = self._hsa(contribution_limit_annual=4000)
         self.assertTrue(hsa.contribute(3000))
         # Only $1000 of headroom remains; the surplus is clamped away.
         self.assertTrue(hsa.contribute(5000))
@@ -38,25 +38,25 @@ class TestHSA(unittest.TestCase):
 
     def test_deposit_is_not_a_contribution(self):
         """deposit() is a plain credit (rollovers, transfers); only contribute() uses the annual limit."""
-        hsa = self._hsa(contribution_limit=4000)
+        hsa = self._hsa(contribution_limit_annual=4000)
         self.assertTrue(hsa.deposit(1000))
         self.assertEqual(hsa.balance, 1000)
         self.assertEqual(hsa.contributions_ytd, 0)
         self.assertEqual(hsa.remaining_contribution_room(), 4000)
 
     def test_withdraw_capped_at_balance(self):
-        hsa = self._hsa(contribution_limit=4000, balance=2000)
+        hsa = self._hsa(contribution_limit_annual=4000, balance=2000)
         self.assertEqual(hsa.withdraw(5000), 2000)
         self.assertEqual(hsa.balance, 0)
 
     def test_medical_and_non_medical_withdraw_reduce_balance(self):
-        hsa = self._hsa(contribution_limit=4000, balance=1000)
+        hsa = self._hsa(contribution_limit_annual=4000, balance=1000)
         self.assertEqual(hsa.withdraw_medical(400), 400)
         self.assertEqual(hsa.withdraw_non_medical(200), 200)
         self.assertEqual(hsa.balance, 400)
 
     def test_reset_annual_contributions(self):
-        hsa = self._hsa(contribution_limit=4000)
+        hsa = self._hsa(contribution_limit_annual=4000)
         hsa.contribute(4000)
         hsa.reset_annual_contributions()
         self.assertEqual(hsa.contributions_ytd, 0)
@@ -65,7 +65,7 @@ class TestHSA(unittest.TestCase):
 
     def test_employer_contribution_added_in_step(self):
         """The full annual employer contribution lands once a year, at the year start (not a twelfth of it)."""
-        hsa = self._hsa(contribution_limit=8000, employer_contribution=1200, growth_rate=0)
+        hsa = self._hsa(contribution_limit_annual=8000, employer_contribution_annual=1200, growth_pct=0)
         hsa.on_year_start()  # the employer contribution lands at each year start
         self.assertAlmostEqual(hsa.balance, 1200, places=6)
         # Employer money counts against the same annual limit.

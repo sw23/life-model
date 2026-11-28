@@ -42,7 +42,6 @@
 from typing import TYPE_CHECKING, ClassVar
 
 from ..config.financial_config import resolve_financial_config as _fin
-from ..deprecated_names import deprecated_arguments
 from ..ledger import FlowKind
 from ..model import Event, LifeModelAgent, snap_money
 from ..people.person import Person
@@ -397,9 +396,6 @@ class SocialSecurity(LifeModelAgent):
     # The earnings test reads the year's earnings before the income ledger is cleared (20).
     STEP_PRIORITY: ClassVar[dict[str, int]] = {"on_year_end": 15}
 
-    @deprecated_arguments(
-        {"person": "owner", "withdrawal_start_age": "claim_age", "income_history": "earnings_history"}
-    )
     def __init__(
         self,
         owner: Person,
@@ -414,10 +410,10 @@ class SocialSecurity(LifeModelAgent):
         """Models Social Security benefits for a person
 
         Args:
-            owner: The person for whom to model Social Security benefits (``person=`` is deprecated)
+            owner: The person for whom to model Social Security benefits
             claim_age: The age at which the person starts claiming benefits (the
-                ``withdrawal_start_age`` attribute; ``withdrawal_start_age=`` is deprecated)
-            earnings_history: The person's covered earnings by year (``income_history=`` is deprecated)
+                ``withdrawal_start_age`` attribute)
+            earnings_history: The person's covered earnings by year
             pia_override_monthly: The monthly benefit at full retirement age from the SSA statement, in today's
                 (the model start's) dollars, instead of computing the PIA from ``income_history``
                 (keyword-only). It is wage-indexed to the year the person turns 62 (the
