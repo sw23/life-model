@@ -5,7 +5,6 @@
 from enum import Enum
 
 from ..base_classes import TaxAdvantagedAccount, TaxTreatment
-from ..deprecated_names import deprecated_arguments
 from ..ledger import FlowKind
 from ..people.person import Person
 
@@ -23,15 +22,6 @@ class HealthSavingsAccount(TaxAdvantagedAccount):
     tax_treatment = TaxTreatment.HSA
     is_rmd_eligible = False
 
-    @deprecated_arguments(
-        {
-            "person": "owner",
-            "contribution_limit": "contribution_limit_annual",
-            "employer_contribution": "employer_contribution_annual",
-            "growth_rate": "growth_pct",
-        },
-        positional=("hsa_type", "balance", "contribution_limit_annual", "employer_contribution_annual"),
-    )
     def __init__(
         self,
         owner: Person,
@@ -53,16 +43,15 @@ class HealthSavingsAccount(TaxAdvantagedAccount):
         :class:`~life_model.work.payroll.PayrollDeductions`.
 
         Args:
-            owner: The person who owns this HSA (deprecated alias ``person``).
+            owner: The person who owns this HSA.
             hsa_type: Type of HSA (Individual or Family).
             balance: Current HSA balance.
-            contribution_limit_annual: Override for the annual contribution limit (deprecated alias
-                ``contribution_limit``). Uses the year/age/tier indexed limit when None.
+            contribution_limit_annual: Override for the annual contribution limit. Uses the year/age/tier indexed limit when None.
             employer_contribution_annual: A yearly employer contribution deposited at each year start
-                while the owner has an active W-2 job (deprecated alias ``employer_contribution``; prefer
+                while the owner has an active W-2 job (prefer
                 ``PayrollDeductions(hsa_employer_annual=)``, paid per paycheck). Uses the configured
                 default if None.
-            growth_pct: Expected annual growth rate percentage (deprecated alias ``growth_rate``).
+            growth_pct: Expected annual growth rate percentage.
                 Defers to the economy's equity return when None (HSAs are typically invested).
             basis: Contribution basis; the whole balance when None. Informational: every
                 HSA distribution is tax-free for medical costs and fully taxable otherwise.

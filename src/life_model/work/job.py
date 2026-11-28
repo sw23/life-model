@@ -8,7 +8,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar
 
-from ..deprecated_names import deprecated_arguments
 from ..ledger import FlowKind
 from ..limits import job_401k_annual_additions_limit
 from ..model import Event, EventKind, LifeModel, LifeModelAgent, snap_money
@@ -110,7 +109,6 @@ class Job(LifeModelAgent):
     #: Job kinds: a W-2 employee, or a sole proprietorship (Schedule C).
     KINDS = ("w2", "self_employed")
 
-    @deprecated_arguments(None, positional=("company", "role", "salary"))
     def __init__(
         self,
         owner: Person,
@@ -161,7 +159,7 @@ class Job(LifeModelAgent):
             raises: ``[(year, percent), ...]``: the raise taking effect in each listed year (the salary's
                 ``yearly_increase`` applies to other years); sets ``salary.raises``.
 
-        Every argument after ``owner`` is keyword-only (positional use is deprecated).
+        Every argument after ``owner`` is keyword-only.
         """
         if kind not in self.KINDS:
             raise ValueError(f"Unknown job kind {kind!r}; expected one of {self.KINDS}")
@@ -841,10 +839,6 @@ class Salary(LifeModelAgent):
     # The raise runs at year end after the year's taxes are settled (0).
     STEP_PRIORITY: ClassVar[dict[str, int]] = {"on_year_end": 10}
 
-    @deprecated_arguments(
-        {"base": "base_annual", "yearly_increase": "raise_pct", "yearly_bonus": "bonus_pct"},
-        positional=("base_annual", "raise_pct", "bonus_pct"),
-    )
     def __init__(
         self,
         model: LifeModel,
@@ -859,11 +853,10 @@ class Salary(LifeModelAgent):
         """Salary
 
         Args:
-            base_annual (float): Base salary (a year's pay; the job pays a twelfth each month; deprecated
-                alias ``base``).
-            raise_pct (float, optional): Yearly percentage increase (deprecated alias ``yearly_increase``).
+            base_annual (float): Base salary (a year's pay; the job pays a twelfth each month).
+            raise_pct (float, optional): Yearly percentage increase.
                 Pass None to grow with the economy's wage growth each year. Defaults to 0 (no increase).
-            bonus_pct (float): Yearly bonus, percent of base (deprecated alias ``yearly_bonus``).
+            bonus_pct (float): Yearly bonus, percent of base.
             bonus_month (int, optional): Month (1-12) the bonus is paid in (keyword-only). Defaults to
                 the configured ``payroll.bonus_month`` (March).
             bonus (Bonus, optional): A structured bonus (target and/or fixed, a payout range, a sign-on);
@@ -871,7 +864,7 @@ class Salary(LifeModelAgent):
             raises (optional): ``[(year, percent), ...]``: the raise taking effect in each listed year
                 (``raise_pct`` applies to the others).
 
-        Every argument after ``model`` is keyword-only (positional use is deprecated).
+        Every argument after ``model`` is keyword-only.
         """
         if bonus is not None and bonus_pct:
             raise ValueError("pass bonus_pct or bonus=Bonus(...), not both")

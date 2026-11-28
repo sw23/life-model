@@ -5,7 +5,6 @@
 from enum import Enum
 from typing import ClassVar, cast
 
-from ..deprecated_names import deprecated_arguments
 from ..ledger import FlowKind
 from ..model import Event, EventKind, LifeModel, LifeModelAgent, compound_interest
 from ..people.person import Person
@@ -44,14 +43,6 @@ class LifeInsurance(LifeModelAgent):
     # The year-end update runs before the tax settlement (0): a lapse's taxable gain is this year's.
     STEP_PRIORITY: ClassVar[dict[str, int]] = {"pre_step": 10, "on_year_end": -5}
 
-    @deprecated_arguments(
-        {
-            "person": "owner",
-            "monthly_premium": "premium_monthly",
-            "cash_value_growth_rate": "cash_value_growth_pct",
-            "loan_interest_rate": "loan_interest_pct",
-        }
-    )
     def __init__(
         self,
         owner: Person,
@@ -74,10 +65,10 @@ class LifeInsurance(LifeModelAgent):
         """Models life insurance policy for a person
 
         Args:
-            owner: The person to which this policy belongs (``person=`` is deprecated)
+            owner: The person to which this policy belongs
             policy_type: The type of life insurance policy
             death_benefit: Amount paid out on death
-            premium_monthly: Monthly premium cost (``monthly_premium=`` is deprecated)
+            premium_monthly: Monthly premium cost
             term_years: Number of years for term life (None for whole life)
             premium_increase_rate: How the premium changes: ``None`` / ``0`` /
                 ``PremiumIncreaseType.LEVEL`` keep it level (the default: a level-premium term policy,
@@ -86,9 +77,9 @@ class LifeInsurance(LifeModelAgent):
                 from the configured age-band multipliers (``insurance.life.term_age_multipliers``);
                 a dict ``{age: multiplier}`` does the same with custom bands.
             cash_value_growth_pct: Yearly growth rate (percent) for whole life cash value. Uses configured
-                default if None (``cash_value_growth_rate=`` is deprecated).
+                default if None.
             loan_interest_pct: Interest rate (percent) for loans against cash value. Uses configured default
-                if None (``loan_interest_rate=`` is deprecated).
+                if None.
             max_missed_payments: Maximum consecutive missed payments before lapse. Uses configured default if None.
             beneficiary: Optional designated beneficiary for the death benefit. When set (and
                 surviving), the benefit is paid to this person; otherwise it defaults to the

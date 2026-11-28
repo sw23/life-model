@@ -3,12 +3,14 @@
 # Use of this source code is governed by an MIT license:
 # https://github.com/sw23/life-model/blob/main/LICENSE
 
-"""Deprecated constructor argument names.
+"""Deprecating a constructor argument name.
 
 The core constructors use the spec's canonical argument names: ``owner=`` for the person who owns the
-object, ``rate_pct=`` / ``*_pct`` for percentages, ``*_monthly`` / ``*_annual`` for flows. The earlier
-names are accepted for one release as deprecated aliases (a ``DeprecationWarning`` names the
-replacement), as are positional arguments after the owner for the keyword-only constructors.
+object, ``rate_pct=`` / ``*_pct`` for percentages, ``*_monthly`` / ``*_annual`` for flows. When one is
+renamed (or a constructor becomes keyword-only), :func:`deprecated_arguments` keeps the old name (or the
+positional order) working for one release with a ``DeprecationWarning`` naming the replacement, and
+:func:`deprecated_names` lists every such alias for docs/constructor-cheatsheet.md. The aliases of the
+0.4.0 renames have been removed; none are registered now.
 """
 
 import functools

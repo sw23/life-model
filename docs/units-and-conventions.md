@@ -177,7 +177,7 @@ simulated month of the year (January). In a household spec, `at: {year: 2030, mo
 ## Money and rates
 
 * Money is nominal dollars unless a result is converted with `real_dollars()` (start-year dollars).
-* Rates are **percent**. Annual rates (`growth_rate=7`, `interest_rate=5`, `economy.equity_return`)
+* Rates are **percent**. Annual rates (`growth_pct=7`, `interest_pct=5`, `economy.equity_return`)
   are annual; the engine applies them monthly. An annual return `R` becomes the monthly rate
   `(1 + R)^(1/12) - 1`, so twelve months compound back to `R`; a bank APR compounded monthly
   accrues `APR / 12` a month (`compounding="annual"`: the monthly equivalent of the APY).

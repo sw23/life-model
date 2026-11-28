@@ -425,6 +425,9 @@ def _deprecated_rows() -> list[str]:
     """The documented list of deprecated constructor names (``life_model.deprecated_names``)."""
     from life_model.deprecated_names import POSITIONAL, deprecated_names
 
+    deprecated = deprecated_names()
+    if not deprecated:
+        return []
     lines = [
         "",
         "## Deprecated constructor names",
@@ -437,7 +440,7 @@ def _deprecated_rows() -> list[str]:
         "| Class | Old name -> canonical name | Keyword-only after |",
         "|---|---|---|",
     ]
-    for owner, renames in deprecated_names().items():
+    for owner, renames in deprecated.items():
         module, name = owner.rsplit(".", 1)
         pairs = ", ".join(f"`{old}` -> `{new}`" for old, new in renames.items()) or "—"
         boundary = POSITIONAL.get(owner)

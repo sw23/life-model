@@ -17,7 +17,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, ClassVar
 
-from ..deprecated_names import deprecated_arguments
 from ..ledger import FlowKind
 from ..model import LifeModelAgent
 
@@ -253,7 +252,6 @@ class StockPlan(LifeModelAgent):
     # year, in the first month of the year (quarterly vesting is not modeled).
     STEP_PRIORITY: ClassVar[dict[str, int]] = {"pre_step": 5}
 
-    @deprecated_arguments({"refresher_growth_percent": "refresher_growth_pct", "growth_rate": "growth_pct"})
     def __init__(
         self,
         job: "Job",
@@ -279,8 +277,7 @@ class StockPlan(LifeModelAgent):
             refresher_value: Dollar value of each annual refresher grant.
             refresher_start_year: Years after the plan starts before the first refresher is issued.
                 Defaults to 1 (the first anniversary).
-            refresher_growth_pct: Yearly percentage growth applied to ``refresher_value`` (deprecated alias
-                ``refresher_growth_percent``).
+            refresher_growth_pct: Yearly percentage growth applied to ``refresher_value``.
             schedule: Vesting schedule for refresher grants. Defaults to the configured preset.
             signon_schedule: Vesting schedule for the sign-on grant. Defaults to ``schedule``.
             disposition: What happens to vested shares. ``"sell"`` (default) sells at vest, which
@@ -289,7 +286,7 @@ class StockPlan(LifeModelAgent):
                 appreciation is taxed on eventual sale. Holding risks the entire position to save
                 the rate spread on the *appreciation only* — the tax on the vest value itself is
                 unavoidable either way.
-            growth_pct: Annual percentage growth of the company's stock (deprecated alias ``growth_rate``).
+            growth_pct: Annual percentage growth of the company's stock.
                 Defers to the economy's equity return when None, which ties company stock to the broad
                 market.
             brokerage_account: Where ``disposition="hold"`` deposits vested shares. Defaults to the

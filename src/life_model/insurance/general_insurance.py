@@ -7,7 +7,6 @@ import math
 from enum import Enum
 from typing import cast
 
-from ..deprecated_names import deprecated_arguments
 from ..ledger import FlowKind
 from ..model import Event, LifeModel, LifeModelAgent, month_index, snap_money
 from ..people.person import Person
@@ -52,9 +51,6 @@ class InsuranceClaim:
 
 
 class Insurance(LifeModelAgent):
-    @deprecated_arguments(
-        {"person": "owner", "annual_premium": "premium_annual", "premium_increase_rate": "premium_increase_pct"}
-    )
     def __init__(
         self,
         owner: Person,
@@ -83,16 +79,16 @@ class Insurance(LifeModelAgent):
         """Models insurance coverage for a person
 
         Args:
-            owner: The person who owns this insurance (``person=`` is deprecated)
+            owner: The person who owns this insurance
             insurance_type: Type of insurance
             company: Insurance company name
-            premium_annual: Annual premium cost (``annual_premium=`` is deprecated)
+            premium_annual: Annual premium cost
             coverage_amount: Coverage amount/limit
             deductible: Insurance deductible amount
             coverage_start_age: Age when coverage starts (None for immediate)
             coverage_end_age: Age when coverage ends (None for lifetime)
             premium_increase_pct: Annual premium increase percentage. Configured default if None
-                (``premium_increase_rate=`` is deprecated).
+               .
             max_claims_per_year: Maximum claims allowed per year. Configured default if None.
             oop_max_annual: HEALTH: the out-of-pocket maximum per year (keyword-only). With
                 it or ``coinsurance_pct`` the policy caps the person's ``MedicalCosts``: they pay the

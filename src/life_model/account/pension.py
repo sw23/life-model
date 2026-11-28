@@ -6,7 +6,6 @@ import html
 from typing import TYPE_CHECKING, ClassVar
 
 from ..base_classes import Benefit
-from ..deprecated_names import deprecated_arguments
 from ..ledger import FlowKind
 from ..model import snap_money
 from ..people.person import Person
@@ -48,17 +47,6 @@ class Pension(Benefit):
     # the COLA follows it.
     STEP_PRIORITY: ClassVar[dict[str, int]] = {"on_year_end": 5}
 
-    @deprecated_arguments(
-        {
-            "person": "owner",
-            "benefit_amount": "benefit_annual",
-            "cola_percent": "cola_pct",
-            "survivor_percent": "survivor_pct",
-            "benefit_multiplier": "benefit_multiplier_pct",
-            "final_salary": "final_salary_annual",
-        },
-        positional=("company", "vesting_years", "benefit_annual"),
-    )
     def __init__(
         self,
         owner: Person,
@@ -86,10 +74,7 @@ class Pension(Benefit):
     ):
         """Models a pension plan for a person
 
-        Every argument after the owner is keyword-only. Deprecated (one release): positional arguments,
-        and the names ``person`` (owner), ``benefit_amount`` (benefit_annual), ``cola_percent``
-        (cola_pct), ``survivor_percent`` (survivor_pct), ``benefit_multiplier`` (benefit_multiplier_pct)
-        and ``final_salary`` (final_salary_annual).
+        Every argument after the owner is keyword-only.
 
         Args:
             owner: The person to which this pension belongs

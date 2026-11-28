@@ -646,7 +646,7 @@ class TestMatchTiers(unittest.TestCase):
     def test_match_on_bonus(self):
         tiers = [(100, 6)]
         self.assertAlmostEqual(self._match(bonus=10, match_tiers=tiers), 6000, places=6)
-        self.assertAlmostEqual(self._match(bonus=10, match_tiers=tiers, match_on_bonus=True), 6600, places=6)
+        self.assertAlmostEqual(self._match(bonus=10, match_tiers=tiers, bonus_is_plan_pay=True), 6600, places=6)
 
     def test_deprecated_percent_warns_and_keeps_the_legacy_formula(self):
         with self.assertWarns(DeprecationWarning) as caught:

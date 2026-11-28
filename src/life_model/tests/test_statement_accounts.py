@@ -11,7 +11,6 @@ Dollar assertions read published years (2026) of the packaged ``tax_years`` tabl
 """
 
 import unittest
-import warnings
 
 from ..account.bank import BankAccount
 from ..account.brokerage import BrokerageAccount, Lot
@@ -455,23 +454,3 @@ class TestPolicies(unittest.TestCase):
         model.step_year()
         self.assertAlmostEqual(hsa.balance, 4_400, places=2)  # 2026 self-only limit (Rev. Proc. 2025-19)
         self.assertEqual(check_model(model), [])
-
-
-class TestDeprecatedAliases(unittest.TestCase):
-    def test_old_names_and_positional_arguments_still_work_with_a_warning(self):
-        model = _model()
-        alex = _person(model)
-        with self.assertWarns(DeprecationWarning):
-            account = BrokerageAccount(alex, "Example Brokerage", 1000, 5)
-        self.assertEqual((account.company, account.balance, account.growth_rate), ("Example Brokerage", 1000, 5))
-        with self.assertWarns(DeprecationWarning):
-            bank = BankAccount(owner=alex, company="Bank", interest_rate=1.5)
-        self.assertEqual(bank.interest_rate, 1.5)
-        with self.assertWarns(DeprecationWarning):
-            ira = TraditionalIRA(person=alex, growth_rate=4)
-        self.assertEqual(ira.person, alex)
-        with self.assertRaises(TypeError):
-            TraditionalIRA(alex, growth_rate=4, growth_pct=5)
-        with warnings.catch_warnings():
-            warnings.simplefilter("error", DeprecationWarning)
-            BrokerageAccount(alex, company="Example Brokerage", balance=1, growth_pct=5)

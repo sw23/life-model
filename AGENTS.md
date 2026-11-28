@@ -108,8 +108,9 @@ fixtures use only synthetic names (a test enforces an allowlist).
   `convert_to_roth`), changeable between months; a `ContributionPlan` has a `start`/`end` window. Bank
   and brokerage accounts can be joint between spouses (`joint_owner=`; registered under the titled
   owner, usable by both, income split 50/50, passed to the survivor at a death). Constructors take canonical keyword names (`owner=`,
-  `*_pct`, `*_annual`) and are keyword-only past the owner; deprecated names are still accepted with a
-  `DeprecationWarning` (`life_model/deprecated_names.py`). Library code must use the canonical names.
+  `*_pct`, `*_annual`) and are keyword-only past the owner. A future rename keeps the old name for one
+  release with a `DeprecationWarning` (`life_model/deprecated_names.py`); library code uses the canonical
+  names.
 - **Construction.** The recommended path is the household spec (`life_model.spec`):
   `build_model(load(path))` validates, canonicalizes list order and constructs agents in a fixed
   order (`spec/builder.py` docstring). Direct constructors remain the low-level API; keep their
@@ -128,8 +129,7 @@ fixtures use only synthetic names (a test enforces an allowlist).
   `FinancialConfig` (`model.config`); simulated years read brackets, deductions, wage base and
   contribution limits from `model.year_config` (the `tax_years` table, inflation-projected past the
   last published year). Module helpers take an optional `config=` that falls back to
-  `default_financial_config()`. `config_manager.config` is a deprecated shim library code must not
-  import (a test enforces it). Scenarios are YAML overlays in `config/data/scenarios/`
+  `default_financial_config()` (there is no process-global config). Scenarios are YAML overlays in `config/data/scenarios/`
   (`list_scenarios()`; `stochastic` turns on random economy draws).
 - **RL environment** (`deepqlearning/envs/financial/`). `FinancialLifeEnv(config=
   {"action_space": "flat" | "factored", "decision_interval": "year" | "quarter" | "month"})`: the

@@ -337,7 +337,16 @@ class TestConservationOnWholeHouseholds(unittest.TestCase):
         model = LifeModel(start_year=2026, end_year=2027)
         person = _person(model)
         BankAccount(person, company="Bank", balance=100)
-        LifeEvents(model, [LifeEvent(2027, "Open a brokerage account", BrokerageAccount, person, "Broker", 5000)])
+        LifeEvents(
+            model,
+            [
+                LifeEvent(
+                    2027,
+                    "Open a brokerage account",
+                    lambda: BrokerageAccount(person, company="Broker", balance=5000),
+                )
+            ],
+        )
         model.run()
         assert_conservation(model)
         (opening,) = [e for e in model.ledger if e.kind == "opening_balance"]

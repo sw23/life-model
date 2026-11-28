@@ -6,7 +6,6 @@ import html
 from typing import TYPE_CHECKING, Optional
 
 from ..base_classes import Investment
-from ..deprecated_names import deprecated_arguments
 from ..ledger import FlowKind
 from ..model import compound_interest
 from ..tax.income import IncomeType
@@ -20,17 +19,6 @@ class Plan529(Investment):
     STATS_OWNED = frozenset({"stat_529_balance"})
     BALANCE_STAT = "stat_529_balance"
 
-    @deprecated_arguments(
-        {"growth_rate": "growth_pct", "annual_contribution_limit": "contribution_limit_annual"},
-        positional=(
-            "beneficiary",
-            "balance",
-            "state",
-            "growth_pct",
-            "contribution_limit_annual",
-            "lifetime_contribution_limit",
-        ),
-    )
     def __init__(
         self,
         owner: "Person",
@@ -52,10 +40,9 @@ class Plan529(Investment):
             beneficiary: The child beneficiary of this plan (optional)
             balance: Current balance in the plan
             state: The state sponsoring the plan
-            growth_pct: Expected annual growth rate percentage (deprecated alias ``growth_rate``).
+            growth_pct: Expected annual growth rate percentage.
                 Defers to the economy's equity return when None.
-            contribution_limit_annual: Annual contribution limit (deprecated alias
-                ``annual_contribution_limit``). Uses configured default if None.
+            contribution_limit_annual: Annual contribution limit. Uses configured default if None.
             lifetime_contribution_limit: Lifetime contribution limit. Uses configured default if None.
             basis: Contributions in the balance; the rest is earnings, taxed and penalized
                 pro rata on a non-qualified withdrawal. The whole balance when None.

@@ -5,8 +5,7 @@
 import html
 from enum import Enum
 
-from ..base_classes import LOAN_RENAMES, Loan
-from ..deprecated_names import deprecated_arguments
+from ..base_classes import Loan
 from ..model import Event
 from ..people.person import Person
 from ..tax.income import IncomeType
@@ -34,19 +33,6 @@ class StudentLoanRepaymentPlan(Enum):
 
 
 class StudentLoan(Loan):
-    @deprecated_arguments(
-        LOAN_RENAMES,
-        positional=(
-            "loan_type",
-            "original_amount",
-            "rate_pct",
-            "term_years",
-            "school_name",
-            "current_balance",
-            "payment_monthly",
-            "in_deferment",
-        ),
-    )
     def __init__(
         self,
         owner: Person,
@@ -72,17 +58,15 @@ class StudentLoan(Loan):
         """Models a student loan for a person
 
         Args:
-            owner: The person to which this loan belongs (``person=`` is a deprecated alias)
+            owner: The person to which this loan belongs
             loan_type: Type of student loan (``UNKNOWN`` when the statement does not say: no deferment
                 subsidy and no Repayment Assistance Plan)
-            original_amount: Original amount of the loan (``loan_amount=`` is deprecated)
-            rate_pct: Annual interest rate percentage (``yearly_interest_rate=`` is deprecated)
-            term_years: Length of loan in years, or ``term_months`` (``length_years=`` is deprecated)
+            original_amount: Original amount of the loan
+            rate_pct: Annual interest rate percentage
+            term_years: Length of loan in years, or ``term_months``
             school_name: Name of the educational institution
-            current_balance: Current principal balance (defaults to the schedule's; ``principal=`` is
-                deprecated)
-            payment_monthly: Monthly payment amount (calculated if not provided; ``monthly_payment=``
-                is deprecated)
+            current_balance: Current principal balance (defaults to the schedule's)
+            payment_monthly: Monthly payment amount (calculated if not provided)
             in_deferment: Whether the loan is currently in deferment (no scheduled payments).
                 For ``FEDERAL_SUBSIDIZED`` loans the government pays the interest during deferment
                 (the balance does not grow); for other types interest accrues and capitalizes.
@@ -95,7 +79,7 @@ class StudentLoan(Loan):
             qualifying_payments: Forgiveness-qualifying payments already made under an income-driven
                 plan (counts toward the RAP forgiveness horizon).
 
-        Every argument after the owner is keyword-only (positional use is deprecated).
+        Every argument after the owner is keyword-only.
 
         Raises:
             ValueError: If a private loan is put on the Repayment Assistance Plan.

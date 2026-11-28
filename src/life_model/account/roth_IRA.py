@@ -6,7 +6,6 @@
 from dataclasses import dataclass
 
 from ..base_classes import TaxAdvantagedAccount, TaxTreatment
-from ..deprecated_names import deprecated_arguments
 from ..limits import federal_retirement_age
 from ..people.person import Person
 from ..tax.income import IncomeType
@@ -36,10 +35,6 @@ class RothIRA(TaxAdvantagedAccount):
     is_rmd_eligible = False
     limit_group = "ira"  # one IRA limit shared across Roth and Traditional
 
-    @deprecated_arguments(
-        {"person": "owner", "growth_rate": "growth_pct", "contribution_limit": "contribution_limit_annual"},
-        positional=("balance", "growth_pct", "contribution_limit_annual"),
-    )
     def __init__(
         self,
         owner: Person,
@@ -61,12 +56,11 @@ class RothIRA(TaxAdvantagedAccount):
         and tax-free from 59.5; the five-year rule for earnings is not modeled).
 
         Args:
-            owner: The person to which this IRA belongs (deprecated alias ``person``).
+            owner: The person to which this IRA belongs.
             balance: Current balance in the IRA.
-            growth_pct: Expected annual growth rate percentage (deprecated alias ``growth_rate``).
+            growth_pct: Expected annual growth rate percentage.
                 Defers to the economy's equity return when None.
-            contribution_limit_annual: Override for the annual contribution limit (deprecated alias
-                ``contribution_limit``); the year's IRA limit plus the age-50 catch-up when None.
+            contribution_limit_annual: Override for the annual contribution limit; the year's IRA limit plus the age-50 catch-up when None.
             contribution_basis: Regular contributions still in the account. When None the
                 whole balance less ``conversion_basis`` is treated as contributions (no earnings).
             conversion_basis: Converted amounts still in the account (assumed more than five years old).

@@ -8,7 +8,6 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, ClassVar
 
 from ..base_classes import RetirementAccount
-from ..deprecated_names import deprecated_arguments
 from ..ledger import FlowKind
 from ..limits import required_rmd_for_year
 from ..model import Event, EventKind, snap_money
@@ -38,23 +37,6 @@ class Job401kAccount(RetirementAccount):
     is_rmd_eligible = True
     STEP_PRIORITY: ClassVar[dict[str, int]] = {"pre_step": -10, "step": -10}
 
-    @deprecated_arguments(
-        {
-            "pretax_contrib_percent": "pretax_contrib_pct",
-            "roth_contrib_percent": "roth_contrib_pct",
-            "average_growth": "growth_pct",
-            "person": "owner",
-            "match_on_bonus": "bonus_is_plan_pay",
-        },
-        positional=(
-            "pretax_balance",
-            "pretax_contrib_pct",
-            "roth_balance",
-            "roth_contrib_pct",
-            "growth_pct",
-            "company_match_percent",
-        ),
-    )
     def __init__(
         self,
         job: "Job | None" = None,
@@ -89,14 +71,11 @@ class Job401kAccount(RetirementAccount):
             roth_balance (float, optional): Initial roth balance of account. Defaults to 0.
             after_tax_balance (float, optional): After-tax (non-Roth) bucket: contributions plus their
                 earnings, which are pre-tax money. Defaults to 0.
-            pretax_contrib_pct (float, optional): Pre-tax deferral, percent of plan pay (deprecated alias
-                ``pretax_contrib_percent``). Defaults to 0.
-            roth_contrib_pct (float, optional): Roth deferral, percent of plan pay (deprecated alias
-                ``roth_contrib_percent``). Defaults to 0.
+            pretax_contrib_pct (float, optional): Pre-tax deferral, percent of plan pay. Defaults to 0.
+            roth_contrib_pct (float, optional): Roth deferral, percent of plan pay. Defaults to 0.
             after_tax_contrib_pct (float, optional): After-tax (non-Roth) contributions, percent of plan
                 pay: out of take-home pay, outside the 402(g) limit but inside 415(c). Defaults to 0.
-            growth_pct (float, optional): Annual growth rate (percent; deprecated alias
-                ``average_growth``). Defaults to None, which defers to the economy's equity return.
+            growth_pct (float, optional): Annual growth rate (percent). Defaults to None, which defers to the economy's equity return.
             company_match_percent (float, optional): **Deprecated.** The legacy formula: a match of
                 this percent *of the employee's deferral*, capped at this percent of salary (so
                 ``6`` with a 6% deferral on $100k is $360). Warns with the equivalent
@@ -109,8 +88,7 @@ class Job401kAccount(RetirementAccount):
                 pay") includes the bonus. A plan document defines compensation once and uses it for both
                 the deferral election and the match formula, so when True the deferral percentages *and*
                 the match tiers apply to salary + bonus (the deferral is withheld from the bonus check
-                too); when False (default) both apply to base salary only. Deprecated alias
-                ``match_on_bonus``.
+                too); when False (default) both apply to base salary only.
             match_vesting_years (int, optional): Cliff vesting for employer money: the match vests
                 after this many years of service at the job, and unvested match is forfeited when the
                 job ends before then. 0 (default) means immediately vested.
@@ -126,7 +104,7 @@ class Job401kAccount(RetirementAccount):
             in_plan_roth_conversion (bool, optional): Convert each after-tax contribution to Roth as it is
                 made (the "mega backdoor" in-plan conversion): it lands in the Roth bucket as basis.
 
-        Every argument after ``job`` is keyword-only (positional use is deprecated).
+        Every argument after ``job`` is keyword-only.
         """
         if job is None and owner is None:
             raise ValueError("Job401kAccount needs a job, or an owner for a standalone plan")
