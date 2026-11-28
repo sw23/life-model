@@ -464,10 +464,19 @@ def _never_bought(builder: "_Builder", home_id: str | None, action: str) -> bool
 
 
 def _sell_home(builder: "_Builder", home_id: str, selling_cost_pct: float | None, day: int | None) -> None:
+    """Sell ``home_id`` on the scheduled day. A home that passed to a surviving spouse sells for them; a home
+    whose owner died with no one to inherit left the books with the dissolved estate, so its sale is skipped
+    (like the other dated events on a home with no living owner)."""
     if _never_bought(builder, home_id, "home sale"):
         return
+    home = builder.built.items[home_id]
+    if home.person.is_deceased:
+        builder.model.event_log.add(
+            Event(f"home sale skipped: {home_id} left the books with {home.person.name}'s dissolved estate")
+        )
+        return
     when = date(builder.model.year, builder.model.month, day or 1)
-    builder.built.items[home_id].sell(selling_cost_pct, when=when)
+    home.sell(selling_cost_pct, when=when)
 
 
 def _change_spending(person, amount_annual: float | None, change_pct: float | None) -> None:
